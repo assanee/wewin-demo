@@ -35,7 +35,7 @@ export function Home() {
               invented heritage claim is the same species of unverifiable number as
               the customer counts this page deliberately does without. */}
           <p className="numeric text-caption tracking-[0.22em] text-chalk-3 uppercase">
-            {company.wordmark} · งานอะลูมิเนียมสั่งทำ
+            {company.wordmark}
           </p>
 
           <h1 id="hero-heading" className="mt-4 text-display text-chalk lg:text-hero">

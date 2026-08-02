@@ -29,9 +29,6 @@ export function AppHeader() {
           <span className="font-display text-lead tracking-[0.18em] text-chalk">
             {company.wordmark}
           </span>
-          <span className="numeric hidden text-caption text-chalk-3 md:inline">
-            งานอะลูมิเนียมสั่งทำ
-          </span>
         </Link>
 
         <nav className="hidden lg:flex lg:items-center lg:gap-1" aria-label="เมนูหลัก">
