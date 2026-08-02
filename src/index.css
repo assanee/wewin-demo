@@ -1,0 +1,176 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ *
+ * Design tokens — spec section 2
+ *
+ * The default Tailwind colour, type and breakpoint scales are wiped rather than
+ * extended. The spec fixes a 7-step type scale, a 3-step breakpoint set and a
+ * closed palette; leaving the defaults in place would let `text-sm`, `sm:` or
+ * `bg-slate-800` compile silently and drift the design away from the tokens.
+ * With them removed, any such class is simply not generated and shows up at once.
+ * ------------------------------------------------------------------ */
+
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --breakpoint-*: initial;
+  --font-*: initial;
+
+  /* Surfaces */
+  --color-ink: #0f1210; /* page background */
+  --color-panel: #171b16; /* card, sticky bar */
+  --color-panel-2: #202519; /* input, chip background */
+  --color-line: #2c3325; /* hairline */
+  --color-line-2: #46503a; /* hover border */
+
+  /* Selection */
+  --color-sel-bg: #33421f;
+  --color-sel-line: #7f9e4c;
+
+  /* Text */
+  --color-chalk: #e9ece2;
+  --color-chalk-2: #9ba391;
+  --color-chalk-3: #6b7263;
+
+  /* Semantic accents */
+  --color-blueprint: #6e8fa8; /* dimension lines and dimension numerals ONLY */
+  --color-lime: #b7d45c; /* price and the single active action ONLY */
+  --color-danger: #d9705a;
+  --color-warn: #e0b45c;
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* Type scale: 12 / 13 / 15 / 18 / 24 / 34 / 52 — no other size exists.
+     Thai needs 1.6 line-height at reading sizes so upper and lower vowel marks
+     never collide; display sizes can breathe a little tighter. */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.6;
+  --text-small: 13px;
+  --text-small--line-height: 1.6;
+  --text-body: 15px;
+  --text-body--line-height: 1.6;
+  --text-lead: 18px;
+  --text-lead--line-height: 1.6;
+  --text-title: 24px;
+  --text-title--line-height: 1.4;
+  --text-display: 34px;
+  --text-display--line-height: 1.3;
+  --text-hero: 52px;
+  --text-hero--line-height: 1.15;
+
+  --font-display: 'Bai Jamjuree', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans Thai', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* base 360-767 is unprefixed; only two prefixes exist. */
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Base
+ * ------------------------------------------------------------------ */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Nothing may scroll sideways at 360px (spec section 8). */
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-chalk);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: 1.6;
+    /* A faint 24px grid — the paper a shop drawing is set out on. Two hairlines at
+       ~1.5% contrast: present when you look for it, invisible when you read. */
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.014) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.014) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-sel-line);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background-color: var(--color-sel-bg);
+    color: var(--color-chalk);
+  }
+
+  /* The configurator supplies explicit - / + buttons, so native spinners are
+     redundant and steal touch-target width on mobile. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    appearance: textfield;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Utilities
+ * ------------------------------------------------------------------ */
+
+@utility container-page {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 16px;
+
+  @media (width >= 768px) {
+    padding-inline: 24px;
+  }
+
+  @media (width >= 1024px) {
+    padding-inline: 32px;
+  }
+}
+
+/** Numerals that represent a measurement, a price or a code — never body copy. */
+@utility numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ *
+ * Reduced motion — spec section 11: "nothing moves"
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
