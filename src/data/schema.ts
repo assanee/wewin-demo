@@ -297,6 +297,14 @@ export function parseCatalog(rawProducts: unknown, rawCategories: unknown): Cata
     errors.push(`duplicate product id "${duplicateId}"`);
   }
 
+  // Two products sharing a prefix can emit identical sku_codes for different
+  // products, which would make a quote line ambiguous on the shop floor.
+  const prefixes = parsedProducts.map((product) => product.skuPrefix);
+  const duplicatePrefix = prefixes.find((prefix, index) => prefixes.indexOf(prefix) !== index);
+  if (duplicatePrefix !== undefined) {
+    errors.push(`duplicate skuPrefix "${duplicatePrefix}"`);
+  }
+
   for (const product of parsedProducts) {
     if (!categoryIds.has(product.categoryId)) {
       errors.push(`product "${product.id}" has unknown categoryId "${product.categoryId}"`);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseCatalog, productSchema } from '../src/data/schema';
-import { products } from '../src/data/products';
+import { getProductById, products } from '../src/data/products';
 import { categories } from '../src/data/categories';
 import type { Product } from '../src/types/catalog';
 
@@ -10,10 +10,15 @@ import type { Product } from '../src/types/catalog';
  * a schema that accepts everything passes silently and protects nothing.
  */
 
+/**
+ * awn-4t specifically, not `products[0]`: these tests mutate a swatch group, a glass
+ * group and a rule, so the fixture has to be a product that actually has all three.
+ * Indexing into the catalog made that an accident of ordering.
+ */
 const validProduct = (): Product => {
-  const [first] = products;
-  if (!first) throw new Error('fixture missing: products is empty');
-  return structuredClone(first);
+  const found = getProductById('awn-4t');
+  if (!found) throw new Error('fixture missing: awn-4t');
+  return structuredClone(found);
 };
 
 describe('parseCatalog', () => {
@@ -24,8 +29,15 @@ describe('parseCatalog', () => {
   test('returns the parsed products so callers use the validated value', () => {
     const parsed = parseCatalog(products, categories);
 
-    expect(parsed.products).toHaveLength(3);
-    expect(parsed.products.map((product) => product.id)).toEqual(['awn-4t', 'lvr-adj-3', 'sld-2p']);
+    expect(parsed.products).toHaveLength(products.length);
+    expect(parsed.products.map((product) => product.id)).toEqual(products.map((p) => p.id));
+  });
+
+  test('rejects a catalog where two products share a skuPrefix', () => {
+    const a = validProduct();
+    const b = { ...validProduct(), id: 'other', slug: 'other' };
+
+    expect(() => parseCatalog([a, b], categories)).toThrow(/skuPrefix/i);
   });
 
   test('rejects a product whose categoryId matches no category', () => {
