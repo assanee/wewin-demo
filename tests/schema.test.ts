@@ -33,6 +33,47 @@ describe('parseCatalog', () => {
     expect(parsed.products.map((product) => product.id)).toEqual(products.map((p) => p.id));
   });
 
+  test('keeps every field the raw product had', () => {
+    // zod strips keys that the schema does not declare. Adding a field to Product
+    // and forgetting it here makes it vanish between products.ts and the UI, with
+    // no error anywhere — the elevation drawings went blank exactly this way.
+    const parsed = parseCatalog(products, categories);
+
+    parsed.products.forEach((product, index) => {
+      const raw = products[index];
+      expect(Object.keys(product).sort()).toEqual(Object.keys(raw ?? {}).sort());
+    });
+  });
+
+  test('carries the elevation through the parse, panels and all', () => {
+    const parsed = parseCatalog(products, categories);
+    const awning = parsed.products.find((product) => product.id === 'awn-4t');
+
+    expect(awning?.elevation).toEqual({ panels: 4, operation: 'awning', infill: 'glass' });
+  });
+
+  test('rejects an elevation whose panelWidths do not match its panel count', () => {
+    const broken = validProduct();
+    broken.elevation = { panels: 3, operation: 'casement', infill: 'glass', panelWidths: [2, 1] };
+
+    expect(productSchema.safeParse(broken).success).toBe(false);
+  });
+
+  test('rejects a panel count below one', () => {
+    const broken = validProduct();
+    broken.elevation = { ...broken.elevation, panels: 0 };
+
+    expect(productSchema.safeParse(broken).success).toBe(false);
+  });
+
+  test('rejects an unknown opening symbol', () => {
+    const broken = validProduct();
+    // @ts-expect-error deliberately invalid data — this is what the schema must catch
+    broken.elevation = { ...broken.elevation, operation: 'teleport' };
+
+    expect(productSchema.safeParse(broken).success).toBe(false);
+  });
+
   test('rejects a catalog where two products share a skuPrefix', () => {
     const a = validProduct();
     const b = { ...validProduct(), id: 'other', slug: 'other' };

@@ -21,6 +21,7 @@
  */
 
 import type { CustomGroup, OptionGroup, OptionValue, Product, Rule, SkuGroup } from '../types/catalog';
+import type { PanelInfill, PanelOperation } from '../lib/elevation';
 import { and, area, div, gt, lt, measure, selected } from './ruleBuilders';
 
 /* ------------------------------------------------------------------ *
@@ -218,6 +219,16 @@ const KIT_LEAD_TIME: Record<Kit, [number, number]> = {
   screen: [7, 10],
 };
 
+/** What fills a panel, which follows entirely from the kit. */
+const KIT_INFILL: Record<Kit, PanelInfill> = {
+  louver: 'louvre',
+  louver_door: 'louvre',
+  glass_window: 'glass',
+  glass_door: 'glass',
+  glass_fixed: 'glass',
+  screen: 'mesh',
+};
+
 const KIT_SUMMARY: Record<Kit, string> = {
   louver: 'ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด',
   louver_door: 'บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ',
@@ -303,6 +314,20 @@ interface Row {
   /** Rules beyond the automatic ones. */
   extraRules?: Rule[];
   summaryTh?: string;
+
+  /* --- Elevation drawing -------------------------------------------------
+     The panel count and opening symbol are data because the drawing has to
+     match the product name: "บานเฟี้ยม แบ่ง 12" that renders four panels is a
+     more obvious lie than a wrong price. One renderer reads these for all 81. */
+
+  /** Panels across the elevation. Defaults to 1. */
+  panels?: number;
+  /** Opening symbol drawn over each panel. Defaults to 'fixed'. */
+  op?: PanelOperation;
+  /** Relative widths, e.g. [2, 1] for the unequal leaves of a คู่แม่ลูก door. */
+  panelWidths?: number[];
+  /** Which leaves slide, when only some of them do. */
+  movingPanels?: number[];
 }
 
 const AWN4T_RULES: Rule[] = [
@@ -340,8 +365,8 @@ const SLD2_RULES: Rule[] = [
 
 const ROWS: Row[] = [
   /* --- 1. ระแนงและป้องกันแสงแดด --------------------------------- */
-  { slug: 'lvr-adj', nameTh: 'ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVR1', size: 'louver', pricePerSqm: 2200, ruleIdBase: 'lvr1' },
-  { slug: 'lvr-adj-2', nameTh: 'ระแนงปรับได้ แบ่ง 2', categoryId: 'louvers', kit: 'louver', prefix: 'LVR2', size: 'louver', pricePerSqm: 2300, ruleIdBase: 'lvr2' },
+  { slug: 'lvr-adj', nameTh: 'ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVR1', size: 'louver', pricePerSqm: 2200, ruleIdBase: 'lvr1', panels: 1, op: 'fixed' },
+  { slug: 'lvr-adj-2', nameTh: 'ระแนงปรับได้ แบ่ง 2', categoryId: 'louvers', kit: 'louver', prefix: 'LVR2', size: 'louver', pricePerSqm: 2300, ruleIdBase: 'lvr2', panels: 2, op: 'fixed' },
   {
     slug: 'lvr-adj-3',
     nameTh: 'ระแนงปรับได้ แบ่ง 3',
@@ -351,63 +376,65 @@ const ROWS: Row[] = [
     size: 'louver',
     pricePerSqm: 2400,
     ruleIdBase: 'lvr3',
+    panels: 3,
+    op: 'fixed',
     extraRules: LVR3_RULES,
     summaryTh: 'ระแนงอะลูมิเนียมปรับองศาใบได้ แบ่งชุดควบคุม 3 ช่วง คุมแสงและลมได้อิสระในแต่ละช่วง',
   },
-  { slug: 'lvr-slide-swap', nameTh: 'บานเลื่อนสลับ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVSW', size: 'window_wide', pricePerSqm: 3400, ruleIdBase: 'lvsw' },
-  { slug: 'lvr-slide-4free', nameTh: 'บานเลื่อน แบ่ง 4 อิสระ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS4F', size: 'window_wide', pricePerSqm: 3900, ruleIdBase: 'lvs4f' },
-  { slug: 'lvr-slide-single', nameTh: 'บานเลื่อน เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS1', size: 'window', pricePerSqm: 3100, ruleIdBase: 'lvs1' },
-  { slug: 'lvr-slide-3', nameTh: 'บานเลื่อน แบ่ง 3 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS3', size: 'window_wide', pricePerSqm: 3700, ruleIdBase: 'lvs3' },
-  { slug: 'lvr-slide-4c', nameTh: 'บานเลื่อน แบ่ง 4 เปิดกลาง - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS4C', size: 'window_wide', pricePerSqm: 3800, ruleIdBase: 'lvs4c' },
-  { slug: 'lvr-hang-swap', nameTh: 'บานแขวนสลับ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVHW', size: 'window_wide', pricePerSqm: 3500, ruleIdBase: 'lvhw' },
-  { slug: 'lvr-hang-4free', nameTh: 'บานแขวน แบ่ง 4 อิสระ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH4F', size: 'window_wide', pricePerSqm: 4000, ruleIdBase: 'lvh4f' },
-  { slug: 'lvr-hang-single', nameTh: 'บานแขวน เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH1', size: 'window', pricePerSqm: 3200, ruleIdBase: 'lvh1' },
-  { slug: 'lvr-hang-3', nameTh: 'บานแขวน แบ่ง 3 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH3', size: 'window_wide', pricePerSqm: 3800, ruleIdBase: 'lvh3' },
-  { slug: 'lvr-hang-4c', nameTh: 'บานแขวน แบ่ง 4 เปิดกลาง - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH4C', size: 'window_wide', pricePerSqm: 3900, ruleIdBase: 'lvh4c' },
-  { slug: 'lvr-door-single', nameTh: 'ประตูบานเปิด เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVD1', size: 'door', pricePerSqm: 3300, ruleIdBase: 'lvd1' },
-  { slug: 'lvr-door-double', nameTh: 'ประตูบานเปิด คู่ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVD2', size: 'door_wide', pricePerSqm: 3500, ruleIdBase: 'lvd2' },
-  { slug: 'lvr-door-uneven', nameTh: 'ประตูบานเปิด คู่แม่ลูก - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVDU', size: 'door_wide', pricePerSqm: 3600, ruleIdBase: 'lvdu' },
-  { slug: 'lvr-door-uneven-3in', nameTh: 'ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVDU3', size: 'door_wide', pricePerSqm: 3900, ruleIdBase: 'lvdu3' },
-  { slug: 'lvr-swing-single', nameTh: 'ประตูบานสวิง เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVW1', size: 'door', pricePerSqm: 3600, ruleIdBase: 'lvw1' },
-  { slug: 'lvr-swing-double', nameTh: 'ประตูบานสวิง คู่ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVW2', size: 'door_wide', pricePerSqm: 3800, ruleIdBase: 'lvw2' },
-  { slug: 'lvr-swing-uneven', nameTh: 'ประตูบานสวิง คู่แม่ลูก - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVWU', size: 'door_wide', pricePerSqm: 3900, ruleIdBase: 'lvwu' },
-  { slug: 'lvr-fold-2', nameTh: 'บานเฟี้ยม แบ่ง 2 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF2', size: 'door_wide', pricePerSqm: 4200, ruleIdBase: 'lvf2' },
-  { slug: 'lvr-fold-4', nameTh: 'บานเฟี้ยม แบ่ง 4 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF4', size: 'door_wide', pricePerSqm: 4400, ruleIdBase: 'lvf4' },
-  { slug: 'lvr-fold-6', nameTh: 'บานเฟี้ยม แบ่ง 6 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF6', size: 'door_wide', pricePerSqm: 4600, ruleIdBase: 'lvf6' },
-  { slug: 'lvr-fold-8', nameTh: 'บานเฟี้ยม แบ่ง 8 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF8', size: 'door_wide', pricePerSqm: 4800, ruleIdBase: 'lvf8' },
+  { slug: 'lvr-slide-swap', nameTh: 'บานเลื่อนสลับ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVSW', size: 'window_wide', pricePerSqm: 3400, ruleIdBase: 'lvsw', panels: 2, op: 'slide' },
+  { slug: 'lvr-slide-4free', nameTh: 'บานเลื่อน แบ่ง 4 อิสระ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS4F', size: 'window_wide', pricePerSqm: 3900, ruleIdBase: 'lvs4f', panels: 4, op: 'slide' },
+  { slug: 'lvr-slide-single', nameTh: 'บานเลื่อน เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS1', size: 'window', pricePerSqm: 3100, ruleIdBase: 'lvs1', panels: 2, op: 'slide', movingPanels: [1] },
+  { slug: 'lvr-slide-3', nameTh: 'บานเลื่อน แบ่ง 3 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS3', size: 'window_wide', pricePerSqm: 3700, ruleIdBase: 'lvs3', panels: 3, op: 'slide' },
+  { slug: 'lvr-slide-4c', nameTh: 'บานเลื่อน แบ่ง 4 เปิดกลาง - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVS4C', size: 'window_wide', pricePerSqm: 3800, ruleIdBase: 'lvs4c', panels: 4, op: 'slide' },
+  { slug: 'lvr-hang-swap', nameTh: 'บานแขวนสลับ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVHW', size: 'window_wide', pricePerSqm: 3500, ruleIdBase: 'lvhw', panels: 2, op: 'hang' },
+  { slug: 'lvr-hang-4free', nameTh: 'บานแขวน แบ่ง 4 อิสระ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH4F', size: 'window_wide', pricePerSqm: 4000, ruleIdBase: 'lvh4f', panels: 4, op: 'hang' },
+  { slug: 'lvr-hang-single', nameTh: 'บานแขวน เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH1', size: 'window', pricePerSqm: 3200, ruleIdBase: 'lvh1', panels: 2, op: 'hang', movingPanels: [1] },
+  { slug: 'lvr-hang-3', nameTh: 'บานแขวน แบ่ง 3 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH3', size: 'window_wide', pricePerSqm: 3800, ruleIdBase: 'lvh3', panels: 3, op: 'hang' },
+  { slug: 'lvr-hang-4c', nameTh: 'บานแขวน แบ่ง 4 เปิดกลาง - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver', prefix: 'LVH4C', size: 'window_wide', pricePerSqm: 3900, ruleIdBase: 'lvh4c', panels: 4, op: 'hang' },
+  { slug: 'lvr-door-single', nameTh: 'ประตูบานเปิด เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVD1', size: 'door', pricePerSqm: 3300, ruleIdBase: 'lvd1', panels: 1, op: 'casement' },
+  { slug: 'lvr-door-double', nameTh: 'ประตูบานเปิด คู่ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVD2', size: 'door_wide', pricePerSqm: 3500, ruleIdBase: 'lvd2', panels: 2, op: 'casement' },
+  { slug: 'lvr-door-uneven', nameTh: 'ประตูบานเปิด คู่แม่ลูก - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVDU', size: 'door_wide', pricePerSqm: 3600, ruleIdBase: 'lvdu', panels: 2, op: 'casement', panelWidths: [2, 1] },
+  { slug: 'lvr-door-uneven-3in', nameTh: 'ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVDU3', size: 'door_wide', pricePerSqm: 3900, ruleIdBase: 'lvdu3', panels: 2, op: 'casement', panelWidths: [2, 1] },
+  { slug: 'lvr-swing-single', nameTh: 'ประตูบานสวิง เดี่ยว - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVW1', size: 'door', pricePerSqm: 3600, ruleIdBase: 'lvw1', panels: 1, op: 'casement' },
+  { slug: 'lvr-swing-double', nameTh: 'ประตูบานสวิง คู่ - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVW2', size: 'door_wide', pricePerSqm: 3800, ruleIdBase: 'lvw2', panels: 2, op: 'casement' },
+  { slug: 'lvr-swing-uneven', nameTh: 'ประตูบานสวิง คู่แม่ลูก - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVWU', size: 'door_wide', pricePerSqm: 3900, ruleIdBase: 'lvwu', panels: 2, op: 'casement', panelWidths: [2, 1] },
+  { slug: 'lvr-fold-2', nameTh: 'บานเฟี้ยม แบ่ง 2 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF2', size: 'door_wide', pricePerSqm: 4200, ruleIdBase: 'lvf2', panels: 2, op: 'fold' },
+  { slug: 'lvr-fold-4', nameTh: 'บานเฟี้ยม แบ่ง 4 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF4', size: 'door_wide', pricePerSqm: 4400, ruleIdBase: 'lvf4', panels: 4, op: 'fold' },
+  { slug: 'lvr-fold-6', nameTh: 'บานเฟี้ยม แบ่ง 6 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF6', size: 'door_wide', pricePerSqm: 4600, ruleIdBase: 'lvf6', panels: 6, op: 'fold' },
+  { slug: 'lvr-fold-8', nameTh: 'บานเฟี้ยม แบ่ง 8 - ระแนงปรับได้', categoryId: 'louvers', kit: 'louver_door', prefix: 'LVF8', size: 'door_wide', pricePerSqm: 4800, ruleIdBase: 'lvf8', panels: 8, op: 'fold' },
 
   /* --- 2. 2in1 บานมัลติฟังก์ชัน ---------------------------------- */
-  { slug: 'multi-hang-cas-2', nameTh: '2in1 บานแขวน-เปิด แบ่ง 2', categoryId: 'multi', kit: 'glass_window', prefix: 'M2HC2', size: 'window_wide', pricePerSqm: 3200, ruleIdBase: 'm2hc2' },
-  { slug: 'multi-hang-cas-4', nameTh: '2in1 บานแขวน-เปิด แบ่ง 4', categoryId: 'multi', kit: 'glass_window', prefix: 'M2HC4', size: 'window_wide', pricePerSqm: 3500, ruleIdBase: 'm2hc4' },
-  { slug: 'multi-hang-fold-3', nameTh: '2in1 บานแขวน-เฟี้ยม แบ่ง 3', categoryId: 'multi', kit: 'glass_door', prefix: 'M2HF3', size: 'door_wide', pricePerSqm: 3800, ruleIdBase: 'm2hf3' },
-  { slug: 'multi-hang-fold-6', nameTh: '2in1 บานแขวน-เฟี้ยม แบ่ง 6', categoryId: 'multi', kit: 'glass_door', prefix: 'M2HF6', size: 'door_wide', pricePerSqm: 4100, ruleIdBase: 'm2hf6' },
+  { slug: 'multi-hang-cas-2', nameTh: '2in1 บานแขวน-เปิด แบ่ง 2', categoryId: 'multi', kit: 'glass_window', prefix: 'M2HC2', size: 'window_wide', pricePerSqm: 3200, ruleIdBase: 'm2hc2', panels: 2, op: 'hang' },
+  { slug: 'multi-hang-cas-4', nameTh: '2in1 บานแขวน-เปิด แบ่ง 4', categoryId: 'multi', kit: 'glass_window', prefix: 'M2HC4', size: 'window_wide', pricePerSqm: 3500, ruleIdBase: 'm2hc4', panels: 4, op: 'hang' },
+  { slug: 'multi-hang-fold-3', nameTh: '2in1 บานแขวน-เฟี้ยม แบ่ง 3', categoryId: 'multi', kit: 'glass_door', prefix: 'M2HF3', size: 'door_wide', pricePerSqm: 3800, ruleIdBase: 'm2hf3', panels: 3, op: 'fold' },
+  { slug: 'multi-hang-fold-6', nameTh: '2in1 บานแขวน-เฟี้ยม แบ่ง 6', categoryId: 'multi', kit: 'glass_door', prefix: 'M2HF6', size: 'door_wide', pricePerSqm: 4100, ruleIdBase: 'm2hf6', panels: 6, op: 'fold' },
 
   /* --- 3. บานเฟี้ยม ---------------------------------------------- */
-  { slug: 'fold-2', nameTh: 'บานเฟี้ยม แบ่ง 2', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD2', size: 'door_wide', pricePerSqm: 3400, ruleIdBase: 'fld2' },
-  { slug: 'fold-4', nameTh: 'บานเฟี้ยม แบ่ง 4', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD4', size: 'door_wide', pricePerSqm: 3600, ruleIdBase: 'fld4' },
-  { slug: 'fold-6', nameTh: 'บานเฟี้ยม แบ่ง 6', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD6', size: 'door_wide', pricePerSqm: 3800, ruleIdBase: 'fld6' },
-  { slug: 'fold-8', nameTh: 'บานเฟี้ยม แบ่ง 8', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD8', size: 'door_wide', pricePerSqm: 4000, ruleIdBase: 'fld8' },
-  { slug: 'fold-10', nameTh: 'บานเฟี้ยม แบ่ง 10', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD10', size: 'door_wide', pricePerSqm: 4200, ruleIdBase: 'fld10' },
-  { slug: 'fold-12', nameTh: 'บานเฟี้ยม แบ่ง 12', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD12', size: 'door_wide', pricePerSqm: 4400, ruleIdBase: 'fld12' },
-  { slug: 'fold-nt-2', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 2', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN2', size: 'door_wide', pricePerSqm: 4000, ruleIdBase: 'fln2' },
-  { slug: 'fold-nt-4', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 4', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN4', size: 'door_wide', pricePerSqm: 4200, ruleIdBase: 'fln4' },
-  { slug: 'fold-nt-6', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 6', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN6', size: 'door_wide', pricePerSqm: 4400, ruleIdBase: 'fln6' },
-  { slug: 'fold-nt-8', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 8', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN8', size: 'door_wide', pricePerSqm: 4600, ruleIdBase: 'fln8' },
-  { slug: 'fold-nt-10', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 10', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN10', size: 'door_wide', pricePerSqm: 4800, ruleIdBase: 'fln10' },
-  { slug: 'fold-nt-12', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 12', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN12', size: 'door_wide', pricePerSqm: 5000, ruleIdBase: 'fln12' },
+  { slug: 'fold-2', nameTh: 'บานเฟี้ยม แบ่ง 2', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD2', size: 'door_wide', pricePerSqm: 3400, ruleIdBase: 'fld2', panels: 2, op: 'fold' },
+  { slug: 'fold-4', nameTh: 'บานเฟี้ยม แบ่ง 4', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD4', size: 'door_wide', pricePerSqm: 3600, ruleIdBase: 'fld4', panels: 4, op: 'fold' },
+  { slug: 'fold-6', nameTh: 'บานเฟี้ยม แบ่ง 6', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD6', size: 'door_wide', pricePerSqm: 3800, ruleIdBase: 'fld6', panels: 6, op: 'fold' },
+  { slug: 'fold-8', nameTh: 'บานเฟี้ยม แบ่ง 8', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD8', size: 'door_wide', pricePerSqm: 4000, ruleIdBase: 'fld8', panels: 8, op: 'fold' },
+  { slug: 'fold-10', nameTh: 'บานเฟี้ยม แบ่ง 10', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD10', size: 'door_wide', pricePerSqm: 4200, ruleIdBase: 'fld10', panels: 10, op: 'fold' },
+  { slug: 'fold-12', nameTh: 'บานเฟี้ยม แบ่ง 12', categoryId: 'folding', kit: 'glass_door', prefix: 'FLD12', size: 'door_wide', pricePerSqm: 4400, ruleIdBase: 'fld12', panels: 12, op: 'fold' },
+  { slug: 'fold-nt-2', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 2', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN2', size: 'door_wide', pricePerSqm: 4000, ruleIdBase: 'fln2', panels: 2, op: 'fold' },
+  { slug: 'fold-nt-4', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 4', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN4', size: 'door_wide', pricePerSqm: 4200, ruleIdBase: 'fln4', panels: 4, op: 'fold' },
+  { slug: 'fold-nt-6', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 6', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN6', size: 'door_wide', pricePerSqm: 4400, ruleIdBase: 'fln6', panels: 6, op: 'fold' },
+  { slug: 'fold-nt-8', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 8', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN8', size: 'door_wide', pricePerSqm: 4600, ruleIdBase: 'fln8', panels: 8, op: 'fold' },
+  { slug: 'fold-nt-10', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 10', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN10', size: 'door_wide', pricePerSqm: 4800, ruleIdBase: 'fln10', panels: 10, op: 'fold' },
+  { slug: 'fold-nt-12', nameTh: 'บานเฟี้ยม ไร้รางล่าง แบ่ง 12', categoryId: 'folding', kit: 'glass_door', prefix: 'FLN12', size: 'door_wide', pricePerSqm: 5000, ruleIdBase: 'fln12', panels: 12, op: 'fold' },
 
   /* --- 4. บานเปิด ------------------------------------------------ */
-  { slug: 'cas-door-single', nameTh: 'ประตูบานเปิด เดี่ยว', categoryId: 'casement', kit: 'glass_door', prefix: 'CAS1', size: 'door', pricePerSqm: 2400, ruleIdBase: 'cas1' },
-  { slug: 'cas-door-double', nameTh: 'ประตูบานเปิด คู่', categoryId: 'casement', kit: 'glass_door', prefix: 'CAS2', size: 'door_wide', pricePerSqm: 2600, ruleIdBase: 'cas2' },
-  { slug: 'cas-door-uneven', nameTh: 'ประตูบานเปิด คู่แม่ลูก', categoryId: 'casement', kit: 'glass_door', prefix: 'CASU', size: 'door_wide', pricePerSqm: 2700, ruleIdBase: 'casu' },
-  { slug: 'cas-door-uneven-3in', nameTh: 'ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว', categoryId: 'casement', kit: 'glass_door', prefix: 'CASU3', size: 'door_wide', pricePerSqm: 3000, ruleIdBase: 'casu3' },
-  { slug: 'cas-win-1', nameTh: 'หน้าต่างบานเปิด', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW1', size: 'window', pricePerSqm: 1600, ruleIdBase: 'csw1' },
-  { slug: 'cas-win-2', nameTh: 'หน้าต่างบานเปิด 2', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW2', size: 'window', pricePerSqm: 1700, ruleIdBase: 'csw2' },
-  { slug: 'cas-win-3', nameTh: 'หน้าต่างบานเปิด 3', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW3', size: 'window_wide', pricePerSqm: 1800, ruleIdBase: 'csw3' },
-  { slug: 'cas-win-4', nameTh: 'หน้าต่างบานเปิด 4', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW4', size: 'window_wide', pricePerSqm: 1900, ruleIdBase: 'csw4' },
-  { slug: 'awn-1', nameTh: 'หน้าต่างบานกระทุ้ง', categoryId: 'casement', kit: 'glass_window', prefix: 'AWN1', size: 'window', pricePerSqm: 1350, ruleIdBase: 'awn1' },
-  { slug: 'awn-2', nameTh: 'หน้าต่างบานกระทุ้ง 2', categoryId: 'casement', kit: 'glass_window', prefix: 'AWN2', size: 'window', pricePerSqm: 1400, ruleIdBase: 'awn2' },
-  { slug: 'awn-3', nameTh: 'หน้าต่างบานกระทุ้ง 3', categoryId: 'casement', kit: 'glass_window', prefix: 'AWN3', size: 'window', pricePerSqm: 1450, ruleIdBase: 'awn3' },
+  { slug: 'cas-door-single', nameTh: 'ประตูบานเปิด เดี่ยว', categoryId: 'casement', kit: 'glass_door', prefix: 'CAS1', size: 'door', pricePerSqm: 2400, ruleIdBase: 'cas1', panels: 1, op: 'casement' },
+  { slug: 'cas-door-double', nameTh: 'ประตูบานเปิด คู่', categoryId: 'casement', kit: 'glass_door', prefix: 'CAS2', size: 'door_wide', pricePerSqm: 2600, ruleIdBase: 'cas2', panels: 2, op: 'casement' },
+  { slug: 'cas-door-uneven', nameTh: 'ประตูบานเปิด คู่แม่ลูก', categoryId: 'casement', kit: 'glass_door', prefix: 'CASU', size: 'door_wide', pricePerSqm: 2700, ruleIdBase: 'casu', panels: 2, op: 'casement', panelWidths: [2, 1] },
+  { slug: 'cas-door-uneven-3in', nameTh: 'ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว', categoryId: 'casement', kit: 'glass_door', prefix: 'CASU3', size: 'door_wide', pricePerSqm: 3000, ruleIdBase: 'casu3', panels: 2, op: 'casement', panelWidths: [2, 1] },
+  { slug: 'cas-win-1', nameTh: 'หน้าต่างบานเปิด', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW1', size: 'window', pricePerSqm: 1600, ruleIdBase: 'csw1', panels: 1, op: 'casement' },
+  { slug: 'cas-win-2', nameTh: 'หน้าต่างบานเปิด 2', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW2', size: 'window', pricePerSqm: 1700, ruleIdBase: 'csw2', panels: 2, op: 'casement' },
+  { slug: 'cas-win-3', nameTh: 'หน้าต่างบานเปิด 3', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW3', size: 'window_wide', pricePerSqm: 1800, ruleIdBase: 'csw3', panels: 3, op: 'casement' },
+  { slug: 'cas-win-4', nameTh: 'หน้าต่างบานเปิด 4', categoryId: 'casement', kit: 'glass_window', prefix: 'CSW4', size: 'window_wide', pricePerSqm: 1900, ruleIdBase: 'csw4', panels: 4, op: 'casement' },
+  { slug: 'awn-1', nameTh: 'หน้าต่างบานกระทุ้ง', categoryId: 'casement', kit: 'glass_window', prefix: 'AWN1', size: 'window', pricePerSqm: 1350, ruleIdBase: 'awn1', panels: 1, op: 'awning' },
+  { slug: 'awn-2', nameTh: 'หน้าต่างบานกระทุ้ง 2', categoryId: 'casement', kit: 'glass_window', prefix: 'AWN2', size: 'window', pricePerSqm: 1400, ruleIdBase: 'awn2', panels: 2, op: 'awning' },
+  { slug: 'awn-3', nameTh: 'หน้าต่างบานกระทุ้ง 3', categoryId: 'casement', kit: 'glass_window', prefix: 'AWN3', size: 'window', pricePerSqm: 1450, ruleIdBase: 'awn3', panels: 3, op: 'awning' },
   {
     slug: 'awn-4t',
     nameTh: 'หน้าต่างบานกระทุ้ง 4',
@@ -417,22 +444,24 @@ const ROWS: Row[] = [
     size: 'window',
     pricePerSqm: 1500,
     ruleIdBase: 'awn4t',
+    panels: 4,
+    op: 'awning',
     extraRules: AWN4T_RULES,
     summaryTh:
       'บานกระทุ้งเปิดออกด้านนอก ระบายอากาศได้แม้ฝนตก พร้อมช่องแสงบน 4 ช่อง เหมาะกับห้องนอนและห้องน้ำ',
   },
 
   /* --- 5. บานสวิง ------------------------------------------------ */
-  { slug: 'swing-single', nameTh: 'ประตูบานสวิง เดี่ยว', categoryId: 'swing', kit: 'glass_door', prefix: 'SWG1', size: 'door', pricePerSqm: 2800, ruleIdBase: 'swg1' },
-  { slug: 'swing-double', nameTh: 'ประตูบานสวิง คู่', categoryId: 'swing', kit: 'glass_door', prefix: 'SWG2', size: 'door_wide', pricePerSqm: 3000, ruleIdBase: 'swg2' },
-  { slug: 'swing-uneven', nameTh: 'ประตูบานสวิง คู่แม่ลูก', categoryId: 'swing', kit: 'glass_door', prefix: 'SWGU', size: 'door_wide', pricePerSqm: 3100, ruleIdBase: 'swgu' },
+  { slug: 'swing-single', nameTh: 'ประตูบานสวิง เดี่ยว', categoryId: 'swing', kit: 'glass_door', prefix: 'SWG1', size: 'door', pricePerSqm: 2800, ruleIdBase: 'swg1', panels: 1, op: 'casement' },
+  { slug: 'swing-double', nameTh: 'ประตูบานสวิง คู่', categoryId: 'swing', kit: 'glass_door', prefix: 'SWG2', size: 'door_wide', pricePerSqm: 3000, ruleIdBase: 'swg2', panels: 2, op: 'casement' },
+  { slug: 'swing-uneven', nameTh: 'ประตูบานสวิง คู่แม่ลูก', categoryId: 'swing', kit: 'glass_door', prefix: 'SWGU', size: 'door_wide', pricePerSqm: 3100, ruleIdBase: 'swgu', panels: 2, op: 'casement', panelWidths: [2, 1] },
 
   /* --- 6. บานแขวน ------------------------------------------------ */
-  { slug: 'hang-swap', nameTh: 'บานแขวน สลับ', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNGW', size: 'window_wide', pricePerSqm: 2500, ruleIdBase: 'hngw' },
-  { slug: 'hang-single', nameTh: 'บานแขวน เดี่ยว', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG1', size: 'window', pricePerSqm: 2300, ruleIdBase: 'hng1' },
-  { slug: 'hang-single-pocket', nameTh: 'บานแขวน เดี่ยว - ซ่อนผนัง', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG1P', size: 'window', pricePerSqm: 2900, ruleIdBase: 'hng1p' },
-  { slug: 'hang-4c', nameTh: 'บานแขวน แบ่ง 4 เปิดกลาง', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG4C', size: 'window_wide', pricePerSqm: 2800, ruleIdBase: 'hng4c' },
-  { slug: 'hang-4c-pocket', nameTh: 'บานแขวน แบ่ง 4 เปิดกลาง - ซ่อนผนัง', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG4P', size: 'window_wide', pricePerSqm: 3400, ruleIdBase: 'hng4p' },
+  { slug: 'hang-swap', nameTh: 'บานแขวน สลับ', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNGW', size: 'window_wide', pricePerSqm: 2500, ruleIdBase: 'hngw', panels: 2, op: 'hang' },
+  { slug: 'hang-single', nameTh: 'บานแขวน เดี่ยว', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG1', size: 'window', pricePerSqm: 2300, ruleIdBase: 'hng1', panels: 2, op: 'hang', movingPanels: [1] },
+  { slug: 'hang-single-pocket', nameTh: 'บานแขวน เดี่ยว - ซ่อนผนัง', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG1P', size: 'window', pricePerSqm: 2900, ruleIdBase: 'hng1p', panels: 2, op: 'hang', movingPanels: [1] },
+  { slug: 'hang-4c', nameTh: 'บานแขวน แบ่ง 4 เปิดกลาง', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG4C', size: 'window_wide', pricePerSqm: 2800, ruleIdBase: 'hng4c', panels: 4, op: 'hang' },
+  { slug: 'hang-4c-pocket', nameTh: 'บานแขวน แบ่ง 4 เปิดกลาง - ซ่อนผนัง', categoryId: 'hanging', kit: 'glass_window', prefix: 'HNG4P', size: 'window_wide', pricePerSqm: 3400, ruleIdBase: 'hng4p', panels: 4, op: 'hang' },
 
   /* --- 7. บานเลื่อน ---------------------------------------------- */
   {
@@ -444,35 +473,37 @@ const ROWS: Row[] = [
     size: 'door',
     pricePerSqm: 2100,
     ruleIdBase: 'sld2',
+    panels: 2,
+    op: 'slide',
     extraRules: SLD2_RULES,
     summaryTh: 'บานเลื่อนสองบานบนรางคู่ เปิดได้ครึ่งช่อง เหมาะกับทางออกระเบียงและห้องนั่งเล่น',
   },
-  { slug: 'sld-door-4c', nameTh: 'ประตูบานเลื่อน แบ่ง 4 เปิดกลาง', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD4C', size: 'door_wide', pricePerSqm: 2400, ruleIdBase: 'sldd4c' },
-  { slug: 'sld-door-3free', nameTh: 'ประตูบานเลื่อน แบ่ง 3 อิสระ', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD3F', size: 'door_wide', pricePerSqm: 2500, ruleIdBase: 'sldd3f' },
-  { slug: 'sld-door-3', nameTh: 'ประตูบานเลื่อน แบ่ง 3', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD3', size: 'door_wide', pricePerSqm: 2300, ruleIdBase: 'sldd3' },
-  { slug: 'sld-door-6c', nameTh: 'ประตูบานเลื่อน แบ่ง 6 เปิดกลาง', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD6C', size: 'door_wide', pricePerSqm: 2700, ruleIdBase: 'sldd6c' },
-  { slug: 'sld-win-swap', nameTh: 'บานเลื่อน สลับ', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW', size: 'window_wide', pricePerSqm: 1700, ruleIdBase: 'sldw' },
-  { slug: 'sld-win-4c', nameTh: 'บานเลื่อน แบ่ง 4 เปิดกลาง', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW4C', size: 'window_wide', pricePerSqm: 1900, ruleIdBase: 'sldw4c' },
-  { slug: 'sld-win-3free', nameTh: 'บานเลื่อน แบ่ง 3 อิสระ', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW3F', size: 'window_wide', pricePerSqm: 2000, ruleIdBase: 'sldw3f' },
-  { slug: 'sld-win-3', nameTh: 'บานเลื่อน แบ่ง 3', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW3', size: 'window_wide', pricePerSqm: 1850, ruleIdBase: 'sldw3' },
-  { slug: 'sld-win-6c', nameTh: 'บานเลื่อน แบ่ง 6 เปิดกลาง', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW6C', size: 'window_wide', pricePerSqm: 2150, ruleIdBase: 'sldw6c' },
+  { slug: 'sld-door-4c', nameTh: 'ประตูบานเลื่อน แบ่ง 4 เปิดกลาง', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD4C', size: 'door_wide', pricePerSqm: 2400, ruleIdBase: 'sldd4c', panels: 4, op: 'slide' },
+  { slug: 'sld-door-3free', nameTh: 'ประตูบานเลื่อน แบ่ง 3 อิสระ', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD3F', size: 'door_wide', pricePerSqm: 2500, ruleIdBase: 'sldd3f', panels: 3, op: 'slide' },
+  { slug: 'sld-door-3', nameTh: 'ประตูบานเลื่อน แบ่ง 3', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD3', size: 'door_wide', pricePerSqm: 2300, ruleIdBase: 'sldd3', panels: 3, op: 'slide' },
+  { slug: 'sld-door-6c', nameTh: 'ประตูบานเลื่อน แบ่ง 6 เปิดกลาง', categoryId: 'sliding', kit: 'glass_door', prefix: 'SLDD6C', size: 'door_wide', pricePerSqm: 2700, ruleIdBase: 'sldd6c', panels: 6, op: 'slide' },
+  { slug: 'sld-win-swap', nameTh: 'บานเลื่อน สลับ', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW', size: 'window_wide', pricePerSqm: 1700, ruleIdBase: 'sldw', panels: 2, op: 'slide' },
+  { slug: 'sld-win-4c', nameTh: 'บานเลื่อน แบ่ง 4 เปิดกลาง', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW4C', size: 'window_wide', pricePerSqm: 1900, ruleIdBase: 'sldw4c', panels: 4, op: 'slide' },
+  { slug: 'sld-win-3free', nameTh: 'บานเลื่อน แบ่ง 3 อิสระ', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW3F', size: 'window_wide', pricePerSqm: 2000, ruleIdBase: 'sldw3f', panels: 3, op: 'slide' },
+  { slug: 'sld-win-3', nameTh: 'บานเลื่อน แบ่ง 3', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW3', size: 'window_wide', pricePerSqm: 1850, ruleIdBase: 'sldw3', panels: 3, op: 'slide' },
+  { slug: 'sld-win-6c', nameTh: 'บานเลื่อน แบ่ง 6 เปิดกลาง', categoryId: 'sliding', kit: 'glass_window', prefix: 'SLDW6C', size: 'window_wide', pricePerSqm: 2150, ruleIdBase: 'sldw6c', panels: 6, op: 'slide' },
 
   /* --- 8. บานเลื่อนแนวตั้ง ---------------------------------------- */
-  { slug: 'vert-slide', nameTh: 'บานเลื่อนแนวตั้ง', categoryId: 'vertical-sliding', kit: 'glass_window', prefix: 'VSL1', size: 'vertical', pricePerSqm: 2600, ruleIdBase: 'vsl1' },
+  { slug: 'vert-slide', nameTh: 'บานเลื่อนแนวตั้ง', categoryId: 'vertical-sliding', kit: 'glass_window', prefix: 'VSL1', size: 'vertical', pricePerSqm: 2600, ruleIdBase: 'vsl1', panels: 1, op: 'vertical' },
 
   /* --- 9. บานปิดตาย ---------------------------------------------- */
-  { slug: 'fixed-1', nameTh: 'บานติดตาย', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX1', size: 'fixed', pricePerSqm: 1100, ruleIdBase: 'fix1' },
-  { slug: 'fixed-2', nameTh: 'บานติดตาย 2', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX2', size: 'fixed', pricePerSqm: 1150, ruleIdBase: 'fix2' },
-  { slug: 'fixed-3', nameTh: 'บานติดตาย 3', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX3', size: 'fixed', pricePerSqm: 1200, ruleIdBase: 'fix3' },
-  { slug: 'fixed-4', nameTh: 'บานติดตาย 4', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX4', size: 'fixed', pricePerSqm: 1250, ruleIdBase: 'fix4' },
-  { slug: 'fixed-5', nameTh: 'บานติดตาย 5', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX5', size: 'fixed', pricePerSqm: 1300, ruleIdBase: 'fix5' },
-  { slug: 'fixed-6', nameTh: 'บานติดตาย 6', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX6', size: 'fixed', pricePerSqm: 1350, ruleIdBase: 'fix6' },
+  { slug: 'fixed-1', nameTh: 'บานติดตาย', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX1', size: 'fixed', pricePerSqm: 1100, ruleIdBase: 'fix1', panels: 1, op: 'fixed' },
+  { slug: 'fixed-2', nameTh: 'บานติดตาย 2', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX2', size: 'fixed', pricePerSqm: 1150, ruleIdBase: 'fix2', panels: 2, op: 'fixed' },
+  { slug: 'fixed-3', nameTh: 'บานติดตาย 3', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX3', size: 'fixed', pricePerSqm: 1200, ruleIdBase: 'fix3', panels: 3, op: 'fixed' },
+  { slug: 'fixed-4', nameTh: 'บานติดตาย 4', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX4', size: 'fixed', pricePerSqm: 1250, ruleIdBase: 'fix4', panels: 4, op: 'fixed' },
+  { slug: 'fixed-5', nameTh: 'บานติดตาย 5', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX5', size: 'fixed', pricePerSqm: 1300, ruleIdBase: 'fix5', panels: 5, op: 'fixed' },
+  { slug: 'fixed-6', nameTh: 'บานติดตาย 6', categoryId: 'fixed', kit: 'glass_fixed', prefix: 'FIX6', size: 'fixed', pricePerSqm: 1350, ruleIdBase: 'fix6', panels: 6, op: 'fixed' },
 
   /* --- 10. มุ้งกันยุงและแมลง -------------------------------------- */
-  { slug: 'screen-ss-door', nameTh: 'มุ้งลวดสแตนเลส ประตู', categoryId: 'screens', kit: 'screen', prefix: 'SCRSD', size: 'door', pricePerSqm: 1400, ruleIdBase: 'scrsd' },
-  { slug: 'screen-alu-single', nameTh: 'มุ้งจีบอลูมิเนียม เดี่ยว', categoryId: 'screens', kit: 'screen', prefix: 'SCRA1', size: 'screen', pricePerSqm: 1200, ruleIdBase: 'scra1' },
-  { slug: 'screen-fiber-single', nameTh: 'มุ้งจีบไฟเบอร์ เดี่ยว', categoryId: 'screens', kit: 'screen', prefix: 'SCRF1', size: 'screen', pricePerSqm: 900, ruleIdBase: 'scrf1' },
-  { slug: 'screen-fiber-track-single', nameTh: 'มุ้งจีบไฟเบอร์ เก็บราง เดี่ยว', categoryId: 'screens', kit: 'screen', prefix: 'SCRFT1', size: 'screen', pricePerSqm: 1050, ruleIdBase: 'scrft1' },
+  { slug: 'screen-ss-door', nameTh: 'มุ้งลวดสแตนเลส ประตู', categoryId: 'screens', kit: 'screen', prefix: 'SCRSD', size: 'door', pricePerSqm: 1400, ruleIdBase: 'scrsd', panels: 1, op: 'casement' },
+  { slug: 'screen-alu-single', nameTh: 'มุ้งจีบอลูมิเนียม เดี่ยว', categoryId: 'screens', kit: 'screen', prefix: 'SCRA1', size: 'screen', pricePerSqm: 1200, ruleIdBase: 'scra1', panels: 1, op: 'slide' },
+  { slug: 'screen-fiber-single', nameTh: 'มุ้งจีบไฟเบอร์ เดี่ยว', categoryId: 'screens', kit: 'screen', prefix: 'SCRF1', size: 'screen', pricePerSqm: 900, ruleIdBase: 'scrf1', panels: 1, op: 'slide' },
+  { slug: 'screen-fiber-track-single', nameTh: 'มุ้งจีบไฟเบอร์ เก็บราง เดี่ยว', categoryId: 'screens', kit: 'screen', prefix: 'SCRFT1', size: 'screen', pricePerSqm: 1050, ruleIdBase: 'scrft1', panels: 1, op: 'slide' },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -511,6 +542,13 @@ function buildProduct(row: Row): Product {
     nameTh: row.nameTh,
     categoryId: row.categoryId,
     summaryTh: row.summaryTh ?? KIT_SUMMARY[row.kit],
+    elevation: {
+      panels: row.panels ?? 1,
+      operation: row.op ?? 'fixed',
+      infill: KIT_INFILL[row.kit],
+      ...(row.panelWidths ? { panelWidths: row.panelWidths } : {}),
+      ...(row.movingPanels ? { movingPanels: row.movingPanels } : {}),
+    },
     heroImage: `/products/${row.slug}.svg`,
     leadTimeDays: KIT_LEAD_TIME[row.kit],
     pricePerSqm: row.pricePerSqm,

@@ -1,9 +1,12 @@
 import { useElementSize } from '../../state/useElementSize';
+import { ElevationDrawing } from '../common/ElevationDrawing';
+import type { Elevation } from '../../lib/elevation';
 import { formatCm } from '../../lib/format';
 
 interface ElevationPreviewProps {
   widthCm: number;
   heightCm: number;
+  elevation: Elevation;
   profileHex: string;
   glassHex: string;
   /** Dimension lines turn danger-coloured while the measurements are out of bounds. */
@@ -32,6 +35,7 @@ const TICK = 4;
 export function ElevationPreview({
   widthCm,
   heightCm,
+  elevation,
   profileHex,
   glassHex,
   invalid = false,
@@ -77,40 +81,17 @@ export function ElevationPreview({
     >
       {ready ? (
         <svg width={boxW} height={boxH} viewBox={`0 0 ${boxW} ${boxH}`} aria-hidden>
-          {/* Glass */}
-          <rect
-            x={x0}
-            y={y0}
-            width={drawW}
-            height={drawH}
-            fill={glassHex}
-            fillOpacity={0.16}
-            className="transition-[fill] duration-180 ease-out"
-          />
-
-          {/* Profile frame, drawn as a stroke on the centreline so the outer edge
-              lands exactly on the dimensioned opening. */}
-          <rect
-            x={x0 + frame / 2}
-            y={y0 + frame / 2}
-            width={Math.max(drawW - frame, 0)}
-            height={Math.max(drawH - frame, 0)}
-            fill="none"
-            stroke={profileHex}
-            strokeWidth={frame}
-            className="transition-[stroke] duration-180 ease-out"
-          />
-
-          {/* Centre line — the convention for an unfixed opening on a shop drawing. */}
-          <line
-            x1={(x0 + x1) / 2}
-            y1={y0 + frame}
-            x2={(x0 + x1) / 2}
-            y2={y1 - frame}
-            stroke="var(--color-chalk-3)"
-            strokeWidth={1}
-            strokeDasharray="6 4"
-            opacity={0.5}
+          {/* The elevation itself is the same component the catalog thumbnails use,
+              so the drawing a customer picked from and the one they configure can
+              never disagree. This adds only the dimensioning around it. */}
+          <ElevationDrawing
+            frame={{ x: x0, y: y0, width: drawW, height: drawH }}
+            elevation={elevation}
+            profileHex={profileHex}
+            glassHex={glassHex}
+            frameWeight={frame}
+            lineWeight={1}
+            bladePitch={12}
           />
 
           {/* ---- Width dimension, below the drawing ---- */}

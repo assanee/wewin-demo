@@ -168,6 +168,7 @@ function ConfigureProduct({ product, editingLine }: { product: Product; editingL
               <ElevationPreview
                 widthCm={width}
                 heightCm={height}
+                elevation={product.elevation}
                 profileHex={profileHex}
                 glassHex={glassHex}
                 invalid={measureInvalid('width') || measureInvalid('height')}
@@ -195,6 +196,7 @@ function ConfigureProduct({ product, editingLine }: { product: Product; editingL
                   <Schematic
                     widthCm={w}
                     heightCm={h}
+                    elevation={product.elevation}
                     profileHex={profileHex}
                     glassHex={glassHex}
                     frameRatio={0.07}

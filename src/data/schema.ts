@@ -184,6 +184,39 @@ function referencedGroups(expr: RuleExpr): { sku: string[]; measure: string[] } 
   return { sku, measure };
 }
 
+/**
+ * The elevation drawing spec.
+ *
+ * Declared here for two reasons, not one: to reject bad data, and because zod
+ * strips keys it does not know about — a field missing from this schema silently
+ * disappears between products.ts and the UI.
+ */
+const elevationSchema = z
+  .object({
+    panels: z.number().int().min(1).max(24),
+    operation: z.enum(['fixed', 'casement', 'awning', 'slide', 'fold', 'hang', 'vertical']),
+    infill: z.enum(['glass', 'louvre', 'mesh']),
+    panelWidths: z.array(z.number().finite().positive()).optional(),
+    movingPanels: z.array(z.number().int().nonnegative()).optional(),
+  })
+  .superRefine((elevation, ctx) => {
+    for (const index of elevation.movingPanels ?? []) {
+      if (index >= elevation.panels) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `elevation movingPanels references panel ${index} but only has ${elevation.panels}`,
+        });
+      }
+    }
+
+    if (elevation.panelWidths && elevation.panelWidths.length !== elevation.panels) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `elevation has ${elevation.panels} panels but ${elevation.panelWidths.length} panelWidths`,
+      });
+    }
+  });
+
 export const productSchema = z
   .object({
     id: z.string().min(1),
@@ -194,6 +227,7 @@ export const productSchema = z
     nameTh: z.string().min(1),
     categoryId: z.string().min(1),
     summaryTh: z.string().min(1),
+    elevation: elevationSchema,
     heroImage: z.string().min(1),
     leadTimeDays: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
     pricePerSqm: z.number().finite().positive(),

@@ -29,6 +29,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <Schematic
             widthCm={width?.defaultValue ?? 100}
             heightCm={height?.defaultValue ?? 100}
+            elevation={product.elevation}
             profileHex={defaultSwatch(product, 'profile_color', '#7C7F85')}
             glassHex={defaultSwatch(product, 'glass_color', '#C9E4F7')}
           />

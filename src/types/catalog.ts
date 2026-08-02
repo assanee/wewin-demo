@@ -67,6 +67,12 @@ export interface Product {
   nameTh: string;
   categoryId: string;
   summaryTh: string;
+  /**
+   * How to draw this product's front elevation. Data, not artwork: the panel count
+   * and opening symbol come from here so one renderer serves all 81 products and a
+   * new one is drawn correctly the moment it is added to the table.
+   */
+  elevation: Elevation;
   heroImage: string;
   leadTimeDays: [number, number];
   pricePerSqm: number;
@@ -83,4 +89,5 @@ export interface Category {
 }
 
 import type { RuleExpr } from './rule';
-export type { RuleExpr };
+import type { Elevation } from '../lib/elevation';
+export type { RuleExpr, Elevation };

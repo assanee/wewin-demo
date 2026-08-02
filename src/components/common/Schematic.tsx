@@ -1,6 +1,10 @@
+import type { Elevation } from '../../lib/elevation';
+import { ElevationDrawing } from './ElevationDrawing';
+
 interface SchematicProps {
   widthCm: number;
   heightCm: number;
+  elevation: Elevation;
   profileHex: string;
   glassHex: string;
   /** Frame thickness as a fraction of the shorter side. */
@@ -8,18 +12,22 @@ interface SchematicProps {
 }
 
 /**
- * A proportional elevation outline, drawn from the product's own measurements.
+ * A proportional elevation, drawn from the product's own measurements and its
+ * elevation data — no stored artwork anywhere.
  *
  * There is no product photography in this prototype, and hand-drawing a thumbnail
  * per product would be exactly the per-product hardcoding spec section 0 forbids.
- * This derives the drawing from the data instead, so a fourth product gets a correct
- * thumbnail the moment it is added to products.ts.
+ * A fourth product gets a correct drawing, with the right number of panels and the
+ * right opening symbol, the moment it is added to products.ts.
  *
- * Phase 3's ElevationPreview builds on the same geometry, adding dimension lines.
+ * Unlike ElevationPreview this carries no dimension lines: at thumbnail size their
+ * gutters and 11px numerals collide into noise. Dimensions belong on the big
+ * drawing, once.
  */
 export function Schematic({
   widthCm,
   heightCm,
+  elevation,
   profileHex,
   glassHex,
   frameRatio = 0.045,
@@ -28,7 +36,8 @@ export function Schematic({
   // drawing rather than distorting or cropping it (spec section 8).
   const w = Math.max(widthCm, 1);
   const h = Math.max(heightCm, 1);
-  const frame = Math.min(w, h) * frameRatio;
+  const shorter = Math.min(w, h);
+  const frameWeight = shorter * frameRatio;
 
   return (
     <svg
@@ -38,26 +47,14 @@ export function Schematic({
       role="img"
       aria-label={`ภาพร่างสัดส่วน ${widthCm} × ${heightCm} เซนติเมตร`}
     >
-      <rect x={0} y={0} width={w} height={h} fill={glassHex} fillOpacity={0.14} />
-      <rect
-        x={frame / 2}
-        y={frame / 2}
-        width={w - frame}
-        height={h - frame}
-        fill="none"
-        stroke={profileHex}
-        strokeWidth={frame}
-      />
-      {/* Centre marks — the convention on a shop drawing for an unfixed opening. */}
-      <line
-        x1={w / 2}
-        y1={frame}
-        x2={w / 2}
-        y2={h - frame}
-        stroke="currentColor"
-        strokeWidth={Math.max(w, h) * 0.002}
-        strokeDasharray={`${h * 0.05} ${h * 0.03}`}
-        opacity={0.35}
+      <ElevationDrawing
+        frame={{ x: 0, y: 0, width: w, height: h }}
+        elevation={elevation}
+        profileHex={profileHex}
+        glassHex={glassHex}
+        frameWeight={frameWeight}
+        lineWeight={Math.max(shorter * 0.006, 0.4)}
+        bladePitch={shorter * 0.075}
       />
     </svg>
   );
