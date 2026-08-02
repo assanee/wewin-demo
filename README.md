@@ -17,11 +17,12 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 | 1 | types · zod schema · mock data · pricing · validation · skuCode + unit tests | ✅ |
 | 2 | design tokens · fonts · `AppHeader` · `/` (stub) · `/products` + FilterPanel | ✅ |
 | 3 | `/products/:slug` configurator เต็มรูปแบบ · ElevationPreview · PriceSummary | ✅ |
-| 4 | `QuoteContext` · localStorage · `/quote` · toast · a11y pass | ⬜ ยังไม่ทำ |
+| 4 | `QuoteContext` · localStorage · `/quote` · toast · a11y pass | ✅ |
 
-ตอนนี้ `/quote` เป็น stub — v1 จบที่ **เพิ่มลงตะกร้าและเห็นสิ่งที่เพิ่มไปแล้ว** ยังไม่มีฟอร์มขอใบเสนอราคา
+**v1 จบตรงนี้ตามสเปก** — เพิ่มลงตะกร้า ดู แก้จำนวน ลบ ทำซ้ำ แก้การตั้งค่า
+ไม่มีปุ่มส่งคำขอ ไม่มีฟอร์มกรอกข้อมูลติดต่อ ไม่มีการชำระเงิน
 
-**121 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
+**171 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
 
 ---
 
@@ -55,6 +56,22 @@ catalog มี 81 สินค้า **แต่มีเพียง 3 ตั�
 **เป็น placeholder ทั้งหมด** ราคาเป็นคอลัมน์เดียวในตาราง `ROWS` ที่ [`src/data/products.ts`](src/data/products.ts)
 — แทนที่ด้วยราคาจริงได้โดยไม่ต้องแตะอย่างอื่น
 
+**ข้อมูลติดต่อใน [`src/data/company.ts`](src/data/company.ts) เป็นของจริง** — คัดลอกตรงตัวจาก
+https://www.wewin180.com/th/contact (ดึงเมื่อ 2 ส.ค. 2569 ตรวจซ้ำกับ `/th/about`)
+เบอร์คงรูปแบบ `+66` ตามที่เว็บเผยแพร่ ไม่ได้แปลงเป็น `0XX` เพื่อให้เทียบกับต้นทางได้ตรงๆ
+
+**สิ่งที่ไม่มีบนเว็บต้นทาง จะไม่ถูกเดาขึ้นมา:**
+
+| เรื่อง | สถานะ |
+|---|---|
+| ปีก่อตั้ง | ตัดออก — ฉบับก่อนเขียน "พ.ศ. 2547" ซึ่งเป็นตัวเลขที่แต่งขึ้น |
+| ความหนาโปรไฟล์ · มาตรฐาน (มอก.) · เงื่อนไขรับประกัน | `null` ใน `productSpecs` — ไม่ render |
+
+สามข้อหลังเคยถูกเขียนเป็น "มอก. 284-2530 · ทดสอบแรงลม 2,000 Pa" และ "โครงสร้าง 5 ปี · อุปกรณ์ 2 ปี"
+ซึ่ง**แต่งขึ้นทั้งหมด** — ใบรับรองที่กุขึ้นคือการอ้างผลทดสอบที่ไม่เคยเกิด และเงื่อนไขรับประกันที่กุขึ้น
+คือข้อสัญญา ทั้งคู่เดาไม่ได้ยิ่งกว่าราคา แถวที่ `valueTh` เป็น `null` จะไม่แสดง
+หน้าสินค้าจึงบอกให้สอบถามทีมงานแทน — เติมค่าจริงลง `productSpecs` แล้วแถวจะกลับมาเอง
+
 ---
 
 ## แนวคิดหลัก
@@ -86,20 +103,23 @@ pricing กับ validation อยู่ใน `src/lib/` ไม่ import อ�
 ```
 src/
   types/     catalog.ts (data model) · rule.ts (RuleExpr AST)
-  data/      products.ts (แหล่งข้อมูลเดียว) · categories.ts
+  data/      products.ts (แหล่งข้อมูลเดียว) · categories.ts · company.ts (⚠️ placeholder)
              schema.ts (zod, parse ตอน boot) · catalog.ts (จุดที่แอปอ่านข้อมูล)
              ruleBuilders.ts
   lib/       pricing.ts · validation.ts · optionStates.ts · skuCode.ts
-             filters.ts · format.ts · hash.ts
-  state/     useConfigurator.ts · useMediaQuery.ts · useElementSize.ts
+             filters.ts · catalogSummary.ts · format.ts · hash.ts
+  state/     quoteReducer.ts (pure) · QuoteContext.tsx (React shell) · useQuote.ts
+             useConfigurator.ts · useMediaQuery.ts · useElementSize.ts
   components/
     configurator/  ElevationPreview (signature) · OptionGroupBase
                    SwatchGroup · ChipGroup · ToggleOption · MeasureInput
                    IssuePanel · PriceSummary · PriceBreakdownList
     catalog/       ProductCard · FilterPanel
-    common/        AppHeader · Button · Badge · Accordion · BottomSheet · Schematic
+    quote/         QuoteLineRow (lg) · QuoteLineCard (base/md) · QuoteActions
+    common/        AppHeader · AppFooter · Button · Badge · Accordion · BottomSheet
+                   Schematic · StickyBar · Toast · useToast.ts
   pages/     Home · Catalog · Configure · Quote · About · NotFound
-tests/       8 ไฟล์ 121 เคส
+tests/       10 ไฟล์ 171 เคส
 ```
 
 ทุกอย่างอ่านข้อมูลผ่าน [`src/data/catalog.ts`](src/data/catalog.ts) ไม่ใช่ `products.ts` โดยตรง
@@ -222,10 +242,12 @@ Breakpoint: base 360–767 · `md` 768–1023 · `lg` 1024+ · container `max-wi
 ```
 tests/pricing.test.ts       17   รวม 6 เคสตามสเปกหัวข้อ 5
 tests/validation.test.ts    20   รวม 7 เคสตามสเปกหัวข้อ 6
-tests/optionStates.test.ts  12
-tests/schema.test.ts        20   พิสูจน์ว่า schema ปฏิเสธ typo ที่มันมีไว้จับจริง
+tests/quoteReducer.test.ts  37   ตะกร้า: dedupe, ทำซ้ำ, reprice, persistence
 tests/filters.test.ts       23
+tests/schema.test.ts        20   พิสูจน์ว่า schema ปฏิเสธ typo ที่มันมีไว้จับจริง
 tests/format.test.ts        15
+tests/catalogSummary.test.ts 13   ตัวเลขที่หน้าแรกโฆษณา ต้อง derive จาก products.ts
+tests/optionStates.test.ts  12
 tests/hash.test.ts           7
 tests/skuCode.test.ts        7
 ```
@@ -249,6 +271,22 @@ tests/skuCode.test.ts        7
 | Validation test #3 | `400×120` → 2 errors | **`400×220`** → 1 error | `400×120` = 4.8 ตร.ม. ไม่เกิน 8 กฎ max-area จึงยิงไม่ได้ทางคณิตศาสตร์ |
 | ราคาบน sticky bar | 20px | **18px** | 20px ไม่อยู่ใน type scale 7 ค่า สองกฎนี้ขัดกันเอง |
 | `heroImage` | ภาพสินค้า | **`Schematic` วาดจากข้อมูล** | ไม่มีภาพถ่ายจริง และการวาดภาพแยกต่อสินค้าคือ hardcode UI ต่อชิ้น |
+| ตะกร้า | `QuoteContext.tsx` ไฟล์เดียว | **แยก `quoteReducer.ts`** | reducer เป็น pure function เทสได้โดยไม่ต้องมี React หรือ mock เวลา |
+| `QuoteLine` | ไม่มีฟิลด์ warning | **เพิ่ม `warnings`** | หัวข้อ 6 บอกว่า warning ต้องติดไปกับ QuoteLine แต่ interface ในหัวข้อ 3 ไม่มีให้ |
+| ปุ่มบันทึกตอนแก้ไข | ไม่ระบุ | **อัปเดตในที่เดิม** | "แก้ไขการตั้งค่า" ที่กลายเป็นการเพิ่มรายการใหม่คือการแก้ไขที่ล้มเหลว |
+
+### ตะกร้าทำงานยังไง
+
+- **dedupe**: กด "เพิ่มลงรายการ" ด้วย config เดิมซ้ำ → รวมจำนวนเข้ารายการเดิม (เทียบด้วย `configHash`)
+- **"ทำซ้ำรายการ" ข้าม dedupe โดยตั้งใจ** — เคสจริงคือหน้าต่างทรงเดียวกัน 5 บานคนละขนาด
+  ถ้าทำซ้ำแล้วถูกรวมกลับทันที ฟีเจอร์นี้ก็ไร้ความหมาย
+- **แก้จำนวนคูณจาก `unitPrice` ที่ล็อกไว้** ไม่ได้เรียก `calcPrice` ใหม่ — ไม่งั้นจะได้ราคาวันนี้
+  ซึ่งทำลายจุดประสงค์ของ `priceSnapshot`
+- **`hydrated` อยู่ใน state ของ reducer ไม่ใช่ใน ref** — effect ที่เขียน localStorage ต้องอ่านธงนี้
+  จาก object เดียวกับที่มันกำลังจะเขียน ถ้าใช้ ref ทั้งสอง effect รันในคอมมิตเดียวกัน
+  ตัวเขียนจะเห็น state ว่างเปล่าที่ยังไม่อัปเดตแล้วทับตะกร้าจริงทิ้ง
+- **`localStorage` ถือเป็น input ที่เชื่อไม่ได้** — JSON เสียหรือ line ที่ฟิลด์ไม่ครบถูกทิ้งทีละรายการ
+  ตะกร้าที่พังบางส่วนต้องเสียแค่รายการนั้น ไม่ใช่ทั้งแอปบูตไม่ขึ้น
 
 ---
 

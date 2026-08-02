@@ -1,11 +1,16 @@
 import { useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Check, Minus, Pencil, Plus } from 'lucide-react';
 import { getProductBySlug } from '../data/catalog';
+import { productSpecs } from '../data/company';
 import { useConfigurator } from '../state/useConfigurator';
 import { useMediaQuery } from '../state/useMediaQuery';
 import { getCustomGroup, getSkuGroup } from '../lib/filters';
 import { formatBaht, formatSqm } from '../lib/format';
+import { configHash } from '../lib/hash';
+import { useQuote } from '../state/useQuote';
+import { useToast } from '../components/common/useToast';
+import type { QuoteLine } from '../state/quoteReducer';
 import type { CustomGroup, Product, SkuGroup } from '../types/catalog';
 import { ButtonLink } from '../components/common/Button';
 import { BottomSheet } from '../components/common/BottomSheet';
@@ -20,28 +25,54 @@ import { PriceBreakdownList } from '../components/configurator/PriceBreakdownLis
 import { PriceStickyBar, PriceSummaryCard } from '../components/configurator/PriceSummary';
 import { NotFound } from './NotFound';
 
-/** Static spec sheet — identical for every product in this prototype. */
-const SPEC_ROWS: [string, string][] = [
-  ['วัสดุ', 'อะลูมิเนียมอัดรีด เกรด 6063-T5'],
-  ['ความหนาโปรไฟล์', '1.2–1.4 mm'],
-  ['มาตรฐานที่ผ่าน', 'มอก. 284-2530 · ทดสอบแรงลม 2,000 Pa'],
-  ['การรับประกัน', 'โครงสร้าง 5 ปี · อุปกรณ์ 2 ปี'],
-];
-
 export function Configure() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const product = getProductBySlug(slug ?? '');
+  const { getLine, ready } = useQuote();
 
   if (!product) return <NotFound />;
 
-  // Keyed on the product so switching slugs resets the configuration rather than
-  // carrying one product's selections into another's group codes.
-  return <ConfigureProduct key={product.id} product={product} />;
+  const editingLineId = searchParams.get('line');
+  const editingLine = editingLineId ? getLine(editingLineId) : undefined;
+
+  // Wait for localStorage before deciding: rendering the defaults first and swapping
+  // them in a moment later would throw away anything typed in between.
+  if (editingLineId && !ready) {
+    return (
+      <main className="container-page py-16">
+        <p className="text-body text-chalk-2">กำลังโหลดรายการ…</p>
+      </main>
+    );
+  }
+
+  // Keyed on the product and the line so switching either resets the configuration
+  // rather than carrying one product's selections into another's group codes.
+  return (
+    <ConfigureProduct
+      key={`${product.id}:${editingLineId ?? 'new'}`}
+      product={product}
+      editingLine={editingLine}
+    />
+  );
 }
 
-function ConfigureProduct({ product }: { product: Product }) {
-  const config = useConfigurator(product);
+function ConfigureProduct({ product, editingLine }: { product: Product; editingLine: QuoteLine | undefined }) {
+  const config = useConfigurator(
+    product,
+    editingLine
+      ? {
+          selections: editingLine.selections,
+          measures: editingLine.measures,
+          qty: editingLine.qty,
+          nickname: editingLine.nickname,
+        }
+      : undefined,
+  );
   const isTablet = useMediaQuery('(min-width: 768px)');
+  const navigate = useNavigate();
+  const { addLine, updateLine } = useQuote();
+  const { showToast } = useToast();
 
   const [editingName, setEditingName] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
@@ -63,34 +94,68 @@ function ConfigureProduct({ product }: { product: Product }) {
     config.issues.some((issue) => issue.severity === 'error' && issue.affects.includes(groupCode));
 
   const onAdd = () => {
+    setBreakdownOpen(false);
+
     if (config.hasError) {
       // Spec section 6: the button stays pressable so a touch user gets an
-      // explanation rather than a dead control. Phase 4 wires the successful path.
-      setBreakdownOpen(false);
+      // explanation rather than a dead control.
       issueRef.current?.focus();
       issueRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    setBreakdownOpen(false);
+
+    const draft = {
+      productId: product.id,
+      nickname: config.nickname.trim() || product.nameTh,
+      skuCode: config.skuCode,
+      selections: config.selections,
+      measures: config.measures,
+      qty: config.qty,
+      priceSnapshot: config.price,
+      configHash: configHash(config.skuCode, config.measures),
+      // Warnings ride along with the line so the sales team sees them when the
+      // quote is issued (spec section 6).
+      warnings: config.issues.filter((issue) => issue.severity === 'warning'),
+    };
+
+    if (editingLine) {
+      updateLine(editingLine.lineId, draft);
+      showToast({ messageTh: 'บันทึกการแก้ไขแล้ว', action: { labelTh: 'ดูตะกร้า', to: '/quote' } });
+      navigate('/quote');
+      return;
+    }
+
+    addLine(draft);
+    showToast({ messageTh: 'เพิ่มลงรายการแล้ว', action: { labelTh: 'ดูตะกร้า', to: '/quote' } });
   };
 
   const profileHex = swatchOf('profile_color', '#7C7F85');
   const glassHex = swatchOf('glass_color', '#C9E4F7');
   const unit = getCustomGroup(product, 'width')?.unit ?? 'cm';
 
+  // Only rows with a confirmed value are shown. The unconfirmed ones (profile
+  // thickness, standards, warranty) are held as null in company.ts rather than
+  // filled with plausible figures — see the note there.
+  const knownSpecs = productSpecs.filter((row) => row.valueTh !== null);
+
   // Rendered in exactly one of two places depending on viewport — never both.
   const specTable = (
-    <dl className="mt-3 border border-line bg-panel">
-      {SPEC_ROWS.map(([term, value]) => (
-        <div
-          key={term}
-          className="flex min-w-0 flex-col gap-0.5 border-b border-line px-3 py-2 last:border-b-0"
-        >
-          <dt className="text-caption text-chalk-3">{term}</dt>
-          <dd className="min-w-0 text-small text-chalk-2">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="mt-3 border border-line bg-panel">
+      <dl>
+        {knownSpecs.map((row) => (
+          <div
+            key={row.termTh}
+            className="flex min-w-0 flex-col gap-0.5 border-b border-line px-3 py-2"
+          >
+            <dt className="text-caption text-chalk-3">{row.termTh}</dt>
+            <dd className="min-w-0 text-small text-chalk-2">{row.valueTh}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="px-3 py-2 text-caption text-chalk-3">
+        สเปกละเอียด มาตรฐาน และเงื่อนไขรับประกัน สอบถามทีมงานได้ที่ช่องทางติดต่อด้านล่าง
+      </p>
+    </div>
   );
 
   return (
@@ -273,9 +338,6 @@ function ConfigureProduct({ product }: { product: Product }) {
           </div>
         </div>
       </div>
-
-      {/* Reserve the bar's height so it never covers the last line of content. */}
-      {!isTablet ? <div aria-hidden className="h-18" /> : null}
 
       {!isTablet ? (
         <PriceStickyBar

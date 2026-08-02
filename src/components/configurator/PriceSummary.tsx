@@ -5,6 +5,7 @@ import type { Product } from '../../types/catalog';
 import { formatBaht, formatLeadTime, formatSqm } from '../../lib/format';
 import { Button } from '../common/Button';
 import { Accordion } from '../common/Accordion';
+import { StickyBar } from '../common/StickyBar';
 import { PriceBreakdownList } from './PriceBreakdownList';
 
 interface SharedProps {
@@ -154,35 +155,25 @@ interface StickyBarProps extends SharedProps {
  * 12/13/15/18/24/34/52 and forbids values outside it. We took the scale as the
  * stricter rule and used 18px — the two rules cannot both hold.
  */
-export function PriceStickyBar({
-  price,
-  qty,
-  onAdd,
-  onOpenBreakdown,
-}: StickyBarProps) {
+export function PriceStickyBar({ price, qty, onAdd, onOpenBreakdown }: StickyBarProps) {
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-panel md:hidden"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
-      <div className="container-page flex h-18 items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onOpenBreakdown}
-          aria-label="ดูรายละเอียดราคา"
-          className="flex min-h-11 min-w-0 flex-col items-start justify-center text-start"
-        >
-          <span className="numeric text-lead text-lime">{formatBaht(price.total)}</span>
-          <span className="numeric text-caption text-chalk-3">
-            {formatSqm(price.areaSqm)} ตร.ม.{qty > 1 ? ` · ${qty} ชิ้น` : ''} · ดูรายละเอียด
-          </span>
-        </button>
+    <StickyBar>
+      <button
+        type="button"
+        onClick={onOpenBreakdown}
+        aria-label="ดูรายละเอียดราคา"
+        className="flex min-h-11 min-w-0 flex-col items-start justify-center text-start"
+      >
+        <span className="numeric text-lead text-lime">{formatBaht(price.total)}</span>
+        <span className="numeric text-caption text-chalk-3">
+          {formatSqm(price.areaSqm)} ตร.ม.{qty > 1 ? ` · ${qty} ชิ้น` : ''} · ดูรายละเอียด
+        </span>
+      </button>
 
-        <Button variant="primary" onClick={onAdd} className="shrink-0">
-          เพิ่มลงรายการ
-        </Button>
-      </div>
-    </div>
+      <Button variant="primary" onClick={onAdd} className="shrink-0">
+        เพิ่มลงรายการ
+      </Button>
+    </StickyBar>
   );
 }
 

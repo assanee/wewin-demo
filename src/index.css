@@ -91,6 +91,11 @@
     font-family: var(--font-body);
     font-size: var(--text-body);
     line-height: 1.6;
+    /* Spec section 8: the body reserves the sticky bar's height, or the bar covers
+       the last line of content. It has to live here rather than as a spacer inside
+       a page, because the footer sits outside the page in the app shell and would
+       still end up underneath. StickyBar sets the variable while it is mounted. */
+    padding-bottom: var(--sticky-bar-height, 0px);
     /* A faint 24px grid — the paper a shop drawing is set out on. Two hairlines at
        ~1.5% contrast: present when you look for it, invisible when you read. */
     background-image:

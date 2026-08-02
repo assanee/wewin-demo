@@ -20,5 +20,8 @@ export const categories: Category[] = parsed.categories;
 export const getProductBySlug = (slug: string): Product | undefined =>
   products.find((product) => product.slug === slug);
 
+export const getProductById = (id: string): Product | undefined =>
+  products.find((product) => product.id === id);
+
 export const getCategoryById = (id: string): Category | undefined =>
   categories.find((category) => category.id === id);

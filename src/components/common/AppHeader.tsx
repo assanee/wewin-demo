@@ -1,10 +1,7 @@
 import { NavLink, Link } from 'react-router-dom';
 import { ClipboardList } from 'lucide-react';
-
-interface AppHeaderProps {
-  /** Wired to QuoteContext in phase 4; the badge stays hidden while it is zero. */
-  quoteCount?: number;
-}
+import { useQuote } from '../../state/useQuote';
+import { company } from '../../data/company';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
   `inline-flex min-h-11 items-center px-3 text-body transition-colors duration-180 ease-out ${
@@ -16,16 +13,22 @@ const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
  * behind a menu adds a tap to reach either one and saves nothing worth saving.
  * On mobile the nav simply drops and the two entry points live on the page itself.
  */
-export function AppHeader({ quoteCount = 0 }: AppHeaderProps) {
+export function AppHeader() {
+  // Pieces rather than rows: three windows on one line reads as 3, which is what
+  // the customer counts.
+  const { itemCount: quoteCount } = useQuote();
+
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-ink/95 backdrop-blur-sm">
       <div className="container-page flex h-16 items-center justify-between gap-4">
         <Link
           to="/"
           className="flex min-h-11 min-w-0 shrink items-baseline gap-2 self-center"
-          aria-label="ALUFORM หน้าหลัก"
+          aria-label={`${company.wordmark} หน้าหลัก`}
         >
-          <span className="font-display text-lead tracking-[0.18em] text-chalk">ALUFORM</span>
+          <span className="font-display text-lead tracking-[0.18em] text-chalk">
+            {company.wordmark}
+          </span>
           <span className="numeric hidden text-caption text-chalk-3 md:inline">
             งานอะลูมิเนียมสั่งทำ
           </span>
