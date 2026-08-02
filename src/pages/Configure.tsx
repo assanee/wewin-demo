@@ -1,13 +1,14 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Check, Minus, Pencil, Plus } from 'lucide-react';
 import { getProductBySlug } from '../data/catalog';
 import { productSpecs } from '../data/company';
-import { useConfigurator } from '../state/useConfigurator';
+import { defaultStateFor, useConfigurator, type ConfiguratorState } from '../state/useConfigurator';
 import { useMediaQuery } from '../state/useMediaQuery';
 import { getCustomGroup, getSkuGroup } from '../lib/filters';
 import { formatBaht, formatSqm } from '../lib/format';
 import { configHash } from '../lib/hash';
+import { buildShareUrl, readSharedConfig, type SharedConfig } from '../lib/shareLink';
 import { useQuote } from '../state/useQuote';
 import { useToast } from '../components/common/useToast';
 import type { QuoteLine } from '../state/quoteReducer';
@@ -23,6 +24,7 @@ import { ToggleOption } from '../components/configurator/ToggleOption';
 import { IssuePanel } from '../components/configurator/IssuePanel';
 import { PriceBreakdownList } from '../components/configurator/PriceBreakdownList';
 import { PriceStickyBar, PriceSummaryCard } from '../components/configurator/PriceSummary';
+import { ConfiguratorToolbar } from '../components/configurator/ConfiguratorToolbar';
 import { NotFound } from './NotFound';
 
 export function Configure() {
@@ -46,6 +48,10 @@ export function Configure() {
     );
   }
 
+  // A saved line wins over link parameters: opening "แก้ไขการตั้งค่า" on a line is
+  // a stronger intent than whatever query string happens to be along for the ride.
+  const shared = editingLine ? null : readSharedConfig(product, searchParams);
+
   // Keyed on the product and the line so switching either resets the configuration
   // rather than carrying one product's selections into another's group codes.
   return (
@@ -53,22 +59,21 @@ export function Configure() {
       key={`${product.id}:${editingLineId ?? 'new'}`}
       product={product}
       editingLine={editingLine}
+      shared={shared}
     />
   );
 }
 
-function ConfigureProduct({ product, editingLine }: { product: Product; editingLine: QuoteLine | undefined }) {
-  const config = useConfigurator(
-    product,
-    editingLine
-      ? {
-          selections: editingLine.selections,
-          measures: editingLine.measures,
-          qty: editingLine.qty,
-          nickname: editingLine.nickname,
-        }
-      : undefined,
-  );
+function ConfigureProduct({
+  product,
+  editingLine,
+  shared,
+}: {
+  product: Product;
+  editingLine: QuoteLine | undefined;
+  shared: SharedConfig | null;
+}) {
+  const config = useConfigurator(product, initialStateFrom(product, editingLine, shared));
   const isTablet = useMediaQuery('(min-width: 768px)');
   const navigate = useNavigate();
   const { addLine, updateLine } = useQuote();
@@ -132,6 +137,20 @@ function ConfigureProduct({ product, editingLine }: { product: Product; editingL
   const profileHex = swatchOf('profile_color', '#7C7F85');
   const glassHex = swatchOf('glass_color', '#C9E4F7');
   const unit = getCustomGroup(product, 'width')?.unit ?? 'cm';
+
+  // `location` is read in an event-free render path only through this memo, which
+  // falls back to a relative URL so nothing here depends on `window` existing.
+  const shareUrl = useMemo(
+    () =>
+      buildShareUrl(
+        typeof window === 'undefined' ? '' : window.location.origin,
+        product,
+        config.selections,
+        config.measures,
+        config.qty,
+      ),
+    [product, config.selections, config.measures, config.qty],
+  );
 
   // Only rows with a confirmed value are shown. The unconfirmed ones (profile
   // thickness, standards, warranty) are held as null in company.ts rather than
@@ -257,6 +276,18 @@ function ConfigureProduct({ product, editingLine }: { product: Product; editingL
               </div>
             )}
             <p className="mt-2 max-w-[60ch] text-small text-chalk-2">{product.summaryTh}</p>
+
+            <div className="mt-4">
+              <ConfiguratorToolbar
+                onUndo={config.undo}
+                onRedo={config.redo}
+                onReset={config.reset}
+                canUndo={config.canUndo}
+                canRedo={config.canRedo}
+                isPristine={config.isPristine}
+                shareUrl={shareUrl}
+              />
+            </div>
           </div>
 
           {/* 2. Measurements */}
@@ -397,4 +428,34 @@ function ConfigureProduct({ product, editingLine }: { product: Product; editingL
       </BottomSheet>
     </main>
   );
+}
+
+/**
+ * Where the configurator starts: a saved quote line if one is being edited, else a
+ * shared link's parameters, else the product's own defaults.
+ */
+function initialStateFrom(
+  product: Product,
+  editingLine: QuoteLine | undefined,
+  shared: SharedConfig | null,
+): Partial<ConfiguratorState> | undefined {
+  if (editingLine) {
+    return {
+      selections: editingLine.selections,
+      measures: editingLine.measures,
+      qty: editingLine.qty,
+      nickname: editingLine.nickname,
+    };
+  }
+
+  if (!shared) return undefined;
+
+  // Merged over the defaults, not used raw: a link may name only a width, and the
+  // remaining groups still need the values the product ships with.
+  const defaults = defaultStateFor(product);
+  return {
+    selections: { ...defaults.selections, ...shared.selections },
+    measures: { ...defaults.measures, ...shared.measures },
+    qty: shared.qty,
+  };
 }

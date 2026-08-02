@@ -94,7 +94,12 @@ export function BottomSheet({ open, titleTh, onClose, children, footer, size = '
         aria-modal="true"
         aria-labelledby={titleId}
         className={`absolute inset-x-0 bottom-0 flex flex-col border-t border-line bg-panel ${
-          size === 'full' ? 'top-0' : 'max-h-[85%]'
+          size === 'full'
+            ? 'top-0'
+            : // Auto-height sheets are the ones that can appear on a large screen
+              // (the share panel does). Stretching a QR code across 1440px reads as
+              // a broken layout, so from md up it becomes a centred dialog instead.
+              'max-h-[85%] md:inset-x-auto md:bottom-8 md:left-1/2 md:w-full md:max-w-130 md:-translate-x-1/2 md:rounded-xs md:border'
         }`}
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
