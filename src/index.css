@@ -107,6 +107,33 @@
     font-weight: 600;
   }
 
+  /* Tailwind v4 follows the browser and leaves <button> at `cursor: default`.
+     For this app the pointer is the cheapest affordance we have — the controls are
+     flat chips and swatches with no bevel, so the cursor is often the only thing
+     that says "this is pressable" before you hover-highlight it.
+
+     Declared in @layer base so any component can still override it with a utility:
+     cascade layers make utilities win over base regardless of specificity, which is
+     how the sheet backdrop keeps `cursor-default`. */
+  button:not(:disabled):not([aria-disabled='true']),
+  [role='button']:not([aria-disabled='true']),
+  a[href],
+  label:has(input:not(:disabled)),
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Blocked options stay focusable with aria-disabled rather than the disabled
+     attribute (see OptionGroupBase), so both spellings need the same cursor. */
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
   :focus-visible {
     outline: 2px solid var(--color-sel-line);
     outline-offset: 2px;
