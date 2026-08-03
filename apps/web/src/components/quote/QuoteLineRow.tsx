@@ -1,6 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import type { QuoteLine } from '@wewin/core/quote';
 import { formatBaht, formatDimensions } from '@wewin/core/format';
+import { useDisplayUnit } from '../../state/displayUnitContext';
 import { QuoteActions, QuoteQtyStepper } from './QuoteActions';
 
 interface QuoteLineRowProps {
@@ -12,12 +13,21 @@ interface QuoteLineRowProps {
 
 /** Desktop only (lg). The mobile equivalent is QuoteLineCard — never both at once. */
 export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: QuoteLineRowProps) {
+  const { unit: displayUnit } = useDisplayUnit();
   const widthUm = line.measures['width'] ?? 0n;
   const heightUm = line.measures['height'] ?? 0n;
-  // Shown back in the unit it was measured in — a size the customer read off a tape
-  // in inches is theirs to check, and `formatDimensions` marks the pair `≈` when the
-  // unit cannot express it exactly.
-  const unit = line.enteredUnits['width'] ?? 'cm';
+  // Per line, in the unit it was typed in — not all lines in the current display unit.
+  // The job on this screen is checking the quote against what was asked for, and a
+  // customer who read 82 1/2" off a tape is looking for 82 1/2"; restating that as
+  // ≈209.6 cm asks them to verify arithmetic instead of a window, and every imperial
+  // line would wear an `≈` that means nothing was wrong. The picker still governs
+  // lines with no entered unit — sizes left at their default, and lines saved before
+  // the unit was recorded — so it is never dead on this screen.
+  //
+  // Width carries the pair: a size is spoken as one pair, so a height typed in another
+  // unit is shown in width's, where `formatDimensions` marks it `≈` rather than
+  // quietly rounding it.
+  const unit = line.enteredUnits['width'] ?? line.enteredUnits['height'] ?? displayUnit;
 
   return (
     <tr className="border-b border-line last:border-b-0 align-top">

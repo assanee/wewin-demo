@@ -4,12 +4,17 @@ import type { CustomGroup, LengthUnit } from '@wewin/core';
 import { gridFor } from '@wewin/core/validation';
 import { parseMeasure, snapUpUm } from '@wewin/core/units';
 import { formatLength, formatMeasure, formatRange } from '@wewin/core/format';
+import { useDisplayUnit } from '../../state/displayUnitContext';
 
 interface MeasureInputProps {
   group: CustomGroup;
   /** Canonical micrometres, like every other length in the app. */
   value: bigint;
-  onChange: (next: bigint) => void;
+  /**
+   * The unit travels with the value because only this component knows it: by the time
+   * the quote holds the line, the picker may say something else entirely.
+   */
+  onChange: (next: bigint, enteredUnit: LengthUnit) => void;
   invalid?: boolean;
 }
 
@@ -31,34 +36,56 @@ const DEBOUNCE_MS = 120;
  * blurring, stepping — go through `parseMeasure`/`snapUpUm`, so they cannot land on
  * different answers the way they used to (typing 250.3 kept 250.3, blurring made it
  * 250.5, and the stepper snapped to nothing at all).
+ *
+ * And the rule the whole micrometre phase exists for: reading a size in another unit
+ * is not editing it. A snap only ever happens on a value a person committed, on the
+ * grid of the unit they were looking at when they committed it.
  */
 export function MeasureInput({ group, value, onChange, invalid = false }: MeasureInputProps) {
   const inputId = useId();
   const helperId = useId();
 
-  // The unit this field is read and written in. The catalogue's own for now, and the
-  // single line that has to change when the display-unit picker arrives, because
-  // every format and every parse below already asks it rather than assuming cm.
-  const unit: LengthUnit = group.unit;
+  // The unit on screen, not the one the catalogue was authored in. Every format and
+  // every parse below already asked for a unit rather than assuming cm, so this is
+  // the single line that had to change — but nothing here writes it back.
+  const { unit } = useDisplayUnit();
+  const imperial = unit === 'in' || unit === 'ft';
   const grid = gridFor(group, unit);
   const rendered = formatLength(value, unit);
 
   const [text, setText] = useState(rendered);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editingRef = useRef(false);
+  // Set by a keystroke and by nothing else. It is what separates "the customer said a
+  // new size" from "the same size is being shown differently", and it has to be
+  // tracked rather than inferred: parsing the text and comparing it to the canonical
+  // value says "changed" forever across a unit switch, because 320 cm read back from
+  // `126 3/16"` genuinely is a different number — which would let a blur rebuild an
+  // untouched window at 3,200,400 µm, the exact hazard the phase was written for.
+  const dirtyRef = useRef(false);
+  const shownUnitRef = useRef(unit);
 
-  // Adopt a value that changed elsewhere — the stepper, the snap on blur, undo,
-  // loading a saved line — by comparing what the field *would show* against what it
-  // shows. The old `Number.parseFloat(text) !== value` compares a number with a
-  // bigint and is therefore true on every render, which would rewrite the field from
-  // under the caret forever.
-  //
-  // Skipped while the field has focus. Typing commits a snapped value, so mid-entry
-  // the canonical length legitimately renders as something other than the half-typed
-  // text; blur is what reconciles the two, and it does so itself.
   useEffect(() => {
-    if (!editingRef.current) setText(rendered);
-  }, [rendered]);
+    const unitChanged = shownUnitRef.current !== unit;
+    shownUnitRef.current = unit;
+
+    // Switching the display unit re-renders one size in another unit: not an edit, so
+    // no snap, no commit, and no entered unit recorded. Half-typed text does not
+    // survive it either — `82 1/2` means something else in centimetres — so the field
+    // goes back to the canonical value rather than reinterpreting what is in it.
+    if (unitChanged) dirtyRef.current = false;
+
+    // Otherwise adopt a value that changed elsewhere — the stepper, the snap on blur,
+    // undo, loading a saved line — by comparing what the field *would show* against
+    // what it shows. The old `Number.parseFloat(text) !== value` compares a number
+    // with a bigint and is therefore true on every render, which would rewrite the
+    // field from under the caret forever.
+    //
+    // Skipped while the field has focus. Typing commits a snapped value, so mid-entry
+    // the canonical length legitimately renders as something other than the half-typed
+    // text; blur is what reconciles the two, and it does so itself.
+    if (unitChanged || !editingRef.current) setText(rendered);
+  }, [rendered, unit]);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -68,20 +95,25 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
     if (timerRef.current) clearTimeout(timerRef.current);
   };
 
+  // `unit` is the one that was on screen when this was typed, and the closure keeps it
+  // that way: if the picker moves before the timer fires, the line still remembers the
+  // unit the customer actually spoke in.
   const commitDebounced = (next: bigint) => {
     clearPending();
-    timerRef.current = setTimeout(() => onChange(next), DEBOUNCE_MS);
+    timerRef.current = setTimeout(() => onChange(next, unit), DEBOUNCE_MS);
   };
 
   const commitNow = (next: bigint) => {
     clearPending();
-    onChange(next);
+    dirtyRef.current = false;
+    onChange(next, unit);
   };
 
   // The marks the ± buttons move to. `value + 1n` rather than `value + grid`: from a
   // value already on the grid the next mark up is one step away, but from one that is
-  // not — a shared link, a line saved before a step changed — it is the snap itself,
-  // and adding a whole step would jump over the mark in between.
+  // not — a shared link, a line saved before a step changed, a metric size being read
+  // in inches — it is the snap itself, and adding a whole step would jump over the
+  // mark in between.
   const nextUp = snapUpUm(value + 1n, grid);
   // Snapping up from one step below lands on the greatest mark strictly under
   // `value`, whichever side of the grid `value` sits on. That is not a snap *down*
@@ -92,9 +124,14 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
   const atMin = nextDown < group.minUm;
   const atMax = nextUp > group.maxUm;
 
-  const step = (next: bigint) => {
-    setText(formatLength(next, unit));
-    commitNow(next);
+  // A ± press is a deliberate size in the unit on screen, so it ends where the keyboard
+  // does instead of committing a number of its own. The mark is already on `grid`, so
+  // rendering it and reading it straight back is exact — the round trip costs nothing
+  // and buys one snap, one grid and one recorded unit for all three entry paths.
+  const step = (mark: bigint) => {
+    const marked = formatLength(mark, unit);
+    setText(marked);
+    commitNow(parseMeasure(marked, unit, group) ?? mark);
   };
 
   const onBlur = () => {
@@ -103,16 +140,20 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
     // parsed from older text.
     clearPending();
 
-    // A blur that follows no edit must not move the value — clicking into a field
-    // and back out is not permission to resize a window. Rendered strings decide it,
-    // because re-reading the field's own text is exactly the round trip that is
-    // allowed to be lossy: 320 cm shown as 126 3/16" and typed straight back is a
-    // different window.
-    if (text === rendered) return;
+    // A blur that follows no edit must not move the value — clicking into a field and
+    // back out, or switching the picker to inches, is not permission to resize a
+    // window. The string compare is the cheaper of the two guards but the flag is the
+    // one that matters: only a keystroke sets it, so a field that merely got looked at
+    // in another unit cannot reach the snap below.
+    if (!dirtyRef.current || text === rendered) {
+      dirtyRef.current = false;
+      return;
+    }
 
-    // Spec section 6: snap up to the nearest valid step on blur. An unreadable or
-    // empty field falls back to the default rather than throwing out of an event
-    // handler, which is why `parseMeasure` reports failure as null.
+    // Spec section 6: snap up to the nearest valid step on blur, on the grid of the
+    // unit it was typed in. An unreadable or empty field falls back to the default
+    // rather than throwing out of an event handler, which is why `parseMeasure`
+    // reports failure as null.
     const next = parseMeasure(text, unit, group) ?? group.defaultUm;
     setText(formatLength(next, unit));
     commitNow(next);
@@ -142,21 +183,26 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
 
         <input
           id={inputId}
-          type="number"
-          // Brings up the numeric keypad with a decimal key on mobile.
-          inputMode="decimal"
+          // Text, not `number`. An inch reads `82 1/2"` and a foot `4' 3 1/2"`; a
+          // number field shows an empty box for both and drops what it cannot parse,
+          // which here would mean losing the size rather than displaying it. The same
+          // goes for `min`/`max`/`step`, so the bounds are stated in the helper line
+          // under the field, where they are also readable.
+          type="text"
+          // The decimal keypad has no space and no `/`, so imperial entry needs the
+          // full keyboard to be typeable at all.
+          inputMode={imperial ? 'text' : 'decimal'}
+          autoComplete="off"
           value={text}
-          // The bounds a browser enforces are in whatever unit the field displays, so
-          // they are formatted, not converted — the same single exit as the value.
-          min={formatLength(group.minUm, unit)}
-          max={formatLength(group.maxUm, unit)}
-          step={formatLength(grid, unit)}
           aria-describedby={helperId}
           aria-invalid={invalid || undefined}
           onFocus={() => {
             editingRef.current = true;
+            // A new session owes the value nothing until a key is actually pressed.
+            dirtyRef.current = false;
           }}
           onChange={(event) => {
+            dirtyRef.current = true;
             setText(event.target.value);
             const parsed = parseMeasure(event.target.value, unit, group);
             // Half-typed text — `250.`, an emptied field — parses to null and simply

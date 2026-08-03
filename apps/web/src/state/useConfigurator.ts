@@ -38,7 +38,12 @@ export interface Configurator extends ConfiguratorState {
   optionStates: OptionStates;
   hasError: boolean;
   select: (groupCode: string, valueCode: string) => void;
-  measure: (groupCode: string, value: bigint) => void;
+  /**
+   * `enteredUnit` is the unit the customer was reading when they committed the value,
+   * which is the only moment it can be known — the display picker has moved on by the
+   * time anything downstream asks.
+   */
+  measure: (groupCode: string, value: bigint, enteredUnit: LengthUnit) => void;
   setQty: (qty: number) => void;
   setNickname: (nickname: string) => void;
   /* --- History ---------------------------------------------------------- */
@@ -142,12 +147,17 @@ export function useConfigurator(product: Product, initial?: Partial<Configurator
 
     // Keyed per field: dragging width then height gives two steps, not one.
     //
-    // Takes no unit yet, so `enteredUnits` stays empty and every reader falls back to
-    // the authored one — which is the unit the field is displaying, so nothing is
-    // misreported. It gains one when the fields can be shown in something else.
-    measure: (groupCode, value) =>
+    // The unit is written beside the value, in the same edit and the same history
+    // entry, because the two are one statement: undoing back past this must leave the
+    // line saying it was measured in whatever it was measured in before. Only a
+    // committed value reaches here — showing a size in another unit calls nothing.
+    measure: (groupCode, value, enteredUnit) =>
       edit(
-        (current) => ({ ...current, measures: { ...current.measures, [groupCode]: value } }),
+        (current) => ({
+          ...current,
+          measures: { ...current.measures, [groupCode]: value },
+          enteredUnits: { ...current.enteredUnits, [groupCode]: enteredUnit },
+        }),
         `measure:${groupCode}`,
       ),
 

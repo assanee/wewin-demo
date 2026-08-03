@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { formatBaht, formatCm, formatInteger, formatSqm } from '../src/format.js';
+import { formatBaht, formatInteger, formatLength, formatSqm } from '../src/format.js';
 
 /**
  * Spec section 1: "every number on screen goes through a formatter — no float
@@ -53,23 +53,50 @@ describe('formatSqm', () => {
   });
 });
 
-describe('formatCm', () => {
-  test('drops a trailing .0 so whole centimetres read cleanly', () => {
-    expect(formatCm(320)).toBe('320');
-    expect(formatCm(160)).toBe('160');
+/*
+ * `formatCm(value: number)` and its four cases are gone, and this block is where they
+ * went.
+ *
+ * Everything that formatter did — round to a tenth, trim the trailing `.0`, survive a
+ * NaN — was repair work for centimetres held as floats. Its last caller went away when
+ * the share link started carrying integer micrometres, and a public length formatter
+ * taking a `number` is a standing invitation to divide before calling it, which is
+ * exactly the lossy path the phase closed. `formatLength(um, 'cm')` answers the same
+ * question from the canonical type, and the cases it inherits are pinned here.
+ */
+describe('formatLength', () => {
+  test('renders whole centimetres without a trailing zero', () => {
+    expect(formatLength(3_200_000n, 'cm')).toBe('320');
+    expect(formatLength(1_600_000n, 'cm')).toBe('160');
   });
 
   test('keeps a half step when there is one', () => {
-    expect(formatCm(160.5)).toBe('160.5');
-    expect(formatCm(320.5)).toBe('320.5');
+    expect(formatLength(1_605_000n, 'cm')).toBe('160.5');
+    expect(formatLength(3_205_000n, 'cm')).toBe('320.5');
   });
 
-  test('rounds to the nearest 0.1 rather than printing float dust', () => {
-    expect(formatCm(160.30000000000001)).toBe('160.3');
+  test('has no float dust to round away, in any metric unit', () => {
+    // The old formatter existed because 160.3 cm arrived as 160.30000000000001. The
+    // canonical value is an integer, so this is division-free string work now.
+    expect(formatLength(1_603_000n, 'cm')).toBe('160.3');
+    expect(formatLength(1_603_000n, 'mm')).toBe('1603');
+    expect(formatLength(1_603_000n, 'm')).toBe('1.603');
   });
 
-  test('falls back to 0 for a non-finite value', () => {
-    expect(formatCm(Number.NaN)).toBe('0');
+  test('reads imperial the way a tape is read, not as a decimal', () => {
+    expect(formatLength(2_095_500n, 'in')).toBe('82 1/2"');
+    expect(formatLength(1_270_000n, 'ft')).toBe(`4' 2"`);
+    expect(formatLength(1_219_200n, 'ft')).toBe(`4'`);
+    // Eighths reduce, and a value under an inch drops the leading zero it would
+    // otherwise carry — a tape reads 3/8", never 0 3/8".
+    expect(formatLength(9_525n, 'in')).toBe('3/8"');
+  });
+
+  test('a sub-foot value keeps its foot mark, because the parser reads that mark', () => {
+    // The one place a leading zero survives: `1/8"` in a field set to feet would parse
+    // back as an eighth of a foot. See the note in formatImperial.
+    expect(formatLength(3_175n, 'ft')).toBe(`0' 1/8"`);
+    expect(formatLength(3_175n, 'in')).toBe('1/8"');
   });
 });
 

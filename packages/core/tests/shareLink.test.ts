@@ -80,9 +80,9 @@ describe('buildShareParams', () => {
   test('writes the measurement whole, at the resolution it was entered', () => {
     // Was: "writes measurements through the formatter, not raw floats", guarding
     // 160.5 against arriving as 160.50000000000003. Nothing formats here any more —
-    // and the formatter it used to guard through was itself the lossy part, since
-    // `formatCm` caps at one decimal and turned 250.34 cm into "250.3" before
-    // imperial entry existed to complicate anything.
+    // and the formatter it used to guard through was itself the lossy part: it capped
+    // at one decimal and turned 250.34 cm into "250.3", before imperial entry existed
+    // to complicate anything.
     const search = buildShareParams(
       product('awn-4t'),
       AWN,

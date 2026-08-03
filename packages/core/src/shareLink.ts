@@ -12,9 +12,9 @@ import { isLengthUnit, type LengthUnit } from './units.js';
  * failing to decode.
  *
  * Measurements travel as raw integer micrometres in both directions, so this file
- * converts nothing. The previous version routed them through `formatCm`, which meant
- * a link built from 250.34 cm carried "250.3" — the link lost resolution before
- * imperial entry ever existed to complicate it.
+ * converts nothing. The previous version wrote them through the centimetre display
+ * formatter, which capped at one decimal: a link built from 250.34 cm carried "250.3"
+ * — the link lost resolution before imperial entry existed to complicate it.
  *
  * Everything read back is untrusted: it has been through a chat client, possibly a
  * URL shortener, and possibly someone's own edits.

@@ -4,8 +4,10 @@ import type { Product } from '@wewin/core';
 import { countProfileColors, getCustomGroup, getSkuGroup, measureRange } from '@wewin/core/filters';
 import { formatBaht, formatDimensions, formatLeadTime, formatRange } from '@wewin/core/format';
 import { bahtToMinor } from '@wewin/core/money';
+import type { LengthUnit } from '@wewin/core/units';
 import { Badge } from '../common/Badge';
 import { Schematic } from '../common/Schematic';
+import { useDisplayUnit } from '../../state/displayUnitContext';
 
 interface ProductCardProps {
   product: Product;
@@ -25,8 +27,13 @@ const defaultSwatch = (product: Product, groupCode: string, fallback: string): s
  * turn into a ratio and a string here and go no further. `Number` on a bound is safe
  * and stays safe — the largest one in the catalogue is four metres, eleven orders of
  * magnitude inside what a double holds exactly.
+ *
+ * `unit` reaches the label and stops there. The ratio is a quotient of micrometres and
+ * so is the same drawing in every unit, and nothing on this path can write a length
+ * back — a card that re-rounded a catalogue default to show it in inches would be the
+ * exact failure plan 4.1 forbids.
  */
-const defaultSize = (product: Product): { ratio: number; label: string } => {
+const defaultSize = (product: Product, unit: LengthUnit): { ratio: number; label: string } => {
   const width = getCustomGroup(product, 'width');
   const height = getCustomGroup(product, 'height');
 
@@ -37,12 +44,15 @@ const defaultSize = (product: Product): { ratio: number; label: string } => {
 
   return {
     ratio: Number(width.defaultUm) / Number(height.defaultUm),
-    label: formatDimensions(width.defaultUm, height.defaultUm, width.unit),
+    label: formatDimensions(width.defaultUm, height.defaultUm, unit),
   };
 };
 
 export function ProductCard({ product }: ProductCardProps) {
-  const size = defaultSize(product);
+  // The unit the customer picked, not the one the row was authored in: the badge and
+  // the size on the card have to agree with the configurator they lead to.
+  const { unit } = useDisplayUnit();
+  const size = defaultSize(product, unit);
   const range = measureRange(product, 'width');
   const colorCount = countProfileColors(product);
 
@@ -79,9 +89,10 @@ export function ProductCard({ product }: ProductCardProps) {
           <Badge>{colorCount} สีโปรไฟล์</Badge>
           {range ? (
             <Badge tone="blueprint" mono>
-              {/* formatRange carries its own unit, and its own ≈ when the bounds
-                  cannot be said exactly in that unit. */}
-              ปรับขนาดได้ {formatRange(range.minUm, range.maxUm, range.unit)}
+              {/* formatRange writes the unit itself, and its own ≈ when a bound
+                  cannot be said exactly in the unit on screen — every authored bound
+                  is off the eighth-inch grid, so imperial always earns the marker. */}
+              ปรับขนาดได้ {formatRange(range.minUm, range.maxUm, unit)}
             </Badge>
           ) : null}
         </div>

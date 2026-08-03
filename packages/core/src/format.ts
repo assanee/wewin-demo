@@ -37,12 +37,6 @@ export function formatSqm(value: number): string {
   return safe(value).toFixed(2);
 }
 
-/** Centimetres to at most one decimal, with a trailing .0 trimmed. */
-export function formatCm(value: number): string {
-  const rounded = Math.round(safe(value) * 10) / 10;
-  return String(rounded + 0);
-}
-
 /* ------------------------------------------------------------------ *
  * Lengths
  *
@@ -101,6 +95,11 @@ function formatImperial(um: bigint, unit: LengthUnit): string {
   const rest = eighths % EIGHTHS_PER_FOOT;
   if (rest === 0n) return `${feet.toString()}'`;
 
+  // `0' 1/8"` keeps its zero, unlike the inch case above. The foot mark is what tells
+  // `parseMeasure` that what follows is inches, so dropping it in a field set to feet
+  // would make the step this very function renders read back as an eighth of a *foot* —
+  // a formatter whose output its own parser misreads, which is the one thing this pair
+  // may not do. It shows up in the ± labels and the "ทีละ" line, never in a size.
   return `${feet.toString()}' ${inchesPart(rest / 8n, rest % 8n)}"`;
 }
 

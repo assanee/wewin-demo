@@ -108,6 +108,13 @@ export function quoteReducer(state: QuoteState, action: QuoteAction): QuoteState
       const existing = state.lines[existingIndex];
       if (!existing) return { ...state, lines: [...state.lines, action.line] };
 
+      // Built from `existing`, so the row keeps its own nickname, its locked price and
+      // its `enteredUnits`. That last one is a decision, not a side effect: the hash
+      // that brought the two rows together deliberately ignores units — 320 cm and
+      // 3200 mm are one window — so the merge has a genuine choice to make, and the
+      // row the customer already named and measured is the one that keeps speaking.
+      // Taking the incoming units would rewrite a line the customer never edited,
+      // which is the same class of surprise as re-snapping on a unit switch.
       const merged = withQty(existing, clampQty(existing.qty + action.line.qty));
       const lines = [...state.lines];
       lines[existingIndex] = merged;

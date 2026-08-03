@@ -1,6 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import type { QuoteLine } from '@wewin/core/quote';
 import { formatBaht, formatDimensions } from '@wewin/core/format';
+import { useDisplayUnit } from '../../state/displayUnitContext';
 import { QuoteActions, QuoteQtyStepper } from './QuoteActions';
 
 interface QuoteLineCardProps {
@@ -16,11 +17,13 @@ interface QuoteLineCardProps {
  * sku_code and size as a mono sub-line, quantity and total on the bottom row.
  */
 export function QuoteLineCard({ line, onQtyChange, onDuplicate, onRemove }: QuoteLineCardProps) {
+  const { unit: displayUnit } = useDisplayUnit();
   const widthUm = line.measures['width'] ?? 0n;
   const heightUm = line.measures['height'] ?? 0n;
-  // Same unit choice as the desktop row: the unit the size was measured in, so one
-  // line does not read 320 cm here and 126 in there.
-  const unit = line.enteredUnits['width'] ?? 'cm';
+  // Same unit choice as the desktop row, reasoned about there: the unit the size was
+  // typed in, falling back to the display unit only when nobody typed one. Rotating a
+  // phone must not restate a line, so the two views have to agree.
+  const unit = line.enteredUnits['width'] ?? line.enteredUnits['height'] ?? displayUnit;
 
   return (
     <article className="flex min-w-0 flex-col gap-3 border border-line bg-panel p-4">

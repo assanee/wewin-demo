@@ -4,6 +4,7 @@ import { Check, Minus, Pencil, Plus } from 'lucide-react';
 import { getProductBySlug } from '@wewin/core/fixtures';
 import { productSpecs } from '../data/company';
 import { defaultStateFor, useConfigurator, type ConfiguratorState } from '../state/useConfigurator';
+import { useDisplayUnit } from '../state/displayUnitContext';
 import { useMediaQuery } from '../state/useMediaQuery';
 import { getCustomGroup, getSkuGroup } from '@wewin/core/filters';
 import { formatBaht, formatDimensions, formatLength, formatSqm } from '@wewin/core/format';
@@ -17,6 +18,7 @@ import type { CustomGroup, Product, SkuGroup } from '@wewin/core';
 import { ButtonLink } from '../components/common/Button';
 import { BottomSheet } from '../components/common/BottomSheet';
 import { Schematic } from '../components/common/Schematic';
+import { UnitPicker } from '../components/common/UnitPicker';
 import { ElevationPreview } from '../components/configurator/ElevationPreview';
 import { MeasureInput } from '../components/configurator/MeasureInput';
 import { SwatchGroup } from '../components/configurator/SwatchGroup';
@@ -76,6 +78,9 @@ function ConfigureProduct({
 }) {
   const config = useConfigurator(product, initialStateFrom(product, editingLine, shared));
   const isTablet = useMediaQuery('(min-width: 768px)');
+  // How the sizes on this page are read out, and nothing more. Every measurement the
+  // page holds stays canonical micrometres; this reaches only the format calls.
+  const { unit } = useDisplayUnit();
   const navigate = useNavigate();
   const { addLine, updateLine } = useQuote();
   const { showToast } = useToast();
@@ -144,11 +149,14 @@ function ConfigureProduct({
 
   const profileHex = swatchOf('profile_color', '#7C7F85');
   const glassHex = swatchOf('glass_color', '#C9E4F7');
-  const unit = getCustomGroup(product, 'width')?.unit ?? 'cm';
   const minBillableSqm = sqUmToSqm(product.minBillableSqUm);
 
   // `location` is read in an event-free render path only through this memo, which
   // falls back to a relative URL so nothing here depends on `window` existing.
+  //
+  // The measurements go in canonical micrometres and the units the customer typed in
+  // go beside them; the unit currently on screen is not in the link at all. A link is
+  // the sizes, and the recipient reads them in whichever unit they themselves prefer.
   const shareUrl = useMemo(
     () =>
       buildShareUrl(
@@ -306,13 +314,24 @@ function ConfigureProduct({
 
           {/* 2. Measurements */}
           <section aria-label="ขนาด" className="flex flex-col gap-4">
+            {/* The picker sits with the fields it retitles rather than off in the
+                header: the customer reaches for it while looking at a tape measure,
+                and this is the one place on the site where the answer is typed. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <h2 className="text-body text-chalk">ขนาด</h2>
+              <UnitPicker />
+            </div>
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {customGroups.map((group) => (
                 <MeasureInput
                   key={group.code}
                   group={group}
                   value={config.measures[group.code] ?? group.defaultUm}
-                  onChange={(next) => config.measure(group.code, next)}
+                  // The unit comes back from the field rather than being read off the
+                  // picker here: what has to be recorded is the unit the customer was
+                  // typing in when they committed, and the picker may have moved on.
+                  onChange={(next, enteredUnit) => config.measure(group.code, next, enteredUnit)}
                   invalid={measureInvalid(group.code)}
                 />
               ))}
@@ -484,6 +503,9 @@ function initialStateFrom(
   const defaults = defaultStateFor(product);
   return {
     selections: { ...defaults.selections, ...shared.selections },
+    // Verbatim micrometres. Opening a link is not typing a value, so nothing here is
+    // snapped to a grid: a 3,200,000 µm window that arrives from a link has to still
+    // be 3,200,000 µm on the screen it arrives at.
     measures: { ...defaults.measures, ...shared.measures },
     // A link only carries a unit for a group it also carries a measurement for, so
     // merging over the defaults keeps the rest on the catalogue's own idiom.

@@ -103,6 +103,153 @@ describe('a canonical length survives every display unit', () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * The tour
+ *
+ * Not a handful of examples: every size the catalogue can be configured to, taken
+ * through all five display units and back to the one it started in. That is the
+ * customer holding a tape in inches, checking the drawing in feet, and returning to
+ * the centimetres the quote is written in — and it is the shape of the accident this
+ * phase was opened over, because the size passes under five different renderings and
+ * only one of them can say it exactly.
+ * ------------------------------------------------------------------ */
+
+/** Every size the customer can configure this group to — the group's own grid, end to end. */
+function everySize(group: CustomGroup): bigint[] {
+  const sizes: bigint[] = [];
+  for (let um = group.minUm; um <= group.maxUm; um += group.stepUm) sizes.push(um);
+  return sizes;
+}
+
+/**
+ * One trip through every unit, starting at `from` and ending back where it began.
+ *
+ * Returns the value the page is holding after each of the six stops, rather than just
+ * the last one. The endpoint alone would be the wrong thing to check: a size can be
+ * wrong at three stops and right again at the sixth, and what the customer is shown —
+ * and can add to a quote — is the value while the tour is under way.
+ *
+ * `writesBack` is MeasureInput's dirty flag, and it is the only difference between the
+ * two policies below. False renders and leaves the value alone; true reads the field
+ * back at every stop, the way a blur after a keystroke does. The rule of plan 4.1 is
+ * that a unit switch is always the first and never the second, so modelling both here
+ * is what lets the assertions say precisely what separates them.
+ */
+function tour(um: bigint, group: CustomGroup, from: number, writesBack: boolean): bigint[] {
+  const itinerary: bigint[] = [];
+  let current = um;
+
+  for (let step = 0; step <= LENGTH_UNITS.length; step += 1) {
+    const unit = LENGTH_UNITS[(from + step) % LENGTH_UNITS.length];
+    if (!unit) throw new Error('unreachable');
+
+    const shown = formatLength(current, unit);
+    if (writesBack) current = parseMeasure(shown, unit, group) ?? current;
+    itinerary.push(current);
+  }
+
+  return itinerary;
+}
+
+/**
+ * lcm(5 mm, 1/8 in) — where the two entry grids coincide, at 63.5 cm.
+ *
+ * A size sitting on it is the only kind that survives being re-snapped in both, which
+ * is what makes it the exact measure of the damage in the counterfactual below.
+ */
+const BOTH_GRIDS_UM = 635_000n;
+
+describe('a size tours every display unit and comes back unmoved', () => {
+  test('the sweep is the whole catalogue, not a sample of it', () => {
+    // The 162 authored groups are 16 distinct sets of bounds; sweeping the same six
+    // numbers 32 times would be slower, not stronger. This is the step that lets the
+    // dedup be honest — every authored group has to be one of the 16.
+    const profiles = new Set(
+      sizeProfiles().map((group) => `${group.minUm}:${group.maxUm}:${group.stepUm}:${group.defaultUm}`),
+    );
+
+    expect(customGroups()).toHaveLength(162);
+    expect(profiles.size).toBe(16);
+    for (const group of customGroups()) {
+      expect(profiles).toContain(
+        `${group.minUm}:${group.maxUm}:${group.stepUm}:${group.defaultUm}`,
+      );
+    }
+  });
+
+  test('every configurable size holds still at every stop, from every starting unit', () => {
+    let checked = 0;
+
+    for (const group of sizeProfiles()) {
+      for (const um of everySize(group)) {
+        // From each of the five, because the preference is restored from storage and
+        // the customer does not always start in the unit the catalogue was authored in.
+        for (let from = 0; from < LENGTH_UNITS.length; from += 1) {
+          for (const atStop of tour(um, group, from, false)) {
+            expect(atStop).toBe(um);
+            checked += 1;
+          }
+        }
+      }
+    }
+
+    // 9,356 configurable sizes across the 16 profiles × 5 starting units × 6 stops.
+    // Pinned, not floored: the count is a fact about the catalogue, and a floor would
+    // let the sweep erode to a handful of points with nothing saying so.
+    expect(checked).toBe(9_356 * 5 * 6);
+  });
+
+  test('with a write-back at each stop, the same tour disturbs all but 78 of them', () => {
+    /*
+     * The counterfactual, and the reason the test above is not vacuous. Everything is
+     * identical except the flag: this is the tour a build takes if a unit switch is
+     * allowed to commit what the field is showing — which is what the pre-phase blur
+     * handler did, since it compared a parsed number against the value and found them
+     * different on every render.
+     *
+     * The survivors are exactly the multiples of 63.5 cm, the 78 sizes where the metric
+     * and imperial grids meet. Every other size in the catalogue is a window the
+     * customer never touched, moved by up to a full 5 mm step.
+     */
+    let disturbed = 0;
+    let onBothGrids = 0;
+    let differsAtTheEnd = 0;
+    let worstDrift = 0n;
+
+    for (const group of sizeProfiles()) {
+      for (const um of everySize(group)) {
+        const itinerary = tour(um, group, 0, true);
+        const moved = itinerary.filter((atStop) => atStop !== um);
+
+        for (const atStop of moved) {
+          const drift = atStop > um ? atStop - um : um - atStop;
+          if (drift > worstDrift) worstDrift = drift;
+        }
+
+        if (moved.length > 0) disturbed += 1;
+        else onBothGrids += 1;
+        if (itinerary.at(-1) !== um) differsAtTheEnd += 1;
+
+        // Exactly, in both directions: nothing off the shared grid survives, and
+        // nothing on it is touched.
+        expect(isOnGridUm(um, BOTH_GRIDS_UM)).toBe(moved.length === 0);
+      }
+    }
+
+    expect(disturbed + onBothGrids).toBe(9_356);
+    expect(onBothGrids).toBe(78);
+    expect(disturbed).toBe(9_278);
+    expect(worstDrift).toBe(5_000n); // a whole metric step, on a window nobody edited
+
+    // And this is what makes it silent rather than merely wrong: half of the damaged
+    // sizes are back at their original value by the last stop, so a before-and-after
+    // comparison reports the catalogue intact while the customer was shown — and could
+    // have added to a quote — a window 5 mm out.
+    expect(differsAtTheEnd).toBe(4_647);
+    expect(differsAtTheEnd).toBeLessThan(disturbed);
+  });
+});
+
 describe('switching the display unit never re-snaps', () => {
   /** awn-4t's width: 320 cm, authored on the 5 mm grid like all 162 slots. */
   const group = sizeProfiles().find((candidate) => candidate.stepUm === 5_000n);
