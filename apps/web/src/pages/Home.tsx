@@ -10,6 +10,7 @@ import {
   summarizeCategories,
 } from '@wewin/core/catalog-summary';
 import { formatBaht, formatInteger, formatLeadTime, formatSqm } from '@wewin/core/format';
+import { bahtToMinor } from '@wewin/core/money';
 import { ButtonLink } from '../components/common/Button';
 
 /**
@@ -63,7 +64,7 @@ export function Home() {
           <FactCell termTh="แบบให้เลือก" value={`${formatInteger(products.length)} แบบ`} />
           <FactCell
             termTh="ราคาเริ่มต้น"
-            value={catalogFrom === null ? '—' : formatBaht(catalogFrom)}
+            value={catalogFrom === null ? '—' : formatBaht(bahtToMinor(catalogFrom))}
             suffixTh={catalogFrom === null ? undefined : '/ ตร.ม.'}
           />
           <FactCell
@@ -153,7 +154,7 @@ export function Home() {
                       <>
                         <p className="text-caption text-chalk-3">เริ่ม</p>
                         <p className="numeric text-lead text-chalk">
-                          {formatBaht(summary.fromPricePerSqm)}
+                          {formatBaht(bahtToMinor(summary.fromPricePerSqm))}
                           <span className="text-small text-chalk-2"> / ตร.ม.</span>
                         </p>
                         <p className="numeric mt-1 text-caption text-chalk-3">

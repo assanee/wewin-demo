@@ -31,12 +31,12 @@ describe('calcPrice — spec test cases', () => {
 
     expect(price.areaSqm).toBeCloseTo(5.12, 6);
     expect(price.billableSqm).toBeCloseTo(5.12, 6);
-    expect(price.base).toBeCloseTo(7680, 6);
-    expect(price.percentTotal).toBeCloseTo(614.4, 6);
-    expect(price.perSqmTotal).toBeCloseTo(921.6, 6);
-    expect(price.flatTotal).toBeCloseTo(0, 6);
-    expect(price.unitPrice).toBeCloseTo(9216, 6);
-    expect(price.total).toBe(18432);
+    expect(price.baseMinor).toBe(768000n);
+    expect(price.percentTotalMinor).toBe(61440n);
+    expect(price.perSqmTotalMinor).toBe(92160n);
+    expect(price.flatTotalMinor).toBe(0n);
+    expect(price.unitPriceMinor).toBe(921600n);
+    expect(price.totalMinor).toBe(1843200n);
   });
 
   test('case 2: awn-4t 80x60 falls back to minBillableSqm 1.5 -> 2250', () => {
@@ -49,8 +49,8 @@ describe('calcPrice — spec test cases', () => {
 
     expect(price.areaSqm).toBeCloseTo(0.48, 6);
     expect(price.billableSqm).toBe(1.5);
-    expect(price.unitPrice).toBeCloseTo(2250, 6);
-    expect(price.total).toBe(2250);
+    expect(price.unitPriceMinor).toBe(225000n);
+    expect(price.totalMinor).toBe(225000n);
   });
 
   test('case 3: awn-4t 200x150 BK/LAM/NS1 combines percent + per_sqm + flat -> 8475', () => {
@@ -62,11 +62,11 @@ describe('calcPrice — spec test cases', () => {
     );
 
     expect(price.areaSqm).toBeCloseTo(3, 6);
-    expect(price.base).toBeCloseTo(4500, 6);
-    expect(price.percentTotal).toBeCloseTo(225, 6);
-    expect(price.perSqmTotal).toBeCloseTo(1950, 6);
-    expect(price.flatTotal).toBeCloseTo(1800, 6);
-    expect(price.total).toBe(8475);
+    expect(price.baseMinor).toBe(450000n);
+    expect(price.percentTotalMinor).toBe(22500n);
+    expect(price.perSqmTotalMinor).toBe(195000n);
+    expect(price.flatTotalMinor).toBe(180000n);
+    expect(price.totalMinor).toBe(847500n);
   });
 
   test('case 4: lvr-adj-3 300x200 DW/B150/MOT -> 27552', () => {
@@ -78,11 +78,11 @@ describe('calcPrice — spec test cases', () => {
     );
 
     expect(price.areaSqm).toBeCloseTo(6, 6);
-    expect(price.base).toBeCloseTo(14400, 6);
-    expect(price.percentTotal).toBeCloseTo(1152, 6);
-    expect(price.perSqmTotal).toBeCloseTo(0, 6);
-    expect(price.flatTotal).toBeCloseTo(12000, 6);
-    expect(price.total).toBe(27552);
+    expect(price.baseMinor).toBe(1440000n);
+    expect(price.percentTotalMinor).toBe(115200n);
+    expect(price.perSqmTotalMinor).toBe(0n);
+    expect(price.flatTotalMinor).toBe(1200000n);
+    expect(price.totalMinor).toBe(2755200n);
   });
 
   test('case 5: lvr-adj-3 300x200 SG/B100/MAN qty 3 -> percent is 0 for a none delta', () => {
@@ -93,11 +93,11 @@ describe('calcPrice — spec test cases', () => {
       3,
     );
 
-    expect(price.base).toBeCloseTo(14400, 6);
-    expect(price.percentTotal).toBe(0);
-    expect(price.perSqmTotal).toBeCloseTo(1080, 6);
-    expect(price.unitPrice).toBeCloseTo(15480, 6);
-    expect(price.total).toBe(46440);
+    expect(price.baseMinor).toBe(1440000n);
+    expect(price.percentTotalMinor).toBe(0n);
+    expect(price.perSqmTotalMinor).toBe(108000n);
+    expect(price.unitPriceMinor).toBe(1548000n);
+    expect(price.totalMinor).toBe(4644000n);
   });
 
   test('case 6: sld-2p 180x220 WH/CLR/T6/LK1 -> 8791 (rounded from 8791.2)', () => {
@@ -109,10 +109,10 @@ describe('calcPrice — spec test cases', () => {
     );
 
     expect(price.areaSqm).toBeCloseTo(3.96, 6);
-    expect(price.base).toBeCloseTo(8316, 6);
-    expect(price.perSqmTotal).toBeCloseTo(475.2, 6);
-    expect(price.unitPrice).toBeCloseTo(8791.2, 6);
-    expect(price.total).toBe(8791);
+    expect(price.baseMinor).toBe(831600n);
+    expect(price.perSqmTotalMinor).toBe(47520n);
+    expect(price.unitPriceMinor).toBe(879120n);
+    expect(price.totalMinor).toBe(879100n);
   });
 });
 
@@ -131,7 +131,7 @@ describe('calcPrice — calculation order', () => {
       1,
     );
 
-    expect(price.percentTotal).toBeCloseTo(225, 6);
+    expect(price.percentTotalMinor).toBe(22500n);
   });
 
   test('per_sqm uses billableSqm, not the raw area, when the minimum kicks in', () => {
@@ -144,7 +144,7 @@ describe('calcPrice — calculation order', () => {
       1,
     );
 
-    expect(price.perSqmTotal).toBeCloseTo(270, 6);
+    expect(price.perSqmTotalMinor).toBe(27000n);
   });
 
   test('flat deltas are per unit and multiply with qty', () => {
@@ -161,9 +161,9 @@ describe('calcPrice — calculation order', () => {
       4,
     );
 
-    expect(one.flatTotal).toBeCloseTo(1800, 6);
-    expect(four.flatTotal).toBeCloseTo(1800, 6);
-    expect(four.total).toBe(one.total * 4);
+    expect(one.flatTotalMinor).toBe(180000n);
+    expect(four.flatTotalMinor).toBe(180000n);
+    expect(four.totalMinor).toBe(one.totalMinor * 4n);
   });
 
   test('rounds once at the end, so qty x unit never accumulates per-unit rounding error', () => {
@@ -176,7 +176,7 @@ describe('calcPrice — calculation order', () => {
       3,
     );
 
-    expect(price.total).toBe(26374);
+    expect(price.totalMinor).toBe(2637400n);
   });
 });
 
@@ -194,9 +194,9 @@ describe('calcPrice — breakdown lines', () => {
     );
 
     expect(price.lines).toEqual([
-      { label: 'ราคาฐานตามพื้นที่', amount: 7680 },
-      { label: 'สีโปรไฟล์อะลูมิเนียม · ลายไม้เข้ม', amount: 614.4 },
-      { label: 'สีกระจก · สีเขียว', amount: 921.6 },
+      { label: 'ราคาฐานตามพื้นที่', amountMinor: 768000n },
+      { label: 'สีโปรไฟล์อะลูมิเนียม · ลายไม้เข้ม', amountMinor: 61440n },
+      { label: 'สีกระจก · สีเขียว', amountMinor: 92160n },
     ]);
   });
 
@@ -208,7 +208,7 @@ describe('calcPrice — breakdown lines', () => {
       1,
     );
 
-    expect(price.lines).toEqual([{ label: 'ราคาฐานตามพื้นที่', amount: 4500 }]);
+    expect(price.lines).toEqual([{ label: 'ราคาฐานตามพื้นที่', amountMinor: 450000n }]);
   });
 
   test('line amounts sum to unitPrice', () => {
@@ -219,8 +219,9 @@ describe('calcPrice — breakdown lines', () => {
       1,
     );
 
-    const sum = price.lines.reduce((acc, line) => acc + line.amount, 0);
-    expect(sum).toBeCloseTo(price.unitPrice, 6);
+    // Exact now, so no epsilon: the breakdown accounts for the unit price to the satang.
+    const sum = price.lines.reduce((acc, line) => acc + line.amountMinor, 0n);
+    expect(sum).toBe(price.unitPriceMinor);
   });
 });
 
@@ -241,8 +242,8 @@ describe('calcPrice — degenerate input', () => {
     const withDefaults = awn({}, 320, 160, 1);
     const explicit = awn(explicitDefaults, 320, 160, 1);
 
-    expect(withDefaults.total).toBe(explicit.total);
-    expect(withDefaults.total).toBeGreaterThan(0);
+    expect(withDefaults.totalMinor).toBe(explicit.totalMinor);
+    expect(withDefaults.totalMinor).toBeGreaterThan(0n);
   });
 
   test('treats a missing measurement as its group default rather than producing NaN', () => {
@@ -253,7 +254,7 @@ describe('calcPrice — degenerate input', () => {
       1,
     );
 
-    expect(Number.isNaN(price.total)).toBe(false);
+    expect(price.totalMinor).toBeTypeOf('bigint');
     expect(price.areaSqm).toBeCloseTo(5.12, 6);
   });
 
@@ -265,8 +266,10 @@ describe('calcPrice — degenerate input', () => {
       0,
     );
 
-    expect(price.total).toBe(0);
-    expect(Object.is(price.total, -0)).toBe(false);
+    // A bigint has no negative zero, so the "-0 on screen" defect the spec calls out
+    // in section 11 is now unrepresentable rather than guarded against.
+    expect(price.totalMinor).toBe(0n);
+    expect(Object.is(Number(price.totalMinor), -0)).toBe(false);
   });
 
   test('ignores an unknown option code instead of throwing', () => {
@@ -277,7 +280,7 @@ describe('calcPrice — degenerate input', () => {
       1,
     );
 
-    expect(price.percentTotal).toBe(0);
-    expect(price.total).toBe(7680);
+    expect(price.percentTotalMinor).toBe(0n);
+    expect(price.totalMinor).toBe(768000n);
   });
 });

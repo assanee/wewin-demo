@@ -3,6 +3,7 @@ import type { Category } from '@wewin/core';
 import type { CatalogFilters, ProfileColorFacet } from '@wewin/core/filters';
 import { isFilterActive } from '@wewin/core/filters';
 import { formatBaht } from '@wewin/core/format';
+import { bahtToMinor } from '@wewin/core/money';
 import { Button } from '../common/Button';
 
 interface FilterPanelProps {
@@ -113,9 +114,9 @@ export function FilterPanel({ filters, onChange, categories, colorFacets, bounds
       <Section titleTh="ราคาต่อ ตร.ม.">
         <div className="flex flex-col gap-3">
           <div className="numeric flex items-baseline justify-between text-small text-chalk-2">
-            <span>{formatBaht(filters.minPricePerSqm ?? bounds.min)}</span>
+            <span>{formatBaht(bahtToMinor(filters.minPricePerSqm ?? bounds.min))}</span>
             <span className="text-chalk-3">ถึง</span>
-            <span>{formatBaht(filters.maxPricePerSqm ?? bounds.max)}</span>
+            <span>{formatBaht(bahtToMinor(filters.maxPricePerSqm ?? bounds.max))}</span>
           </div>
 
           <label className="flex flex-col gap-1">

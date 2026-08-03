@@ -421,7 +421,7 @@ function ConfigureProduct({
 
           <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
             <span className="text-body text-chalk">ราคารวม</span>
-            <span className="numeric text-title text-lime">{formatBaht(config.price.total)}</span>
+            <span className="numeric text-title text-lime">{formatBaht(config.price.totalMinor)}</span>
           </div>
           <p className="numeric text-caption text-chalk-3">ราคายังไม่รวม VAT 7%</p>
         </div>

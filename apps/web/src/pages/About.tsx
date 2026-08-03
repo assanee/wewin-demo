@@ -9,6 +9,7 @@ import {
   summarizeCategories,
 } from '@wewin/core/catalog-summary';
 import { formatBaht, formatInteger, formatLeadTime, formatSqm } from '@wewin/core/format';
+import { bahtToMinor } from '@wewin/core/money';
 import { ButtonLink } from '../components/common/Button';
 
 /**
@@ -94,7 +95,7 @@ export function About() {
           />
           <Fact
             termTh="ราคาเริ่มต้น"
-            value={catalogFrom === null ? '—' : `${formatBaht(catalogFrom)} / ตร.ม.`}
+            value={catalogFrom === null ? '—' : `${formatBaht(bahtToMinor(catalogFrom))} / ตร.ม.`}
             noteTh="ยังไม่รวม VAT 7%"
           />
           <Fact

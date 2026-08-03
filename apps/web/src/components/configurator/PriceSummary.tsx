@@ -108,7 +108,7 @@ export function PriceSummaryCard({
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
         <div className="min-w-0">
           <p className="text-caption text-chalk-3">ราคาต่อชิ้น</p>
-          <p className="numeric text-lead text-chalk">{formatBaht(price.unitPrice)}</p>
+          <p className="numeric text-lead text-chalk">{formatBaht(price.unitPriceMinor)}</p>
         </div>
         <QtyStepper qty={qty} onQtyChange={onQtyChange} />
       </div>
@@ -117,7 +117,7 @@ export function PriceSummaryCard({
         <p className="text-caption text-chalk-3">ราคารวม</p>
         {/* The one lime number on the screen — the other lime element is the button. */}
         <p className="numeric text-display text-lime transition-colors duration-180 ease-out">
-          {formatBaht(price.total)}
+          {formatBaht(price.totalMinor)}
         </p>
         <p className="numeric mt-1 text-caption text-chalk-3">
           {formatSqm(price.areaSqm)} ตร.ม. · ราคายังไม่รวม VAT 7%
@@ -163,7 +163,7 @@ export function PriceStickyBar({ price, qty, onAdd, onOpenBreakdown }: StickyBar
         aria-label="ดูรายละเอียดราคา"
         className="flex min-h-11 min-w-0 flex-col items-start justify-center text-start"
       >
-        <span className="numeric text-lead text-lime">{formatBaht(price.total)}</span>
+        <span className="numeric text-lead text-lime">{formatBaht(price.totalMinor)}</span>
         <span className="numeric text-caption text-chalk-3">
           {formatSqm(price.areaSqm)} ตร.ม.{qty > 1 ? ` · ${qty} ชิ้น` : ''} · ดูรายละเอียด
         </span>

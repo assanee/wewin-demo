@@ -7,30 +7,29 @@ import { formatBaht, formatCm, formatInteger, formatSqm } from '../src/format.js
  */
 
 describe('formatBaht', () => {
-  test('groups thousands and prefixes the baht sign', () => {
-    expect(formatBaht(18432)).toBe('฿18,432');
-    expect(formatBaht(1500)).toBe('฿1,500');
-    expect(formatBaht(0)).toBe('฿0');
+  test('takes minor units and renders whole baht with separators', () => {
+    expect(formatBaht(1_843_200n)).toBe('฿18,432');
+    expect(formatBaht(150_000n)).toBe('฿1,500');
+    expect(formatBaht(0n)).toBe('฿0');
   });
 
-  test('rounds to whole baht — quotes are never quoted in satang', () => {
-    expect(formatBaht(8791.2)).toBe('฿8,791');
-    expect(formatBaht(614.4)).toBe('฿614');
-    expect(formatBaht(0.5)).toBe('฿1');
+  test('rounds half up if handed unrounded satang', () => {
+    // Totals arrive already rounded, but a stray caller must not get a third answer.
+    expect(formatBaht(879_120n)).toBe('฿8,791');
+    expect(formatBaht(61_440n)).toBe('฿614');
+    expect(formatBaht(50n)).toBe('฿1');
   });
 
-  test('renders -0 as ฿0, never "-฿0"', () => {
-    expect(formatBaht(-0)).toBe('฿0');
-    expect(formatBaht(-0.2)).toBe('฿0');
+  test('renders a credit with the sign outside the symbol', () => {
+    expect(formatBaht(-180_000n)).toBe('-฿1,800');
   });
 
-  test('falls back to ฿0 for a non-finite value instead of printing NaN', () => {
-    expect(formatBaht(Number.NaN)).toBe('฿0');
-    expect(formatBaht(Number.POSITIVE_INFINITY)).toBe('฿0');
-  });
-
-  test('keeps negative amounts readable for future discount lines', () => {
-    expect(formatBaht(-1800)).toBe('-฿1,800');
+  test('has no NaN or -0 case left to guard', () => {
+    // v1 needed both: the arithmetic was float, so `-0` and `NaN` could reach the
+    // screen and did — `pricing.ts` carried a `+ 0` for exactly that reason. A bigint
+    // has neither value, so the defect is gone rather than defended against.
+    expect(formatBaht(-0n)).toBe('฿0');
+    expect(Object.is(Number(-0n), -0)).toBe(false);
   });
 });
 

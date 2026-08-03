@@ -12,7 +12,8 @@ export interface QuoteContextValue {
   lines: QuoteLine[];
   /** Pieces, not rows — what the header badge shows. */
   itemCount: number;
-  total: number;
+  /** Minor units — satang. Never baht: see @wewin/core/money. */
+  total: bigint;
   /** False until localStorage has been read, so the UI never acts on an empty cart. */
   ready: boolean;
   addLine: (line: Omit<QuoteLine, 'lineId' | 'addedAt'>) => void;

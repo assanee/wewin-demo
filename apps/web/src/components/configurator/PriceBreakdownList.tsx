@@ -20,13 +20,13 @@ export function PriceBreakdownList({ price, minBillableSqm }: PriceBreakdownList
       {price.lines.map((line) => (
         <div key={line.label} className="flex min-w-0 items-baseline justify-between gap-3">
           <dt className="min-w-0 flex-1 truncate text-small text-chalk-2">{line.label}</dt>
-          <dd className="numeric shrink-0 text-small text-chalk">{formatBaht(line.amount)}</dd>
+          <dd className="numeric shrink-0 text-small text-chalk">{formatBaht(line.amountMinor)}</dd>
         </div>
       ))}
 
       <div className="mt-1 flex items-baseline justify-between gap-3 border-t border-line pt-2">
         <dt className="text-small text-chalk-2">ราคาต่อชิ้น</dt>
-        <dd className="numeric text-small text-chalk">{formatBaht(price.unitPrice)}</dd>
+        <dd className="numeric text-small text-chalk">{formatBaht(price.unitPriceMinor)}</dd>
       </div>
     </dl>
   );

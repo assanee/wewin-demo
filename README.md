@@ -22,12 +22,17 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 **v1 จบตรงนี้ตามสเปก** — เพิ่มลงตะกร้า ดู แก้จำนวน ลบ ทำซ้ำ แก้การตั้งค่า
 ไม่มีปุ่มส่งคำขอ ไม่มีฟอร์มกรอกข้อมูลติดต่อ ไม่มีการชำระเงิน
 
-**219 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
+**246 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
 
 ### เฟส 0 ของการยกระดับเป็น monorepo — เสร็จแล้ว
 
 โครงสร้างย้ายเป็น pnpm workspace + Turborepo และแยกชั้นโดเมนออกเป็น `@wewin/core`
 **พฤติกรรมไม่เปลี่ยนแม้แต่อย่างเดียว** — ยังเป็นเซนติเมตร ยังเป็นบาท และ 219 เทสต์ผ่านโดยไม่แก้ assertion สักตัว
+
+### เฟส 1 — เสร็จแล้ว
+
+เงินเป็น `bigint` หน่วยย่อย (สตางค์) ทั้งระบบ · VAT คำนวณจริงแล้ว · `NaN` กับ `-0` แทนค่าไม่ได้อีกต่อไป
+**เทียบกับ v1.0.0 กว่า 55,000 ชุด ตรงกันทุกตัว ยกเว้น 87 ชุดที่ v1 คิดขาดไป ฿1** เพราะ float ทำครึ่งบาทหล่นหาย
 แผนเต็มอยู่ที่ [`docs/monorepo-plan.md`](docs/monorepo-plan.md)
 
 ---
@@ -37,7 +42,7 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 ```bash
 pnpm install
 pnpm dev             # http://localhost:5173 (build core ให้ก่อนอัตโนมัติ)
-pnpm test            # vitest — 219 เคสใน packages/core
+pnpm test            # vitest — 246 เคสใน packages/core
 pnpm typecheck
 pnpm lint
 pnpm build
@@ -119,7 +124,7 @@ packages/core/            @wewin/core — โดเมนล้วน ไม่�
     filters.ts · catalogSummary.ts · format.ts · hash.ts · history.ts
     shareLink.ts · quote.ts (reducer, pure) · constants.ts
     index.ts   root ของแพ็กเกจ — เป็น type ล้วน ไม่มี runtime
-  tests/       13 ไฟล์ 219 เคส
+  tests/       16 ไฟล์ 246 เคส
 
 apps/web/                 @wewin/web — Vite + React (จะเป็น Next.js ที่เฟส 6)
   src/
@@ -268,13 +273,16 @@ filters.test.ts         23
 validation.test.ts      20   รวม 7 เคสตามสเปกหัวข้อ 6
 elevation.test.ts       18
 pricing.test.ts         17   รวม 6 เคสตามสเปกหัวข้อ 5
-format.test.ts          15
+money.test.ts           14   half_up รวมค่าติดลบ · minorExponent ≠ roundTo
+format.test.ts          14
 catalogSummary.test.ts  13   ตัวเลขที่หน้าแรกโฆษณา ต้อง derive จาก products.ts
 shareLink.test.ts       13
 history.test.ts         12   undo/redo รวบตามความหมาย ไม่ใช่ตามเวลา
 optionStates.test.ts    12
+vat.test.ts              9   net / vat / grand ต้อง foot เสมอ ทั้งสองทางที่กรอก
 hash.test.ts             7
 skuCode.test.ts          7
+pricing-parity.test.ts   5   เทียบ v1.0.0 กว่า 55,000 ชุด — เกณฑ์ผ่านของเฟส 1
 ```
 
 เทสของ filter ใช้ **fixture 3 สินค้า** ไม่ใช่ catalog จริง เพราะมันทดสอบ *logic ของตัวกรอง*

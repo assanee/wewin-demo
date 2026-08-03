@@ -6,19 +6,29 @@
  * should show a wrong price, not blank the page mid-configuration.
  */
 
+import { divRoundHalfUp } from './money.js';
+
 const THAI_LOCALE = 'th-TH';
 
 /** Replace non-finite input with 0 and collapse -0 to 0. */
 const safe = (value: number): number => (Number.isFinite(value) ? value + 0 : 0);
 
-/** Thai baht, whole units. Quotes are never issued in satang. */
-export function formatBaht(value: number): string {
-  const rounded = Math.round(safe(value));
-  const magnitude = Math.abs(rounded).toLocaleString(THAI_LOCALE, {
+/**
+ * Thai baht, whole units. Quotes are never issued in satang.
+ *
+ * Takes minor units, because that is what money is in this codebase now. A formatter
+ * that accepted baht would need a caller to divide first, and a division on the way to
+ * the screen is exactly where a rounding decision hides from review.
+ */
+export function formatBaht(minor: bigint): string {
+  // Normally already rounded to the whole baht upstream; rounding here too means a
+  // caller that hands over raw satang still gets the same answer as everywhere else.
+  const whole = divRoundHalfUp(minor, 100n);
+  const magnitude = (whole < 0n ? -whole : whole).toLocaleString(THAI_LOCALE, {
     maximumFractionDigits: 0,
   });
 
-  return rounded < 0 ? `-฿${magnitude}` : `฿${magnitude}`;
+  return whole < 0n ? `-฿${magnitude}` : `฿${magnitude}`;
 }
 
 /** Square metres, always two decimals (spec section 5). */

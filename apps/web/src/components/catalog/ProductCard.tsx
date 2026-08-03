@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import type { Product } from '@wewin/core';
 import { countProfileColors, getCustomGroup, getSkuGroup, measureRange } from '@wewin/core/filters';
 import { formatBaht, formatCm, formatLeadTime } from '@wewin/core/format';
+import { bahtToMinor } from '@wewin/core/money';
 import { Badge } from '../common/Badge';
 import { Schematic } from '../common/Schematic';
 
@@ -65,7 +66,7 @@ export function ProductCard({ product }: ProductCardProps) {
             {/* Never a per-piece price here — the size is not known yet (spec 7). */}
             <p className="text-caption text-chalk-3">เริ่มต้น</p>
             <p className="numeric text-lead text-chalk">
-              {formatBaht(product.pricePerSqm)}
+              {formatBaht(bahtToMinor(product.pricePerSqm))}
               <span className="text-small text-chalk-2"> / ตร.ม.</span>
             </p>
             <p className="numeric mt-1 text-caption text-chalk-3">

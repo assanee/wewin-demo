@@ -11,7 +11,7 @@ import {
   type QuoteLine,
   type QuoteState,
 } from '../src/quote.js';
-import { calcPrice } from '../src/pricing.js';
+import { PRICE_SCALE, calcPrice, totalFromUnitPrice } from '../src/pricing.js';
 import { buildSkuCode } from '../src/skuCode.js';
 import { configHash } from '../src/hash.js';
 import { getProductById } from '../src/data/products.js';
@@ -134,7 +134,9 @@ describe('quoteReducer — add', () => {
     const merged = next.lines[0];
 
     expect(merged?.priceSnapshot.qty).toBe(5);
-    expect(merged?.priceSnapshot.total).toBe(Math.round((a.priceSnapshot.unitPrice ?? 0) * 5));
+    expect(merged?.priceSnapshot.totalMinor).toBe(
+      totalFromUnitPrice(a.priceSnapshot.unitPriceScaledMinor, 5),
+    );
   });
 
   test('keeps the existing nickname when merging, rather than silently overwriting it', () => {
@@ -228,11 +230,20 @@ describe('quoteReducer — setQty', () => {
   test('reprices from the locked unit price, not from current product prices', () => {
     // The whole point of priceSnapshot: material prices move, a quote does not.
     const a = lineFor('awn-4t', { width: 320, height: 160 }, { lineId: 'a' });
-    const frozen = { ...a, priceSnapshot: { ...a.priceSnapshot, unitPrice: 1000, total: 1000 } };
+    // ฿1,000 a unit, held at full working precision: 100,000 satang × PRICE_SCALE.
+    const frozen = {
+      ...a,
+      priceSnapshot: {
+        ...a.priceSnapshot,
+        unitPriceMinor: 100_000n,
+        unitPriceScaledMinor: 100_000n * PRICE_SCALE,
+        totalMinor: 100_000n,
+      },
+    };
 
     const next = quoteReducer(state(frozen), { type: 'setQty', lineId: 'a', qty: 4 });
 
-    expect(next.lines[0]?.priceSnapshot.total).toBe(4000);
+    expect(next.lines[0]?.priceSnapshot.totalMinor).toBe(400000n);
   });
 
   test('clamps to at least one — removing is a separate, explicit action', () => {
@@ -321,15 +332,15 @@ describe('repriceForQty', () => {
     const base = calcPrice(product('sld-2p'), {}, { width: 180, height: 220 }, 1);
 
     // unitPrice 8791.2 — rounding per unit first would give 26373, not 26374.
-    expect(repriceForQty(base, 3).total).toBe(26374);
+    expect(repriceForQty(base, 3).totalMinor).toBe(2637400n);
   });
 
   test('leaves the per-unit figures untouched', () => {
     const base = calcPrice(product('awn-4t'), {}, { width: 320, height: 160 }, 1);
     const next = repriceForQty(base, 4);
 
-    expect(next.unitPrice).toBe(base.unitPrice);
-    expect(next.base).toBe(base.base);
+    expect(next.unitPriceMinor).toBe(base.unitPriceMinor);
+    expect(next.baseMinor).toBe(base.baseMinor);
     expect(next.lines).toEqual(base.lines);
   });
 });
@@ -343,11 +354,11 @@ describe('quote selectors', () => {
   const b = lineFor('sld-2p', { width: 180, height: 220 }, { lineId: 'b', qty: 1 });
 
   test('quoteTotal sums the locked line totals', () => {
-    expect(quoteTotal([a, b])).toBe(a.priceSnapshot.total + b.priceSnapshot.total);
+    expect(quoteTotal([a, b])).toBe(a.priceSnapshot.totalMinor + b.priceSnapshot.totalMinor);
   });
 
   test('quoteTotal is zero for an empty quote, never NaN', () => {
-    expect(quoteTotal([])).toBe(0);
+    expect(quoteTotal([])).toBe(0n);
   });
 
   test('quoteItemCount counts pieces, not rows', () => {
@@ -397,7 +408,7 @@ describe('quote persistence', () => {
   test('drops individual lines that are missing required fields, keeping the good ones', () => {
     // A half-written line from an older build should cost that line, not the quote.
     const a = lineFor('awn-4t', { width: 320, height: 160 }, { lineId: 'a' });
-    const payload = JSON.stringify({ lines: [a, { lineId: 'broken' }] });
+    const payload = serialiseQuote({ lines: [a, { lineId: 'broken' } as unknown as QuoteLine], hydrated: true });
 
     expect(parseStoredQuote(payload)).toEqual([a]);
   });

@@ -38,9 +38,9 @@ export function QuoteLineCard({ line, onQtyChange, onDuplicate, onRemove }: Quot
         <QuoteQtyStepper qty={line.qty} nickname={line.nickname} onChange={onQtyChange} />
         <div className="text-end">
           <p className="numeric text-caption text-chalk-3">
-            {formatBaht(line.priceSnapshot.unitPrice)} / ชิ้น
+            {formatBaht(line.priceSnapshot.unitPriceMinor)} / ชิ้น
           </p>
-          <p className="numeric text-body text-chalk">{formatBaht(line.priceSnapshot.total)}</p>
+          <p className="numeric text-body text-chalk">{formatBaht(line.priceSnapshot.totalMinor)}</p>
         </div>
       </div>
 

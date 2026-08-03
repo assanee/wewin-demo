@@ -1,5 +1,5 @@
 import type { Product } from './types/catalog.js';
-import type { PriceBreakdown } from './pricing.js';
+import { type PriceBreakdown, totalFromUnitPrice } from './pricing.js';
 import type { Issue } from './validation.js';
 import { MAX_QTY, MIN_QTY } from './constants.js';
 
@@ -64,7 +64,7 @@ export const emptyQuote = (): QuoteState => ({ lines: [], hydrated: false });
  * cannot accumulate per-unit error.
  */
 export function repriceForQty(snapshot: PriceBreakdown, qty: number): PriceBreakdown {
-  return { ...snapshot, qty, total: Math.round(snapshot.unitPrice * qty) + 0 };
+  return { ...snapshot, qty, totalMinor: totalFromUnitPrice(snapshot.unitPriceScaledMinor, qty) };
 }
 
 const clampQty = (qty: number): number =>
@@ -144,8 +144,8 @@ export function quoteReducer(state: QuoteState, action: QuoteAction): QuoteState
  * Selectors
  * ------------------------------------------------------------------ */
 
-export const quoteTotal = (lines: QuoteLine[]): number =>
-  lines.reduce((sum, line) => sum + line.priceSnapshot.total, 0);
+export const quoteTotal = (lines: QuoteLine[]): bigint =>
+  lines.reduce((sum, line) => sum + line.priceSnapshot.totalMinor, 0n);
 
 /** Pieces, not rows — three windows on one line is three windows. */
 export const quoteItemCount = (lines: QuoteLine[]): number =>
@@ -175,9 +175,29 @@ export function longestLeadTime(
  * Persistence
  * ------------------------------------------------------------------ */
 
-export const QUOTE_STORAGE_KEY = 'aluform.quote.v1';
+/**
+ * Bumped from v1 in the same change that made money a `bigint`.
+ *
+ * Plan 4.5 is explicit that this must move together with the representation: a v1
+ * entry holds `total: 8791` meaning baht, and a v2 entry holds `totalMinor: "879100"`
+ * meaning satang. Reading one as the other is a hundredfold error that renders as a
+ * plausible price. Old carts are dropped rather than migrated — a lost cart can be
+ * rebuilt in a minute, a wrong price cannot be noticed at all.
+ */
+export const QUOTE_STORAGE_KEY = 'aluform.quote.v2';
 
-export const serialiseQuote = (state: QuoteState): string => JSON.stringify({ lines: state.lines });
+/** `JSON.stringify` throws on a bigint, so money crosses the storage boundary as digits. */
+const replacer = (_key: string, value: unknown): unknown =>
+  typeof value === 'bigint' ? value.toString() : value;
+
+export const serialiseQuote = (state: QuoteState): string =>
+  JSON.stringify({ lines: state.lines }, replacer);
+
+/** Accepts only a string of digits — `BigInt("")` is 0n and `BigInt(" 1 ")` is 1n. */
+function readMinor(value: unknown): bigint | null {
+  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return null;
+  return BigInt(value);
+}
 
 const isQuoteLine = (value: unknown): value is QuoteLine => {
   if (typeof value !== 'object' || value === null) return false;
@@ -198,11 +218,43 @@ const isQuoteLine = (value: unknown): value is QuoteLine => {
     line.measures !== null &&
     typeof line.priceSnapshot === 'object' &&
     line.priceSnapshot !== null &&
-    typeof line.priceSnapshot.total === 'number' &&
-    typeof line.priceSnapshot.unitPrice === 'number' &&
+    typeof line.priceSnapshot.totalMinor === 'bigint' &&
+    typeof line.priceSnapshot.unitPriceScaledMinor === 'bigint' &&
     Array.isArray(line.warnings)
   );
 };
+
+/** Money fields on a stored snapshot, revived from their digit strings. */
+const MONEY_FIELDS = [
+  'baseMinor',
+  'percentTotalMinor',
+  'perSqmTotalMinor',
+  'flatTotalMinor',
+  'unitPriceMinor',
+  'unitPriceScaledMinor',
+  'totalMinor',
+] as const;
+
+function reviveSnapshot(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  const snapshot = { ...(value as Record<string, unknown>) };
+
+  for (const field of MONEY_FIELDS) {
+    const minor = readMinor(snapshot[field]);
+    if (minor === null) return value; // leave it broken; isQuoteLine drops the line
+    snapshot[field] = minor;
+  }
+
+  if (Array.isArray(snapshot.lines)) {
+    snapshot.lines = snapshot.lines.map((row: unknown) => {
+      if (typeof row !== 'object' || row === null) return row;
+      const amountMinor = readMinor((row as { amountMinor?: unknown }).amountMinor);
+      return amountMinor === null ? row : { ...row, amountMinor };
+    });
+  }
+
+  return snapshot;
+}
 
 /**
  * Read the quote back out of storage.
@@ -221,7 +273,13 @@ export function parseStoredQuote(raw: string | null): QuoteLine[] {
     const { lines } = parsed as { lines?: unknown };
     if (!Array.isArray(lines)) return [];
 
-    return lines.filter(isQuoteLine);
+    return lines
+      .map((line: unknown) =>
+        typeof line === 'object' && line !== null
+          ? { ...line, priceSnapshot: reviveSnapshot((line as { priceSnapshot?: unknown }).priceSnapshot) }
+          : line,
+      )
+      .filter(isQuoteLine);
   } catch {
     return [];
   }

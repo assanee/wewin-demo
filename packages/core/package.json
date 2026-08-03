@@ -24,7 +24,9 @@
     "./quote": "./dist/quote.js",
     "./schema": "./dist/data/schema.js",
     "./rules": "./dist/data/ruleBuilders.js",
-    "./fixtures": "./dist/data/catalog.js"
+    "./fixtures": "./dist/data/catalog.js",
+    "./money": "./dist/money.js",
+    "./vat": "./dist/vat.js"
   },
   "files": [
     "dist"

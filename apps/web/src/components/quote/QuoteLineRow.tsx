@@ -40,11 +40,11 @@ export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: Quote
       </td>
 
       <td className="numeric py-3 pe-3 text-end text-small text-chalk-2 whitespace-nowrap">
-        {formatBaht(line.priceSnapshot.unitPrice)}
+        {formatBaht(line.priceSnapshot.unitPriceMinor)}
       </td>
 
       <td className="numeric py-3 pe-3 text-end text-body text-chalk whitespace-nowrap">
-        {formatBaht(line.priceSnapshot.total)}
+        {formatBaht(line.priceSnapshot.totalMinor)}
       </td>
 
       <td className="py-3">
