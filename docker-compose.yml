@@ -1,0 +1,50 @@
+# The one Postgres this repository talks to.
+#
+# At the root, and nowhere else, because Docker Compose searches upward from the current
+# directory: a file here is found by `pnpm db:up` at the root, by `packages/db` running
+# migrations and by `apps/api` serving them, and all three then mean the same server.
+# Phase 3a briefly shipped two of these — one in packages/db on 5433 and one in apps/api
+# on 5432 — which is how an API answers /health against a database that has no tables.
+# This file is the merge of the two; the per-package files are gone.
+#
+# Port 5433, not 5432: `pnpm db:seed` truncates the catalogue, and 5432 is where a
+# developer's unrelated company Postgres lives. The one place a wrong guess is expensive.
+name: wewin-demo
+
+services:
+  postgres:
+    # Pinned to a major. A minor upgrade is a container restart; a major upgrade rewrites
+    # the on-disk format and refuses to start against an existing volume.
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wewin
+      POSTGRES_PASSWORD: wewin
+      POSTGRES_DB: wewin
+      # ICU th-TH so an ORDER BY over Thai product names sorts the same on every machine,
+      # and checksums so a corrupted page is an error at read time instead of a value.
+      # Both are initdb-time decisions: neither can be turned on later without a dump.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=th-TH --encoding=UTF8 --data-checksums'
+      # timestamptz is stored in UTC regardless; a UTC server keeps every log line and
+      # every `now()` in one frame of reference no matter whose laptop this is.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - '5433:5432'
+    volumes:
+      # Mounted one level above `data`. The 18 images place the cluster in a
+      # version-named subdirectory and refuse to start when the mount point is `data`
+      # itself; the payoff is that a future `pg_upgrade --link` stays inside one mount.
+      - wewin-pgdata:/var/lib/postgresql
+    healthcheck:
+      # `--dbname` as well as `--username`: pg_isready answers on the postgres database
+      # before the init scripts have finished creating this one, and `--wait` would let
+      # a migration start against a server that is up but not ready.
+      test: ['CMD-SHELL', 'pg_isready --username=wewin --dbname=wewin']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  wewin-pgdata:

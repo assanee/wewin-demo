@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    /*
+     * `nodenext` is not a style choice here, it is the only setting that lets this
+     * CommonJS app import ESM-only @wewin/core.
+     *
+     * core is `"type": "module"` and its export map names subpaths only, so:
+     *   - `moduleResolution: node10` cannot see `@wewin/core/money` at all (and is a
+     *     hard error in TypeScript 6 besides),
+     *   - `module: commonjs` + a modern resolver makes tsc reject the import as
+     *     "an ECMAScript module ... cannot be required",
+     *   - `module: nodenext` in a package without `"type": "module"` emits `require()`
+     *     and permits it, because Node >= 22.12 can require a synchronous ESM graph.
+     *
+     * The debt this creates: core must never gain a top-level `await`. One would turn
+     * every `require('@wewin/core/*')` in this app into ERR_REQUIRE_ASYNC_MODULE at
+     * boot. tests/esm-bridge.test.ts requires the built output in a real CommonJS
+     * process so that regression fails a test rather than a deploy.
+     */
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    /*
+     * Nest resolves constructor dependencies from `design:paramtypes`, which only these
+     * two flags produce. They are also why `erasableSyntaxOnly` — on in packages/core —
+     * cannot be on here: decorators are not erasable syntax.
+     */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+
+    /* Strictness — same bar as packages/core. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src"]
+}

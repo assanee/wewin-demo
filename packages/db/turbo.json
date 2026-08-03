@@ -1,0 +1,6 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "//": "The tag is half of the import rule; the other half is a `boundaries.tags.db.dependents.allow` entry in the root turbo.json, which this package does not own. Without both, `turbo boundaries` has nothing to check and the rule is back to being a review promise.",
+  "tags": ["db"]
+}

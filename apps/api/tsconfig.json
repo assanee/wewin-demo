@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+
+    /* Tests sit outside the emit root; widen it where nothing is emitted, as core does. */
+    "rootDir": "."
+  },
+  "include": ["src", "tests"]
+}

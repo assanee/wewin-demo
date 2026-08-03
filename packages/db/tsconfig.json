@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+
+    /*
+     * Declaration emit is a build concern and `src` is the only thing built. Leaving it
+     * on here makes the checker apply declaration-emit rules to the tests too, where
+     * `describe.skipIf(...)` has a vitest-internal type that cannot be named in a `.d.ts`
+     * that will never be written — an error about a file that does not exist.
+     */
+    "declaration": false,
+    "declarationMap": false,
+
+    /*
+     * `dist` mirrors `src` exactly so the exports map can name files directly, which
+     * pins `rootDir` in the emit config. Tests and the drizzle config sit outside that
+     * root and still have to be type-checked, so widen it here where nothing is emitted.
+     */
+    "rootDir": "."
+  },
+  "include": ["src", "tests", "drizzle.config.ts", "vitest.config.ts"]
+}

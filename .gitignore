@@ -16,6 +16,14 @@ dist-ssr
 .turbo
 *.tsbuildinfo
 
+# Connection strings and credentials. .env.example is the documented shape and is committed.
+.env
+.env.*
+!.env.example
+
+# Postgres data directory, if docker compose is pointed at a bind mount instead of a volume
+pgdata
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

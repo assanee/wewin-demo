@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+
+    /* Same split core makes: `dist` mirrors `src`, so the wider root that lets the
+     * tests be type-checked lives here, where nothing is emitted. */
+    "rootDir": "."
+  },
+  "include": ["src", "tests"]
+}

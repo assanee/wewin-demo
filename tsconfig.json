@@ -1,7 +1,20 @@
 {
+  // A solution file: no sources of its own, just every project in the workspace.
+  //
+  // Keeping it complete is not bookkeeping. Plan section 1 records the phase-0 bug where a
+  // reference here pointed at a tsconfig that had been moved — `tsc`, vitest and
+  // `vite build` all passed, but `vite dev` returned 500 for every module of @wewin/core
+  // with an empty page and nothing in the console, because Vite's oxc walks up from a file
+  // to find its tsconfig and choked on the dangling reference. Drift here is invisible
+  // until it is expensive, so the answer is to have none: every package
+  // pnpm-workspace.yaml picks up is listed, and `tsc -b` from the root checks all of them
+  // (verified by planting a type error in packages/db and watching it fail).
   "files": [],
   "references": [
     { "path": "./packages/core" },
+    { "path": "./packages/contract" },
+    { "path": "./packages/db" },
+    { "path": "./apps/api" },
     { "path": "./apps/web" }
   ]
 }

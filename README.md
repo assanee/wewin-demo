@@ -22,18 +22,29 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 **v1 จบตรงนี้ตามสเปก** — เพิ่มลงตะกร้า ดู แก้จำนวน ลบ ทำซ้ำ แก้การตั้งค่า
 ไม่มีปุ่มส่งคำขอ ไม่มีฟอร์มกรอกข้อมูลติดต่อ ไม่มีการชำระเงิน
 
-**246 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
+**296 tests ใน `packages/core` · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
+(ทั้ง workspace 506 tests หลังเฟส 3a — ดูหัวข้อ [เทส](#เทส))
 
-### เฟส 0 ของการยกระดับเป็น monorepo — เสร็จแล้ว
+### การยกระดับเป็น monorepo
 
-โครงสร้างย้ายเป็น pnpm workspace + Turborepo และแยกชั้นโดเมนออกเป็น `@wewin/core`
-**พฤติกรรมไม่เปลี่ยนแม้แต่อย่างเดียว** — ยังเป็นเซนติเมตร ยังเป็นบาท และ 219 เทสต์ผ่านโดยไม่แก้ assertion สักตัว
+แผนเต็มอยู่ที่ [`docs/monorepo-plan.md`](docs/monorepo-plan.md) — ตารางนี้คือสถานะจริงของมัน
 
-### เฟส 1 — เสร็จแล้ว
+| เฟส | ทำอะไร | สถานะ |
+|---|---|---|
+| 0 | pnpm workspace + Turborepo · แยกชั้นโดเมนเป็น `@wewin/core` · **ไม่เปลี่ยนพฤติกรรมอะไรเลย** | ✅ |
+| 1 | เงินเป็น `bigint` หน่วยย่อย (สตางค์) ทั้งระบบ · VAT คำนวณจริง · `NaN` กับ `-0` แทนค่าไม่ได้อีก | ✅ |
+| 2 | ความยาว canonical เป็น **ไมโครเมตรจำนวนเต็ม** · grid · หน่วยแสดงผล 5 แบบ | ✅ |
+| 3a | `packages/db` · `packages/contract` · `apps/api` · ย้าย catalog เข้า Postgres | 🚧 |
+| 3b | auth + RBAC (แผนข้อ 6) | |
+| 4–7 | dashboard · order + outbox แจ้งเตือน · Next.js web + i18n · รีวิว | |
 
-เงินเป็น `bigint` หน่วยย่อย (สตางค์) ทั้งระบบ · VAT คำนวณจริงแล้ว · `NaN` กับ `-0` แทนค่าไม่ได้อีกต่อไป
-**เทียบกับ v1.0.0 กว่า 55,000 ชุด ตรงกันทุกตัว ยกเว้น 87 ชุดที่ v1 คิดขาดไป ฿1** เพราะ float ทำครึ่งบาทหล่นหาย
-แผนเต็มอยู่ที่ [`docs/monorepo-plan.md`](docs/monorepo-plan.md)
+เฟส 1 เทียบกับ `calcPrice` ของ v1.0.0 กว่า 55,000 ชุด **ตรงกันทุกตัว ยกเว้น 87 ชุดที่ v1 คิดขาดไป ฿1**
+เพราะ float ทำครึ่งบาทหล่นหาย · เฟส 2 เปลี่ยนหน่วยใต้ทั้งหมดนั้นโดยที่ 87 ยังเป็น 87
+
+เฟส 3a ใช้เกณฑ์เดียวกันกับการย้ายข้อมูล: `apps/api/tests/catalog-fidelity.pg.test.ts` seed แล้วอ่าน
+สินค้าทั้ง **81 ตัวกลับออกมาทาง HTTP** แล้วเทียบกับ `@wewin/core/fixtures` ด้วย `toStrictEqual`
+ทุก option ทุกค่า ทุกโหนดของ rule AST ทุก elevation ทุก bigint — ผิดไปหนึ่งไมโครเมตรหรือหนึ่งสตางค์ก็แดง
+และบล็อกสุดท้ายของไฟล์ **แก้แถวในฐานจริงเพื่อพิสูจน์ว่าเทสต์แดงได้** แล้วคืนค่ากลับ
 
 ---
 
@@ -41,17 +52,57 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 
 ```bash
 pnpm install
-pnpm dev             # http://localhost:5173 (build core ให้ก่อนอัตโนมัติ)
-pnpm test            # vitest — 246 เคสใน packages/core
+
+cp .env.example .env  # DATABASE_URL — ค่าเริ่มต้นชี้ไปที่ Postgres ของ docker compose
+pnpm db:up            # docker compose up -d --wait  (รอจน healthcheck ผ่านก่อนคืน prompt)
+pnpm db:migrate       # สร้าง schema
+pnpm db:seed          # ยัดตาราง 81 สินค้าจาก @wewin/core เข้า Postgres
+
+pnpm dev              # ทุก app พร้อมกัน — web อยู่ที่ http://localhost:5173
+pnpm test             # vitest
 pnpm typecheck
 pnpm lint
+pnpm boundaries       # ใครนำเข้าอะไรได้บ้าง — ดูหัวข้อ "ทิศทางของ dependency"
 pnpm build
 ```
 
 ต้องใช้ **pnpm** ไม่ใช่ npm — workspace ผูกกันด้วย `workspace:*` protocol
 
-ไม่มี backend ไม่มี env variable ไม่มี API — ข้อมูลทุกอย่างเป็น TS module ใน `packages/core/src/data/`
-network request เดียวที่ออกไปข้างนอกคือการโหลดฟอนต์จาก Google Fonts
+**ต้องมี Docker** เครื่องนี้ไม่มี Postgres — `docker-compose.yml` ที่ราก
+คือตัวจัดหาให้ **ต้องอยู่ที่รากเท่านั้น** เพราะ Docker Compose ไล่หาไฟล์ขึ้นไปตามไดเรกทอรีแม่
+ไฟล์ที่รากจึงทำให้ `db:up` ของทุกแพ็กเกจชี้ไป Postgres ตัวเดียวกัน ส่วนไฟล์ที่ซุกอยู่ในแพ็กเกจใด
+แพ็กเกจหนึ่งจะกลายเป็นคนละ compose project กับที่รากเรียก แล้วได้ฐานสองตัวโดยไม่มีใครสังเกต
+
+`pnpm db:nuke` ลบทั้ง container และ volume เมื่ออยากเริ่มจากศูนย์
+
+ไฟล์เดียวจริงแล้ว — `docker-compose.yml` ที่รากคือการรวมสองไฟล์เดิม
+(`packages/db` พอร์ต 5433 + locale ICU th-TH · `apps/api` พอร์ต 5432 + `--data-checksums` + TZ=UTC)
+เหลือพอร์ต **5433** เพราะ `pnpm db:seed` ทำ truncate และ 5432 คือที่ที่ Postgres ของบริษัทมักอยู่
+`db:up` ของทั้ง `packages/db` และ `apps/api` ชี้กลับมาที่ไฟล์นี้ด้วย `-f ../../docker-compose.yml`
+
+`db:migrate` กับ `db:seed` ตั้ง `"cache": false` ไว้ใน [`turbo.json`](turbo.json) **เจตนา ไม่ใช่ความมักง่าย**
+— migration ที่ "hit cache" คือ migration ที่ไม่ได้รัน แล้ว Turbo รายงานว่าสำเร็จโดยที่ตารางไม่มีอยู่จริง
+ส่วน `DATABASE_URL` ถูกประกาศเป็น `env` ของ task `test` จึงเข้าไปอยู่ใน hash: ชุดเทสที่เขียวกับฐานหนึ่ง
+ไม่ได้บอกอะไรเลยเกี่ยวกับอีกฐานหนึ่ง การชี้ไปฐานอื่นจึงต้อง **หลุด** แคช ไม่ใช่ใช้ผลเดิม
+
+`.env` อยู่ที่ราก **ที่เดียวพอ** — ทั้ง `apps/api` (ตอนบูตและตอนเทส) `packages/db` (เทส · `db:migrate`
+· `db:seed`) ไล่หาจากไดเรกทอรีของตัวเองขึ้นไปจนถึงราก แล้วหยุดที่ `pnpm-workspace.yaml`
+ไฟล์ที่อยู่ในแพ็กเกจชนะไฟล์ที่ราก (ไว้ชี้ migration ไปฐานอื่นชั่วคราว) และตัวแปรที่ export ไว้แล้ว
+ชนะทั้งสองไฟล์เสมอ — `process.loadEnvFile` เติมช่องว่าง ไม่ทับของเดิม
+
+`GET /meta` **นับจากฐานข้อมูล ไม่ใช่จากตาราง TS** — เดิมมันอ่าน `@wewin/core/fixtures` แล้วตอบ
+`{"source":"fixtures","productCount":81}` ต่อไปเรื่อยๆ แม้ฐานจะว่างเปล่า ตอนนี้ตอบ
+`{"source":"database","counts":{"publishedProducts":81,"categories":10}}` และเมื่อฐานล่ม
+`counts` เป็น `null` **ไม่ใช่ `0`** เพราะ "ยังไม่มีสินค้าที่เผยแพร่" กับ "query ล้มเหลว" เป็นคนละเรื่อง
+
+`documentHash` ที่เสิร์ฟออกไป **คำนวณใหม่จากเอกสาร ไม่ได้อ่านจากคอลัมน์** — ไม่งั้นมันเป็นแค่ป้ายชื่อ
+เอกสารที่ถูกแก้ในที่เดิมจะยังถือ hash เก่าไว้ แล้วการเทียบ 409 ตามแผนข้อ 5.5 ก็จะเทียบกับค่าที่
+ไม่ได้อธิบายเอกสารข้างๆ มันอีกต่อไป ผลลัพธ์ memoise ไว้ต่อคู่ `(versionId, hash)` เพราะแถวถูก
+แช่แข็งอยู่แล้ว และมีเทสต์ที่ปิด trigger แล้วแก้ JSONB จริงเพื่อพิสูจน์ว่ามันปฏิเสธ
+
+`apps/web` ยังอ่าน catalog จาก `@wewin/core/fixtures` โดยตรงและยังไม่เรียก API เลย — มันจะย้ายไปกิน
+`apps/api` ตอนเปลี่ยนเป็น Next.js ในเฟส 6 network request เดียวที่หน้าเว็บออกไปข้างนอกตอนนี้
+ยังเป็นการโหลดฟอนต์จาก Google Fonts เหมือนเดิม
 
 ---
 
@@ -65,9 +116,9 @@ catalog มี 81 สินค้า **แต่มีเพียง 3 ตั�
 | `lvr-adj-3` ระแนงปรับได้ แบ่ง 3 | 2,400 |
 | `sld-2p` ประตูบานเลื่อน สลับ | 2,100 |
 
-อีก 78 ตัว รวมทั้ง lead time, `minBillableSqm`, ช่วงขนาด และค่า surcharge ของ option
+อีก 78 ตัว รวมทั้ง lead time, `minBillableSqUm`, ช่วงขนาด และค่า surcharge ของ option
 **เป็น placeholder ทั้งหมด** ราคาเป็นคอลัมน์เดียวในตาราง `ROWS` ที่ [`packages/core/src/data/products.ts`](packages/core/src/data/products.ts)
-— แทนที่ด้วยราคาจริงได้โดยไม่ต้องแตะอย่างอื่น
+— แทนที่ด้วยราคาจริงได้โดยไม่ต้องแตะอย่างอื่น แล้ว `pnpm db:seed` ใหม่
 
 **ข้อมูลติดต่อใน [`apps/web/src/data/company.ts`](apps/web/src/data/company.ts) เป็นของจริง** — คัดลอกตรงตัวจาก
 https://www.wewin180.com/th/contact (ดึงเมื่อ 2 ส.ค. 2569 ตรวจซ้ำกับ `/th/about`)
@@ -117,14 +168,21 @@ pricing กับ validation อยู่ใน `packages/core/` ไม่ impor
 packages/core/            @wewin/core — โดเมนล้วน ไม่มี React แม้แต่ import เดียว
   src/
     types/     catalog.ts (data model) · rule.ts (RuleExpr AST)
-    data/      products.ts (แหล่งข้อมูลเดียว) · categories.ts
+    data/      products.ts (ตาราง 81 สินค้า — ต้นทางของ seed) · categories.ts
                schema.ts (zod, parse ตอน boot) · catalog.ts (จุดที่แอปอ่านข้อมูล)
                ruleBuilders.ts
+    money.ts · vat.ts · units.ts        ← เงิน bigint · VAT · ไมโครเมตร (เฟส 1–2)
     pricing.ts · validation.ts · optionStates.ts · skuCode.ts · elevation.ts
     filters.ts · catalogSummary.ts · format.ts · hash.ts · history.ts
     shareLink.ts · quote.ts (reducer, pure) · constants.ts
     index.ts   root ของแพ็กเกจ — เป็น type ล้วน ไม่มี runtime
-  tests/       16 ไฟล์ 246 เคส
+  tests/       18 ไฟล์ 296 เคส
+
+packages/contract/        @wewin/contract — DTO ของ HTTP ที่ api กับ client ใช้ร่วมกัน
+packages/db/              @wewin/db — Drizzle schema + migration + seed
+                          **มีแต่ apps/api ที่ import ได้** และ db ขึ้นกับ core ไม่ใช่ทางกลับ
+
+apps/api/                 @wewin/api — NestJS (CommonJS) · Drizzle · Postgres
 
 apps/web/                 @wewin/web — Vite + React (จะเป็น Next.js ที่เฟส 6)
   src/
@@ -151,6 +209,34 @@ apps/web/                 @wewin/web — Vite + React (จะเป็น Next.j
 เพื่อให้ zod parse ทำงานครั้งเดียวตอน module load **ก่อน** component แรกจะ render
 — typo ใน mock data จะทำให้แอปไม่ boot พร้อมข้อความชัดเจน แทนที่จะไปโผล่เป็นราคาผิดในอีกสามหน้าถัดไป
 
+### ทิศทางของ dependency
+
+```
+              ┌──►  contract  ──┐
+   core  ─────┼──►  db  ────────┼──►  api
+              └──►  web
+```
+
+ลูกศรมีทิศทางเดียว **`db` ขึ้นกับ `core` ไม่ใช่ทางกลับ** — โดเมนต้องคำนวณราคาได้โดยไม่รู้จัก Postgres
+
+[`turbo.json`](turbo.json) **ไม่ได้เขียนลำดับนี้ลงไปตรงๆ** มันประกาศแค่ `"dependsOn": ["^build"]`
+แล้วปล่อยให้ลำดับตกผลึกจากกราฟ `workspace:*` ของ pnpm เอง ผลคือการเพิ่มแพ็กเกจใหม่
+ไม่มีทางทำให้ลำดับ build ผิดโดยที่ลืมแก้ไฟล์นี้ — เพราะไม่มีลำดับที่เขียนไว้ให้ลืมแก้
+
+### `packages/db` มีแต่ `apps/api` ที่ import ได้ — บังคับด้วยเครื่องมือ
+
+กฎนี้เป็นเรื่องที่ `pnpm boundaries` ตรวจ ไม่ใช่เรื่องที่คนรีวิวต้องจำ ประกอบจากสามชิ้นที่ต้องมีครบ:
+
+| ชิ้น | อยู่ที่ | เนื้อหา |
+|---|---|---|
+| ป้าย | `packages/db/turbo.json` | `"tags": ["db"]` |
+| ป้าย | `apps/api/turbo.json` | `"tags": ["api"]` |
+| กฎ | [`turbo.json`](turbo.json) ที่ราก | `boundaries.tags.db.dependents.allow: ["api"]` |
+
+**ขาดซีกไหนก็ไม่เหลือกฎ** ถ้าไม่มี `boundaries` ที่ราก ป้ายก็เป็นแค่ข้อความ · ถ้า `apps/api`
+ไม่ติดป้าย `api` มันจะถูกปฏิเสธพร้อมกับทุกคน เพราะ allowlist ตรวจ **ป้าย** ไม่ได้ตรวจชื่อแพ็กเกจ
+แพ็กเกจที่ไม่มีป้ายเลยแล้วไปพึ่ง `@wewin/db` จะได้ `Package X found without any tag listed in allowlist for db`
+
 ---
 
 ## เพิ่มสินค้าใหม่
@@ -176,27 +262,52 @@ apps/web/                 @wewin/web — Vite + React (จะเป็น Next.j
 ถ้าสินค้านั้นมีข้อจำกัดเฉพาะตัว ใส่ `extraRules` เพิ่ม — กฎ "กระจกสองชั้นกว้างไม่เกิน 200 cm"
 ถูก generate ให้อัตโนมัติทุกสินค้าที่มี LAM อยู่แล้ว เพราะเป็นสมบัติของวัสดุ ไม่ใช่ของสินค้า
 
+แล้ว `pnpm db:seed` เพื่อให้ฝั่ง API เห็นด้วย — invariant ข้ามสินค้า (slug ซ้ำ · id ซ้ำ · `prefix` ซ้ำ ·
+`categoryId` ที่ไม่มีอยู่) มีคนตรวจสองชั้น: zod ตอน module load และ `UNIQUE`/`FK` ใน Postgres
+ตามแผนข้อ 5 ชั้นที่สองไม่ใช่ของซ้ำซ้อน — zod ตรวจได้เพราะมันเห็นตารางทั้งใบพร้อมกัน
+ส่วน dashboard ในเฟส 4 จะแก้ทีละสินค้า ตอนนั้นจะไม่มีใครเห็นตารางทั้งใบอีกแล้ว
+
+> เฟส 4 จะย้ายการเพิ่มสินค้าไปที่ dashboard และตาราง `ROWS` จะกลายเป็น seed ตั้งต้นอย่างเดียว
+
 ---
 
 ## สูตรราคา
 
-[`packages/core/src/pricing.ts`](packages/core/src/pricing.ts) — **ลำดับนี้ห้ามสลับ**
+[`packages/core/src/pricing.ts`](packages/core/src/pricing.ts) — **ลำดับนี้ห้ามสลับ** และทุกบรรทัดเป็น `bigint`
 
 ```
-1. areaSqm      = (width × height) / 10000
-2. billableSqm  = max(areaSqm, minBillableSqm)
-3. base         = billableSqm × pricePerSqm
-4. percentTotal = Σ (base × delta / 100)        ← คิดจาก base เท่านั้น
-5. perSqmTotal  = Σ (billableSqm × delta)
-6. flatTotal    = Σ delta
-7. unitPrice    = base + percent + perSqm + flat
-8. total        = round(unitPrice × qty)        ← ปัดเศษที่ขั้นนี้ขั้นเดียว
+1. areaSqUm     = width µm × height µm                  ← จำนวนเต็มพอดี ไม่มีการหาร
+2. billableSqUm = max(areaSqUm, minBillableSqUm)
+3. base         = billableSqUm × pricePerSqm × 100       ← [scaled] สตางค์ × SQ_UM_PER_SQM
+4. percentTotal = Σ (base × delta / 100)                 ← คิดจาก base เท่านั้น
+5. perSqmTotal  = Σ (billableSqUm × delta × 100)
+6. flatTotal    = Σ (delta × 100 × SQ_UM_PER_SQM)
+7. unitPrice    = base + percent + perSqm + flat         ← ยังเป็น [scaled] เต็มความละเอียด
+8. total        = divRoundHalfUp(unitPrice × qty, SQ_UM_PER_SQM × 100)
 ```
 
 `percent` เป็น markup บนค่าอะลูมิเนียม จึงต้องคิดก่อนบวกค่ากระจกและค่าอุปกรณ์
-ปัดเศษครั้งเดียวตอนท้าย — ถ้าปัดต่อชิ้นก่อนคูณ ยอด 3 ชิ้นจะเพี้ยนไป 1 บาท
+`base` พก factor 100 ติดตัวมาตลอด การหาร `/100` ในขั้นที่ 4 จึงลงตัวเสมอ ไม่ใช่แค่มักจะลงตัว
+
+**ปัดเศษจุดเดียว และปัดจากความละเอียดเต็มตรงไปยังหน่วยที่แสดง** ห้ามแวะปัดที่สตางค์ก่อน —
+฿36,224.496 ถ้าแวะปัดจะกลายเป็น ฿36,224.50 แล้วจบที่ ฿36,225 ซึ่งเกินที่ v1.0.0 คิดไป ฿1
+
+`unitPriceMinor` ที่ส่งออกไปเป็น **ค่าสำหรับแสดงผลเท่านั้น** มันคูณ `qty` แล้วไม่ได้ `totalMinor`
+ตัวที่เป็นสัญญาคือ `totalMinor` ส่วนการคูณจำนวนใหม่ให้ใช้ `totalFromUnitPrice(unitPriceScaledMinor, qty)`
+ซึ่งเริ่มจากค่าที่ยังไม่ถูกปัด — ไม่งั้นก็คือการปัดสองครั้งอีกทางหนึ่ง
 
 ตัวเลขทุกตัวที่ขึ้นจอผ่าน formatter ใน [`format.ts`](packages/core/src/format.ts) — กัน float artifact, `NaN` และ `-0`
+
+### ความยาวเป็นไมโครเมตร ไม่ใช่มิลลิเมตร
+
+[`units.ts`](packages/core/src/units.ts) — `gcd(5 mm, ⅛ นิ้ว) = gcd(5000 µm, 3175 µm) = 25 µm`
+ค่า min/max/default ในตาราง size profile **48 จาก 48 ค่าไม่อยู่บน grid นิ้ว** ถ้า canonical เป็นมิลลิเมตร
+แล้ว snap ตาม grid ของหน่วยที่กำลังแสดงอยู่ แค่สลับหน่วยแล้วคลิกออกจากช่อง ขนาดจริงจะขยับ
+
+> **การสลับหน่วยเป็นการแสดงผลล้วนๆ ห้าม snap ใหม่** `snapUpUm` ทำงานเฉพาะตอนพิมพ์ค่าใหม่
+> ในหน่วยที่พิมพ์ และบรรทัดนั้นจำ `enteredUnits` ของตัวเองไว้
+
+หน่วยแสดงผลมี 5 แบบ: `mm` · `cm` · `m` · `in` · `ft`
 
 ---
 
@@ -204,8 +315,9 @@ apps/web/                 @wewin/web — Vite + React (จะเป็น Next.j
 
 [`packages/core/src/validation.ts`](packages/core/src/validation.ts) รองรับ 3 ประเภท:
 
-1. **Range / step** — derive จาก `CustomGroup.min/max/step` อัตโนมัติ ไม่ต้องเขียนใน `rules[]`
+1. **Range / step** — derive จาก `CustomGroup.minUm/maxUm/stepUm` อัตโนมัติ ไม่ต้องเขียนใน `rules[]`
    ค่าที่ไม่ตรง step จะ snap **ขึ้น** ตอน blur (บานที่ใหญ่ไปเจียนหน้างานได้ บานที่เล็กไปทำไม่ได้)
+   grid ที่ใช้ตัดสินคือ grid ของหน่วยที่ *พิมพ์เข้ามา* ไม่ใช่ของหน่วยที่กำลังแสดงอยู่
 2. **Cross-field** — เช่น พื้นที่รวมไม่เกิน 8 ตร.ม.
 3. **Compatibility** — เช่น `glass_thickness == 'LAM' && width > 200`
 
@@ -219,7 +331,11 @@ apps/web/                 @wewin/web — Vite + React (จะเป็น Next.j
 - ได้ `Issue.affects` ฟรีจากการเดิน AST ทำให้ UI รู้ว่าต้อง highlight ช่องไหน
   และทำให้บล็อกตัวเลือกได้ถูกจุด (ดูด้านล่าง)
 
-`ruleBuilders.ts` ทำให้เขียนกฎอ่านง่ายพอๆ กับ string: `and(selected('glass_thickness','LAM'), gt(measure('width'), 200))`
+`ruleBuilders.ts` ทำให้เขียนกฎอ่านง่ายพอๆ กับ string:
+`and(selected('glass_thickness','LAM'), gt(measure('width'), lengthCm(200)))`
+
+ตัวเลขในกฎต้องผ่าน `lengthCm()` / `areaSqm()` / `scalar()` เสมอ — ทั้งสามแปลงเป็นหน่วย canonical
+ให้ตั้งแต่ตอนเขียน กฎจึงเทียบกับค่าที่ลูกค้ากรอกได้ตรงๆ โดยไม่มีการแปลงหน่วยกลางทาง
 
 ### ตัวเลือกที่เลือกไม่ได้
 
@@ -264,26 +380,45 @@ Breakpoint: base 360–767 · `md` 768–1023 · `lg` 1024+ · container `max-wi
 
 ## เทส
 
-ทั้งหมดอยู่ที่ `packages/core/tests/` — ทุกเคสทดสอบฟังก์ชัน pure ไม่มีเคสไหนต้องใช้ DOM
+296 เคสของชั้นโดเมนอยู่ที่ `packages/core/tests/` — ทุกเคสทดสอบฟังก์ชัน pure ไม่มีเคสไหนต้องใช้ DOM
+จึงไม่ต้องมี Postgres และไม่อ่าน `DATABASE_URL` เลย ส่วน `packages/contract` (44) · `packages/db` (46)
+· `apps/api` (120) มีชุดของตัวเอง รวมทั้ง workspace **506 เคส**
+
+ชุดที่ต้องใช้ฐานจริงจะ **skip พร้อมข้อความ** เมื่อไม่มี `DATABASE_URL` — และคำว่า "พร้อมข้อความ"
+คือประเด็นทั้งหมด เพราะครั้งหนึ่ง `turbo run test` เขียวโดยที่ 97 จาก 115 เคสของ `apps/api` ถูก skip
+เงียบๆ (รวมทั้ง 91 เคสที่เป็นเกณฑ์ผ่านของเฟส 3a ทั้งเฟส) — turbo ส่ง `DATABASE_URL` ต่อให้เฉพาะเมื่อ
+มัน export อยู่ใน shell แล้วเท่านั้น ส่วน `.env` บนดิสก์ turbo มองไม่เห็น ตอนนี้ทั้ง
+`apps/api/tests/setup.ts` และ `packages/db/tests/support/db.ts` อ่าน `.env` เอง (ไล่หาจากแพ็กเกจ
+ตัวเองขึ้นไปจนถึงราก) และเตือนออก stderr เมื่อไม่เจอ ส่วน `turbo.json` ประกาศ
+`globalDependencies: [".env"]` ไว้ด้วย — ชี้ไปฐานอื่นแล้วต้องหลุดแคช ไม่ใช่ replay ผลเดิม
+
+`apps/api` กับ `packages/db` ใช้ Postgres ตัวเดียวกันและทั้งคู่ truncate catalog ดังนั้น
+`apps/api/turbo.json` จึงประกาศ `dependsOn: ["@wewin/db#test"]` ไว้ — ไม่ใช่ลำดับ build
+แต่เป็นการกันไม่ให้สองชุดรันพร้อมกันแล้ว truncate ของฝั่งหนึ่งไปโผล่กลาง assertion ของอีกฝั่ง
 
 ```
-quoteReducer.test.ts    37   ตะกร้า: dedupe, ทำซ้ำ, reprice, persistence
-schema.test.ts          25   พิสูจน์ว่า schema ปฏิเสธ typo ที่มันมีไว้จับจริง
+quoteReducer.test.ts    42   ตะกร้า: dedupe, ทำซ้ำ, reprice, persistence
+schema.test.ts          31   พิสูจน์ว่า schema ปฏิเสธ typo ที่มันมีไว้จับจริง
+validation.test.ts      25   รวม 7 เคสตามสเปกหัวข้อ 6
 filters.test.ts         23
-validation.test.ts      20   รวม 7 เคสตามสเปกหัวข้อ 6
+shareLink.test.ts       21
 elevation.test.ts       18
 pricing.test.ts         17   รวม 6 เคสตามสเปกหัวข้อ 5
+units.test.ts           16   µm ↔ 5 หน่วย · grid · snapUp
+format.test.ts          15
 money.test.ts           14   half_up รวมค่าติดลบ · minorExponent ≠ roundTo
-format.test.ts          14
 catalogSummary.test.ts  13   ตัวเลขที่หน้าแรกโฆษณา ต้อง derive จาก products.ts
-shareLink.test.ts       13
 history.test.ts         12   undo/redo รวบตามความหมาย ไม่ใช่ตามเวลา
 optionStates.test.ts    12
 vat.test.ts              9   net / vat / grand ต้อง foot เสมอ ทั้งสองทางที่กรอก
-hash.test.ts             7
+displayUnits.test.ts     8   สลับหน่วยไปกลับทุกขนาดที่ตั้งค่าได้ ขนาดจริงต้องไม่ขยับ
+hash.test.ts             8
 skuCode.test.ts          7
 pricing-parity.test.ts   5   เทียบ v1.0.0 กว่า 55,000 ชุด — เกณฑ์ผ่านของเฟส 1
 ```
+
+`tests/baseline/` เก็บ `pricing-v1.0.0.ts` กับ `catalog-v1.0.0.ts` ไว้ทั้งดุ้น — เป็นสำเนาของโค้ดเดิม
+ไม่ใช่ตารางคำตอบที่ generate ไว้ล่วงหน้า เพราะตารางคำตอบพิสูจน์ได้แค่ว่าเราเคยรันมันตอนไหนสักตอน
 
 เทสของ filter ใช้ **fixture 3 สินค้า** ไม่ใช่ catalog จริง เพราะมันทดสอบ *logic ของตัวกรอง*
 ไม่ใช่ทดสอบว่าสัปดาห์นี้มีสินค้าอะไรบ้าง — การ assert รายชื่อ slug ทั้งชุดทำให้ทุกเคสพังทันทีที่เพิ่มสินค้า
@@ -325,8 +460,10 @@ pricing-parity.test.ts   5   เทียบ v1.0.0 กว่า 55,000 ชุ�
 
 ## นอกขอบเขต
 
-ไม่มีในโปรเจกต์นี้: ระบบชำระเงิน · บัญชีผู้ใช้ · backend/database/API จริง · การส่งอีเมล ·
-ระบบหลังบ้านแอดมิน · i18n · SSR/SEO · animation library · UI component library
+ยังไม่มีในโปรเจกต์นี้: ระบบชำระเงิน · บัญชีผู้ใช้ · auth/RBAC (เฟส 3b) · การส่งอีเมล ·
+ระบบหลังบ้านแอดมิน (เฟส 4) · i18n · SSR/SEO (เฟส 6) · animation library · UI component library
 (design token เฉพาะเจาะจงเกินกว่าจะไป override ธีมของ library)
+
+**backend/database/API เลิกอยู่ในรายการนี้แล้วตั้งแต่เฟส 3a** — แต่ `apps/web` ยังไม่ได้ต่อกับมัน
 
 โค้ดเขียนโดยไม่ผูกกับ `window` ใน render path เพื่อให้ย้ายไป Next.js App Router ได้ง่ายถ้าจะขึ้น production จริง

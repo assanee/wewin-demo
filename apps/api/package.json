@@ -1,0 +1,49 @@
+{
+  "name": "@wewin/api",
+  "version": "1.0.0",
+  "private": true,
+  "//type": "Deliberately absent, which makes this package CommonJS. Nest's DI reads `design:paramtypes`, which only `emitDecoratorMetadata` produces and only the TypeScript compiler emits — so this app cannot be ESM-by-type-stripping. It consumes ESM-only @wewin/core through Node's require(ESM); see tsconfig.json for the full reasoning.",
+  "//test": "`test` compiles first because tests/esm-bridge.test.ts inspects and executes the emitted CommonJS — the require(ESM) arrangement cannot be proven from inside Vitest, which resolves everything as ESM.",
+  "//scripts": "No @nestjs/cli. The CLI carries its own `typescript` dependency, so `nest build` would compile with a different compiler than `pnpm typecheck` — and this repo's rule is that what CI type-checks is what production runs (plan section 1). Plain `tsc`, one compiler, same as packages/core.",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --enable-source-maps dist/main.js",
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.build.json && vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint",
+    "db:up": "docker compose -f ../../docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f ../../docker-compose.yml down",
+    "db:reset": "docker compose -f ../../docker-compose.yml down -v && docker compose -f ../../docker-compose.yml up -d --wait",
+    "db:logs": "docker compose -f ../../docker-compose.yml logs -f postgres",
+    "db:psql": "docker compose -f ../../docker-compose.yml exec postgres psql -U wewin -d wewin"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/platform-express": "^11.1.28",
+    "@wewin/contract": "workspace:*",
+    "@wewin/core": "workspace:*",
+    "@wewin/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.22.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.28",
+    "@swc/core": "^1.15.47",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.20.3",
+    "typescript": "~6.0.2",
+    "unplugin-swc": "^1.5.10",
+    "vitest": "^4.1.10"
+  }
+}

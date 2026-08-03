@@ -1,0 +1,39 @@
+{
+  "name": "@wewin/contract",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "//": "The root export is types only, for the same reason core's is: a client that only needs the shape of a response must not drag the codecs into its bundle. Every runtime value comes from a subpath.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    },
+    "./exact": "./dist/exact.js",
+    "./measure": "./dist/measure.js",
+    "./money": "./dist/money.js",
+    "./catalog": "./dist/catalog.js",
+    "./pricing": "./dist/pricing.js",
+    "./errors": "./dist/errors.js",
+    "./version": "./dist/version.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "@wewin/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

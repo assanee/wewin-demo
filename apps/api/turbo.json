@@ -1,0 +1,28 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+
+  // The other half of the root's boundaries rule: packages/db allows dependents tagged
+  // `api`, and this is the only package that claims that tag. Anything else importing
+  // @wewin/db fails `turbo boundaries` instead of failing review.
+  "tags": ["api"],
+
+  "tasks": {
+    // Restates the root definition rather than adding to it — a package task config
+    // replaces the inherited one. TEST_DATABASE_URL is the addition: tests/database.pg.test.ts
+    // prefers it so that a suite can be pointed at a throwaway database without also
+    // repointing `pnpm dev`, and under Turbo's strict env mode an undeclared variable
+    // never reaches the task at all.
+    // `@wewin/db#test` is a real edge, not build ordering. Two suites, one Postgres, one
+    // catalogue: db's tests truncate and re-seed it, and tests/catalog-fidelity.pg.test.ts
+    // reads it back and compares all 81 products to the fixture table. Turbo runs sibling
+    // packages in parallel, so without this the api suite occasionally asserts against a
+    // catalogue a concurrent truncate had just emptied — observed under
+    // `turbo run typecheck build lint test`, green on its own. The edge is the honest fix
+    // until each suite owns its own database, which is more than phase 3a needs.
+    "test": {
+      "dependsOn": ["^build", "@wewin/db#test"],
+      "env": ["DATABASE_URL", "TEST_DATABASE_URL", "PG*"]
+    }
+  }
+}

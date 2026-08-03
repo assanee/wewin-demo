@@ -1,7 +1,32 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
+
+  // The `test` task declares DATABASE_URL as a hashed env var, which covers the shell that exports
+  // it. It does not cover the far more common case: nobody exports anything and the test harnesses
+  // read `.env` from disk themselves (apps/api/tests/setup.ts, packages/db/tests/support/db.ts),
+  // where Turbo cannot see the value at all. Listing the file makes repointing the suite at another
+  // database miss the cache, which is the same rule the env declaration exists to enforce — a suite
+  // that ran green against one server has told you nothing about another.
+  "globalDependencies": [".env"],
+
+  // "only apps/api may import packages/db" is otherwise a promise a reviewer has to keep. This is
+  // the half of the rule that lives at the root; packages/db tags itself `db` and apps/api must tag
+  // itself `api`, and `turbo boundaries` fails the build for anything else that reaches for it.
+  "boundaries": {
+    "tags": {
+      "db": {
+        "dependents": {
+          "allow": ["api"]
+        }
+      }
+    }
+  },
+
   "tasks": {
+    // The build edges are topological on purpose: core -> {contract, db} -> api falls out of the
+    // workspace dependency graph rather than being spelled out here, so adding a package cannot
+    // silently get the order wrong.
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
@@ -9,14 +34,52 @@
     "typecheck": {
       "dependsOn": ["^build"]
     },
+    // Hashed, not passed through: a suite that ran green against one database has told you nothing
+    // about another, so pointing at a different one must miss the cache. `PG*` is here for the same
+    // reason DATABASE_URL is — node-postgres falls back to PGHOST/PGUSER/… when handed no
+    // connection string, so they select the database just as surely and must count just as much.
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": ["DATABASE_URL", "PG*"]
     },
     "lint": {},
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": ["DATABASE_URL", "PG*", "PORT", "NODE_ENV"]
+    },
+
+    // Everything below talks to a live Postgres. `cache: false` is load-bearing, not tidiness — a
+    // migration that hits the cache is a migration that did not run, and the schema it was supposed
+    // to create is missing while Turbo reports success.
+    //
+    // `["^build", "build"]` covers both shapes the runner can take: a compiled entrypoint needs the
+    // package's own dist, a tsx-run script still needs @wewin/core compiled. Turbo skips whichever
+    // script a package does not define.
+    "db:generate": {
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "env": ["DATABASE_URL", "PG*"]
+    },
+    "db:migrate": {
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "env": ["DATABASE_URL", "PG*"]
+    },
+    // Seeding an unmigrated database fails on a missing table. The edge closes that off — but only
+    // while both scripts live in the same package: a bare `db:migrate` is a same-package edge, so
+    // moving the seeder somewhere else turns this line into a no-op rather than an error.
+    "db:seed": {
+      "dependsOn": ["^build", "build", "db:migrate"],
+      "cache": false,
+      "env": ["DATABASE_URL", "PG*"]
+    },
+    "db:studio": {
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "persistent": true,
+      "env": ["DATABASE_URL", "PG*"]
     }
   }
 }

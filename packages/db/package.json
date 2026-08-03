@@ -1,0 +1,50 @@
+{
+  "name": "@wewin/db",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "//": "ONLY apps/api may depend on this package. The Drizzle schema is a server-side detail: web and dashboard read the compiled catalog document over HTTP (docs/monorepo-plan.md section 1). pnpm makes an undeclared import impossible, and the `db` tag in ./turbo.json is what lets `turbo boundaries` fail a declared one — see README.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    },
+    "./schema": "./dist/schema/index.js",
+    "./sql": "./dist/sql.js",
+    "./client": "./dist/client.js",
+    "./document": "./dist/document.js",
+    "./compile": "./dist/compile.js",
+    "./hash": "./dist/hash.js",
+    "./publish": "./dist/publish.js",
+    "./seed": "./dist/seed.js"
+  },
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "db:up": "docker compose -f ../../docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f ../../docker-compose.yml down -v",
+    "db:seed": "pnpm build && node dist/bin/seed.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@wewin/core": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.15.6",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

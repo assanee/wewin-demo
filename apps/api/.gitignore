@@ -1,0 +1,5 @@
+# The root .gitignore covers dist/ and node_modules/, but not this — and this one holds a
+# connection string.
+.env
+.env.*
+!.env.example
