@@ -6,7 +6,8 @@ import { productSpecs } from '../data/company';
 import { defaultStateFor, useConfigurator, type ConfiguratorState } from '../state/useConfigurator';
 import { useMediaQuery } from '../state/useMediaQuery';
 import { getCustomGroup, getSkuGroup } from '@wewin/core/filters';
-import { formatBaht, formatSqm } from '@wewin/core/format';
+import { formatBaht, formatDimensions, formatLength, formatSqm } from '@wewin/core/format';
+import { sqUmToSqm } from '@wewin/core/pricing';
 import { configHash } from '@wewin/core/hash';
 import { buildShareUrl, readSharedConfig, type SharedConfig } from '@wewin/core/share-link';
 import { useQuote } from '../state/useQuote';
@@ -86,8 +87,11 @@ function ConfigureProduct({
   const customGroups = product.groups.filter((g): g is CustomGroup => g.kind === 'custom');
   const skuGroups = product.groups.filter((g): g is SkuGroup => g.kind === 'sku');
 
-  const width = config.measures['width'] ?? getCustomGroup(product, 'width')?.defaultValue ?? 0;
-  const height = config.measures['height'] ?? getCustomGroup(product, 'height')?.defaultValue ?? 0;
+  // Canonical micrometres all the way down to the two format calls below. `0n` and
+  // not `0`: a number beside a bigint is a TypeError at the first arithmetic, not a
+  // type error, and this page is the first thing a customer opens.
+  const widthUm = config.measures['width'] ?? getCustomGroup(product, 'width')?.defaultUm ?? 0n;
+  const heightUm = config.measures['height'] ?? getCustomGroup(product, 'height')?.defaultUm ?? 0n;
 
   const swatchOf = (groupCode: string, fallback: string): string => {
     const group = getSkuGroup(product, groupCode);
@@ -115,6 +119,10 @@ function ConfigureProduct({
       skuCode: config.skuCode,
       selections: config.selections,
       measures: config.measures,
+      // Travels with the line so reopening it offers the fields back in the unit the
+      // customer measured in. Deliberately not part of `configHash`: 320 cm and
+      // 3200 mm are one window and have to merge into one row.
+      enteredUnits: config.enteredUnits,
       qty: config.qty,
       priceSnapshot: config.price,
       configHash: configHash(config.skuCode, config.measures),
@@ -137,6 +145,7 @@ function ConfigureProduct({
   const profileHex = swatchOf('profile_color', '#7C7F85');
   const glassHex = swatchOf('glass_color', '#C9E4F7');
   const unit = getCustomGroup(product, 'width')?.unit ?? 'cm';
+  const minBillableSqm = sqUmToSqm(product.minBillableSqUm);
 
   // `location` is read in an event-free render path only through this memo, which
   // falls back to a relative URL so nothing here depends on `window` existing.
@@ -147,9 +156,10 @@ function ConfigureProduct({
         product,
         config.selections,
         config.measures,
+        config.enteredUnits,
         config.qty,
       ),
-    [product, config.selections, config.measures, config.qty],
+    [product, config.selections, config.measures, config.enteredUnits, config.qty],
   );
 
   // Only rows with a confirmed value are shown. The unconfirmed ones (profile
@@ -185,8 +195,9 @@ function ConfigureProduct({
           <div className="border border-line bg-panel p-3">
             <div className="h-55 w-full md:h-70 lg:h-80">
               <ElevationPreview
-                widthCm={width}
-                heightCm={height}
+                ratio={ratioOf(widthUm, heightUm)}
+                widthLabel={formatLength(widthUm, unit)}
+                heightLabel={formatLength(heightUm, unit)}
                 elevation={product.elevation}
                 profileHex={profileHex}
                 glassHex={glassHex}
@@ -205,16 +216,19 @@ function ConfigureProduct({
           <ul className="mt-3 grid grid-cols-3 gap-3">
             {(
               [
-                ['ด้านหน้า', width, height],
-                ['ครึ่งบาน', width / 2, height],
-                ['ช่องแสงบน', width, height / 3],
-              ] as [string, number, number][]
+                ['ด้านหน้า', widthUm, heightUm],
+                // Integer division truncates by at most a micrometre, which is a
+                // millionth of a millimetre on a 64px sketch — it can reach neither
+                // a pixel nor a rendered numeral.
+                ['ครึ่งบาน', widthUm / 2n, heightUm],
+                ['ช่องแสงบน', widthUm, heightUm / 3n],
+              ] as [string, bigint, bigint][]
             ).map(([label, w, h]) => (
               <li key={label} className="min-w-0 border border-line bg-panel p-2">
                 <div className="h-16 w-full">
                   <Schematic
-                    widthCm={w}
-                    heightCm={h}
+                    ratio={ratioOf(w, h)}
+                    sizeLabel={formatDimensions(w, h, unit)}
                     elevation={product.elevation}
                     profileHex={profileHex}
                     glassHex={glassHex}
@@ -297,7 +311,7 @@ function ConfigureProduct({
                 <MeasureInput
                   key={group.code}
                   group={group}
-                  value={config.measures[group.code] ?? group.defaultValue}
+                  value={config.measures[group.code] ?? group.defaultUm}
                   onChange={(next) => config.measure(group.code, next)}
                   invalid={measureInvalid(group.code)}
                 />
@@ -305,7 +319,7 @@ function ConfigureProduct({
             </div>
             <p className="numeric text-small text-blueprint">
               พื้นที่ {formatSqm(config.price.areaSqm)} ตร.ม. · คิดขั้นต่ำ{' '}
-              {formatSqm(product.minBillableSqm)} ตร.ม.
+              {formatSqm(minBillableSqm)} ตร.ม.
             </p>
           </section>
 
@@ -392,7 +406,7 @@ function ConfigureProduct({
         onClose={() => setBreakdownOpen(false)}
       >
         <div className="flex flex-col gap-4">
-          <PriceBreakdownList price={config.price} minBillableSqm={product.minBillableSqm} />
+          <PriceBreakdownList price={config.price} minBillableSqm={minBillableSqm} />
           <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
             <span className="text-small text-chalk-2">จำนวน</span>
             <div className="flex items-stretch overflow-hidden rounded-xs border border-line">
@@ -431,6 +445,17 @@ function ConfigureProduct({
 }
 
 /**
+ * The proportion the drawing layer works in.
+ *
+ * The one place a canonical length is widened to a float, and deliberately at the
+ * SVG boundary: `Math.max(3_200_000n, 1)` throws, so no bigint may cross into that
+ * layer. A height nobody has entered stays `0n` upstream, and zero divides into an
+ * Infinity that each consumer would otherwise have to recognise on its own.
+ */
+const ratioOf = (widthUm: bigint, heightUm: bigint): number =>
+  heightUm > 0n ? Number(widthUm) / Number(heightUm) : 1;
+
+/**
  * Where the configurator starts: a saved quote line if one is being edited, else a
  * shared link's parameters, else the product's own defaults.
  */
@@ -443,6 +468,10 @@ function initialStateFrom(
     return {
       selections: editingLine.selections,
       measures: editingLine.measures,
+      // Carried, not re-derived: the line records what the customer measured in, and
+      // rebuilding it from the catalogue would put an inch reading back in cm and
+      // move it to the metric grid the first time the field is touched.
+      enteredUnits: editingLine.enteredUnits,
       qty: editingLine.qty,
       nickname: editingLine.nickname,
     };
@@ -456,6 +485,9 @@ function initialStateFrom(
   return {
     selections: { ...defaults.selections, ...shared.selections },
     measures: { ...defaults.measures, ...shared.measures },
+    // A link only carries a unit for a group it also carries a measurement for, so
+    // merging over the defaults keeps the rest on the catalogue's own idiom.
+    enteredUnits: { ...defaults.enteredUnits, ...shared.enteredUnits },
     qty: shared.qty,
   };
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, Minus, Plus } from 'lucide-react';
-import type { PriceBreakdown } from '@wewin/core/pricing';
+import { type PriceBreakdown, sqUmToSqm } from '@wewin/core/pricing';
 import type { Product } from '@wewin/core';
 import { formatBaht, formatLeadTime, formatSqm } from '@wewin/core/format';
 import { MAX_QTY } from '@wewin/core/constants';
@@ -137,7 +137,10 @@ export function PriceSummaryCard({
       ) : null}
 
       <Accordion titleTh="ดูรายละเอียดราคา">
-        <PriceBreakdownList price={price} minBillableSqm={product.minBillableSqm} />
+        {/* The floor is held in µm² alongside the area it is compared against; the
+            breakdown quotes m², the unit a price list is written in, so it converts
+            here — the same single divide `Configure.tsx` makes for the mobile sheet. */}
+        <PriceBreakdownList price={price} minBillableSqm={sqUmToSqm(product.minBillableSqUm)} />
       </Accordion>
     </section>
   );

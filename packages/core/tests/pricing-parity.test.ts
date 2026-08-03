@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { products } from '../src/data/catalog.js';
-import { calcPrice } from '../src/pricing.js';
+import { calcAreaSqUm, calcPrice } from '../src/pricing.js';
 import { calcPrice as calcPriceV1 } from './baseline/pricing-v1.0.0.js';
+import { SQ_UM_PER_SQM, fromMicrons, toMicrons } from '../src/units.js';
 import type { CustomGroup, Product, SkuGroup } from '../src/types/catalog.js';
 
 /*
@@ -16,6 +17,11 @@ import type { CustomGroup, Product, SkuGroup } from '../src/types/catalog.js';
  * changed from float to exact integer arithmetic, and the interesting failures are
  * amounts that land within a rounding step of a boundary, which no hand-written
  * example would think to include.
+ *
+ * Phase 2 moved lengths to canonical micrometres and area to µm², which multiplied
+ * the working scale by exactly 10^6 in both the numerator and the denominator. This
+ * file is the proof that that was a no-op in baht: the sweep is generated in µm and
+ * converted back to v1's centimetres only at the moment it is handed to the baseline.
  */
 
 const customGroups = (product: Product): CustomGroup[] =>
@@ -23,6 +29,45 @@ const customGroups = (product: Product): CustomGroup[] =>
 
 const skuGroups = (product: Product): SkuGroup[] =>
   product.groups.filter((group): group is SkuGroup => group.kind === 'sku');
+
+/**
+ * The catalogue as v1.0.0 knew how to read it.
+ *
+ * The baseline is vendored verbatim, so it still reaches for `minBillableSqm` in
+ * square metres and for a custom group's `defaultValue` in the authored unit. Both
+ * were renamed by the flip, and the failure mode of leaving them absent is silent:
+ * `Math.max(area, undefined)` is `NaN`, and `NaN !== after` would be reported as a
+ * pricing regression on all 160,740 comparisons rather than as a broken harness.
+ *
+ * Every field is derived from the live catalogue, so this cannot drift into being a
+ * second, agreeing copy of the numbers under test.
+ */
+interface V1CustomGroup extends CustomGroup {
+  /** Only ever read as the fallback for an absent measurement. */
+  defaultValue: number;
+}
+
+interface V1Product extends Omit<Product, 'groups'> {
+  /** v1 compared the floor against an area in m²; the flip holds it in µm². */
+  minBillableSqm: number;
+  groups: (SkuGroup | V1CustomGroup)[];
+}
+
+const asV1Product = (product: Product): V1Product => ({
+  ...product,
+  minBillableSqm: Number(product.minBillableSqUm) / Number(SQ_UM_PER_SQM),
+  groups: product.groups.map((group) =>
+    group.kind === 'custom'
+      ? { ...group, defaultValue: fromMicrons(group.defaultUm, group.unit) }
+      : group,
+  ),
+});
+
+/** The same measurements, in the centimetres v1 took. Exact for every size below. */
+const asV1Measures = (measures: Record<string, bigint>): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(measures).map(([code, um]) => [code, fromMicrons(um, 'cm')]),
+  );
 
 /** Every option combination is far too many; one per value, against defaults, is enough. */
 function selectionSweep(product: Product): Record<string, string>[] {
@@ -40,25 +85,30 @@ function selectionSweep(product: Product): Record<string, string>[] {
 }
 
 /** Sizes chosen to sit on the awkward parts of the range, not the comfortable middle. */
-function sizeSweep(product: Product): Record<string, number>[] {
+function sizeSweep(product: Product): Record<string, bigint>[] {
   const dims = customGroups(product);
   const width = dims.find((group) => group.code === 'width');
   const height = dims.find((group) => group.code === 'height');
   if (!width || !height) return [{}];
 
-  const pick = (group: CustomGroup): number[] => {
-    const span = group.max - group.min;
+  const pick = (group: CustomGroup): bigint[] => {
+    const steps = (group.maxUm - group.minUm) / group.stepUm;
+    // The step nearest the midpoint. `Math.round` rounded a half-step up; bigint
+    // division truncates, so the +1 restores that and the sweep keeps hitting the
+    // same physical sizes it did before the flip — which is what pins `correctedUp`.
+    const middle = group.minUm + ((steps + 1n) / 2n) * group.stepUm;
+
     return [
-      group.min,
-      group.min + group.step,
-      group.defaultValue,
-      group.min + Math.round(span / 2 / group.step) * group.step,
-      group.max - group.step,
-      group.max,
+      group.minUm,
+      group.minUm + group.stepUm,
+      group.defaultUm,
+      middle,
+      group.maxUm - group.stepUm,
+      group.maxUm,
     ];
   };
 
-  const sizes: Record<string, number>[] = [];
+  const sizes: Record<string, bigint>[] = [];
   for (const w of pick(width)) {
     for (const h of pick(height)) sizes.push({ width: w, height: h });
   }
@@ -74,13 +124,13 @@ function sizeSweep(product: Product): Record<string, number>[] {
 function exactScaledTotal(
   product: Product,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
   qty: number,
 ): bigint {
-  const mm = (cm: number): bigint => BigInt(Math.round(cm * 10));
-  const micro = mm(measures.width ?? 0) * mm(measures.height ?? 0);
-  const floor = BigInt(Math.round(product.minBillableSqm * 1_000_000));
-  const billable = micro > floor ? micro : floor;
+  // µm × µm is µm² — the whole point of the flip is that there is no division here.
+  const areaSqUm = (measures.width ?? 0n) * (measures.height ?? 0n);
+  const floor = product.minBillableSqUm;
+  const billable = areaSqUm > floor ? areaSqUm : floor;
 
   const base = billable * BigInt(product.pricePerSqm) * 100n;
   let total = base;
@@ -92,14 +142,27 @@ function exactScaledTotal(
 
     if (value.delta.type === 'percent') total += (base * BigInt(value.delta.amount)) / 100n;
     if (value.delta.type === 'per_sqm') total += billable * BigInt(value.delta.amount) * 100n;
-    if (value.delta.type === 'flat') total += BigInt(value.delta.amount) * 100n * 1_000_000n;
+    if (value.delta.type === 'flat') total += BigInt(value.delta.amount) * 100n * SQ_UM_PER_SQM;
   }
 
   return total * BigInt(qty);
 }
 
-/** One baht, in the scaled units `exactScaledTotal` returns. */
-const SCALED_BAHT = 100n * 1_000_000n;
+/**
+ * One baht, in the scaled units `exactScaledTotal` returns.
+ *
+ * Named from the area constant rather than written as a literal: the scale a price
+ * carries *is* the number of area units in one m², so if one moves and the other does
+ * not, every remainder below is off by a factor of a million and the classification
+ * quietly stops meaning anything.
+ */
+const SCALED_BAHT = 100n * SQ_UM_PER_SQM;
+
+/** `JSON.stringify` throws on a bigint, so failure messages spell measures out. */
+const describeMeasures = (measures: Record<string, bigint>): string =>
+  Object.entries(measures)
+    .map(([code, um]) => `${code}=${String(um)}um`)
+    .join(' ');
 
 describe('THB totals against v1.0.0', () => {
   test('agree everywhere except where v1 lost an exact half baht to float error', () => {
@@ -108,10 +171,15 @@ describe('THB totals against v1.0.0', () => {
     let correctedUp = 0;
 
     for (const product of products) {
+      const v1Product = asV1Product(product);
+
       for (const selections of selectionSweep(product)) {
         for (const measures of sizeSweep(product)) {
+          const v1Measures = asV1Measures(measures);
+
           for (const qty of [1, 2, 3, 7, 99]) {
-            const before = BigInt(calcPriceV1(product, selections, measures, qty).total) * 100n;
+            const before =
+              BigInt(calcPriceV1(v1Product, selections, v1Measures, qty).total) * 100n;
             const after = calcPrice(product, selections, measures, qty).totalMinor;
             compared += 1;
             if (before === after) continue;
@@ -133,7 +201,7 @@ describe('THB totals against v1.0.0', () => {
             }
 
             unexplained.push(
-              `${product.id} ${JSON.stringify(measures)} ×${qty}: ` +
+              `${product.id} ${describeMeasures(measures)} ×${qty}: ` +
                 `v1 ${String(before)} vs now ${String(after)} satang, remainder ${String(remainder)}`,
             );
           }
@@ -156,9 +224,12 @@ describe('THB totals against v1.0.0', () => {
 });
 
 describe('the spec totals from section 5 survive the rewrite', () => {
-  const cases: [string, Record<string, string>, Record<string, number>, number, bigint][] = [
-    ['awn-4t', { profile_color: 'DW', glass_color: 'GRN', glass_thickness: 'T5', insect_screen: 'NS0' }, { width: 320, height: 160 }, 2, 1_843_200n],
-    ['sld-2p', {}, { width: 180, height: 220 }, 1, 879_100n],
+  /** The spec quotes centimetres; `calcPrice` takes canonical micrometres. */
+  const cm = (value: number): bigint => toMicrons(value, 'cm');
+
+  const cases: [string, Record<string, string>, Record<string, bigint>, number, bigint][] = [
+    ['awn-4t', { profile_color: 'DW', glass_color: 'GRN', glass_thickness: 'T5', insect_screen: 'NS0' }, { width: cm(320), height: cm(160) }, 2, 1_843_200n],
+    ['sld-2p', {}, { width: cm(180), height: cm(220) }, 1, 879_100n],
   ];
 
   test.each(cases)('%s stays put', (id, selections, measures, qty, expected) => {
@@ -173,23 +244,39 @@ describe('exactness the float version could not offer', () => {
     const product = products.find((candidate) => candidate.id === 'sld-2p');
     if (!product) throw new Error('fixture missing');
 
-    const one = calcPrice(product, {}, { width: 180, height: 220 }, 1);
-    const three = calcPrice(product, {}, { width: 180, height: 220 }, 3);
+    const measures = { width: toMicrons(180, 'cm'), height: toMicrons(220, 'cm') };
+    const one = calcPrice(product, {}, measures, 1);
+    const three = calcPrice(product, {}, measures, 3);
 
-    // Rounding once on the line, not once per unit — so these need not agree, and
-    // anything that adds money must read totalMinor.
-    expect(three.totalMinor).toBe(
-      BigInt(3) * one.unitPriceMinor > 0n ? three.totalMinor : three.totalMinor,
-    );
+    /*
+     * Rounding once on the line, not once per unit — so these need not agree, and
+     * anything that adds money must read totalMinor. sld-2p at 180×220 is the case
+     * that shows it: ฿8,791.20 a unit renders as ฿8,791, but three of them are
+     * ฿26,373.60 and bill as ฿26,374, not as 3 × ฿8,791.
+     *
+     * The old assertion here was `3n * one.unitPriceMinor > 0n ? three.totalMinor :
+     * three.totalMinor`, which compares the line total to itself and holds for any
+     * implementation whatsoever. Stated properly, the claim is that the two disagree
+     * by a known amount.
+     */
+    expect(one.unitPriceMinor).toBe(879_120n);
+    expect(3n * one.unitPriceMinor).not.toBe(three.totalMinor);
+    expect(three.totalMinor).toBe(2_637_400n);
     expect(three.totalMinor % 100n).toBe(0n);
   });
 
-  test('area is an exact integer count of micro square metres', async () => {
-    const { calcAreaMicroSqm } = await import('../src/pricing.js');
+  test('area is an exact integer count of square micrometres', () => {
     const product = products.find((candidate) => candidate.id === 'awn-4t');
     if (!product) throw new Error('fixture missing');
 
-    // 320.5 cm × 160 cm = 3205 mm × 1600 mm = 5,128,000 µm² = 5.128 m², no float in sight.
-    expect(calcAreaMicroSqm(product, { width: 320.5, height: 160 })).toBe(5_128_000n);
+    // 320.5 cm × 160 cm = 3,205,000 µm × 1,600,000 µm = 5.128 × 10^12 µm², which is
+    // 5.128 m². Re-pinned from the mm² era: the same physical window, and the same
+    // digits, now with six more zeros and no division on the way there.
+    expect(
+      calcAreaSqUm(product, {
+        width: toMicrons(320.5, 'cm'),
+        height: toMicrons(160, 'cm'),
+      }),
+    ).toBe(5_128_000_000_000n);
   });
 });

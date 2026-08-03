@@ -2,6 +2,7 @@ import type { Product } from './types/catalog.js';
 import { type PriceBreakdown, totalFromUnitPrice } from './pricing.js';
 import type { Issue } from './validation.js';
 import { MAX_QTY, MIN_QTY } from './constants.js';
+import { isLengthUnit, type LengthUnit } from './units.js';
 
 /**
  * Quote state and its reducer. Pure — no React, no clock, no randomness.
@@ -17,7 +18,21 @@ export interface QuoteLine {
   nickname: string;
   skuCode: string;
   selections: Record<string, string>;
-  measures: Record<string, number>;
+  /** Canonical micrometres, keyed by custom group code. */
+  measures: Record<string, bigint>;
+  /**
+   * The unit each measurement was typed in, keyed the same way.
+   *
+   * A sibling of `measures` rather than a field inside it, because a value in
+   * `measures` is interpolated straight into the config hash and an object there
+   * would stringify to `[object Object]` — two different windows, one hash.
+   *
+   * It is deliberately *not* part of the hash: 320 cm, 3200 mm and 3.2 m are one
+   * window and must merge into one line. This exists so that reopening a line
+   * offers the customer the field back in the unit they measured in, and so the
+   * step warning is phrased on the grid they were working to.
+   */
+  enteredUnits: Record<string, LengthUnit>;
   qty: number;
   /** Price locked at the moment the line was added — material prices move, quotes do not. */
   priceSnapshot: PriceBreakdown;
@@ -176,27 +191,32 @@ export function longestLeadTime(
  * ------------------------------------------------------------------ */
 
 /**
- * Bumped from v1 in the same change that made money a `bigint`.
+ * Bumped from v2 in the same change that made lengths micrometres.
  *
- * Plan 4.5 is explicit that this must move together with the representation: a v1
- * entry holds `total: 8791` meaning baht, and a v2 entry holds `totalMinor: "879100"`
- * meaning satang. Reading one as the other is a hundredfold error that renders as a
- * plausible price. Old carts are dropped rather than migrated — a lost cart can be
- * rebuilt in a minute, a wrong price cannot be noticed at all.
+ * Plan 4.5 is explicit that this must move together with the representation, and it
+ * has now had to twice: a v1 entry held `total: 8791` meaning baht, a v2 entry held
+ * `totalMinor: "879100"` meaning satang, and a v3 entry holds `measures.width:
+ * "3200000"` where v2 held `320`. Every one of those reads as a plausible number
+ * under the wrong rules rather than as a crash.
+ *
+ * v2 is dropped, not migrated. Not because the unit is ambiguous — it is not, every
+ * v2 group hardcoded `unit: 'cm'` — but because `unitPriceScaledMinor` changed scale
+ * by a factor of 10^6 in the same commit, and a migration is a thing somebody has to
+ * keep correct forever. A lost cart can be rebuilt in a minute.
  */
-export const QUOTE_STORAGE_KEY = 'aluform.quote.v2';
+export const QUOTE_STORAGE_KEY = 'aluform.quote.v3';
 
 /**
  * Written into the payload itself, not only into the key.
  *
  * A payload outlives its key more often than it looks: a restored backup, a profile
  * sync, localStorage copied between builds. Both of the representation changes this
- * codebase has made — baht to satang, and centimetres to micrometres next — keep the
- * same field names and the same JSON shape while changing what the numbers mean, so a
+ * codebase has made — baht to satang, and centimetres to micrometres — keep the same
+ * field names and the same JSON shape while changing what the numbers mean, so a
  * mismatched payload renders as a plausible price or a plausible size rather than as a
  * crash. The version has to travel with the data.
  */
-export const QUOTE_SCHEMA_VERSION = 2;
+export const QUOTE_SCHEMA_VERSION = 3;
 
 /** `JSON.stringify` throws on a bigint, so money crosses the storage boundary as digits. */
 const replacer = (_key: string, value: unknown): unknown =>
@@ -210,6 +230,19 @@ function readMinor(value: unknown): bigint | null {
   if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return null;
   return BigInt(value);
 }
+
+/**
+ * An object whose every value passes `isMember`.
+ *
+ * Arrays are excluded rather than merely unexpected: an empty one satisfies "every
+ * value is a bigint" vacuously, so `measures: []` would otherwise be accepted and
+ * price as the group defaults — a real window at a size nobody chose.
+ */
+const isRecordOf = (value: unknown, isMember: (member: unknown) => boolean): boolean =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every(isMember);
 
 const isQuoteLine = (value: unknown): value is QuoteLine => {
   if (typeof value !== 'object' || value === null) return false;
@@ -226,8 +259,11 @@ const isQuoteLine = (value: unknown): value is QuoteLine => {
     Number.isFinite(line.qty) &&
     typeof line.selections === 'object' &&
     line.selections !== null &&
-    typeof line.measures === 'object' &&
-    line.measures !== null &&
+    // Every measurement, not just the container. A `measures` that survived as
+    // `{width: "320"}` would price as the group default and read as a real window;
+    // `reviveMeasures` leaves exactly that shape behind when it cannot convert.
+    isRecordOf(line.measures, (measure) => typeof measure === 'bigint') &&
+    isRecordOf(line.enteredUnits, isLengthUnit) &&
     typeof line.priceSnapshot === 'object' &&
     line.priceSnapshot !== null &&
     typeof line.priceSnapshot.totalMinor === 'bigint' &&
@@ -269,6 +305,30 @@ function reviveSnapshot(value: unknown): unknown {
 }
 
 /**
+ * Measurements, revived from their digit strings the way money is.
+ *
+ * A single unconvertible entry leaves the whole map as it was found rather than
+ * reviving the rest: a half-revived `measures` is a window with one real dimension
+ * and one that falls back to a default, which is the shape that prices plausibly
+ * and wrongly. `isQuoteLine` then drops the line.
+ */
+function reviveMeasures(value: unknown): unknown {
+  // An array is not a measures map, and an empty one would otherwise revive into an
+  // empty object and pass every check that follows — a line that prices from the
+  // group defaults and shows a size nobody entered.
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+
+  const revived: Record<string, bigint> = {};
+  for (const [code, raw] of Object.entries(value)) {
+    const um = readMinor(raw);
+    if (um === null) return value;
+    revived[code] = um;
+  }
+
+  return revived;
+}
+
+/**
  * Read the quote back out of storage.
  *
  * localStorage is shared with every past and future build of this app, so its
@@ -289,11 +349,16 @@ export function parseStoredQuote(raw: string | null): QuoteLine[] {
     if (!Array.isArray(lines)) return [];
 
     return lines
-      .map((line: unknown) =>
-        typeof line === 'object' && line !== null
-          ? { ...line, priceSnapshot: reviveSnapshot((line as { priceSnapshot?: unknown }).priceSnapshot) }
-          : line,
-      )
+      .map((line: unknown) => {
+        if (typeof line !== 'object' || line === null) return line;
+        const stored = line as { priceSnapshot?: unknown; measures?: unknown };
+
+        return {
+          ...line,
+          priceSnapshot: reviveSnapshot(stored.priceSnapshot),
+          measures: reviveMeasures(stored.measures),
+        };
+      })
       .filter(isQuoteLine);
   } catch {
     return [];

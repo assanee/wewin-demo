@@ -26,9 +26,12 @@ describe('pushHistory', () => {
 
   test('ignores a push that does not change anything', () => {
     // Re-selecting the colour that is already selected is not an undo step.
-    const h = pushHistory(initHistory('a'), 'a');
+    expect(pushHistory(initHistory('a'), 'a').past).toEqual([]);
 
-    expect(h.past).toEqual([]);
+    // The same holds for a measure now that measures are bigint micrometres:
+    // `Object.is` compares bigints by value, so blurring an untouched field —
+    // which reparses to the identical micrometre count — costs no undo step.
+    expect(pushHistory(initHistory(3_200_000n), 3_200_000n).past).toEqual([]);
   });
 
   test('discards the redo branch once a new edit is made', () => {
@@ -53,14 +56,15 @@ describe('pushHistory', () => {
 describe('pushHistory — coalescing', () => {
   test('folds consecutive edits to the same field into one step', () => {
     // Holding the + stepper must not cost twenty presses of undo to reverse.
-    let h = initHistory(320);
-    h = pushHistory(h, 320.5, 'width');
-    h = pushHistory(h, 321, 'width');
-    h = pushHistory(h, 321.5, 'width');
+    // One press is one 0.5 cm step, which is 5,000 µm.
+    let h = initHistory(3_200_000n);
+    h = pushHistory(h, 3_205_000n, 'width');
+    h = pushHistory(h, 3_210_000n, 'width');
+    h = pushHistory(h, 3_215_000n, 'width');
 
-    expect(h.present).toBe(321.5);
-    expect(h.past).toEqual([320]);
-    expect(undo(h).present).toBe(320);
+    expect(h.present).toBe(3_215_000n);
+    expect(h.past).toEqual([3_200_000n]);
+    expect(undo(h).present).toBe(3_200_000n);
   });
 
   test('starts a new step when the edit moves to another field', () => {

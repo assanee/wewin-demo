@@ -16,15 +16,18 @@ interface QuoteLineCardProps {
  * sku_code and size as a mono sub-line, quantity and total on the bottom row.
  */
 export function QuoteLineCard({ line, onQtyChange, onDuplicate, onRemove }: QuoteLineCardProps) {
-  const width = line.measures['width'] ?? 0;
-  const height = line.measures['height'] ?? 0;
+  const widthUm = line.measures['width'] ?? 0n;
+  const heightUm = line.measures['height'] ?? 0n;
+  // Same unit choice as the desktop row: the unit the size was measured in, so one
+  // line does not read 320 cm here and 126 in there.
+  const unit = line.enteredUnits['width'] ?? 'cm';
 
   return (
     <article className="flex min-w-0 flex-col gap-3 border border-line bg-panel p-4">
       <div className="min-w-0">
         <h2 className="min-w-0 truncate text-body text-chalk">{line.nickname}</h2>
         <p className="numeric mt-1 min-w-0 truncate text-caption text-chalk-3">{line.skuCode}</p>
-        <p className="numeric text-caption text-blueprint">{formatDimensions(width, height, 'cm')}</p>
+        <p className="numeric text-caption text-blueprint">{formatDimensions(widthUm, heightUm, unit)}</p>
       </div>
 
       {line.warnings.length > 0 ? (

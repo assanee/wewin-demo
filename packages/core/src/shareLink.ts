@@ -1,28 +1,43 @@
 import type { CustomGroup, Product, SkuGroup } from './types/catalog.js';
-import { formatCm } from './format.js';
 import { MAX_QTY, MIN_QTY } from './constants.js';
+import { isLengthUnit, type LengthUnit } from './units.js';
 
 /**
  * Encoding a configuration into the URL so a link can be shared.
  *
- * Group codes go into the query string as-is — `?profile_color=BK&width=250` — in
+ * Group codes go into the query string as-is — `?profile_color=BK&width=2500000` — in
  * preference to a packed blob. A shared link ends up in a chat window where someone
  * will read it, and a salesperson who can see the width in the URL can spot a wrong
  * one without opening it. It also means an old link degrades gracefully instead of
  * failing to decode.
  *
+ * Measurements travel as raw integer micrometres in both directions, so this file
+ * converts nothing. The previous version routed them through `formatCm`, which meant
+ * a link built from 250.34 cm carried "250.3" — the link lost resolution before
+ * imperial entry ever existed to complicate it.
+ *
  * Everything read back is untrusted: it has been through a chat client, possibly a
- * URL shortener, and possibly someone's own edits. Unknown groups, values the
- * product no longer offers and out-of-range numbers are dropped or clamped rather
- * than trusted, so a hand-edited link cannot price a nine-metre window.
+ * URL shortener, and possibly someone's own edits.
  */
 
+/**
+ * The representation the numbers in a link are written in.
+ *
+ * Shares the quote's version because they turned over together. A link without it is
+ * from before micrometres and its `width=250` means centimetres.
+ */
+export const SHARE_SCHEMA_VERSION = '3';
+
 /** Query keys the app already uses for routing; never treated as group codes. */
-export const SHARE_RESERVED_KEYS = ['line', 'category', 'qty'] as const;
+export const SHARE_RESERVED_KEYS = ['v', 'line', 'category', 'qty'] as const;
+
+/** Suffix for the companion key that records what unit a measurement was typed in. */
+const UNIT_SUFFIX = '_u';
 
 export interface SharedConfig {
   selections: Record<string, string>;
-  measures: Record<string, number>;
+  measures: Record<string, bigint>;
+  enteredUnits: Record<string, LengthUnit>;
   qty: number;
 }
 
@@ -35,10 +50,13 @@ const customGroups = (product: Product): CustomGroup[] =>
 export function buildShareParams(
   product: Product,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
+  enteredUnits: Record<string, LengthUnit>,
   qty: number,
 ): URLSearchParams {
   const search = new URLSearchParams();
+
+  search.set('v', SHARE_SCHEMA_VERSION);
 
   for (const group of skuGroups(product)) {
     const value = selections[group.code];
@@ -47,11 +65,14 @@ export function buildShareParams(
 
   for (const group of customGroups(product)) {
     const value = measures[group.code];
-    // Through the formatter, or a few stepper presses leak 160.50000000000003
-    // into a link someone is going to read.
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      search.set(group.code, formatCm(value));
-    }
+    if (typeof value !== 'bigint') continue;
+
+    search.set(group.code, value.toString());
+
+    // Per group, not one unit per link: a customer may well have the sill width off
+    // a tape in inches and the head height off a drawing in centimetres.
+    const unit = enteredUnits[group.code];
+    if (unit) search.set(`${group.code}${UNIT_SUFFIX}`, unit);
   }
 
   // One is the default, and the common link is better off short.
@@ -60,8 +81,10 @@ export function buildShareParams(
   return search;
 }
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
+/** Accepts only a string of digits — `BigInt("")` is 0n and `BigInt(" 1 ")` is 1n. */
+function readUm(value: string): bigint | null {
+  return /^\d+$/.test(value) ? BigInt(value) : null;
+}
 
 /**
  * Read a configuration out of a query string, or null if it carries none.
@@ -69,10 +92,20 @@ const clamp = (value: number, min: number, max: number): number =>
  * Null rather than an empty config so the caller can tell "no configuration in this
  * link" apart from "a configuration that happens to match the defaults" — only the
  * first should leave the configurator on its own defaults.
+ *
+ * Every rejection below returns null for the *whole* link rather than dropping one
+ * key, and nothing is clamped into range. Clamping was the real hazard here: a
+ * pre-micrometre `?width=250` clamps up to the 60 cm minimum and opens a configurator
+ * showing a perfectly ordinary window that is not the one that was shared. A link
+ * that fails to parse is a link the recipient asks about; a link that parses into the
+ * wrong window is one they quote from.
  */
 export function readSharedConfig(product: Product, search: URLSearchParams): SharedConfig | null {
+  if (search.get('v') !== SHARE_SCHEMA_VERSION) return null;
+
   const selections: Record<string, string> = {};
-  const measures: Record<string, number> = {};
+  const measures: Record<string, bigint> = {};
+  const enteredUnits: Record<string, LengthUnit> = {};
   let found = false;
 
   for (const group of skuGroups(product)) {
@@ -90,19 +123,27 @@ export function readSharedConfig(product: Product, search: URLSearchParams): Sha
     const raw = search.get(group.code);
     if (raw === null) continue;
 
-    const parsed = Number.parseFloat(raw);
-    if (!Number.isFinite(parsed)) continue;
+    const um = readUm(raw);
+    if (um === null || um < group.minUm || um > group.maxUm) return null;
 
-    measures[group.code] = clamp(parsed, group.min, group.max);
+    measures[group.code] = um;
     found = true;
+
+    const unit = search.get(`${group.code}${UNIT_SUFFIX}`);
+    if (unit !== null) {
+      if (!isLengthUnit(unit)) return null;
+      enteredUnits[group.code] = unit;
+    }
   }
 
   if (!found) return null;
 
   const rawQty = Number.parseInt(search.get('qty') ?? '', 10);
-  const qty = Number.isFinite(rawQty) ? clamp(rawQty, MIN_QTY, MAX_QTY) : MIN_QTY;
+  const qty = Number.isFinite(rawQty)
+    ? Math.min(Math.max(rawQty, MIN_QTY), MAX_QTY)
+    : MIN_QTY;
 
-  return { selections, measures, qty };
+  return { selections, measures, enteredUnits, qty };
 }
 
 /** The absolute URL to share for a configuration. */
@@ -110,9 +151,10 @@ export function buildShareUrl(
   origin: string,
   product: Product,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
+  enteredUnits: Record<string, LengthUnit>,
   qty: number,
 ): string {
-  const search = buildShareParams(product, selections, measures, qty);
+  const search = buildShareParams(product, selections, measures, enteredUnits, qty);
   return `${origin}/products/${product.slug}?${search.toString()}`;
 }

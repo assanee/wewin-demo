@@ -1,16 +1,25 @@
 import { useElementSize } from '../../state/useElementSize';
 import { ElevationDrawing } from '../common/ElevationDrawing';
 import type { Elevation } from '@wewin/core/elevation';
-import { formatCm } from '@wewin/core/format';
 
 interface ElevationPreviewProps {
-  widthCm: number;
-  heightCm: number;
+  /**
+   * Width ÷ height. Only the proportion of the opening is drawn, so this is the
+   * whole of what the geometry needs; the numbers on the dimension lines arrive
+   * already formatted. Canonical lengths are `bigint` micrometres and must not
+   * reach the SVG layer.
+   */
+  ratio: number;
+  /** The width, formatted in the displayed unit — the numeral only, no unit. */
+  widthLabel: string;
+  /** The height, formatted the same way. */
+  heightLabel: string;
   elevation: Elevation;
   profileHex: string;
   glassHex: string;
   /** Dimension lines turn danger-coloured while the measurements are out of bounds. */
   invalid?: boolean;
+  /** The unit both numerals are in, stated once at the foot of the drawing. */
   unit: string;
 }
 
@@ -30,11 +39,13 @@ const TICK = 4;
  * in a centimetre viewBox. A 600 x 60 cm louver and a 180 x 220 cm door both need
  * legible 11px numerals and 1px hairlines; a scaled cm viewBox would shrink the type
  * along with the drawing and make the wide product unreadable. Only the frame's
- * proportions come from the measurements — the whole drawing scales, never crops.
+ * proportion comes from the measurements, which is why that is all this is given —
+ * the whole drawing scales, never crops.
  */
 export function ElevationPreview({
-  widthCm,
-  heightCm,
+  ratio,
+  widthLabel,
+  heightLabel,
   elevation,
   profileHex,
   glassHex,
@@ -51,11 +62,13 @@ export function ElevationPreview({
   const availableW = Math.max(boxW - GUTTER_LEFT - GUTTER_RIGHT, 1);
   const availableH = Math.max(boxH - GUTTER_TOP - GUTTER_BOTTOM, 1);
 
-  const ratio = Math.max(widthCm, 1) / Math.max(heightCm, 1);
-  const fitByWidth = availableW / availableH <= ratio;
+  // A square is the honest fallback for a proportion that is not one: a zero or a
+  // NaN here divides straight into the layout below and blanks the drawing.
+  const proportion = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  const fitByWidth = availableW / availableH <= proportion;
 
-  const drawW = fitByWidth ? availableW : availableH * ratio;
-  const drawH = fitByWidth ? availableW / ratio : availableH;
+  const drawW = fitByWidth ? availableW : availableH * proportion;
+  const drawH = fitByWidth ? availableW / proportion : availableH;
 
   const x0 = GUTTER_LEFT + (availableW - drawW) / 2;
   const y0 = GUTTER_TOP + (availableH - drawH) / 2;
@@ -75,7 +88,7 @@ export function ElevationPreview({
       ref={ref}
       className="h-full w-full"
       role="img"
-      aria-label={`ภาพแบบ ${formatCm(widthCm)} × ${formatCm(heightCm)} ${unit}${
+      aria-label={`ภาพแบบ ${widthLabel} × ${heightLabel} ${unit}${
         invalid ? ' ขนาดยังอยู่นอกช่วงที่ผลิตได้' : ''
       }`}
     >
@@ -110,7 +123,7 @@ export function ElevationPreview({
             fill={dimColor}
             style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
           >
-            {formatCm(widthCm)}
+            {widthLabel}
           </text>
 
           {/* ---- Height dimension, right of the drawing ---- */}
@@ -130,7 +143,7 @@ export function ElevationPreview({
             transform={`rotate(-90 ${dimX + 8} ${(y0 + y1) / 2})`}
             style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
           >
-            {formatCm(heightCm)}
+            {heightLabel}
           </text>
 
           {/* Unit note, bottom left — a drawing always states its units. */}

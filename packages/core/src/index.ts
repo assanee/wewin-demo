@@ -13,6 +13,7 @@
  */
 
 export type {
+  AuthoredUnit,
   Category,
   CustomGroup,
   InputStyle,
@@ -23,10 +24,10 @@ export type {
   Product,
   Rule,
   SkuGroup,
-  Unit,
 } from './types/catalog.js';
 
-export type { NumExpr, RuleExpr } from './types/rule.js';
+export type { Dimension, NumExpr, RuleExpr } from './types/rule.js';
+export type { LengthUnit } from './units.js';
 
 export type { Elevation, PanelInfill, PanelOperation } from './elevation.js';
 export type { PriceBreakdown } from './pricing.js';

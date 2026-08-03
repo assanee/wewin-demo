@@ -22,7 +22,8 @@
 
 import type { CustomGroup, OptionGroup, OptionValue, Product, Rule, SkuGroup } from '../types/catalog.js';
 import type { PanelInfill, PanelOperation } from '../elevation.js';
-import { and, area, div, gt, lt, measure, selected } from './ruleBuilders.js';
+import { and, area, areaSqm, gt, lengthCm, lt, measure, mul, scalar, selected } from './ruleBuilders.js';
+import { sqmToSqUm, toMicrons } from '../units.js';
 
 /* ------------------------------------------------------------------ *
  * Shared option values
@@ -253,6 +254,19 @@ interface SizeProfile {
   minBillableSqm: number;
 }
 
+/**
+ * The table stays in the numbers a person can check against a price list; `cm` here
+ * and `sqmToSqUm` at the call site turn them into canonical units on the way out.
+ *
+ * Writing `600_000n` here instead would make 48 bounds unreadable and unreviewable,
+ * and a single wrong zero would be a window six metres out with nothing to compare
+ * it against. The catalogue schema re-checks every converted bound against the grid
+ * invariants, so the conversion is verified by machine rather than by eye.
+ */
+const cm = (value: number): bigint => toMicrons(value, 'cm');
+
+const STEP_UM = cm(0.5);
+
 const SIZES: Record<SizeKey, SizeProfile> = {
   window: { width: [60, 400, 320], height: [60, 250, 160], minBillableSqm: 1.5 },
   window_wide: { width: [90, 600, 360], height: [60, 250, 180], minBillableSqm: 2.0 },
@@ -276,10 +290,10 @@ const measureGroups = (size: SizeKey): CustomGroup[] => {
       labelTh: 'ความกว้าง',
       input: 'number',
       unit: 'cm',
-      min: wMin,
-      max: wMax,
-      step: 0.5,
-      defaultValue: wDef,
+      minUm: cm(wMin),
+      maxUm: cm(wMax),
+      stepUm: STEP_UM,
+      defaultUm: cm(wDef),
       helperTh: 'วัดจากขอบวงกบด้านนอกถึงขอบวงกบอีกด้าน',
     },
     {
@@ -288,10 +302,10 @@ const measureGroups = (size: SizeKey): CustomGroup[] => {
       labelTh: 'ความสูง',
       input: 'number',
       unit: 'cm',
-      min: hMin,
-      max: hMax,
-      step: 0.5,
-      defaultValue: hDef,
+      minUm: cm(hMin),
+      maxUm: cm(hMax),
+      stepUm: STEP_UM,
+      defaultUm: cm(hDef),
     },
   ];
 };
@@ -335,13 +349,14 @@ const AWN4T_RULES: Rule[] = [
     id: 'awn4t-max-area',
     severity: 'error',
     messageTh: 'พื้นที่รวมต้องไม่เกิน 8.00 ตร.ม. ลองลดความกว้างหรือความสูง',
-    when: gt(area(), 8),
+    when: gt(area(), areaSqm(8)),
   },
   {
     id: 'awn4t-ratio',
     severity: 'error',
     messageTh: 'อัตราส่วนกว้างต่อสูงต้องไม่เกิน 3:1',
-    when: gt(div(measure('width'), measure('height')), 3),
+    // w/h > 3 as w > 3h. Same predicate, no division, so a ratio of 3.4 still fires.
+    when: gt(measure('width'), mul(scalar(3), measure('height'))),
   },
 ];
 
@@ -350,7 +365,7 @@ const LVR3_RULES: Rule[] = [
     id: 'lvr3-motor-min',
     severity: 'error',
     messageTh: 'มอเตอร์ไฟฟ้าต้องใช้กับความกว้างตั้งแต่ 150 cm ขึ้นไป',
-    when: and(selected('control', 'MOT'), lt(measure('width'), 150)),
+    when: and(selected('control', 'MOT'), lt(measure('width'), lengthCm(150))),
   },
 ];
 
@@ -359,7 +374,7 @@ const SLD2_RULES: Rule[] = [
     id: 'sld2-lam-height',
     severity: 'warning',
     messageTh: 'กระจกสองชั้นที่ความสูงเกิน 250 cm อาจต้องเสริมเสา ทีมงานจะยืนยันอีกครั้ง',
-    when: and(selected('glass_thickness', 'LAM'), gt(measure('height'), 250)),
+    when: and(selected('glass_thickness', 'LAM'), gt(measure('height'), lengthCm(250))),
   },
 ];
 
@@ -520,7 +535,7 @@ const laminatedWidthRule = (ruleIdBase: string): Rule => ({
   id: `${ruleIdBase}-lam-width`,
   severity: 'error',
   messageTh: `กระจกสองชั้นรองรับความกว้างไม่เกิน ${LAM_MAX_WIDTH_CM} cm`,
-  when: and(selected('glass_thickness', 'LAM'), gt(measure('width'), LAM_MAX_WIDTH_CM)),
+  when: and(selected('glass_thickness', 'LAM'), gt(measure('width'), lengthCm(LAM_MAX_WIDTH_CM))),
 });
 
 function buildProduct(row: Row): Product {
@@ -552,7 +567,7 @@ function buildProduct(row: Row): Product {
     heroImage: `/products/${row.slug}.svg`,
     leadTimeDays: KIT_LEAD_TIME[row.kit],
     pricePerSqm: row.pricePerSqm,
-    minBillableSqm: SIZES[row.size].minBillableSqm,
+    minBillableSqUm: sqmToSqUm(SIZES[row.size].minBillableSqm),
     groups,
     rules,
     skuPrefix: row.prefix,

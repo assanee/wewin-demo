@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { calcPrice } from '../src/pricing.js';
 import { getProductById } from '../src/data/products.js';
+import { toMicrons } from '../src/units.js';
 import type { Product } from '../src/types/catalog.js';
 
 const product = (id: string): Product => {
@@ -9,12 +10,21 @@ const product = (id: string): Product => {
   return found;
 };
 
+/**
+ * The sizes below are the ones the spec quotes, in the centimetres it quotes them in;
+ * `calcPrice` takes canonical micrometres. Converting here rather than writing
+ * `3_200_000n` keeps each case checkable against spec section 5 by eye, and routes
+ * every test size through the same converter the catalogue itself uses — a second
+ * hand-rolled `× 10_000` in a test file is how a test starts agreeing with itself.
+ */
+const cm = (value: number): bigint => toMicrons(value, 'cm');
+
 const awn = (
   selections: Record<string, string>,
-  width: number,
-  height: number,
+  widthUm: bigint,
+  heightUm: bigint,
   qty: number,
-) => calcPrice(product('awn-4t'), selections, { width, height }, qty);
+) => calcPrice(product('awn-4t'), selections, { width: widthUm, height: heightUm }, qty);
 
 /* ------------------------------------------------------------------ *
  * Spec section 5 — the six cases that must all pass
@@ -24,13 +34,21 @@ describe('calcPrice — spec test cases', () => {
   test('case 1: awn-4t 320x160 DW/GRN/T5/NS0 qty 2 -> 18432', () => {
     const price = awn(
       { profile_color: 'DW', glass_color: 'GRN', glass_thickness: 'T5', insect_screen: 'NS0' },
-      320,
-      160,
+      cm(320),
+      cm(160),
       2,
     );
 
-    expect(price.areaSqm).toBeCloseTo(5.12, 6);
-    expect(price.billableSqm).toBeCloseTo(5.12, 6);
+    /*
+     * Exact, not approximate. Area is now an integer count of µm² and `areaSqm` is
+     * that integer divided by 10^12 once, for the screen. IEEE division is correctly
+     * rounded and both operands are exact doubles, so the result *is* the double the
+     * literal 5.12 parses to — there is no accumulated error left for an epsilon to
+     * absorb, and tolerating one would hide a genuine scale error of a few parts per
+     * million (the exact class of defect the µm² flip exists to make impossible).
+     */
+    expect(price.areaSqm).toBe(5.12);
+    expect(price.billableSqm).toBe(5.12);
     expect(price.baseMinor).toBe(768000n);
     expect(price.percentTotalMinor).toBe(61440n);
     expect(price.perSqmTotalMinor).toBe(92160n);
@@ -39,15 +57,15 @@ describe('calcPrice — spec test cases', () => {
     expect(price.totalMinor).toBe(1843200n);
   });
 
-  test('case 2: awn-4t 80x60 falls back to minBillableSqm 1.5 -> 2250', () => {
+  test('case 2: awn-4t 80x60 falls back to minBillableSqUm 1.5 sqm -> 2250', () => {
     const price = awn(
       { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS0' },
-      80,
-      60,
+      cm(80),
+      cm(60),
       1,
     );
 
-    expect(price.areaSqm).toBeCloseTo(0.48, 6);
+    expect(price.areaSqm).toBe(0.48);
     expect(price.billableSqm).toBe(1.5);
     expect(price.unitPriceMinor).toBe(225000n);
     expect(price.totalMinor).toBe(225000n);
@@ -56,12 +74,12 @@ describe('calcPrice — spec test cases', () => {
   test('case 3: awn-4t 200x150 BK/LAM/NS1 combines percent + per_sqm + flat -> 8475', () => {
     const price = awn(
       { profile_color: 'BK', glass_color: 'CLR', glass_thickness: 'LAM', insect_screen: 'NS1' },
-      200,
-      150,
+      cm(200),
+      cm(150),
       1,
     );
 
-    expect(price.areaSqm).toBeCloseTo(3, 6);
+    expect(price.areaSqm).toBe(3);
     expect(price.baseMinor).toBe(450000n);
     expect(price.percentTotalMinor).toBe(22500n);
     expect(price.perSqmTotalMinor).toBe(195000n);
@@ -73,11 +91,11 @@ describe('calcPrice — spec test cases', () => {
     const price = calcPrice(
       product('lvr-adj-3'),
       { profile_color: 'DW', blade_width: 'B150', control: 'MOT' },
-      { width: 300, height: 200 },
+      { width: cm(300), height: cm(200) },
       1,
     );
 
-    expect(price.areaSqm).toBeCloseTo(6, 6);
+    expect(price.areaSqm).toBe(6);
     expect(price.baseMinor).toBe(1440000n);
     expect(price.percentTotalMinor).toBe(115200n);
     expect(price.perSqmTotalMinor).toBe(0n);
@@ -89,7 +107,7 @@ describe('calcPrice — spec test cases', () => {
     const price = calcPrice(
       product('lvr-adj-3'),
       { profile_color: 'SG', blade_width: 'B100', control: 'MAN' },
-      { width: 300, height: 200 },
+      { width: cm(300), height: cm(200) },
       3,
     );
 
@@ -104,11 +122,11 @@ describe('calcPrice — spec test cases', () => {
     const price = calcPrice(
       product('sld-2p'),
       { profile_color: 'WH', glass_color: 'CLR', glass_thickness: 'T6', lock_type: 'LK1' },
-      { width: 180, height: 220 },
+      { width: cm(180), height: cm(220) },
       1,
     );
 
-    expect(price.areaSqm).toBeCloseTo(3.96, 6);
+    expect(price.areaSqm).toBe(3.96);
     expect(price.baseMinor).toBe(831600n);
     expect(price.perSqmTotalMinor).toBe(47520n);
     expect(price.unitPriceMinor).toBe(879120n);
@@ -126,8 +144,8 @@ describe('calcPrice — calculation order', () => {
     // If percent were applied after per_sqm/flat it would be 5% of 4500+1950+1800 = 412.50.
     const price = awn(
       { profile_color: 'BK', glass_color: 'CLR', glass_thickness: 'LAM', insect_screen: 'NS1' },
-      200,
-      150,
+      cm(200),
+      cm(150),
       1,
     );
 
@@ -139,8 +157,8 @@ describe('calcPrice — calculation order', () => {
     // Raw area would give 86.40; billable gives 270.
     const price = awn(
       { profile_color: 'SG', glass_color: 'GRN', glass_thickness: 'T5', insect_screen: 'NS0' },
-      80,
-      60,
+      cm(80),
+      cm(60),
       1,
     );
 
@@ -150,14 +168,14 @@ describe('calcPrice — calculation order', () => {
   test('flat deltas are per unit and multiply with qty', () => {
     const one = awn(
       { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS1' },
-      200,
-      150,
+      cm(200),
+      cm(150),
       1,
     );
     const four = awn(
       { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS1' },
-      200,
-      150,
+      cm(200),
+      cm(150),
       4,
     );
 
@@ -172,7 +190,7 @@ describe('calcPrice — calculation order', () => {
     const price = calcPrice(
       product('sld-2p'),
       { profile_color: 'WH', glass_color: 'CLR', glass_thickness: 'T6', lock_type: 'LK1' },
-      { width: 180, height: 220 },
+      { width: cm(180), height: cm(220) },
       3,
     );
 
@@ -188,8 +206,8 @@ describe('calcPrice — breakdown lines', () => {
   test('leads with the area base line, then one line per charging option', () => {
     const price = awn(
       { profile_color: 'DW', glass_color: 'GRN', glass_thickness: 'T5', insect_screen: 'NS0' },
-      320,
-      160,
+      cm(320),
+      cm(160),
       2,
     );
 
@@ -203,8 +221,8 @@ describe('calcPrice — breakdown lines', () => {
   test('omits options that add nothing, so the accordion shows only real charges', () => {
     const price = awn(
       { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS0' },
-      200,
-      150,
+      cm(200),
+      cm(150),
       1,
     );
 
@@ -214,8 +232,8 @@ describe('calcPrice — breakdown lines', () => {
   test('line amounts sum to unitPrice', () => {
     const price = awn(
       { profile_color: 'BK', glass_color: 'BLU', glass_thickness: 'LAM', insect_screen: 'NS1' },
-      200,
-      150,
+      cm(200),
+      cm(150),
       1,
     );
 
@@ -239,8 +257,8 @@ describe('calcPrice — degenerate input', () => {
         .map((group) => [group.code, group.defaultValue]),
     );
 
-    const withDefaults = awn({}, 320, 160, 1);
-    const explicit = awn(explicitDefaults, 320, 160, 1);
+    const withDefaults = awn({}, cm(320), cm(160), 1);
+    const explicit = awn(explicitDefaults, cm(320), cm(160), 1);
 
     expect(withDefaults.totalMinor).toBe(explicit.totalMinor);
     expect(withDefaults.totalMinor).toBeGreaterThan(0n);
@@ -250,19 +268,21 @@ describe('calcPrice — degenerate input', () => {
     const price = calcPrice(
       product('awn-4t'),
       { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS0' },
-      { width: 320 },
+      { width: cm(320) },
       1,
     );
 
     expect(price.totalMinor).toBeTypeOf('bigint');
-    expect(price.areaSqm).toBeCloseTo(5.12, 6);
+    // The fallback is `defaultUm`, so the missing height is exactly 160 cm and the
+    // area is exactly 5.12 m² — "not NaN" is no longer the strongest thing to say.
+    expect(price.areaSqm).toBe(5.12);
   });
 
   test('never returns NaN or -0 for a zero quantity', () => {
     const price = awn(
       { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS0' },
-      320,
-      160,
+      cm(320),
+      cm(160),
       0,
     );
 
@@ -275,8 +295,8 @@ describe('calcPrice — degenerate input', () => {
   test('ignores an unknown option code instead of throwing', () => {
     const price = awn(
       { profile_color: 'NOPE', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS0' },
-      320,
-      160,
+      cm(320),
+      cm(160),
       1,
     );
 

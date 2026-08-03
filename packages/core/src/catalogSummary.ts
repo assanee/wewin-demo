@@ -1,4 +1,5 @@
 import type { Category, Product } from './types/catalog.js';
+import { sqUmToSqm } from './pricing.js';
 
 /**
  * Catalog-wide aggregates for the marketing surfaces (home page, footer).
@@ -40,10 +41,11 @@ export function leadTimeSpan(products: Product[]): [number, number] | null {
   ];
 }
 
+/** In square metres, because this is copy for a marketing badge, not an input to a price. */
 export function billableFloorSpan(products: Product[]): [number, number] | null {
   if (products.length === 0) return null;
 
-  const floors = products.map((product) => product.minBillableSqm);
+  const floors = products.map((product) => sqUmToSqm(product.minBillableSqUm));
   return [Math.min(...floors), Math.max(...floors)];
 }
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { CustomGroup, Product, SkuGroup } from '@wewin/core';
+import type { CustomGroup, LengthUnit, Product, SkuGroup } from '@wewin/core';
 import { calcPrice, type PriceBreakdown } from '@wewin/core/pricing';
 import { buildSkuCode } from '@wewin/core/sku';
 import { hasBlockingError, validate, type Issue } from '@wewin/core/validation';
@@ -16,7 +16,17 @@ import {
 
 export interface ConfiguratorState {
   selections: Record<string, string>;
-  measures: Record<string, number>;
+  /** Canonical micrometres, keyed by group code. */
+  measures: Record<string, bigint>;
+  /**
+   * The unit a measurement was typed in, for the fields that have been typed into.
+   *
+   * A sibling of `measures` rather than a value inside it: `configHash` interpolates
+   * that record, and 320 cm and 3,200 mm are one window that has to reach the quote
+   * as one row. A missing entry means "not typed yet", which every reader resolves
+   * to the unit the catalogue was authored in — the same unit the field is showing.
+   */
+  enteredUnits: Record<string, LengthUnit>;
   qty: number;
   nickname: string;
 }
@@ -28,7 +38,7 @@ export interface Configurator extends ConfiguratorState {
   optionStates: OptionStates;
   hasError: boolean;
   select: (groupCode: string, valueCode: string) => void;
-  measure: (groupCode: string, value: number) => void;
+  measure: (groupCode: string, value: bigint) => void;
   setQty: (qty: number) => void;
   setNickname: (nickname: string) => void;
   /* --- History ---------------------------------------------------------- */
@@ -45,14 +55,17 @@ export interface Configurator extends ConfiguratorState {
 /** Everything a product's groups say the configurator should start at. */
 export function defaultStateFor(product: Product): ConfiguratorState {
   const selections: Record<string, string> = {};
-  const measures: Record<string, number> = {};
+  const measures: Record<string, bigint> = {};
 
   for (const group of product.groups) {
     if (group.kind === 'sku') selections[group.code] = (group satisfies SkuGroup).defaultValue;
-    else measures[group.code] = (group satisfies CustomGroup).defaultValue;
+    else measures[group.code] = (group satisfies CustomGroup).defaultUm;
   }
 
-  return { selections, measures, qty: 1, nickname: product.nameTh };
+  // Empty, not seeded with each group's authored unit: nothing has been typed yet,
+  // and the difference matters the moment the fields can be shown in another unit —
+  // a seeded entry would claim the customer chose cm when they only looked at it.
+  return { selections, measures, enteredUnits: {}, qty: 1, nickname: product.nameTh };
 }
 
 /** Shallow record equality, written out rather than stringified. */
@@ -63,16 +76,18 @@ const sameRecord = <T>(a: Record<string, T>, b: Record<string, T>): boolean => {
 };
 
 /*
- * `JSON.stringify` used to stand in for a deep equal here. It cannot survive phase 2:
- * measures become bigint micrometres, and stringify throws on a bigint rather than
- * returning something wrong. This sits on the render path via `isPristine`, so the
- * whole configurator page would have died on first paint — not just the reset button.
+ * `JSON.stringify` used to stand in for a deep equal here. It could not survive the
+ * move to micrometres: measures are bigint now, and stringify throws on a bigint
+ * rather than returning something wrong. This sits on the render path via
+ * `isPristine`, so the whole configurator page would have died on first paint — not
+ * just the reset button.
  */
 const sameState = (a: ConfiguratorState, b: ConfiguratorState): boolean =>
   a.qty === b.qty &&
   a.nickname === b.nickname &&
   sameRecord(a.selections, b.selections) &&
-  sameRecord(a.measures, b.measures);
+  sameRecord(a.measures, b.measures) &&
+  sameRecord(a.enteredUnits, b.enteredUnits);
 
 /**
  * Holds the configuration and derives everything downstream of it.
@@ -92,20 +107,23 @@ export function useConfigurator(product: Product, initial?: Partial<Configurator
   );
 
   const state = history.present;
-  const { selections, measures, qty } = state;
+  const { selections, measures, enteredUnits, qty } = state;
 
   const derived = useMemo(() => {
     const price = calcPrice(product, selections, measures, qty);
-    const issues = validate(product, selections, measures);
+    // `enteredUnits` decides which grid each measurement is judged against and what
+    // unit the messages are phrased in, so it has to reach both readers or a field
+    // typed in inches gets told off in centimetres.
+    const issues = validate(product, selections, measures, enteredUnits);
 
     return {
       price,
       issues,
       skuCode: buildSkuCode(product, selections),
-      optionStates: optionStatesFor(product, selections, measures),
+      optionStates: optionStatesFor(product, selections, measures, enteredUnits),
       hasError: hasBlockingError(issues),
     };
-  }, [product, selections, measures, qty]);
+  }, [product, selections, measures, enteredUnits, qty]);
 
   const edit = (next: (current: ConfiguratorState) => ConfiguratorState, mergeKey?: string) =>
     setHistory((current) => pushHistory(current, next(current.present), mergeKey));
@@ -123,6 +141,10 @@ export function useConfigurator(product: Product, initial?: Partial<Configurator
       })),
 
     // Keyed per field: dragging width then height gives two steps, not one.
+    //
+    // Takes no unit yet, so `enteredUnits` stays empty and every reader falls back to
+    // the authored one — which is the unit the field is displaying, so nothing is
+    // misreported. It gains one when the fields can be shown in something else.
     measure: (groupCode, value) =>
       edit(
         (current) => ({ ...current, measures: { ...current.measures, [groupCode]: value } }),

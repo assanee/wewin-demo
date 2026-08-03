@@ -16,11 +16,14 @@ const AWN = {
   insect_screen: 'NS0',
 } as const;
 
+// Measurements are canonical micrometres, written out rather than run through
+// `toMicrons` so a converter bug cannot make these fixtures agree with it. Each
+// figure is the centimetre value in the test name times 10,000.
 const blockedCodes = (
   productId: string,
   groupCode: string,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
 ): string[] => {
   const states = optionStatesFor(product(productId), selections, measures);
   return Object.entries(states[groupCode] ?? {})
@@ -30,21 +33,21 @@ const blockedCodes = (
 
 describe('optionStatesFor — compatibility blocking', () => {
   test('blocks laminated glass once the width passes its 200 cm limit', () => {
-    expect(blockedCodes('awn-4t', 'glass_thickness', AWN, { width: 260, height: 160 })).toEqual(['LAM']);
+    expect(blockedCodes('awn-4t', 'glass_thickness', AWN, { width: 2_600_000n, height: 1_600_000n })).toEqual(['LAM']);
   });
 
   test('leaves every thickness selectable below the limit', () => {
-    expect(blockedCodes('awn-4t', 'glass_thickness', AWN, { width: 180, height: 160 })).toEqual([]);
+    expect(blockedCodes('awn-4t', 'glass_thickness', AWN, { width: 1_800_000n, height: 1_600_000n })).toEqual([]);
   });
 
   test('blocks the motor below its minimum width', () => {
     const selections = { profile_color: 'SG', blade_width: 'B150', control: 'MAN' };
 
-    expect(blockedCodes('lvr-adj-3', 'control', selections, { width: 120, height: 200 })).toEqual(['MOT']);
+    expect(blockedCodes('lvr-adj-3', 'control', selections, { width: 1_200_000n, height: 2_000_000n })).toEqual(['MOT']);
   });
 
   test('reports the rule message as the reason, so the tooltip can explain itself', () => {
-    const states = optionStatesFor(product('awn-4t'), AWN, { width: 260, height: 160 });
+    const states = optionStatesFor(product('awn-4t'), AWN, { width: 2_600_000n, height: 1_600_000n });
 
     expect(states['glass_thickness']?.['LAM']?.reasonTh).toBe(
       'กระจกสองชั้นรองรับความกว้างไม่เกิน 200 cm',
@@ -56,7 +59,7 @@ describe('optionStatesFor — compatibility blocking', () => {
     // through rather than silently switching to something else.
     const selections = { ...AWN, glass_thickness: 'LAM' };
 
-    expect(blockedCodes('awn-4t', 'glass_thickness', selections, { width: 260, height: 160 })).toEqual([
+    expect(blockedCodes('awn-4t', 'glass_thickness', selections, { width: 2_600_000n, height: 1_600_000n })).toEqual([
       'LAM',
     ]);
   });
@@ -66,7 +69,7 @@ describe('optionStatesFor — errors that belong to other fields', () => {
   test('an over-area error does not strike through unrelated colour options', () => {
     // 400x250 = 10 sqm, over the 8 sqm cap. That is a size problem, not a colour
     // problem: striking out every swatch would tell the customer the wrong thing.
-    const measures = { width: 400, height: 250 };
+    const measures = { width: 4_000_000n, height: 2_500_000n };
 
     expect(blockedCodes('awn-4t', 'glass_color', AWN, measures)).toEqual([]);
     expect(blockedCodes('awn-4t', 'profile_color', AWN, measures)).toEqual([]);
@@ -74,14 +77,14 @@ describe('optionStatesFor — errors that belong to other fields', () => {
   });
 
   test('an over-area error still leaves thickness selectable when width is within limits', () => {
-    expect(blockedCodes('awn-4t', 'glass_thickness', AWN, { width: 190, height: 250 })).toEqual([]);
+    expect(blockedCodes('awn-4t', 'glass_thickness', AWN, { width: 1_900_000n, height: 2_500_000n })).toEqual([]);
   });
 });
 
 describe('optionStatesFor — warnings never block', () => {
   test('the laminated height warning leaves the option selectable', () => {
     const selections = { profile_color: 'WH', glass_color: 'CLR', glass_thickness: 'T6', lock_type: 'LK1' };
-    const states = optionStatesFor(product('sld-2p'), selections, { width: 180, height: 260 });
+    const states = optionStatesFor(product('sld-2p'), selections, { width: 1_800_000n, height: 2_600_000n });
 
     expect(states['glass_thickness']?.['LAM']?.blocked).toBe(false);
     expect(states['glass_thickness']?.['LAM']?.warnTh).toBe(
@@ -104,7 +107,7 @@ describe('optionStatesFor — stock', () => {
         : group,
     );
 
-    const states = optionStatesFor({ ...base, groups }, AWN, { width: 320, height: 160 });
+    const states = optionStatesFor({ ...base, groups }, AWN, { width: 3_200_000n, height: 1_600_000n });
 
     expect(states['profile_color']?.['BK']?.blocked).toBe(true);
     expect(states['profile_color']?.['BK']?.reasonTh).toBe('ตอนนี้สีนี้ยังไม่พร้อมผลิต');
@@ -113,7 +116,7 @@ describe('optionStatesFor — stock', () => {
 
 describe('optionStatesFor — shape', () => {
   test('covers every value of every sku group and ignores custom groups', () => {
-    const states = optionStatesFor(product('awn-4t'), AWN, { width: 320, height: 160 });
+    const states = optionStatesFor(product('awn-4t'), AWN, { width: 3_200_000n, height: 1_600_000n });
 
     expect(Object.keys(states).sort()).toEqual([
       'glass_color',
@@ -125,7 +128,7 @@ describe('optionStatesFor — shape', () => {
   });
 
   test('blocks nothing when no option could break a rule at this size', () => {
-    const states = optionStatesFor(product('awn-4t'), AWN, { width: 180, height: 160 });
+    const states = optionStatesFor(product('awn-4t'), AWN, { width: 1_800_000n, height: 1_600_000n });
     const anyBlocked = Object.values(states).some((group) =>
       Object.values(group).some((state) => state.blocked),
     );
@@ -136,7 +139,7 @@ describe('optionStatesFor — shape', () => {
   test('at the default 320 cm width, laminated glass is already out of reach', () => {
     // The selection itself is valid, but LAM is not reachable from it. "Valid config"
     // and "every option available" are different things, and the panel must show it.
-    const states = optionStatesFor(product('awn-4t'), AWN, { width: 320, height: 160 });
+    const states = optionStatesFor(product('awn-4t'), AWN, { width: 3_200_000n, height: 1_600_000n });
 
     expect(states['glass_thickness']?.['LAM']?.blocked).toBe(true);
     expect(states['glass_thickness']?.['T8']?.blocked).toBe(false);

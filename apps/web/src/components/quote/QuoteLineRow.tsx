@@ -12,8 +12,12 @@ interface QuoteLineRowProps {
 
 /** Desktop only (lg). The mobile equivalent is QuoteLineCard — never both at once. */
 export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: QuoteLineRowProps) {
-  const width = line.measures['width'] ?? 0;
-  const height = line.measures['height'] ?? 0;
+  const widthUm = line.measures['width'] ?? 0n;
+  const heightUm = line.measures['height'] ?? 0n;
+  // Shown back in the unit it was measured in — a size the customer read off a tape
+  // in inches is theirs to check, and `formatDimensions` marks the pair `≈` when the
+  // unit cannot express it exactly.
+  const unit = line.enteredUnits['width'] ?? 'cm';
 
   return (
     <tr className="border-b border-line last:border-b-0 align-top">
@@ -32,7 +36,7 @@ export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: Quote
       </td>
 
       <td className="numeric py-3 pe-3 text-small text-blueprint whitespace-nowrap">
-        {formatDimensions(width, height, 'cm')}
+        {formatDimensions(widthUm, heightUm, unit)}
       </td>
 
       <td className="py-3 pe-3">

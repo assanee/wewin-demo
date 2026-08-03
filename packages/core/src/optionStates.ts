@@ -1,5 +1,6 @@
 import type { Product, SkuGroup } from './types/catalog.js';
 import { validate } from './validation.js';
+import type { LengthUnit } from './units.js';
 
 export interface OptionState {
   blocked: boolean;
@@ -33,7 +34,8 @@ const skuGroups = (product: Product): SkuGroup[] =>
 export function optionStatesFor(
   product: Product,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
+  enteredUnits: Record<string, LengthUnit> = {},
 ): OptionStates {
   const states: OptionStates = {};
 
@@ -47,7 +49,7 @@ export function optionStatesFor(
       }
 
       const candidate = { ...selections, [group.code]: value.code };
-      const issues = validate(product, candidate, measures);
+      const issues = validate(product, candidate, measures, enteredUnits);
       const relevant = issues.filter((issue) => issue.affects.includes(group.code));
 
       const error = relevant.find((issue) => issue.severity === 'error');

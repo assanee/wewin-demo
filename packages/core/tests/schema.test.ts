@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { parseCatalog, productSchema } from '../src/data/schema.js';
 import { getProductById, products } from '../src/data/products.js';
 import { categories } from '../src/data/categories.js';
-import type { Product } from '../src/types/catalog.js';
+import type { CustomGroup, Product } from '../src/types/catalog.js';
 
 /**
  * Spec section 9: schema.ts parses the mock data at boot to catch typos.
@@ -19,6 +19,31 @@ const validProduct = (): Product => {
   const found = getProductById('awn-4t');
   if (!found) throw new Error('fixture missing: awn-4t');
   return structuredClone(found);
+};
+
+/**
+ * awn-4t's width group: min 600,000 µm, max 4,000,000 µm, step 5,000 µm,
+ * default 3,200,000 µm. Returned by reference so a test can break one field of it.
+ */
+const measureGroup = (product: Product): CustomGroup => {
+  const group = product.groups.find((candidate) => candidate.kind === 'custom');
+  if (group?.kind !== 'custom') throw new Error('fixture changed');
+  return group;
+};
+
+/**
+ * Every rejection message, joined.
+ *
+ * The grid invariants below are not independent — a min that is off its own step is
+ * also, arithmetically, a max and a default that are no longer a whole number of
+ * steps away from it. Asserting only `success === false` would let each of these
+ * tests pass on a refinement it was not written for, which for a gate whose whole
+ * job is to catch a mistyped bound is the same as not testing it. A parse that
+ * succeeds yields '' and matches nothing.
+ */
+const rejection = (product: Product): string => {
+  const result = productSchema.safeParse(product);
+  return result.success ? '' : result.error.issues.map((issue) => issue.message).join('\n');
 };
 
 describe('parseCatalog', () => {
@@ -116,30 +141,76 @@ describe('productSchema — structural typos', () => {
 
   test('rejects a custom group whose min exceeds its max', () => {
     const broken = validProduct();
-    const group = broken.groups.find((candidate) => candidate.kind === 'custom');
-    if (group?.kind !== 'custom') throw new Error('fixture changed');
-    group.min = 500;
-    group.max = 100;
+    const group = measureGroup(broken);
+    group.minUm = 5_000_000n; // 500 cm
+    group.maxUm = 1_000_000n; // 100 cm
 
-    expect(productSchema.safeParse(broken).success).toBe(false);
+    expect(rejection(broken)).toMatch(/min above max/);
   });
 
   test('rejects a custom group whose default falls outside its own range', () => {
     const broken = validProduct();
-    const group = broken.groups.find((candidate) => candidate.kind === 'custom');
-    if (group?.kind !== 'custom') throw new Error('fixture changed');
-    group.defaultValue = 9999;
+    // 9,999 cm, still a whole number of 5,000 µm steps above the min, so the range
+    // check is the only one this can trip.
+    measureGroup(broken).defaultUm = 99_990_000n;
 
-    expect(productSchema.safeParse(broken).success).toBe(false);
+    expect(rejection(broken)).toMatch(/defaultUm is outside min\/max/);
   });
 
   test('rejects a zero or negative step, which would divide by zero in the step check', () => {
     const broken = validProduct();
-    const group = broken.groups.find((candidate) => candidate.kind === 'custom');
-    if (group?.kind !== 'custom') throw new Error('fixture changed');
-    group.step = 0;
+    measureGroup(broken).stepUm = 0n;
 
-    expect(productSchema.safeParse(broken).success).toBe(false);
+    expect(rejection(broken)).toMatch(/step at or below zero/);
+  });
+
+  test('rejects a bound at or below zero, which is a unit gone missing rather than a small window', () => {
+    const broken = validProduct();
+    measureGroup(broken).minUm = 0n;
+
+    expect(rejection(broken)).toMatch(/min at or below zero/);
+  });
+});
+
+/**
+ * The bounds are authored in centimetres and converted by `cm()`, so what the schema
+ * sees is never what a person reviewed. These are the checks that make the conversion
+ * verifiable by machine — each one fails a mistake that would otherwise surface as a
+ * measurement the customer cannot re-enter, months later and off a tape measure.
+ */
+describe('productSchema — measurement grid invariants', () => {
+  test('rejects a step that is off the 25 µm lattice', () => {
+    const broken = validProduct();
+    // 16 µm divides all three of this group's bounds (600,000 / 4,000,000 /
+    // 3,200,000), so the lattice is the only invariant left to fail. A step off the
+    // lattice is one that metric and imperial entry cannot both land on.
+    measureGroup(broken).stepUm = 16n;
+
+    expect(rejection(broken)).toMatch(/lattice/);
+  });
+
+  test('rejects a min that is not itself on its step grid', () => {
+    const broken = validProduct();
+    // Snapping is anchored at absolute zero, so an off-grid min is a size the
+    // customer is handed and then warned about. It also puts the max and the default
+    // a fractional step away, which is why the message is what is asserted.
+    measureGroup(broken).minUm = 602_000n;
+
+    expect(rejection(broken)).toMatch(/min that is not itself on its step grid/);
+  });
+
+  test('rejects a max that is not a whole number of steps above its min', () => {
+    const broken = validProduct();
+    measureGroup(broken).maxUm = 4_002_000n; // 400.2 cm, 2,000 µm past the last step
+
+    expect(rejection(broken)).toMatch(/max that is not a whole number of steps/);
+  });
+
+  test('rejects a default that is not on its own step grid', () => {
+    const broken = validProduct();
+    measureGroup(broken).defaultUm = 3_202_000n; // in range, but between two steps
+
+    expect(rejection(broken)).toMatch(/default that is not on its own step grid/);
   });
 });
 
@@ -189,10 +260,34 @@ describe('productSchema — referential typos', () => {
       id: 'typo-measure',
       severity: 'error',
       messageTh: 'ทดสอบ',
-      when: { op: 'gt', left: { n: 'measure', group: 'widht' }, right: { n: 'const', value: 200 } },
+      when: {
+        op: 'gt',
+        left: { n: 'measure', group: 'widht' },
+        right: { n: 'const', value: 2_000_000n, dim: 'length' }, // 200 cm
+      },
     });
 
-    expect(productSchema.safeParse(broken).success).toBe(false);
+    expect(rejection(broken)).toMatch(/measures unknown custom group "widht"/);
+  });
+
+  test('rejects a comparison between two different dimensions', () => {
+    const broken = validProduct();
+    broken.rules.push({
+      id: 'dimensionless',
+      severity: 'error',
+      messageTh: 'ทดสอบ',
+      // The threshold a person means when they write 200 is 200 cm. Left bare, it is
+      // 200 µm, and an error-severity rule that fires for every window ever built is
+      // as broken as one that never fires — so the constant carries its dimension and
+      // a mismatch is refused at boot rather than evaluated.
+      when: {
+        op: 'gt',
+        left: { n: 'measure', group: 'width' },
+        right: { n: 'const', value: 200n, dim: 'scalar' },
+      },
+    });
+
+    expect(rejection(broken)).toMatch(/compares length against scalar/);
   });
 
   test('rejects duplicate rule ids, which would make issues indistinguishable', () => {
@@ -217,8 +312,16 @@ describe('productSchema — referential typos', () => {
           {
             op: 'or',
             any: [
-              { op: 'gt', left: { n: 'measure', group: 'width' }, right: { n: 'const', value: 200 } },
-              { op: 'gt', left: { n: 'area' }, right: { n: 'const', value: 6 } },
+              {
+                op: 'gt',
+                left: { n: 'measure', group: 'width' },
+                right: { n: 'const', value: 2_000_000n, dim: 'length' }, // 200 cm
+              },
+              {
+                op: 'gt',
+                left: { n: 'area' },
+                right: { n: 'const', value: 6_000_000_000_000n, dim: 'area' }, // 6 m²
+              },
             ],
           },
         ],

@@ -6,7 +6,15 @@
  *   - `custom` options are continuous measurements     -> they are inputs to the price formula
  */
 
-export type Unit = 'cm' | 'mm';
+/**
+ * The unit a size profile was written in.
+ *
+ * Not the unit anything is *held* in — every length below is canonical micrometres.
+ * This records what a human wrote in `products.ts`, so a message about a range can
+ * fall back to the catalogue's own idiom when the customer has not typed anything
+ * yet. Deliberately narrower than `LengthUnit`: the table is authored in metric.
+ */
+export type AuthoredUnit = 'cm' | 'mm';
 export type OptionKind = 'sku' | 'custom';
 export type InputStyle = 'swatch' | 'chip' | 'toggle' | 'number';
 
@@ -35,16 +43,24 @@ export interface SkuGroup {
   defaultValue: string;
 }
 
+/**
+ * A continuous measurement.
+ *
+ * Every bound is an integer count of micrometres, because the alternative is a
+ * catalogue authored on the 5 mm grid and a customer typing on the 1/8 in grid with
+ * no common lattice between them — see `src/units.ts` for the gcd this rests on.
+ * `unit` says how the row was written; it never says how the value is stored.
+ */
 export interface CustomGroup {
   kind: 'custom';
   code: string; // e.g. 'width'
   labelTh: string;
   input: 'number';
-  unit: Unit;
-  min: number;
-  max: number;
-  step: number;
-  defaultValue: number;
+  unit: AuthoredUnit;
+  minUm: bigint;
+  maxUm: bigint;
+  stepUm: bigint;
+  defaultUm: bigint;
   helperTh?: string;
 }
 
@@ -76,7 +92,14 @@ export interface Product {
   heroImage: string;
   leadTimeDays: [number, number];
   pricePerSqm: number;
-  minBillableSqm: number;
+  /**
+   * The price floor, in the same unit the area is computed in (µm²).
+   *
+   * Named for its unit rather than left as `minBillableSqm`, because it is compared
+   * directly against `calcAreaSqUm` — the two figures being a million-fold apart and
+   * still both called "sqm" is how a price floor stops applying without a test failing.
+   */
+  minBillableSqUm: bigint;
   groups: OptionGroup[];
   rules: Rule[];
   skuPrefix: string; // e.g. 'AWN4T'

@@ -159,8 +159,19 @@ describe('product card metadata', () => {
   });
 
   test('reports the adjustable width range for the size badge', () => {
-    expect(measureRange(byId('awn-4t'), 'width')).toEqual({ min: 60, max: 400, unit: 'cm' });
-    expect(measureRange(byId('sld-2p'), 'width')).toEqual({ min: 120, max: 500, unit: 'cm' });
+    // Canonical micrometres, not the authored centimetres: the badge and the
+    // configurator input have to be reading the same number, and the card is what
+    // picks the display unit. 60 cm is 600,000 µm.
+    expect(measureRange(byId('awn-4t'), 'width')).toEqual({
+      minUm: 600_000n,
+      maxUm: 4_000_000n,
+      unit: 'cm',
+    });
+    expect(measureRange(byId('sld-2p'), 'width')).toEqual({
+      minUm: 1_200_000n,
+      maxUm: 5_000_000n,
+      unit: 'cm',
+    });
   });
 
   test('returns null for a measurement the product does not have', () => {

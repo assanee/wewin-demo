@@ -34,16 +34,21 @@ function fnv1a64(input: string): bigint {
  * Serialise a configuration into a canonical string.
  * Keys are sorted so `{width, height}` and `{height, width}` hash identically,
  * and each pair is delimited so 320/160 cannot serialise the same as 32/0160.
+ *
+ * Every value carries its unit. Without the `um` token a pre-micrometre `width=320`
+ * and a micrometre `width=320` would hash identically while meaning 320 cm and
+ * 0.32 mm — the merge in the quote reducer treats an equal hash as the same window,
+ * so two payloads from different eras must be unable to collide by construction.
  */
-function canonicalise(skuCode: string, measures: Record<string, number>): string {
+function canonicalise(skuCode: string, measures: Record<string, bigint>): string {
   const pairs = Object.keys(measures)
     .sort()
-    .map((key) => `${key}=${measures[key] ?? 0}`)
+    .map((key) => `${key}=${measures[key] ?? 0n}um`)
     .join(';');
 
   return `${skuCode}|${pairs}`;
 }
 
-export function configHash(skuCode: string, measures: Record<string, number>): string {
+export function configHash(skuCode: string, measures: Record<string, bigint>): string {
   return fnv1a64(canonicalise(skuCode, measures)).toString(16).padStart(16, '0');
 }

@@ -11,6 +11,8 @@
 import { z } from 'zod';
 import type { Category, Product } from '../types/catalog.js';
 import type { NumExpr, RuleExpr } from '../types/rule.js';
+import { numDimension } from '../validation.js';
+import { LATTICE_UM } from '../units.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -39,15 +41,58 @@ const optionValueSchema = z.object({
 
 const numExprSchema: z.ZodType<NumExpr> = z.lazy(() =>
   z.discriminatedUnion('n', [
-    z.object({ n: z.literal('const'), value: z.number().finite() }),
+    z.object({
+      n: z.literal('const'),
+      value: z.bigint(),
+      dim: z.enum(['length', 'area', 'scalar']),
+    }),
     z.object({ n: z.literal('measure'), group: z.string().min(1) }),
     z.object({ n: z.literal('area') }),
-    z.object({ n: z.literal('div'), left: numExprSchema, right: numExprSchema }),
+    z.object({ n: z.literal('mul'), left: numExprSchema, right: numExprSchema }),
   ]),
 );
 
 const comparison = <T extends 'gt' | 'lt' | 'gte' | 'lte'>(op: T) =>
   z.object({ op: z.literal(op), left: numExprSchema, right: numExprSchema });
+
+/**
+ * Report any comparison that is not dimensionally sensible.
+ *
+ * `evalExpr` throws on a mismatch rather than returning false, and this walk is what
+ * keeps that throw off the customer's screen. It matters most for the shape it cannot
+ * otherwise catch: `gt(measure('width'), scalar(200))` reads as "wider than 200 cm"
+ * and evaluates as "wider than 200 µm", which is true for every window ever built —
+ * an error-severity rule that fires always is as broken as one that never fires.
+ */
+function checkDimensions(expr: RuleExpr, ctx: z.RefinementCtx, ruleId: string): void {
+  switch (expr.op) {
+    case 'gt':
+    case 'lt':
+    case 'gte':
+    case 'lte': {
+      const left = numDimension(expr.left);
+      const right = numDimension(expr.right);
+      if (left === null || right === null || left !== right) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `rule "${ruleId}" compares ${String(left)} against ${String(right)}`,
+        });
+      }
+      break;
+    }
+    case 'and':
+      for (const child of expr.all) checkDimensions(child, ctx, ruleId);
+      break;
+    case 'or':
+      for (const child of expr.any) checkDimensions(child, ctx, ruleId);
+      break;
+    case 'not':
+      checkDimensions(expr.expr, ctx, ruleId);
+      break;
+    case 'selected':
+      break;
+  }
+}
 
 const ruleExprSchema: z.ZodType<RuleExpr> = z.lazy(() =>
   z.discriminatedUnion('op', [
@@ -62,12 +107,16 @@ const ruleExprSchema: z.ZodType<RuleExpr> = z.lazy(() =>
   ]),
 );
 
-const ruleSchema = z.object({
-  id: z.string().min(1),
-  messageTh: z.string().min(1),
-  severity: z.enum(['error', 'warning']),
-  when: ruleExprSchema,
-});
+const ruleSchema = z
+  .object({
+    id: z.string().min(1),
+    messageTh: z.string().min(1),
+    severity: z.enum(['error', 'warning']),
+    when: ruleExprSchema,
+  })
+  .superRefine((rule, ctx) => {
+    checkDimensions(rule.when, ctx, rule.id);
+  });
 
 /* ------------------------------------------------------------------ *
  * Groups
@@ -111,6 +160,19 @@ const skuGroupSchema = z
     }
   });
 
+/**
+ * A measurement group, with the grid invariants checked rather than assumed.
+ *
+ * The bounds in `products.ts` are written in centimetres and converted by `cm()`, so
+ * the numbers a person reviews are not the numbers the app uses. These refinements
+ * are what makes that conversion verifiable by machine: every one of the 48 authored
+ * bounds has to land on the group's own step, and the step has to land on the 25 µm
+ * lattice that keeps metric and imperial entry mutually representable.
+ *
+ * Every field is declared, including the ones with nothing to check. zod strips keys
+ * it does not know about, so a field left out here disappears silently on the way
+ * from the table to the configurator.
+ */
 const customGroupSchema = z
   .object({
     kind: z.literal('custom'),
@@ -118,22 +180,47 @@ const customGroupSchema = z
     labelTh: z.string().min(1),
     input: z.literal('number'),
     unit: z.enum(['cm', 'mm']),
-    min: z.number().finite(),
-    max: z.number().finite(),
-    step: z.number().finite().positive(),
-    defaultValue: z.number().finite(),
+    minUm: z.bigint(),
+    maxUm: z.bigint(),
+    stepUm: z.bigint(),
+    defaultUm: z.bigint(),
     helperTh: z.string().optional(),
   })
   .superRefine((group, ctx) => {
-    if (group.min > group.max) {
-      ctx.addIssue({ code: 'custom', message: `group "${group.code}" has min above max` });
+    const fail = (message: string): void =>
+      ctx.addIssue({ code: 'custom', message: `group "${group.code}" ${message}` });
+
+    // A zero or negative bound is not a small window, it is a unit that went missing.
+    if (group.minUm <= 0n) fail('has a min at or below zero');
+    if (group.minUm > group.maxUm) fail('has min above max');
+    if (group.defaultUm < group.minUm || group.defaultUm > group.maxUm) {
+      fail('defaultUm is outside min/max');
     }
 
-    if (group.defaultValue < group.min || group.defaultValue > group.max) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `group "${group.code}" defaultValue is outside min/max`,
-      });
+    if (group.stepUm <= 0n) {
+      fail('has a step at or below zero');
+      return; // everything below divides by it
+    }
+
+    if (group.stepUm % LATTICE_UM !== 0n) {
+      fail(`stepUm ${String(group.stepUm)} is not a multiple of the ${String(LATTICE_UM)} µm lattice`);
+    }
+
+    // Snapping is anchored at absolute zero, not at the min, so the min has to sit
+    // on the grid itself — otherwise the smallest size in the range is permanently
+    // off-step and the customer is warned about a bound they were handed.
+    if (group.minUm % group.stepUm !== 0n) {
+      fail('has a min that is not itself on its step grid');
+    }
+
+    // The max has to be reachable from the min by whole steps, or the top of the
+    // range is a size the customer can see but never select.
+    if ((group.maxUm - group.minUm) % group.stepUm !== 0n) {
+      fail('has a max that is not a whole number of steps above its min');
+    }
+
+    if ((group.defaultUm - group.minUm) % group.stepUm !== 0n) {
+      fail('has a default that is not on its own step grid');
     }
   });
 
@@ -150,7 +237,7 @@ function referencedGroups(expr: RuleExpr): { sku: string[]; measure: string[] } 
 
   const walkNum = (node: NumExpr): void => {
     if (node.n === 'measure') measure.push(node.group);
-    if (node.n === 'div') {
+    if (node.n === 'mul') {
       walkNum(node.left);
       walkNum(node.right);
     }
@@ -231,7 +318,7 @@ export const productSchema = z
     heroImage: z.string().min(1),
     leadTimeDays: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
     pricePerSqm: z.number().finite().positive(),
-    minBillableSqm: z.number().finite().positive(),
+    minBillableSqUm: z.bigint().positive(),
     groups: z.array(optionGroupSchema).min(1),
     rules: z.array(ruleSchema),
     skuPrefix: z.string().min(1),

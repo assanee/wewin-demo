@@ -1,5 +1,6 @@
 import type { CustomGroup, OptionValue, Product, SkuGroup } from './types/catalog.js';
 import { type Currency, divRoundHalfUp } from './money.js';
+import { SQ_UM_PER_SQM } from './units.js';
 
 /**
  * Pricing, computed in exact integers.
@@ -12,25 +13,27 @@ import { type Currency, divRoundHalfUp } from './money.js';
  *
  * So every value below is a `bigint`. The chain that makes that possible:
  *
- *   lengths land on 0.1 cm      → hold them as whole millimetres
- *   area = mm × mm              → an exact integer count of millionths of a m²
- *   pricePerSqm and every delta → already integers in the catalogue (verified)
+ *   lengths are canonical micrometres → already whole (src/units.ts)
+ *   area = µm × µm                    → an exact integer count of square micrometres
+ *   pricePerSqm and every delta       → already integers in the catalogue (verified)
  *
  * Nothing is divided until the very last step, so nothing can drift.
  */
 
 /**
- * Working precision: minor units × 10^6.
+ * Working precision: minor units × `SQ_UM_PER_SQM`.
  *
- * Chosen so that every intermediate — a percentage of the base, a per-m² charge —
- * stays a whole number. Percentages are the binding constraint: a `percent` delta
- * divides by 100, and this scale leaves the base divisible by 100 with room to spare.
+ * Tied to the area unit rather than picked: `baseScaled` is `areaSqUm × price × 100`,
+ * so the scale it carries *is* the number of area units in one m². When area moved
+ * from mm² to µm² this had to move with it by the same factor of 10^6, or every
+ * total would have come out a million times high. The two are written as one
+ * constant for that reason.
+ *
+ * The property that made 10^6 a deliberate choice still holds at 10^12: a `percent`
+ * delta divides by 100, and the base stays divisible by 100 with room to spare.
  */
-export const PRICE_SCALE = 1_000_000n;
+export const PRICE_SCALE = SQ_UM_PER_SQM;
 const SCALE = PRICE_SCALE;
-
-/** Millionths of a square metre in one square metre. */
-const MICRO_SQM = 1_000_000n;
 
 /** THB presents on the whole baht, so totals round to 100 satang. Policy, not a fact. */
 const THB_ROUND_TO_MINOR = 100n;
@@ -42,6 +45,15 @@ export interface PriceLine {
 }
 
 export interface PriceBreakdown {
+  /**
+   * Square metres, for the screen only.
+   *
+   * The price is computed entirely in `areaSqUm`; these two are the last step of
+   * that arithmetic divided out for a person to read, and nothing may multiply them
+   * back up. They stay `number` so a stored snapshot survives JSON unchanged — a
+   * quote line's own record of how big the window was is the last witness left if
+   * `measures` is ever lost, and it should not depend on a revive path to exist.
+   */
   areaSqm: number;
   billableSqm: number;
   currency: Currency;
@@ -112,17 +124,23 @@ function selectedValues(product: Product, selections: Record<string, string>): {
   return resolved;
 }
 
-/** Read a measurement in cm, falling back to the group default so area is never NaN. */
+/**
+ * Read a measurement in canonical micrometres, falling back to the group default.
+ *
+ * The `bigint` check is not ceremony: `measures` arrives from localStorage and from
+ * share links, and a value that survived as a string would otherwise concatenate
+ * rather than multiply.
+ */
 export function measureOf(
   product: Product,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
   code: string,
-): number {
+): bigint {
   const raw = measures[code];
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'bigint') return raw;
 
   const group = customGroups(product).find((candidate) => candidate.code === code);
-  return group?.defaultValue ?? 0;
+  return group?.defaultUm ?? 0n;
 }
 
 /**
@@ -134,28 +152,29 @@ export function measureOf(
  */
 export const AREA_MEASURE_CODES = ['width', 'height'] as const;
 
-/** Area in square metres from the width and height custom groups. */
-export function calcAreaSqm(product: Product, measures: Record<string, number>): number {
-  const [widthCode, heightCode] = AREA_MEASURE_CODES;
-  return (measureOf(product, measures, widthCode) * measureOf(product, measures, heightCode)) / 10000;
-}
-
-/** Centimetres to whole millimetres. Every dimension in the catalogue lands on 0.1 cm. */
-const toMillimetres = (cm: number): bigint => BigInt(Math.round(cm * 10));
-
 /**
- * Area as an exact count of millionths of a square metre.
+ * Area as an exact count of square micrometres.
  *
- * mm × mm is µm², and there are exactly 1,000,000 mm² in a m² — so the product of the
- * two millimetre measurements *is* the micro-m² figure, with no division at all.
+ * µm × µm is µm², so the product of the two canonical measurements *is* the answer.
+ * The earlier version divided by 10^6 on the way, which was a second rounding point
+ * inside a layer that is supposed to have one — the same class of defect that made
+ * ฿36,224.496 come out a baht high. There is no division here at all.
  */
-export function calcAreaMicroSqm(product: Product, measures: Record<string, number>): bigint {
+export function calcAreaSqUm(product: Product, measures: Record<string, bigint>): bigint {
   const [widthCode, heightCode] = AREA_MEASURE_CODES;
   return (
-    toMillimetres(measureOf(product, measures, widthCode)) *
-    toMillimetres(measureOf(product, measures, heightCode))
+    measureOf(product, measures, widthCode) * measureOf(product, measures, heightCode)
   );
 }
+
+/**
+ * Square micrometres to square metres. **Display only** — never on the way to a price.
+ *
+ * Exported so that the one division out of canonical area lives in one place. The
+ * largest area in the catalogue is 8 m × 3 m = 2.4 × 10^13 µm², comfortably inside
+ * the exactly-representable integers, so this loses nothing it is asked to show.
+ */
+export const sqUmToSqm = (sqUm: bigint): number => Number(sqUm) / Number(SQ_UM_PER_SQM);
 
 /**
  * Price a configuration. Pure — no React, no clock, no randomness (spec section 5).
@@ -167,19 +186,18 @@ export function calcAreaMicroSqm(product: Product, measures: Record<string, numb
 export function calcPrice(
   product: Product,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
   qty: number,
 ): PriceBreakdown {
-  const areaMicroSqm = calcAreaMicroSqm(product, measures);
-  const minBillableMicroSqm = BigInt(Math.round(product.minBillableSqm * Number(MICRO_SQM)));
-  const billableMicroSqm =
-    areaMicroSqm > minBillableMicroSqm ? areaMicroSqm : minBillableMicroSqm;
+  const areaSqUm = calcAreaSqUm(product, measures);
+  const billableSqUm =
+    areaSqUm > product.minBillableSqUm ? areaSqUm : product.minBillableSqUm;
 
   const pricePerSqm = BigInt(product.pricePerSqm);
 
   // base [scaled] = billableSqm × pricePerSqm, in minor units × SCALE.
-  // billableMicroSqm/1e6 m² × pricePerSqm baht × 100 satang × SCALE / 1  →  × 100 exactly.
-  const baseScaled = billableMicroSqm * pricePerSqm * 100n;
+  // billableSqUm/SCALE m² × pricePerSqm baht × 100 satang × SCALE / 1  →  × 100 exactly.
+  const baseScaled = billableSqUm * pricePerSqm * 100n;
 
   const lines: PriceLine[] = [];
   const pushLine = (label: string, scaled: bigint): void => {
@@ -204,7 +222,7 @@ export function calcPrice(
         percentScaled += scaled;
         break;
       case 'per_sqm':
-        scaled = billableMicroSqm * BigInt(value.delta.amount) * 100n;
+        scaled = billableSqUm * BigInt(value.delta.amount) * 100n;
         perSqmScaled += scaled;
         break;
       case 'flat':
@@ -233,8 +251,8 @@ export function calcPrice(
   const totalMinor = totalFromUnitPrice(unitPriceScaled, qty);
 
   return {
-    areaSqm: calcAreaSqm(product, measures),
-    billableSqm: Number(billableMicroSqm) / Number(MICRO_SQM),
+    areaSqm: sqUmToSqm(areaSqUm),
+    billableSqm: sqUmToSqm(billableSqUm),
     currency: 'THB',
     baseMinor: divRoundHalfUp(baseScaled, SCALE),
     percentTotalMinor: divRoundHalfUp(percentScaled, SCALE),

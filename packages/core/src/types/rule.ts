@@ -17,14 +17,36 @@
  * helpers in `src/data/ruleBuilders.ts` remove.
  */
 
-/** A numeric term a rule can compare. Recursive so `width / height` needs no special case. */
+/**
+ * What a numeric term measures.
+ *
+ * A rule constant is a bare integer, and once lengths are micrometres a bare integer
+ * is ambiguous in the worst possible way: `gt(measure('width'), 200)` reads as "wider
+ * than 200 cm" and evaluates as "wider than 0.2 mm", which is true for every window
+ * in the catalogue. The dimension is what makes that a rejected expression rather
+ * than a rule that fires always.
+ */
+export type Dimension = 'length' | 'area' | 'scalar';
+
+/** A numeric term a rule can compare. Recursive so `3 × height` needs no special case. */
 export type NumExpr =
-  | { n: 'const'; value: number }
-  /** Value of a `CustomGroup` measurement, e.g. `width`. */
+  /** Micrometres for `length`, square micrometres for `area`, a plain count for `scalar`. */
+  | { n: 'const'; value: bigint; dim: Dimension }
+  /** Value of a `CustomGroup` measurement in micrometres, e.g. `width`. */
   | { n: 'measure'; group: string }
-  /** Derived: (width * height) / 10000, in square metres. */
+  /** Derived: width × height, in square micrometres. */
   | { n: 'area' }
-  | { n: 'div'; left: NumExpr; right: NumExpr };
+  /**
+   * Product of two terms.
+   *
+   * This is where `div` used to be, and the swap is not cosmetic. Integer division
+   * truncates: `4805000n / 1600000n` is `3n`, so `(w/h) > 3` went quiet for every
+   * aspect ratio in [3, 4) — an error-severity rule silently passing unbuildable
+   * windows. Written as the cross-multiplication `w > 3·h` the same comparison is
+   * exact, and it was verified equivalent to the float form over all 259,461 grid
+   * points before the swap was made.
+   */
+  | { n: 'mul'; left: NumExpr; right: NumExpr };
 
 export type RuleExpr =
   | { op: 'gt'; left: NumExpr; right: NumExpr }

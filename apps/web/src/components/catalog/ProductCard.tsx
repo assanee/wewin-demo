@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import type { Product } from '@wewin/core';
 import { countProfileColors, getCustomGroup, getSkuGroup, measureRange } from '@wewin/core/filters';
-import { formatBaht, formatCm, formatLeadTime } from '@wewin/core/format';
+import { formatBaht, formatDimensions, formatLeadTime, formatRange } from '@wewin/core/format';
 import { bahtToMinor } from '@wewin/core/money';
 import { Badge } from '../common/Badge';
 import { Schematic } from '../common/Schematic';
@@ -17,9 +17,32 @@ const defaultSwatch = (product: Product, groupCode: string, fallback: string): s
   return value?.swatchHex ?? fallback;
 };
 
-export function ProductCard({ product }: ProductCardProps) {
+/**
+ * The default size, as a proportion for the thumbnail and a sentence for its
+ * accessible name.
+ *
+ * Both come from the same pair of groups, and neither is a length: the micrometres
+ * turn into a ratio and a string here and go no further. `Number` on a bound is safe
+ * and stays safe — the largest one in the catalogue is four metres, eleven orders of
+ * magnitude inside what a double holds exactly.
+ */
+const defaultSize = (product: Product): { ratio: number; label: string } => {
   const width = getCustomGroup(product, 'width');
   const height = getCustomGroup(product, 'height');
+
+  // The catalogue schema requires both groups on every product, so this is the
+  // render-time echo of that guarantee rather than a case anyone can reach: a square
+  // with nothing claimed about its size beats inventing one.
+  if (!width || !height) return { ratio: 1, label: '' };
+
+  return {
+    ratio: Number(width.defaultUm) / Number(height.defaultUm),
+    label: formatDimensions(width.defaultUm, height.defaultUm, width.unit),
+  };
+};
+
+export function ProductCard({ product }: ProductCardProps) {
+  const size = defaultSize(product);
   const range = measureRange(product, 'width');
   const colorCount = countProfileColors(product);
 
@@ -28,8 +51,8 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className="border-b border-line bg-ink/40 p-6 text-chalk-3">
         <div className="mx-auto h-[160px] w-full max-w-[240px]">
           <Schematic
-            widthCm={width?.defaultValue ?? 100}
-            heightCm={height?.defaultValue ?? 100}
+            ratio={size.ratio}
+            sizeLabel={size.label}
             elevation={product.elevation}
             profileHex={defaultSwatch(product, 'profile_color', '#7C7F85')}
             glassHex={defaultSwatch(product, 'glass_color', '#C9E4F7')}
@@ -56,7 +79,9 @@ export function ProductCard({ product }: ProductCardProps) {
           <Badge>{colorCount} สีโปรไฟล์</Badge>
           {range ? (
             <Badge tone="blueprint" mono>
-              ปรับขนาดได้ {formatCm(range.min)}–{formatCm(range.max)} {range.unit}
+              {/* formatRange carries its own unit, and its own ≈ when the bounds
+                  cannot be said exactly in that unit. */}
+              ปรับขนาดได้ {formatRange(range.minUm, range.maxUm, range.unit)}
             </Badge>
           ) : null}
         </div>

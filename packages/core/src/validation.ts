@@ -1,6 +1,8 @@
 import type { CustomGroup, Product, SkuGroup } from './types/catalog.js';
-import type { NumExpr, RuleExpr } from './types/rule.js';
-import { AREA_MEASURE_CODES, calcAreaSqm, measureOf } from './pricing.js';
+import type { Dimension, NumExpr, RuleExpr } from './types/rule.js';
+import { AREA_MEASURE_CODES, calcAreaSqUm, measureOf } from './pricing.js';
+import { formatMeasure, formatRange } from './format.js';
+import { gridUmFor, isOnGridUm, type LengthUnit, snapUpUm } from './units.js';
 
 export type Issue = {
   ruleId: string;
@@ -8,9 +10,6 @@ export type Issue = {
   messageTh: string;
   affects: string[]; // groupCodes the UI should highlight
 };
-
-/** Tolerance for step arithmetic — 0.5 steps on a float measurement drift in the 1e-15 range. */
-const EPSILON = 1e-9;
 
 const customGroups = (product: Product): CustomGroup[] =>
   product.groups.filter((group): group is CustomGroup => group.kind === 'custom');
@@ -26,26 +25,67 @@ const skuGroups = (product: Product): SkuGroup[] =>
 export interface RuleScope {
   product: Product;
   selections: Record<string, string>;
-  measures: Record<string, number>;
-  areaSqm: number;
+  measures: Record<string, bigint>;
+  areaSqUm: bigint;
 }
 
-export function evalNum(expr: NumExpr, scope: RuleScope): number {
+/**
+ * What a term measures, or `null` when it multiplies quantities that have no product.
+ *
+ * The algebra is the whole point of `Dimension`: scalar × anything keeps the other
+ * side's dimension, length × length is an area, and there is nothing sensible to do
+ * with area × length in a window catalogue — so it is rejected rather than guessed.
+ */
+export function numDimension(expr: NumExpr): Dimension | null {
+  switch (expr.n) {
+    case 'const':
+      return expr.dim;
+    case 'measure':
+      return 'length';
+    case 'area':
+      return 'area';
+    case 'mul': {
+      const left = numDimension(expr.left);
+      const right = numDimension(expr.right);
+      if (left === null || right === null) return null;
+      if (left === 'scalar') return right;
+      if (right === 'scalar') return left;
+      return left === 'length' && right === 'length' ? 'area' : null;
+    }
+  }
+}
+
+/** Micrometres, square micrometres, or a bare count — read `numDimension` to know which. */
+export function evalNum(expr: NumExpr, scope: RuleScope): bigint {
   switch (expr.n) {
     case 'const':
       return expr.value;
     case 'measure':
       return measureOf(scope.product, scope.measures, expr.group);
     case 'area':
-      return scope.areaSqm;
-    case 'div': {
-      const denominator = evalNum(expr.right, scope);
-      // A zero denominator means the customer cleared the field. Report no ratio
-      // violation for it; the range rule on that field is the actionable message.
-      if (denominator === 0) return 0;
-      return evalNum(expr.left, scope) / denominator;
-    }
+      return scope.areaSqUm;
+    case 'mul':
+      return evalNum(expr.left, scope) * evalNum(expr.right, scope);
   }
+}
+
+/**
+ * Both sides of a comparison, once it is established they measure the same thing.
+ *
+ * Throws rather than returning false on a mismatch. `schema.ts` refuses to boot on a
+ * dimensionally inconsistent rule, so the catalogue can never reach this — the throw
+ * is here for an expression built by hand, where "the rule quietly never fires" is
+ * the failure that costs a customer a window and a silent `false` would deliver it.
+ */
+function comparands(left: NumExpr, right: NumExpr, scope: RuleScope): [bigint, bigint] {
+  const leftDim = numDimension(left);
+  if (leftDim === null || leftDim !== numDimension(right)) {
+    throw new TypeError(
+      `rule compares ${String(leftDim)} against ${String(numDimension(right))}`,
+    );
+  }
+
+  return [evalNum(left, scope), evalNum(right, scope)];
 }
 
 /**
@@ -79,14 +119,22 @@ export function selectionOf(scope: RuleScope, groupCode: string): string | undef
  */
 export function evalExpr(expr: RuleExpr, scope: RuleScope): boolean {
   switch (expr.op) {
-    case 'gt':
-      return evalNum(expr.left, scope) > evalNum(expr.right, scope);
-    case 'lt':
-      return evalNum(expr.left, scope) < evalNum(expr.right, scope);
-    case 'gte':
-      return evalNum(expr.left, scope) >= evalNum(expr.right, scope);
-    case 'lte':
-      return evalNum(expr.left, scope) <= evalNum(expr.right, scope);
+    case 'gt': {
+      const [left, right] = comparands(expr.left, expr.right, scope);
+      return left > right;
+    }
+    case 'lt': {
+      const [left, right] = comparands(expr.left, expr.right, scope);
+      return left < right;
+    }
+    case 'gte': {
+      const [left, right] = comparands(expr.left, expr.right, scope);
+      return left >= right;
+    }
+    case 'lte': {
+      const [left, right] = comparands(expr.left, expr.right, scope);
+      return left <= right;
+    }
     case 'selected':
       return selectionOf(scope, expr.group) === expr.value;
     case 'and':
@@ -108,7 +156,7 @@ export function affectedGroups(expr: RuleExpr): string[] {
     // about the two measurements it is computed from — without this the dimension
     // lines and the number inputs stay unmarked while the size is unbuildable.
     if (node.n === 'area') for (const code of AREA_MEASURE_CODES) found.add(code);
-    if (node.n === 'div') {
+    if (node.n === 'mul') {
       walkNum(node.left);
       walkNum(node.right);
     }
@@ -147,29 +195,33 @@ export function affectedGroups(expr: RuleExpr): string[] {
  * ------------------------------------------------------------------ */
 
 /**
- * Round a measurement up to the next valid step and clamp it into range.
- * Spec section 6: off-step values snap *up* on blur, never down — a window
- * built slightly large can be trimmed on site, one built small cannot.
+ * The grid this group's measurement snaps to when typed in `unit`.
+ *
+ * Anchored at absolute zero, not at `group.min`. Every authored bound is a whole
+ * number of centimetres and so a multiple of the 5 mm step, which makes the two
+ * anchors identical on the metric grid — and fixes the imperial one for free:
+ * 600,000 µm is not a multiple of 3,175, so anchoring at `min` turned a typed
+ * 24 in into 24.122 in.
  */
-export function snapToStep(group: CustomGroup, value: number): number {
-  if (!Number.isFinite(value)) return group.defaultValue;
+export const gridFor = (group: CustomGroup, unit: LengthUnit): bigint =>
+  gridUmFor(unit, group.stepUm);
 
-  const clamped = Math.min(Math.max(value, group.min), group.max);
-  const steps = Math.ceil((clamped - group.min) / group.step - EPSILON);
-  const snapped = group.min + steps * group.step;
+/**
+ * Round a measurement up to the next valid step.
+ *
+ * Spec section 6: off-step values snap *up*, never down — a window built slightly
+ * large can be trimmed on site, one built small is scrap. Notably it does **not**
+ * clamp to `group.maxUm`: the old `Math.min(snapped, group.max)` was a snap *down*
+ * wearing a guard's clothes, and at the top of an imperial range it fired for real —
+ * 4,000,000 µm is not on the eighth grid (3,175 × 1,260 = 4,000,500), so someone
+ * typing 157.5 in got a window 500 µm shorter without being told. Overshooting the
+ * maximum is an error `validate` reports, not something to silently absorb here.
+ */
+export const snapToStep = (group: CustomGroup, valueUm: bigint, unit: LengthUnit): bigint =>
+  snapUpUm(valueUm, gridFor(group, unit));
 
-  // Guard the case where snapping up would leave the range.
-  const bounded = Math.min(snapped, group.max);
-
-  // Re-round to the step's decimal precision so 0.5 steps do not accumulate float dust.
-  const decimals = (String(group.step).split('.')[1] ?? '').length;
-  return Number(bounded.toFixed(decimals));
-}
-
-const isOnStep = (group: CustomGroup, value: number): boolean => {
-  const steps = (value - group.min) / group.step;
-  return Math.abs(steps - Math.round(steps)) < EPSILON;
-};
+const isOnStep = (group: CustomGroup, valueUm: bigint, unit: LengthUnit): boolean =>
+  isOnGridUm(valueUm, gridFor(group, unit));
 
 /* ------------------------------------------------------------------ *
  * validate
@@ -180,28 +232,35 @@ const isOnStep = (group: CustomGroup, value: number): boolean => {
  *
  * Range and step issues are derived from CustomGroup min/max/step rather than
  * written into rules[], so a new product gets them for free.
+ *
+ * `enteredUnits` decides which grid each field is judged against, and therefore what
+ * the messages are phrased in. A field the customer has not typed into falls back to
+ * the unit the catalogue was authored in, which is what the input is showing.
  */
 export function validate(
   product: Product,
   selections: Record<string, string>,
-  measures: Record<string, number>,
+  measures: Record<string, bigint>,
+  enteredUnits: Record<string, LengthUnit> = {},
 ): Issue[] {
   const issues: Issue[] = [];
   const scope: RuleScope = {
     product,
     selections,
     measures,
-    areaSqm: calcAreaSqm(product, measures),
+    areaSqUm: calcAreaSqUm(product, measures),
   };
 
   for (const group of customGroups(product)) {
     const value = measureOf(product, measures, group.code);
+    const unit = enteredUnits[group.code] ?? group.unit;
+    const say = (um: bigint): string => formatMeasure(um, unit);
 
-    if (value < group.min || value > group.max) {
+    if (value < group.minUm || value > group.maxUm) {
       issues.push({
         ruleId: `range:${group.code}`,
         severity: 'error',
-        messageTh: `${group.labelTh}ต้องอยู่ระหว่าง ${group.min}–${group.max} ${group.unit}`,
+        messageTh: `${group.labelTh}ต้องอยู่ระหว่าง ${formatRange(group.minUm, group.maxUm, unit)}`,
         affects: [group.code],
       });
       // Out of range already tells the customer what to fix; a step warning on the
@@ -209,14 +268,42 @@ export function validate(
       continue;
     }
 
-    if (!isOnStep(group, value)) {
+    if (isOnStep(group, value, unit)) continue;
+
+    const snapped = snapToStep(group, value, unit);
+
+    // In range but with nowhere to go: the next mark on this grid is past the
+    // maximum. Snapping down to fit is the one thing that must not happen, so this
+    // is an error the customer resolves, not a warning the app resolves for them.
+    //
+    // The message names the largest mark that does fit rather than the maximum
+    // itself. Both are reachable only when the grid is imperial and the maximum is
+    // not on it, and in that case the maximum *renders* as the mark just above it —
+    // "the next value, 157 1/2", is over the 157 1/2" maximum" is a sentence nobody
+    // can act on. The value below is for the message and goes nowhere near `measures`.
+    if (snapped > group.maxUm) {
+      const grid = gridFor(group, unit);
+      const largestOnGrid = group.maxUm - (group.maxUm % grid);
+      const advice =
+        largestOnGrid >= group.minUm
+          ? `ค่าสูงสุดที่ปรับได้คือ ${say(largestOnGrid)}`
+          : `และไม่มีค่าที่ลงตัวในช่วง ${formatRange(group.minUm, group.maxUm, unit)}`;
+
       issues.push({
         ruleId: `step:${group.code}`,
-        severity: 'warning',
-        messageTh: `${group.labelTh}ปรับได้ทีละ ${group.step} ${group.unit} ระบบจะปัดเป็น ${snapToStep(group, value)} ${group.unit}`,
+        severity: 'error',
+        messageTh: `${group.labelTh}ปรับได้ทีละ ${say(grid)} ${advice}`,
         affects: [group.code],
       });
+      continue;
     }
+
+    issues.push({
+      ruleId: `step:${group.code}`,
+      severity: 'warning',
+      messageTh: `${group.labelTh}ปรับได้ทีละ ${say(gridFor(group, unit))} ระบบจะปัดเป็น ${say(snapped)}`,
+      affects: [group.code],
+    });
   }
 
   for (const rule of product.rules) {

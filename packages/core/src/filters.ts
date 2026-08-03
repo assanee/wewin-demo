@@ -1,4 +1,4 @@
-import type { CustomGroup, OptionValue, Product, SkuGroup, Unit } from './types/catalog.js';
+import type { AuthoredUnit, CustomGroup, OptionValue, Product, SkuGroup } from './types/catalog.js';
 
 /**
  * Catalog filtering and the facets that drive the filter panel.
@@ -97,10 +97,17 @@ export function countProfileColors(product: Product | undefined): number {
   return product ? availableProfileColors(product).length : 0;
 }
 
+/**
+ * The bounds in canonical micrometres, plus the unit the row was authored in.
+ *
+ * Handing back micrometres rather than a formatted string keeps the badge on the
+ * same representation as the configurator: the card decides what to show it in, and
+ * a display unit chosen later cannot disagree with the input the customer then sees.
+ */
 export interface MeasureRange {
-  min: number;
-  max: number;
-  unit: Unit;
+  minUm: bigint;
+  maxUm: bigint;
+  unit: AuthoredUnit;
 }
 
 /** Range badge source, e.g. "ปรับขนาดได้ 60–400 cm". */
@@ -110,7 +117,7 @@ export function measureRange(product: Product | undefined, code: string): Measur
   const group = customGroup(product, code);
   if (!group) return null;
 
-  return { min: group.min, max: group.max, unit: group.unit };
+  return { minUm: group.minUm, maxUm: group.maxUm, unit: group.unit };
 }
 
 export { customGroup as getCustomGroup, skuGroup as getSkuGroup };

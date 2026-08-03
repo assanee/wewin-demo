@@ -87,13 +87,16 @@ describe('buildSkuCode', () => {
   });
 
   test('ignores custom groups entirely — measurements never create a new sku', () => {
+    // Selections are option codes, so a measurement reaching this map is already a
+    // mistake; the values are written as canonical micrometres anyway so the fixture
+    // cannot be read as "320 cm" now that no length in the system means centimetres.
     const code = buildSkuCode(product('awn-4t'), {
       profile_color: 'DW',
       glass_color: 'GRN',
       glass_thickness: 'T5',
       insect_screen: 'NS0',
-      width: '320',
-      height: '160',
+      width: '3200000',
+      height: '1600000',
     });
 
     expect(code).toBe('AWN4T-DW-GRN-T5-NS0');

@@ -1,4 +1,4 @@
-import type { CustomGroup, OptionValue, Product, SkuGroup } from '../../src/types/catalog.js';
+import type { CustomGroup, OptionValue, Product, SkuGroup } from './catalog-v1.0.0.js';
 
 export interface PriceBreakdown {
   areaSqm: number;

@@ -1,45 +1,38 @@
 /**
  * Terse constructors for the RuleExpr AST, so rules in `products.ts` stay readable.
  *
- *   and(selected('glass_thickness', 'LAM'), gt(measure('width'), 200))
+ *   and(selected('glass_thickness', 'LAM'), gt(measure('width'), lengthCm(200)))
  *
  * reads about as well as the string form the spec sketched, but a misspelled group
  * code is a compile error rather than a runtime surprise.
+ *
+ * There is deliberately no constructor for a bare number. A threshold is written in
+ * the unit whoever wrote the rule was thinking in — `lengthCm(200)`, `areaSqm(8)` —
+ * and the conversion to canonical micrometres happens here, once, at build time.
  */
 
-import type { NumExpr, RuleExpr } from '../types/rule.js';
+import type { Dimension, NumExpr, RuleExpr } from '../types/rule.js';
+import { sqmToSqUm, toMicrons } from '../units.js';
 
-export const num = (value: number): NumExpr => ({ n: 'const', value });
+const constant = (value: bigint, dim: Dimension): NumExpr => ({ n: 'const', value, dim });
+
+/** A length threshold written in centimetres, the unit the catalogue is authored in. */
+export const lengthCm = (cm: number): NumExpr => constant(toMicrons(cm, 'cm'), 'length');
+
+/** An area threshold written in square metres, the unit a price list quotes. */
+export const areaSqm = (sqm: number): NumExpr => constant(sqmToSqUm(sqm), 'area');
+
+/** A dimensionless multiplier, e.g. the 3 in a 3:1 aspect ratio. */
+export const scalar = (value: number): NumExpr => constant(BigInt(value), 'scalar');
+
 export const measure = (group: string): NumExpr => ({ n: 'measure', group });
 export const area = (): NumExpr => ({ n: 'area' });
-export const div = (left: NumExpr, right: NumExpr): NumExpr => ({ n: 'div', left, right });
+export const mul = (left: NumExpr, right: NumExpr): NumExpr => ({ n: 'mul', left, right });
 
-/** Coerce bare numbers on the right-hand side of a comparison. */
-const term = (value: NumExpr | number): NumExpr => (typeof value === 'number' ? num(value) : value);
-
-export const gt = (left: NumExpr, right: NumExpr | number): RuleExpr => ({
-  op: 'gt',
-  left,
-  right: term(right),
-});
-
-export const lt = (left: NumExpr, right: NumExpr | number): RuleExpr => ({
-  op: 'lt',
-  left,
-  right: term(right),
-});
-
-export const gte = (left: NumExpr, right: NumExpr | number): RuleExpr => ({
-  op: 'gte',
-  left,
-  right: term(right),
-});
-
-export const lte = (left: NumExpr, right: NumExpr | number): RuleExpr => ({
-  op: 'lte',
-  left,
-  right: term(right),
-});
+export const gt = (left: NumExpr, right: NumExpr): RuleExpr => ({ op: 'gt', left, right });
+export const lt = (left: NumExpr, right: NumExpr): RuleExpr => ({ op: 'lt', left, right });
+export const gte = (left: NumExpr, right: NumExpr): RuleExpr => ({ op: 'gte', left, right });
+export const lte = (left: NumExpr, right: NumExpr): RuleExpr => ({ op: 'lte', left, right });
 
 export const selected = (group: string, value: string): RuleExpr => ({
   op: 'selected',
