@@ -52,6 +52,14 @@ compile ด้วย `tsc` ธรรมดา (ไม่ bundle) แลกมา
 
 จุดที่ต้องแก้ตอนย้าย: `shareLink.ts` import `MIN_QTY`/`MAX_QTY` จาก `quoteReducer.ts` ทำให้ `/share` ลาก `/quote` ตามมา — ย้ายสองค่านี้ไป `constants.ts`
 
+### สิ่งที่เจอจริงตอนทำเฟส 0
+
+- ✅ **root ที่เป็น type ล้วนบังคับได้จริงตอนรัน** ไม่ใช่แค่ข้อตกลง — `import '@wewin/core'` โยน `ERR_PACKAGE_PATH_NOT_EXPORTED` เพราะ export map ให้เฉพาะเงื่อนไข `types` ไม่มีคู่ runtime
+- ✅ **`types: ["node"]` ไม่ใช่ `lib: ["DOM"]`** — `shareLink` ต้องใช้ `URLSearchParams` ซึ่งเป็นมาตรฐานเว็บที่ทั้งสอง runtime มี แต่ `lib: DOM` จะพา `window`/`document` เข้ามาด้วย และลดความบริสุทธิ์ของ core จากสิ่งที่**เครื่องมือรับประกัน** กลับไปเป็นสิ่งที่**รีวิวรับประกัน**
+- ✅ ยืนยันด้วยการ grep ว่าชั้นโดเมนไม่แตะ browser API เลยสักจุด — `window` ทุกตัวที่เจอเป็น **string literal `'window'`** ที่ใช้เป็น size key ในตารางสินค้า
+- 🐛 **กับดักที่ `tsc`, vitest และ `vite build` ผ่านหมด แต่ `vite dev` พัง** — `tsconfig.json` ที่ root ยัง `references` ไปหา `tsconfig.app.json` ที่ย้ายเข้า `apps/web/` ไปแล้ว · oxc ของ Vite เดินขึ้นไปหา tsconfig ให้ไฟล์ใน `packages/core/dist/` แล้วเจอ reference ที่ชี้ไฟล์ไม่มีอยู่ → **500 ทุกโมดูลของ core และ `#root` ว่างเปล่าโดยไม่มี error ใน console**
+  → เจอเพราะเปิดเบราว์เซอร์จริง ไม่ใช่เพราะ CI · **เกณฑ์ผ่านของทุกเฟสต่อจากนี้ต้องรวม "เปิดหน้าเว็บจริง" ด้วย** ไม่ใช่แค่ 4 คำสั่ง
+
 ---
 
 ## 2. ลำดับเฟส (แก้จากร่างแรก)
@@ -60,7 +68,7 @@ compile ด้วย `tsc` ธรรมดา (ไม่ bundle) แลกมา
 
 | เฟส | ทำอะไร | เกณฑ์ผ่าน |
 |---|---|---|
-| **0** | ตั้ง monorepo · แยก `packages/core` · **ไม่เปลี่ยนพฤติกรรมอะไรเลย** ยังเป็น cm ยังเป็นบาท | **219 เทสต์ต้องผ่านโดยไม่แก้ assertion แม้แต่ตัวเดียว** — ถ้าต้องแก้ แปลว่าเผลอเปลี่ยนพฤติกรรม |
+| **0** ✅ | ตั้ง monorepo · แยก `packages/core` · **ไม่เปลี่ยนพฤติกรรมอะไรเลย** ยังเป็น cm ยังเป็นบาท | **ผ่านแล้ว** — 219 เทสต์ผ่านโดยไม่แก้ assertion สักตัว (พิสูจน์ด้วย diff: บรรทัดที่เปลี่ยนในไฟล์เทสต์ทั้ง 13 มีแต่ `import`) · ไฟล์โดเมนทุกไฟล์ byte-identical ยกเว้น `MIN_QTY`/`MAX_QTY` ที่ย้ายไป `constants.ts` ตามข้อ 1 |
 | **1** | เงิน: `Money` เป็น minor units ใน core (บาทสกุลเดียว) + ตาราง `currency_rates` + กฎปัดเศษ | **ยอด THB ทุกตัวต้องเท่าเดิม** — เทียบกับ `calcPrice` ของ v1.0.0 ที่ vendor ไว้ ไม่ใช่แค่เทสต์ผ่าน |
 | **2** | หน่วยวัด: canonical + grid + imperial | ← ต้องมาหลังเงิน ไม่พร้อมกัน |
 | **3** | `apps/api` + Postgres + Drizzle + auth + RBAC · ย้าย catalog เข้า DB (seed จากตารางเดิม) | |

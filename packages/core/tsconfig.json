@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+
+    /*
+     * The emit config pins `rootDir` to `src` so `dist` mirrors it exactly and the
+     * exports map can name files directly. Type-checking covers the tests too, and
+     * they sit outside that root — so widen it here, where nothing is emitted.
+     */
+    "rootDir": "."
+  },
+  "include": ["src", "tests"]
+}

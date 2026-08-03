@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+
+    /*
+     * Node types, NOT DOM.
+     *
+     * `share-link` needs `URLSearchParams`, a web standard both runtimes ship.
+     * `document` and `window` are neither needed nor wanted, and must stay a
+     * compile error in this package. `lib: ["DOM"]` would admit all three and
+     * demote core's purity from a tooling guarantee back to a review one — the
+     * exact trade this codebase avoids everywhere else.
+     */
+    "types": ["node"],
+
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+
+    /* Strictness — spec section 1: no `any`, no `@ts-ignore` */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}

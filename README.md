@@ -6,7 +6,7 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 ปลายทางของธุรกิจคือ **ขอใบเสนอราคา (RFQ)** ไม่ใช่การจ่ายเงินออนไลน์ — ใน UI เรียกว่า "ตะกร้า"
 แต่ใน code ใช้ชื่อ `Quote*` (`QuoteLine`, route `/quote`) เพื่อไม่ต้อง rename ทั้งโปรเจกต์ตอนทำ RFQ จริง
 
-สเปกเต็มอยู่ที่ [`prompt.md`](prompt.md)
+สเปก v1 ฉบับเต็ม (`prompt.md`) ไม่ได้อยู่ในรีโป — README นี้กับ [`docs/monorepo-plan.md`](docs/monorepo-plan.md) คือเอกสารที่ยังมีชีวิต
 
 ---
 
@@ -22,22 +22,30 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 **v1 จบตรงนี้ตามสเปก** — เพิ่มลงตะกร้า ดู แก้จำนวน ลบ ทำซ้ำ แก้การตั้งค่า
 ไม่มีปุ่มส่งคำขอ ไม่มีฟอร์มกรอกข้อมูลติดต่อ ไม่มีการชำระเงิน
 
-**171 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
+**219 tests · `tsc --noEmit` สะอาด · `oxlint` ไม่มี warning**
+
+### เฟส 0 ของการยกระดับเป็น monorepo — เสร็จแล้ว
+
+โครงสร้างย้ายเป็น pnpm workspace + Turborepo และแยกชั้นโดเมนออกเป็น `@wewin/core`
+**พฤติกรรมไม่เปลี่ยนแม้แต่อย่างเดียว** — ยังเป็นเซนติเมตร ยังเป็นบาท และ 219 เทสต์ผ่านโดยไม่แก้ assertion สักตัว
+แผนเต็มอยู่ที่ [`docs/monorepo-plan.md`](docs/monorepo-plan.md)
 
 ---
 
 ## เริ่มใช้งาน
 
 ```bash
-npm install
-npm run dev          # http://localhost:5173
-npm test             # vitest run
-npm run typecheck    # tsc -b --noEmit
-npm run lint         # oxlint
-npm run build
+pnpm install
+pnpm dev             # http://localhost:5173 (build core ให้ก่อนอัตโนมัติ)
+pnpm test            # vitest — 219 เคสใน packages/core
+pnpm typecheck
+pnpm lint
+pnpm build
 ```
 
-ไม่มี backend ไม่มี env variable ไม่มี API — ข้อมูลทุกอย่างเป็น TS module ใน `src/data/`
+ต้องใช้ **pnpm** ไม่ใช่ npm — workspace ผูกกันด้วย `workspace:*` protocol
+
+ไม่มี backend ไม่มี env variable ไม่มี API — ข้อมูลทุกอย่างเป็น TS module ใน `packages/core/src/data/`
 network request เดียวที่ออกไปข้างนอกคือการโหลดฟอนต์จาก Google Fonts
 
 ---
@@ -53,10 +61,10 @@ catalog มี 81 สินค้า **แต่มีเพียง 3 ตั�
 | `sld-2p` ประตูบานเลื่อน สลับ | 2,100 |
 
 อีก 78 ตัว รวมทั้ง lead time, `minBillableSqm`, ช่วงขนาด และค่า surcharge ของ option
-**เป็น placeholder ทั้งหมด** ราคาเป็นคอลัมน์เดียวในตาราง `ROWS` ที่ [`src/data/products.ts`](src/data/products.ts)
+**เป็น placeholder ทั้งหมด** ราคาเป็นคอลัมน์เดียวในตาราง `ROWS` ที่ [`packages/core/src/data/products.ts`](packages/core/src/data/products.ts)
 — แทนที่ด้วยราคาจริงได้โดยไม่ต้องแตะอย่างอื่น
 
-**ข้อมูลติดต่อใน [`src/data/company.ts`](src/data/company.ts) เป็นของจริง** — คัดลอกตรงตัวจาก
+**ข้อมูลติดต่อใน [`apps/web/src/data/company.ts`](apps/web/src/data/company.ts) เป็นของจริง** — คัดลอกตรงตัวจาก
 https://www.wewin180.com/th/contact (ดึงเมื่อ 2 ส.ค. 2569 ตรวจซ้ำกับ `/th/about`)
 เบอร์คงรูปแบบ `+66` ตามที่เว็บเผยแพร่ ไม่ได้แปลงเป็น `0XX` เพื่อให้เทียบกับต้นทางได้ตรงๆ
 
@@ -94,35 +102,47 @@ configurator **render จาก JSON ของสินค้าล้วนๆ*
 
 ### Pure functions
 
-pricing กับ validation อยู่ใน `src/lib/` ไม่ import อะไรจาก React เลย — เทสได้ตรงๆ และย้ายไปฝั่ง server ได้ถ้าวันหนึ่งต้องทำ
+pricing กับ validation อยู่ใน `packages/core/` ไม่ import อะไรจาก React เลย — เทสได้ตรงๆ และย้ายไปฝั่ง server ได้ถ้าวันหนึ่งต้องทำ
 
 ---
 
 ## โครงสร้าง
 
 ```
-src/
-  types/     catalog.ts (data model) · rule.ts (RuleExpr AST)
-  data/      products.ts (แหล่งข้อมูลเดียว) · categories.ts · company.ts (⚠️ placeholder)
-             schema.ts (zod, parse ตอน boot) · catalog.ts (จุดที่แอปอ่านข้อมูล)
-             ruleBuilders.ts
-  lib/       pricing.ts · validation.ts · optionStates.ts · skuCode.ts
-             filters.ts · catalogSummary.ts · format.ts · hash.ts
-  state/     quoteReducer.ts (pure) · QuoteContext.tsx (React shell) · useQuote.ts
-             useConfigurator.ts · useMediaQuery.ts · useElementSize.ts
-  components/
-    configurator/  ElevationPreview (signature) · OptionGroupBase
-                   SwatchGroup · ChipGroup · ToggleOption · MeasureInput
-                   IssuePanel · PriceSummary · PriceBreakdownList
-    catalog/       ProductCard · FilterPanel
-    quote/         QuoteLineRow (lg) · QuoteLineCard (base/md) · QuoteActions
-    common/        AppHeader · AppFooter · Button · Badge · Accordion · BottomSheet
-                   Schematic · StickyBar · Toast · useToast.ts
-  pages/     Home · Catalog · Configure · Quote · About · NotFound
-tests/       10 ไฟล์ 171 เคส
+packages/core/            @wewin/core — โดเมนล้วน ไม่มี React แม้แต่ import เดียว
+  src/
+    types/     catalog.ts (data model) · rule.ts (RuleExpr AST)
+    data/      products.ts (แหล่งข้อมูลเดียว) · categories.ts
+               schema.ts (zod, parse ตอน boot) · catalog.ts (จุดที่แอปอ่านข้อมูล)
+               ruleBuilders.ts
+    pricing.ts · validation.ts · optionStates.ts · skuCode.ts · elevation.ts
+    filters.ts · catalogSummary.ts · format.ts · hash.ts · history.ts
+    shareLink.ts · quote.ts (reducer, pure) · constants.ts
+    index.ts   root ของแพ็กเกจ — เป็น type ล้วน ไม่มี runtime
+  tests/       13 ไฟล์ 219 เคส
+
+apps/web/                 @wewin/web — Vite + React (จะเป็น Next.js ที่เฟส 6)
+  src/
+    state/         QuoteContext.tsx (React shell) · useQuote · useConfigurator
+                   useMediaQuery · useElementSize
+    data/          company.ts (ข้อมูลบริษัทจริง — เป็นเนื้อหา ไม่ใช่โดเมน)
+    components/
+      configurator/  ElevationPreview · OptionGroupBase · SwatchGroup · ChipGroup
+                     ToggleOption · MeasureInput · IssuePanel · PriceSummary
+                     PriceBreakdownList · ConfiguratorToolbar · QrCode
+      catalog/       ProductCard · FilterPanel
+      quote/         QuoteLineRow (lg) · QuoteLineCard (base/md) · QuoteActions
+      common/        AppHeader · AppFooter · Button · Badge · Accordion · BottomSheet
+                     ElevationDrawing · Schematic · StickyBar · Toast · useToast.ts
+    pages/     Home · Catalog · Configure · Quote · About · NotFound
 ```
 
-ทุกอย่างอ่านข้อมูลผ่าน [`src/data/catalog.ts`](src/data/catalog.ts) ไม่ใช่ `products.ts` โดยตรง
+**`@wewin/core` ถูก compile ด้วย `tsc` ไม่ได้แชร์ซอร์ส** — สิ่งที่ CI type-check คือสิ่งเดียวกับที่ production รัน
+และ root ของแพ็กเกจเป็น type ล้วนโดยตั้งใจ: `import '@wewin/core'` จะโยน `ERR_PACKAGE_PATH_NOT_EXPORTED`
+ทุก runtime value ต้องมาจาก subpath (`@wewin/core/pricing`, `/validation`, `/fixtures`, …)
+เพื่อให้การถามว่า `Product` หน้าตายังไง ไม่ลากตาราง 81 สินค้าเข้ามาด้วย
+
+ทุกอย่างอ่านข้อมูลผ่าน [`packages/core/src/data/catalog.ts`](packages/core/src/data/catalog.ts) ไม่ใช่ `products.ts` โดยตรง
 เพื่อให้ zod parse ทำงานครั้งเดียวตอน module load **ก่อน** component แรกจะ render
 — typo ใน mock data จะทำให้แอปไม่ boot พร้อมข้อความชัดเจน แทนที่จะไปโผล่เป็นราคาผิดในอีกสามหน้าถัดไป
 
@@ -130,7 +150,7 @@ tests/       10 ไฟล์ 171 เคส
 
 ## เพิ่มสินค้าใหม่
 
-แก้ไฟล์เดียว — เพิ่มหนึ่งแถวใน `ROWS` ที่ [`src/data/products.ts`](src/data/products.ts):
+แก้ไฟล์เดียว — เพิ่มหนึ่งแถวใน `ROWS` ที่ [`packages/core/src/data/products.ts`](packages/core/src/data/products.ts):
 
 ```ts
 {
@@ -155,7 +175,7 @@ tests/       10 ไฟล์ 171 เคส
 
 ## สูตรราคา
 
-[`src/lib/pricing.ts`](src/lib/pricing.ts) — **ลำดับนี้ห้ามสลับ**
+[`packages/core/src/pricing.ts`](packages/core/src/pricing.ts) — **ลำดับนี้ห้ามสลับ**
 
 ```
 1. areaSqm      = (width × height) / 10000
@@ -171,13 +191,13 @@ tests/       10 ไฟล์ 171 เคส
 `percent` เป็น markup บนค่าอะลูมิเนียม จึงต้องคิดก่อนบวกค่ากระจกและค่าอุปกรณ์
 ปัดเศษครั้งเดียวตอนท้าย — ถ้าปัดต่อชิ้นก่อนคูณ ยอด 3 ชิ้นจะเพี้ยนไป 1 บาท
 
-ตัวเลขทุกตัวที่ขึ้นจอผ่าน formatter ใน [`format.ts`](src/lib/format.ts) — กัน float artifact, `NaN` และ `-0`
+ตัวเลขทุกตัวที่ขึ้นจอผ่าน formatter ใน [`format.ts`](packages/core/src/format.ts) — กัน float artifact, `NaN` และ `-0`
 
 ---
 
 ## กฎ validation
 
-[`src/lib/validation.ts`](src/lib/validation.ts) รองรับ 3 ประเภท:
+[`packages/core/src/validation.ts`](packages/core/src/validation.ts) รองรับ 3 ประเภท:
 
 1. **Range / step** — derive จาก `CustomGroup.min/max/step` อัตโนมัติ ไม่ต้องเขียนใน `rules[]`
    ค่าที่ไม่ตรง step จะ snap **ขึ้น** ตอน blur (บานที่ใหญ่ไปเจียนหน้างานได้ บานที่เล็กไปทำไม่ได้)
@@ -198,7 +218,7 @@ tests/       10 ไฟล์ 171 เคส
 
 ### ตัวเลือกที่เลือกไม่ได้
 
-[`optionStates.ts`](src/lib/optionStates.ts) ตัดสินว่าตัวเลือกไหนขึ้น disabled + ขีดฆ่า
+[`optionStates.ts`](packages/core/src/optionStates.ts) ตัดสินว่าตัวเลือกไหนขึ้น disabled + ขีดฆ่า
 
 นิยามที่ตรงไปตรงมา ("เลือกแล้วเกิด error → บล็อก") ใช้ไม่ได้ — ถ้าพื้นที่เกิน 8 ตร.ม. อยู่แล้ว
 ทุกตัวเลือกจะเกิด error เหมือนกันหมด สีกระจกก็จะโดนขีดฆ่าทั้งที่ไม่เกี่ยวอะไรเลย
@@ -221,7 +241,7 @@ tests/       10 ไฟล์ 171 เคส
 
 ### Design tokens บังคับด้วย tooling
 
-[`src/index.css`](src/index.css) **ล้าง** `--color-*`, `--text-*`, `--breakpoint-*`, `--font-*` ของ Tailwind
+[`apps/web/src/index.css`](apps/web/src/index.css) **ล้าง** `--color-*`, `--text-*`, `--breakpoint-*`, `--font-*` ของ Tailwind
 ทิ้งด้วย `: initial` แล้วใส่ของเราเข้าไปแทน ผลคือ `text-sm`, `sm:`, `bg-slate-800` **ไม่ถูก generate เลย**
 
 กติกา "type scale มี 7 ค่า ห้ามใช้ค่านอกนี้" และ "breakpoint มีแค่ 3 จุด" จึงเป็นเรื่องที่เครื่องมือบังคับ
@@ -239,17 +259,22 @@ Breakpoint: base 360–767 · `md` 768–1023 · `lg` 1024+ · container `max-wi
 
 ## เทส
 
+ทั้งหมดอยู่ที่ `packages/core/tests/` — ทุกเคสทดสอบฟังก์ชัน pure ไม่มีเคสไหนต้องใช้ DOM
+
 ```
-tests/pricing.test.ts       17   รวม 6 เคสตามสเปกหัวข้อ 5
-tests/validation.test.ts    20   รวม 7 เคสตามสเปกหัวข้อ 6
-tests/quoteReducer.test.ts  37   ตะกร้า: dedupe, ทำซ้ำ, reprice, persistence
-tests/filters.test.ts       23
-tests/schema.test.ts        20   พิสูจน์ว่า schema ปฏิเสธ typo ที่มันมีไว้จับจริง
-tests/format.test.ts        15
-tests/catalogSummary.test.ts 13   ตัวเลขที่หน้าแรกโฆษณา ต้อง derive จาก products.ts
-tests/optionStates.test.ts  12
-tests/hash.test.ts           7
-tests/skuCode.test.ts        7
+quoteReducer.test.ts    37   ตะกร้า: dedupe, ทำซ้ำ, reprice, persistence
+schema.test.ts          25   พิสูจน์ว่า schema ปฏิเสธ typo ที่มันมีไว้จับจริง
+filters.test.ts         23
+validation.test.ts      20   รวม 7 เคสตามสเปกหัวข้อ 6
+elevation.test.ts       18
+pricing.test.ts         17   รวม 6 เคสตามสเปกหัวข้อ 5
+format.test.ts          15
+catalogSummary.test.ts  13   ตัวเลขที่หน้าแรกโฆษณา ต้อง derive จาก products.ts
+shareLink.test.ts       13
+history.test.ts         12   undo/redo รวบตามความหมาย ไม่ใช่ตามเวลา
+optionStates.test.ts    12
+hash.test.ts             7
+skuCode.test.ts          7
 ```
 
 เทสของ filter ใช้ **fixture 3 สินค้า** ไม่ใช่ catalog จริง เพราะมันทดสอบ *logic ของตัวกรอง*
@@ -266,7 +291,7 @@ tests/skuCode.test.ts        7
 | เรื่อง | สเปกบอก | ที่ทำจริง | เหตุผล |
 |---|---|---|---|
 | React | 18 | **19** | Vite template ล่าสุด ไม่มีอะไรพึ่งพฤติกรรมเฉพาะของ 18 |
-| `RuleExpr` | `Function` constructor | **discriminated union** | สเปกเปิดช่องไว้เอง เหตุผลอยู่ใน [`types/rule.ts`](src/types/rule.ts) |
+| `RuleExpr` | `Function` constructor | **discriminated union** | สเปกเปิดช่องไว้เอง เหตุผลอยู่ใน [`types/rule.ts`](packages/core/src/types/rule.ts) |
 | `configHash` | sha1 | **FNV-1a (sync)** | sha1 ในเบราว์เซอร์เป็น async อย่างเดียว และนี่ไม่ใช่ security boundary |
 | Validation test #3 | `400×120` → 2 errors | **`400×220`** → 1 error | `400×120` = 4.8 ตร.ม. ไม่เกิน 8 กฎ max-area จึงยิงไม่ได้ทางคณิตศาสตร์ |
 | ราคาบน sticky bar | 20px | **18px** | 20px ไม่อยู่ใน type scale 7 ค่า สองกฎนี้ขัดกันเอง |

@@ -1,0 +1,47 @@
+{
+  "name": "@wewin/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "//": "The root export is types only, on purpose. Every runtime value comes from a subpath so that importing one concern never drags another into the bundle — see docs/monorepo-plan.md section 1.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    },
+    "./constants": "./dist/constants.js",
+    "./pricing": "./dist/pricing.js",
+    "./validation": "./dist/validation.js",
+    "./elevation": "./dist/elevation.js",
+    "./sku": "./dist/skuCode.js",
+    "./hash": "./dist/hash.js",
+    "./format": "./dist/format.js",
+    "./filters": "./dist/filters.js",
+    "./catalog-summary": "./dist/catalogSummary.js",
+    "./option-states": "./dist/optionStates.js",
+    "./share-link": "./dist/shareLink.js",
+    "./history": "./dist/history.js",
+    "./quote": "./dist/quote.js",
+    "./schema": "./dist/data/schema.js",
+    "./rules": "./dist/data/ruleBuilders.js",
+    "./fixtures": "./dist/data/catalog.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  }
+}
