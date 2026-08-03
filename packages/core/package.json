@@ -10,6 +10,7 @@
       "types": "./dist/index.d.ts"
     },
     "./constants": "./dist/constants.js",
+    "./units": "./dist/units.js",
     "./pricing": "./dist/pricing.js",
     "./validation": "./dist/validation.js",
     "./elevation": "./dist/elevation.js",

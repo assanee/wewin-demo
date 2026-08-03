@@ -186,12 +186,24 @@ export function longestLeadTime(
  */
 export const QUOTE_STORAGE_KEY = 'aluform.quote.v2';
 
+/**
+ * Written into the payload itself, not only into the key.
+ *
+ * A payload outlives its key more often than it looks: a restored backup, a profile
+ * sync, localStorage copied between builds. Both of the representation changes this
+ * codebase has made — baht to satang, and centimetres to micrometres next — keep the
+ * same field names and the same JSON shape while changing what the numbers mean, so a
+ * mismatched payload renders as a plausible price or a plausible size rather than as a
+ * crash. The version has to travel with the data.
+ */
+export const QUOTE_SCHEMA_VERSION = 2;
+
 /** `JSON.stringify` throws on a bigint, so money crosses the storage boundary as digits. */
 const replacer = (_key: string, value: unknown): unknown =>
   typeof value === 'bigint' ? value.toString() : value;
 
 export const serialiseQuote = (state: QuoteState): string =>
-  JSON.stringify({ lines: state.lines }, replacer);
+  JSON.stringify({ schemaVersion: QUOTE_SCHEMA_VERSION, lines: state.lines }, replacer);
 
 /** Accepts only a string of digits — `BigInt("")` is 0n and `BigInt(" 1 ")` is 1n. */
 function readMinor(value: unknown): bigint | null {
@@ -270,7 +282,10 @@ export function parseStoredQuote(raw: string | null): QuoteLine[] {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return [];
 
-    const { lines } = parsed as { lines?: unknown };
+    const { lines, schemaVersion } = parsed as { lines?: unknown; schemaVersion?: unknown };
+    // Whole payload, not line by line: a version mismatch means every number in it was
+    // written under different rules, so salvaging part of it salvages the wrong part.
+    if (schemaVersion !== QUOTE_SCHEMA_VERSION) return [];
     if (!Array.isArray(lines)) return [];
 
     return lines

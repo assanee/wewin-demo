@@ -55,11 +55,24 @@ export function defaultStateFor(product: Product): ConfiguratorState {
   return { selections, measures, qty: 1, nickname: product.nameTh };
 }
 
+/** Shallow record equality, written out rather than stringified. */
+const sameRecord = <T>(a: Record<string, T>, b: Record<string, T>): boolean => {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => a[key] === b[key]);
+};
+
+/*
+ * `JSON.stringify` used to stand in for a deep equal here. It cannot survive phase 2:
+ * measures become bigint micrometres, and stringify throws on a bigint rather than
+ * returning something wrong. This sits on the render path via `isPristine`, so the
+ * whole configurator page would have died on first paint — not just the reset button.
+ */
 const sameState = (a: ConfiguratorState, b: ConfiguratorState): boolean =>
   a.qty === b.qty &&
   a.nickname === b.nickname &&
-  JSON.stringify(a.selections) === JSON.stringify(b.selections) &&
-  JSON.stringify(a.measures) === JSON.stringify(b.measures);
+  sameRecord(a.selections, b.selections) &&
+  sameRecord(a.measures, b.measures);
 
 /**
  * Holds the configuration and derives everything downstream of it.

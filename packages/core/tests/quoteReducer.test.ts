@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  QUOTE_SCHEMA_VERSION,
   emptyQuote,
   longestLeadTime,
   parseStoredQuote,
@@ -411,5 +412,31 @@ describe('quote persistence', () => {
     const payload = serialiseQuote({ lines: [a, { lineId: 'broken' } as unknown as QuoteLine], hydrated: true });
 
     expect(parseStoredQuote(payload)).toEqual([a]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Storage schema version — the debt phase 1 left open
+ * ------------------------------------------------------------------ */
+
+describe('quote storage carries its own schema version', () => {
+  test('serialiseQuote writes the version into the payload, not just the key', () => {
+    const a = lineFor('awn-4t', { width: 320, height: 160 }, { lineId: 'a' });
+    const parsed: unknown = JSON.parse(serialiseQuote({ lines: [a], hydrated: true }));
+
+    expect((parsed as { schemaVersion?: unknown }).schemaVersion).toBe(QUOTE_SCHEMA_VERSION);
+  });
+
+  test('a payload from another schema version is discarded whole', () => {
+    // The key alone is not enough. A payload can outlive its key when someone restores
+    // a backup, syncs a profile, or copies localStorage between builds — and money and
+    // lengths both changed representation without changing meaning, which is precisely
+    // the shape of error that renders as a plausible number rather than as a crash.
+    const a = lineFor('awn-4t', { width: 320, height: 160 }, { lineId: 'a' });
+    const good: Record<string, unknown> = JSON.parse(serialiseQuote({ lines: [a], hydrated: true }));
+
+    expect(parseStoredQuote(JSON.stringify(good))).toHaveLength(1);
+    expect(parseStoredQuote(JSON.stringify({ ...good, schemaVersion: 1 }))).toEqual([]);
+    expect(parseStoredQuote(JSON.stringify({ lines: good.lines }))).toEqual([]);
   });
 });
