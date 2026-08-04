@@ -1128,9 +1128,27 @@ export const notifications = pgTable(
      * A message with no address is the exact failure plan 10.5(3) is about — the company
      * believes the customer was told. So it is a visible row in a terminal state with a
      * reason on it, not a row that was never written.
+     *
+     *   `no_contact_channel`  nobody gave us an address.
+     *   `channel_disabled`    the channel exists in the rules and has no address book yet.
+     *   `recipient_erased`    ⚠️ the person asked to be forgotten. Added in 0009 after the
+     *                         behaviour was *exercised* rather than reasoned about: a message
+     *                         queued before `erase_user()` ran was still claimed and
+     *                         delivered to the erased address afterwards, and a new event on
+     *                         the same order re-addressed it from `orders.contact_email`,
+     *                         which the accounting exemption keeps. Suppression is the only
+     *                         answer that leaves the accounting record intact and still stops
+     *                         the message: the address stays on the order, and the outbox
+     *                         refuses to use it. Terminal, and deliberately *not* retryable —
+     *                         `retry` only requeues `dead`, so the button that would have
+     *                         re-sent this months later can no longer reach it.
+     *
+     * TS-only narrowing: the column is plain `text` in Postgres with no CHECK on its values,
+     * so this widening needs no DDL. That is stated rather than assumed — it is the reason
+     * this change is one line and not a migration of an enum type.
      */
     suppressedReason: text('suppressed_reason', {
-      enum: ['no_contact_channel', 'channel_disabled'],
+      enum: ['no_contact_channel', 'channel_disabled', 'recipient_erased'],
     }),
 
     /** The folding bucket, copied from the rule that produced this row. Null means never fold. */

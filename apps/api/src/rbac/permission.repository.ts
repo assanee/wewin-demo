@@ -2,22 +2,33 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
 import { eq } from '@wewin/db/sql';
-import { groupPermissions, userGroups, users } from '@wewin/db/schema';
+import { groupPermissions, userGroups, users, type UserStatus } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../database/database.tokens';
 import { isPermissionCode, type PermissionCode } from './permissions';
 
 export interface EffectivePermissions {
   /**
-   * `users.status = 'active'`, read on the same request that reads the permissions.
+   * `users.status`, read on the same request that reads the permissions.
    *
    * It belongs here rather than in a second query because it answers the same question —
    * "what may this person do" — and because an access token is verified by signature alone:
    * suspending an account does not invalidate the tokens already handed out for it. This is
-   * the read that stops a suspended account from working for the rest of its token's life.
-   * `false` for a user id that does not exist at all, which is the same safe answer.
+   * the read that stops a non-active account from working for the rest of its token's life.
+   *
+   * **The status itself and not a boolean.** This used to be `active: boolean`, which was
+   * enough while the only two members were `active` and `suspended`. With `closed` and
+   * `erased` it is a collapse: the guard said one sentence for every refusal, so nothing
+   * downstream could tell a reinstatable closure from an irreversible erasure, and a
+   * reinstatement path could not distinguish the state it may reverse from the one it must
+   * not. Decisions are made through `accountUsability` (rbac/account-status.ts), whose
+   * exhaustive record is what makes a fifth status a compile error here rather than a
+   * silent branch.
+   *
+   * `'erased'` for a user id that does not exist at all: the safest of the four, and the
+   * one that cannot be mistaken for a working account.
    */
-  readonly active: boolean;
+  readonly status: UserStatus;
   readonly groupIds: readonly string[];
   readonly permissions: ReadonlySet<PermissionCode>;
 }
@@ -74,6 +85,6 @@ export class PermissionRepository {
       if (row.code !== null && isPermissionCode(row.code)) permissions.add(row.code);
     }
 
-    return { active: account?.status === 'active', groupIds: [...groupIds], permissions };
+    return { status: account?.status ?? 'erased', groupIds: [...groupIds], permissions };
   }
 }

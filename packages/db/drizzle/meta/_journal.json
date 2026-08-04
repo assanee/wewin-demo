@@ -64,6 +64,13 @@
       "when": 1785865398280,
       "tag": "0008_guest_secret",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785876099796,
+      "tag": "0009_user_erasure",
+      "breakpoints": true
     }
   ]
 }

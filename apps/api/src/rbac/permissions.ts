@@ -37,7 +37,23 @@ export const PERMISSIONS = {
   'payments.verify': 'Accept or reject a payment slip.',
 
   'users.read': 'Read user accounts, their addresses and their sign-in methods.',
-  'users.write': 'Suspend, reinstate and edit user accounts.',
+  'users.write': 'Suspend, reinstate, close and edit user accounts.',
+  /*
+   * Its own code, and not part of `users.write`.
+   *
+   * `users.write`'s honest description is a list of reversible verbs. Erasure is none of
+   * them: it destroys every credential the person has, it cannot be undone, and the
+   * database refuses to let a row leave `erased`. Bundling it into the write permission
+   * repeats plan 7.14(ข)3 exactly — a permission that quietly carried an authority nobody
+   * had agreed to, discovered afterwards by reading what its holder could actually reach.
+   *
+   * Held by nobody at boot: `permission-sync.service.ts` inserts the code so a grant has
+   * something to reference, and grants it to no group. There is no user-administration
+   * controller yet (grep every `*.controller.ts` for `users.` — nothing consumes either
+   * code), so this is the moment the reach mistake is either made or avoided, and it is
+   * cheaper to declare the separation before the surface exists than to split it after.
+   */
+  'users.erase': 'Irreversibly erase a user: delete every credential and scrub their identity.',
 
   'groups.read': 'Read groups and their permission grants.',
   'groups.write': 'Create groups and change which permissions they carry.',

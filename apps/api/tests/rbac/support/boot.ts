@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { Global, Module, type DynamicModule, type INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Database } from '@wewin/db';
+import type { UserStatus } from '@wewin/db/schema';
 
 import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.filter';
 import { DRIZZLE } from '../../../src/database/database.tokens';
@@ -62,8 +63,13 @@ class UnusableDatabaseModule {
 export interface FakePrincipal {
   readonly groupIds?: readonly string[];
   readonly permissions?: readonly PermissionCode[];
-  /** Defaults to true. `false` is a suspended account, which the guard must refuse. */
-  readonly active?: boolean;
+  /**
+   * Defaults to `'active'`. Any other member is an account the guard must refuse — and it
+   * is the status rather than a boolean because `closed`, `suspended` and `erased` are
+   * refused with three different sentences and a fixture that could only say "not active"
+   * could not tell them apart.
+   */
+  readonly status?: UserStatus;
 }
 
 /** `userId` → what the database would have said about them. Anyone absent has no groups and no permissions. */
@@ -157,7 +163,7 @@ function fakeRepository(table: PermissionTable | undefined, unavailable: boolean
       if (unavailable) return Promise.reject(new Error('connection terminated unexpectedly'));
       const principal = table?.get(userId);
       return Promise.resolve({
-        active: principal?.active ?? true,
+        status: principal?.status ?? 'active',
         groupIds: principal?.groupIds ?? [],
         permissions: new Set(principal?.permissions ?? []),
       });

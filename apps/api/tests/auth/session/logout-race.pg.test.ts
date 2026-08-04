@@ -199,6 +199,21 @@ describeWithPg('signing out while the session is refreshing', () => {
    * `rotate_refresh_token()` ends it at the next rotation — at most one access-token
    * lifetime away — and answers `rejected` rather than `reused`, because suspension is not
    * theft and must not overwrite the reason an administrator set.
+   *
+   * ⚠️ **The second assertion changed in 5b, and the old one was recording a gap rather than
+   * an invariant.** It used to be `revokedAt(...) === null`, on the stated reasoning that
+   * "the session row is untouched, so an administrator's own reason is still the one
+   * recorded when they get round to revoking it". What that described in practice was that
+   * suspending an account revoked nothing at all: `sessions.revoked_at` stayed NULL forever,
+   * the user's own device list went on showing live sessions for a banned account, and
+   * `revoked_reason` — whose CHECK exists because "a revocation with no reason is an
+   * incident nobody can describe afterwards" — recorded nothing.
+   *
+   * `users_status_revoke_sessions` (0009_user_erasure.sql) closes that, and it closes it
+   * *with* the administrator's reason rather than instead of it: `revoked_by_admin` for a
+   * suspension, `account_closed` when the customer asked. The part of the original sentence
+   * that was load-bearing still holds and is still asserted — the outcome is `rejected` and
+   * the reason is not `refresh_reuse`, because suspension is not theft.
    */
   it('stops a suspended account from rotating its refresh token', async () => {
     const userId = await newUser();
@@ -216,8 +231,12 @@ describeWithPg('signing out while the session is refreshing', () => {
     const after = await service.refresh(before.session.refreshToken);
     expect(after.outcome).toBe('rejected');
 
-    // Not revoked-as-theft: the session row is untouched, so an administrator's own reason
-    // is still the one recorded when they get round to revoking it.
-    expect(await revokedAt(issued.sessionId)).toBeNull();
+    // Revoked, in the same transaction as the suspension, and not as theft.
+    expect(await revokedAt(issued.sessionId)).not.toBeNull();
+    const reason = await pool.query<{ revoked_reason: string }>(
+      'select revoked_reason from sessions where id = $1',
+      [issued.sessionId],
+    );
+    expect(reason.rows[0]?.revoked_reason).toBe('revoked_by_admin');
   });
 });

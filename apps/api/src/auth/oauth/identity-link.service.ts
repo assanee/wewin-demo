@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Database } from '@wewin/db';
-import { guests, orders, providerIdentities, userEmails, users } from '@wewin/db/schema';
+import { guests, orders, providerIdentities, userEmails, users, type UserStatus } from '@wewin/db/schema';
 import { and, eq, sql } from '@wewin/db/sql';
 
 import { DRIZZLE } from '../../database/database.tokens';
+import { signInDisposition } from '../../rbac/account-status';
 import type { ProviderName } from './providers/provider.types';
 
 /**
@@ -84,7 +85,11 @@ const PG_UNIQUE_VIOLATION = '23505';
  * had no way to see that nothing had happened.
  */
 export class AccountSuspendedError extends Error {
-  constructor(readonly userId: string) {
+  constructor(
+    readonly userId: string,
+    /** Which non-active status refused it. For the log line only — the redirect stays opaque. */
+    readonly status: UserStatus,
+  ) {
     super('This account is not active.');
     this.name = 'AccountSuspendedError';
   }
@@ -138,7 +143,7 @@ export class IdentityLinkService {
 
       /* Branch 1 — a returning customer, recognised by `sub` and by nothing else. */
       if (existing) {
-        if (existing.status !== 'active') throw new AccountSuspendedError(existing.userId);
+        await this.admitOrRefuse(tx, existing.userId, existing.status);
         await tx
           .update(providerIdentities)
           .set({
@@ -174,7 +179,7 @@ export class IdentityLinkService {
          * login page instead of an answer. The address belongs to a suspended account and
          * that is the whole story.
          */
-        if (provenOwner.status !== 'active') throw new AccountSuspendedError(provenOwner.userId);
+        await this.admitOrRefuse(tx, provenOwner.userId, provenOwner.status);
 
         await insertIdentity(tx, provenOwner.userId, assertion);
         return { userId: provenOwner.userId, accountCreated: false, attachedToVerifiedOwner: true };
@@ -214,6 +219,49 @@ export class IdentityLinkService {
       await insertIdentity(tx, created.id, assertion);
       return { userId: created.id, accountCreated: true, attachedToVerifiedOwner: false };
     });
+  }
+
+  /**
+   * What a provider proof may do with an account that is not `active`.
+   *
+   * ── `closed` is reinstated here, and that is a decision worth defending ─────────
+   *
+   * `closed` means "I want my account gone", and the design's claim is that it is the
+   * *reversible* half of deletion — nothing is scrubbed, the verified address is still
+   * held, the provider identities are still attached. That claim was false until this
+   * method existed. Branch 1 and branch 2 both refused any non-active status, `OAuthService`
+   * turns that into a deliberately opaque `failed` redirect, and `users.read`/`users.write`
+   * have no routes at all — so a closed customer who came back got an unexplained failure on
+   * every provider they tried and could reach nobody. A cooling-off window whose only exit
+   * is an UPDATE nobody can issue is not a cooling-off window.
+   *
+   * Reinstating on a provider proof is not a loophole: it is a real re-authentication by the
+   * same mechanism that would have signed them in. The person who closed the account is
+   * exactly the person who can produce it.
+   *
+   * `suspended` is deliberately NOT reinstated. An administrator decided that one, and a
+   * decision the subject can undo by logging in is not a suspension. `erased` is refused
+   * here and refused again by the database — `users_erasure_is_earned` lets no UPDATE move a
+   * row out of `erased` — because there is nothing left to reinstate: the credentials that
+   * would have proved it are deleted, so branch 1 and branch 2 cannot match an erased row in
+   * the first place. This branch is the belt, not the braces.
+   *
+   * The UPDATE clears `closed_at`? No: it leaves it. The date the customer asked is history
+   * and `users_closed_at_present` is a one-way implication precisely so that history can
+   * survive the row leaving the state.
+   */
+  private async admitOrRefuse(tx: Transaction, userId: string, status: UserStatus): Promise<void> {
+    const disposition = signInDisposition(status);
+
+    if (disposition === 'refuse') throw new AccountSuspendedError(userId, status);
+    if (disposition === 'proceed') return;
+
+    await tx
+      .update(users)
+      .set({ status: 'active', updatedAt: sql`now()` })
+      .where(and(eq(users.id, userId), eq(users.status, 'closed')));
+
+    this.logger.log(`user ${userId} was closed and has been reinstated by a provider proof`);
   }
 
   /**
@@ -357,7 +405,15 @@ type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 interface VerifiedOwner {
   readonly userId: string;
-  readonly status: 'active' | 'suspended';
+  /**
+   * `UserStatus` and not a hand-written union. It was `'active' | 'suspended'`, which was a
+   * copy of the enum kept in sync by nobody: the moment the database learned two more
+   * members this became a value narrower than what arrives in it — a runtime lie that
+   * `status !== 'active'` happened to survive. Drizzle's `{ enum }` narrowing on the column
+   * is what makes this line a compile error instead, which is the one trip-wire that already
+   * existed and is why the column stayed narrowed when it moved from `pgEnum` to `text`.
+   */
+  readonly status: UserStatus;
 }
 
 async function verifiedOwnerOf(tx: Transaction, address: string): Promise<VerifiedOwner | undefined> {

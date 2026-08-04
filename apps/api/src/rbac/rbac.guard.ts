@@ -17,6 +17,7 @@ import { PermissionRepository } from './permission.repository';
 import { RBAC_OPTIONS, type RbacOptions } from './rbac.options';
 import { RouteRegistryService } from './route-registry.service';
 import { matchScope, guestScope, userScope, PUBLIC_SCOPE, type Scope } from './scope';
+import { accountUsability } from './account-status';
 
 /** Only what this guard reads off a request, so a unit test does not have to build an express object. */
 interface GuardedRequest {
@@ -110,9 +111,17 @@ export class RbacGuard implements CanActivate {
        * cheapest place to close that window: a suspended account is refused here rather
        * than up to a full access-token lifetime later. 401 and not 403 — the session is no
        * longer a session, which is what the client has to be told to stop retrying with it.
+       *
+       * `accountUsability` and not `status !== 'active'`, and the difference is the whole
+       * mechanism: it is an exhaustive match (rbac/account-status.ts), so a status added in
+       * a later migration cannot reach this line without somebody deciding what it means.
+       * The refusal message comes from there too — a closed account and an erased one need
+       * different instructions, and a client that shows "sign in again to reopen" for an
+       * erasure sends the person round a loop.
        */
-      if (!effective.active) {
-        throw new UnauthorizedException('This account is not active.');
+      const usability = accountUsability(effective.status);
+      if (!usability.usable) {
+        throw new UnauthorizedException(usability.message);
       }
 
       return userScope({

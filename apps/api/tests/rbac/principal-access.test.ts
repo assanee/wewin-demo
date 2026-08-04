@@ -47,7 +47,7 @@ const guestCookieValue = (guestId: string): string => `${guestId}.${GUEST_SECRET
 
 const PERMISSIONS: PermissionTable = new Map([
   [CUSTOMER, {}],
-  [SUSPENDED, { active: false }],
+  [SUSPENDED, { status: 'suspended' }],
 ]);
 
 describe('RequirePrincipal', () => {

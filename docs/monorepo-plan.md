@@ -668,13 +668,146 @@ client ไม่เคยส่งยอดเงินขึ้นมา ส่
 
 **และลูกค้าเห็นอะไรเมื่อฝ่ายขายแก้ใบที่ตกลงไปแล้ว — ตามที่ออกแบบไว้ตอนนี้คือ ไม่เห็นอะไรเลย** ไม่มี diff ไม่มีช่องทางแจ้ง ไม่มีปุ่มปฏิเสธ · ลูกค้าแสดงความไม่ยินยอมได้ทางเดียวคือไม่โอนเงิน ซึ่งทำให้ออร์เดอร์ค้างตลอดกาลเพราะไม่มี timeout **นี่คือช่องว่างที่ใหญ่ที่สุดของฟีเจอร์นี้และต้องออกแบบก่อนเฟส 5**
 
-### 7.15 🔴 สามข้อที่รอการตัดสินใจของเจ้าของกิจการ
+### 7.16 🔴 สิ่งที่ "ลบด้วย flag" ยังไม่ตอบโจทย์ PDPA
+
+เจ้าของกิจการตัดสินว่า **ไม่ลบจริง ใช้ flag เท่านั้น** — ทำแล้ว แต่ผลที่ตามมาต้องเขียนไว้ให้ชัด ไม่ใช่ปล่อยให้คำว่า `erased` ในฐานข้อมูลพูดแทน
+
+**⚠️ ป้าย `erased` ไม่ได้แปลว่าลูกค้าถูกลืมแล้ว** — `erase_user()` ลบ credential และล้าง `display_name` จริง แต่ `orders.contact_email` / `contact_name` / `contact_phone` **ยังอยู่ครบ** บนแถวที่ `customer_user_id` ชี้กลับไปที่ tombstone · **join เดียวก็ระบุตัวบุคคลได้** ซึ่งตามกฎหมายยังเป็นข้อมูลส่วนบุคคลอยู่ — pseudonymisation ไม่ใช่ anonymisation
+
+คำอธิบายที่ซื่อสัตย์คือ *"ลบ credential และ lookup key ทั้งหมด · เก็บข้อมูลติดต่อไว้ภายใต้ข้ออ้างยกเว้นทางบัญชี"* **ไม่ใช่** *"ลบข้อมูลลูกค้าแล้ว"*
+
+**สี่ข้อที่ยังไม่ได้ทำ**
+
+| | |
+|---|---|
+| **สิทธิ์ให้ลบ (ม.33)** | ทำได้บางส่วน · ที่ยังเหลือและเข้าถึงได้: ข้อมูลติดต่อบนออร์เดอร์ (เห็นผ่าน `GET /orders/:id`) · ข้อความอิสระใน `order_events.payload` ซึ่ง append-only และ**บังคับ**ให้มี `reason` ที่ลูกค้าพิมพ์ตอนยกเลิกหลัง freeze · `notification_attempts.recipient_key` ที่เก็บทุกที่อยู่ที่เคยส่งไว้ตลอดกาล |
+| **ระยะเก็บรักษา (ม.37)** | **ไม่มีนาฬิกาเลย** · "ไม่ลบอะไร" + "เก็บไว้ตามข้อยกเว้นทางบัญชี" = เก็บตลอดกาล ซึ่งไม่มีข้อยกเว้นไหนอนุญาต · การลบคือสองเหตุการณ์ — ล้างตอนนี้ และ **ทำลายเมื่อครบ N ปี** — ตอนนี้มีแค่อันแรก · **ไม่ได้ตั้งค่าเริ่มต้นให้โดยตั้งใจ** เพราะเป็นตัวเลขที่ต้องมาจากผู้ทำบัญชี |
+| **สิทธิ์เข้าถึง / ขอสำเนา (ม.30–31)** | ไม่มีเส้นทางเลย · permission `users.read/write/erase` มีแต่ไม่มี controller |
+| **หน่วยของการลบคือ "บัญชี" ไม่ใช่ "คน"** | ออร์เดอร์ของผู้เยี่ยมชมนิรนามมี `customer_user_id` เป็น NULL และไม่มี FK ถึง `users` เลย — `erase_user()` มองไม่เห็น · ซึ่งเป็นช่องทางหลักของ funnel |
+
+**ต้องให้นักกฎหมายตัดสิน** ว่าการเก็บข้อมูลติดต่อบนออร์เดอร์ภายใต้ข้อยกเว้นทางบัญชีเพียงพอไหม และเก็บได้นานเท่าไร
+
+### 7.15 🔴 สามข้อที่รอการตัดสินใจของเจ้าของกิจการ — **ข้อ 1 ตอบแล้ว**
 
 รอบนี้เลือกทางที่ปลอดภัยไว้ก่อน และเขียนไว้ตรงนี้เพราะมันเป็นการตัดสินใจทางธุรกิจ ไม่ใช่ทางเทคนิค
 
-1. **ลบผู้ใช้ที่มีออร์เดอร์ไม่ได้** — `orders.customer_user_id` เป็น `ON DELETE RESTRICT` ซึ่งขัดกับที่ข้อ 6 ตั้งใจไว้ว่า "การลบข้อมูลคือ `DELETE FROM users` ครั้งเดียว" · ออร์เดอร์เป็นเอกสารทางบัญชี และแถวระยะเก็บรักษาในข้อ 13 ยังไม่มีคำตอบ จึงเลือก fail-closed · **ตะกร้าที่ยังเป็นร่างลบได้** ดังนั้นเส้นทางลบข้อมูลยังเคลียร์ funnel ได้ แต่ต้องมีคนเซ็นรับว่านี่คือคำตอบที่ถูกสำหรับ PDPA
+1. ~~**ลบผู้ใช้ที่มีออร์เดอร์ไม่ได้**~~ — ✅ **ตอบแล้วโดยเจ้าของกิจการ · ทำเสร็จในเฟส 5b · ดูข้อ 7.16 ว่าคำตอบนี้มีราคาเท่าไร**
+
+   > "การลบข้อมูลให้ใช้การ flag status เท่านั้นจะไม่ใช่การลบจริง"
+
+   `orders.customer_user_id` ยังเป็น `ON DELETE RESTRICT` เหมือนเดิม **โดยตั้งใจ** — ตอนนี้มันไม่มีวันทำงาน และนั่นคือประเด็น: มันเป็นสิ่งเดียวที่ขวางระหว่าง `DELETE FROM users` ในอนาคตกับการทำลายเอกสารทางบัญชี · การถอด guard ออกเพราะนโยบายปัจจุบันทำให้มันเอื้อมไม่ถึง คือวิธีที่การเปลี่ยนนโยบายครั้งหน้ากลายเป็นการสูญข้อมูล
+
 2. **`pnpm db:seed` ปฏิเสธฐานข้อมูลที่มีสัญญาแล้ว** — `TRUNCATE … CASCADE` ไม่สนใจ `ON DELETE RESTRICT` และจะลาม `order_document_product_versions` ทิ้ง ทำให้ทุกเอกสารที่ pin ไว้เหลือเงินโดยไม่มีบันทึกว่าคิดราคาจากอะไร · trigger กันไว้แล้ว
 3. **`superseded` ไปถึงได้จาก `redesign` เท่านั้น** — การเปลี่ยนใจหลัง freeze ต้องผ่านการตรวจก่อนจะกลายเป็นสัญญาใหม่ · ถ้าคิดว่าผิด แก้ด้วย INSERT แถวเดียวใน migration ซึ่งเป็นเหตุผลที่มันเป็นตาราง ไม่ใช่ enum
+
+### 7.16 การลบคือ flag — สิ่งที่ทำจริง และราคาที่จ่าย
+
+> เขียนหลังทำจริง · ทุก guard ในหน้านี้มีเทสต์ที่ถูกทำให้แดงด้วยมือแล้วจริง ตารางผลอยู่ท้ายหัวข้อ
+> ไฟล์หลัก: `packages/db/drizzle/0009_user_erasure.sql` · `packages/db/src/schema/auth.ts` ·
+> `apps/api/src/rbac/account-status.ts` · `packages/db/tests/erasure.test.ts`
+
+#### ก. คำตอบของเจ้าของกิจการตอบครึ่งเดียว และครึ่งที่เหลือคือ PDPA
+
+flag ซ่อนแถว · PDPA ต้องการให้ **ข้อมูลส่วนบุคคลหายไปจริง** · ระบบที่ทำแค่อย่างแรกแล้วเรียกว่าการลบ คือความล้มเหลวที่โปรเจกต์นี้เจอซ้ำๆ — เครื่องมือรายงานว่าสำเร็จ แต่งานไม่ได้เกิดขึ้น
+
+จึงส่ง **สองปฏิบัติการ ไม่ใช่หนึ่ง** และไม่ยอมให้เข้าใจสลับกัน
+
+| | `close_user()` | `erase_user()` |
+|---|---|---|
+| คือคำตอบของเจ้าของกิจการ | ✅ ตรงตัว | ครึ่งที่ PDPA ต้องการเพิ่ม |
+| เข้าสู่ระบบ | ปฏิเสธ | ปฏิเสธ |
+| session | เพิกถอนทั้งหมด (`account_closed`) | ลบทิ้ง |
+| อีเมล/ตัวตนผู้ให้บริการ/รหัสผ่าน | **เก็บไว้ครบ** | **ลบทิ้ง** |
+| ย้อนกลับได้ | ได้ — พิสูจน์ตัวตนผ่าน provider อีกครั้งแล้วบัญชีกลับมา | **ไม่ได้ ตลอดกาล** |
+
+**สี่สถานะ ไม่ใช่สอง** — `active` · `suspended` · `closed` · `erased` · และ `user_status` **เลิกเป็น `pgEnum`** เปลี่ยนเป็น `text` + CHECK ตามแบบ `order.ts:40-47` · `session_revocation_reason` เปลี่ยนด้วยและเป็นเคสที่คมกว่า: migration เดียวกันทั้ง *เพิ่ม* `account_closed` และ *เขียน* มัน (trigger เพิกถอน session) ซึ่งถ้าเป็น pgEnum จะได้ `unsafe use of new value` และ deploy พังในรีลีสที่ส่งฟีเจอร์นี้พอดี
+
+#### ข. `erased` ต้องเป็นสิ่งที่ฐานข้อมูล *ตรวจ* ไม่ใช่สิ่งที่ job *สัญญา*
+
+ดีไซน์ที่รับมาบอกว่าใช้ CHECK ผูกกับ status (`status <> 'erased' or display_name is null`) แล้ว "การ scrub ที่ทำไม่ครบจะ commit แถวที่บอกว่า erased ไม่ได้" — **ประโยคนี้เป็นเท็จ** และเหตุผลเป็นเชิงโครงสร้าง ไม่ใช่รายละเอียด: **ทุก CHECK บน `users` เป็นการตรวจแถวเดียวกัน แต่เป้าหมายของการ scrub ทุกตัวยกเว้น `display_name` อยู่คนละแถว** · `UPDATE users SET status='erased', erased_at=now(), display_name=NULL` คำสั่งเดียวผ่านทุก CHECK พร้อมอีเมล ตัวตน รหัสผ่าน และ session ที่ยังมีชีวิตอยู่ครบ — และแย่กว่าการไม่ทำอะไร เพราะ trigger สถานะสิ้นสุดจะทำให้มันถาวร
+
+invariant นี้ข้ามแถว การบังคับจึงต้องข้ามแถวด้วย → `users_erasure_is_earned()` ปฏิเสธการเข้าสู่ `erased` เว้นแต่ (1) มาจาก `closed` (2) ไม่เหลือแถวใน `user_emails` / `provider_identities` / `password_credentials` / `auth_tokens` / `sessions` (3) มีแถว `user_erasure_requests` ที่ `completed_at` ไม่ว่าง **และ `write_txid` เท่ากับ `pg_current_xact_id()` ของทรานแซกชันนี้** — กลไก `write_txid` ยืมมาจาก `notifications_guard_insert()` (0007) ไม่ได้คิดใหม่
+
+`user_erasure_requests` เป็น **append-only** — ถ้าข้อเท็จจริงที่ย้อนกลับไม่ได้อยู่ถาวรแต่บันทึกที่อธิบายมันแก้ได้ นั่นคือกลับหัว และ DSAR ตอบไม่ได้
+
+#### ค. สามที่ที่ทั้งสามดีไซน์ไม่ตรงกัน และเลือกอย่างไร
+
+| ประเด็น | เลือก | เพราะ |
+|---|---|---|
+| `WHERE status <> 'erased'` ทุก repository? | **ไม่** — ใช้ `matchUserStatus` ที่ไม่มี `default` + sweeper ที่ค้นหา route เอง | มีที่อ่าน `users.status` แค่ 3 จุดในทั้ง API และทั้งสามเทียบกับ `'active'` แบบบวก จึง fail-closed อยู่แล้ว · เทอมใน `and()` หายไปได้โดย diff ไม่ดูเหมือนการแก้ความปลอดภัย — คือรูปร่างของกับดัก 2 · ยืนยันแล้ว: เพิ่มสมาชิกที่ห้า → `tsc` แดงที่ `account-status.ts:55` |
+| `user_groups` ตอน `erased` | **เก็บไว้** (ทั้งสามดีไซน์บอกให้ลบ) | แถวสมาชิกภาพคือ uuid กับ group id ไม่ได้ระบุตัวบุคคลเมื่อ `display_name` ว่างแล้ว · การลบมันคือการตอบคำขอ PDPA ของ *พนักงาน* ด้วยการทำลาย audit ของบริษัทเอง — `order_events.actor_user_id` เป็น RESTRICT จึงยังชี้ชื่อ uuid นั้นตลอดไป แต่ไม่เหลืออะไรบอกว่าตอนนั้นเขามีสิทธิ์อะไร ซึ่งคือคำถามที่ข้อพิพาทการคืนเงินถาม |
+| `closed` ย้อนกลับได้จริงไหม | **ทำให้จริง** — พิสูจน์ตัวตนผ่าน provider = คืนสถานะ | เดิม branch 1/2 ของ `IdentityLinkService` ปฏิเสธทุกสถานะที่ไม่ใช่ active · `OAuthService` แปลงเป็น redirect ทึบที่ไม่บอกสาเหตุ · และ `users.read`/`users.write` **ไม่มี route เลย** จึงไม่มีใครแก้ให้ได้ · ช่วงผ่อนผันที่ทางออกเดียวคือ UPDATE ที่ไม่มีใครออกได้ ไม่ใช่ช่วงผ่อนผัน |
+| CHECK รูปทรงเวลา | **implication ทางเดียว** ไม่ใช่ biconditional | `(status='closed') = (closed_at is not null)` จะบังคับให้การ erase ต้อง NULL `closed_at` ทิ้ง = ทำลายวันที่ลูกค้าขอ ซึ่งเป็นหลักฐานเดียวว่าให้ช่วงผ่อนผันจริง · ตามรูปแบบ `users_suspended_at_present` ที่มีอยู่แล้ว |
+| ปล่อยอีเมลที่ยืนยันแล้วคืน = เปิดช่องโหว่ ⓐ ใหม่ไหม | **ไม่** — และลบแถวทิ้ง ไม่ scrub | `user_emails_verification_is_final` ห้ามทั้งการถอนการยืนยันและการเปลี่ยนที่อยู่ · การลบเป็นทางออกเดียวที่ถูกกฎ และเป็นสิ่งเดียวที่ปล่อย `user_emails_one_verified_owner` ซึ่งไม่สนใจ status · ปลอดภัยเพราะ `users` ไม่มีคอลัมน์อีเมล — ความเป็นเจ้าของคือ `orders.customer_user_id` ที่อยู่จึงเปลี่ยนมือได้โดยออร์เดอร์ไม่เปลี่ยนมือ · ทดสอบ end-to-end แล้วใน `erasure.pg.test.ts` |
+| สิทธิ์ | **`users.erase` แยกจาก `users.write`** | คำอธิบายที่ซื่อสัตย์ของ `users.write` เป็นรายการคำกริยาที่ย้อนกลับได้ทั้งหมด · การรวมเข้าไปคือการทำซ้ำข้อ 7.14(ข)3 เป๊ะๆ |
+
+#### ง. สองการแข่งขันที่ดีไซน์คิดไว้แต่ไม่มีใครรัน — รันแล้ว ทั้งคู่เป็นจริง
+
+ทั้งสองต้องใช้ **สองคอนเนกชัน** และอยู่ที่ `packages/db` เท่านั้น — ผ่าน HTTP มองไม่เห็น เพราะ `RbacGuard` ตอบ 401 ให้ token ที่ได้ไม่ว่าแถวจะถูกเขียนหรือไม่ (บทเรียน 6b ข้อ 7.14)
+
+- **`auth_rows_refuse_erased_user` ต้องอ่านด้วย `FOR SHARE`** — ไม่งั้นการเข้าสู่ระบบที่เริ่มก่อน erase commit จะอ่านเจอ `active` แล้ว commit `provider_identities` ลงบนแถวที่บอกว่า `erased` → บัญชี Google ของคนคนนั้นกลายเป็นทางตันทึบถาวรที่ชี้ไปหา tombstone
+- **`erase_user` ต้องจับ `pg_advisory_xact_lock(4919, hashtext(address))`** — 0004 จองเลข namespace นี้ไว้และจับล็อกตอน INSERT กับตอนยืนยัน โดยเขียนไว้ว่า "serialises every writer of one address" · การลบเพิ่ม writer ตัวที่สาม และถ้าไม่จับ ล็อก การสมัครที่แข่งกับการปล่อยที่อยู่จะถูกปฏิเสธด้วยข้อความที่อ้างถึงบัญชีที่ไม่มีอยู่แล้ว
+
+#### จ. ผลการกลายพันธุ์ — **รันจริงทุกบรรทัดในรอบนี้** (ถอดของออก → แดง → ใส่คืน → เขียว)
+
+| # | สิ่งที่ถอดออก | เทสต์ที่แดง |
+|---|---|---|
+| 1 | `users_erasure_is_earned` — บล็อก "ยังมี credential เหลือ" | `refuses to call a row erased while a credential survives` |
+| 2 | `users_erasure_is_earned` — บล็อกที่ต้องมี paper trail | 2 เทสต์ |
+| 3 | `users_erasure_is_earned` — เฉพาะการเทียบ `write_txid` | `refuses a paper trail borrowed from an earlier transaction` |
+| 4 | `users_erasure_is_earned` — เงื่อนไข `OLD.status <> 'closed'` | `refuses to erase an account that was never closed` |
+| 5 | `users_erasure_is_earned` — สาขาสถานะสิ้นสุด | `lets nothing move a row out of erased` |
+| 6 | `FOR SHARE` ใน `auth_rows_refuse_erased_user` | `makes a sign-in that started first wait, and then refuses it` |
+| 7 | advisory lock ใน `erase_user` | `serialises a signup for the address it is releasing` |
+| 8 | trigger `provider_identities_refuse_erased_user` | 2 เทสต์ |
+| 9 | trigger `user_erasure_requests_append_only` | `will not let the record of an erasure be rewritten or removed` |
+| 10 | trigger `users_status_revoke_sessions` | `revokes every open session, with a reason that is not a lie` |
+| 11 | CHECK `users_status_known` | `refuses a status the domain does not know` |
+| 12 | `erase_user` ไม่ลบ `user_emails` | **8 แดง** (trigger ปฏิเสธการ erase ทั้งอัน — ซึ่งคือประเด็น) |
+| 13 | `erase_user` ไม่ NULL `display_name` | **8 แดง** เช่นกัน |
+| 14 | `accountUsability` ทำให้ `closed` ใช้งานได้ | sweeper ทุก route |
+| 15 | `accountUsability` ทำให้ `erased` ใช้งานได้ | sweeper ทุก route |
+| 16 | `signInDisposition`: `closed → refuse` | `reopens a closed account when the customer proves it again` |
+| 17 | `signInDisposition`: `suspended → reinstate` | `does not reopen a suspended account…` |
+| 18 | ทำให้ `erased` เป็น key ที่ไม่บังคับใน `UserStatusHandlers` | `tsc`: `Unused '@ts-expect-error' directive` |
+| 19 | เพิ่มสมาชิกที่ห้าใน `USER_STATUSES` | `tsc`: `account-status.ts(55,90) Function lacks ending return statement` |
+
+> ⚠️ **ข้อ 1 กับข้อ 4 เป็นสีเขียวในรอบแรก** — และนั่นคือเหตุผลที่ต้องรันจริงแทนที่จะเขียนตารางจากความตั้งใจ · ข้อ 1 เขียวเพราะการตรวจ paper trail ปฏิเสธคำสั่งเดียวกันด้วยเหตุผลคนละอัน · ข้อ 4 เขียวเพราะ `erase_user()` ตรวจซ้ำเองอยู่แล้ว จึงบัง trigger ไว้ · แก้โดยให้เทสต์เขียนคำสั่งเองในทรานแซกชันที่ควบคุมได้ และ **ยืนยันข้อความของ exception ไม่ใช่แค่ SQLSTATE** — 6b อีกครั้ง ที่อยู่ใหม่
+
+**รอบตรวจสอบที่สอง (รอบปิดงาน) — กลายพันธุ์เพิ่มอีก 16 ครั้ง ทุกครั้งรันจริง และ *สามครั้งกลับมาเขียว*:**
+
+| # | สิ่งที่ถอดออก | ผล |
+|---|---|---|
+| 20 | CHECK `users_erased_has_no_name` | 🟢 **เขียว — guard ที่ไม่มีหลักฐาน** → ปิดแล้ว ดูข้อ ฉ.9 |
+| 21 | CHECK `users_erased_at_shape` | 🟢 **เขียว** → ปิดแล้ว |
+| 22 | CHECK `users_erased_at_present` | 🟢 **เขียว** → ปิดแล้ว |
+| 23 | บล็อกกด suppress `notifications` ทิ้ง (`recipient_kind='customer'`) | `does not silence the messages the company sends itself about that order` |
+| 24 | ขยาย suppress จาก `('pending','dead')` เป็นทุกสถานะ | 🟢 เขียว — ยอมรับได้: การกวาดเกินไม่ใช่การรั่ว และแถว `sending` เรียกคืนไม่ได้อยู่แล้ว (ฉ.2) |
+| 25 | สาขา `recipient_erased` ใน `order_events_fan_out_notifications()` | 2 เทสต์ |
+| 26 | `erase_user` ไม่เพิกถอน `guests.secret_hash` | `revokes the guest cookie secret while keeping the claim link` |
+| 27–31 | ทำซ้ำข้อ 1 · 4 · 5 · 6 · 7 ของตารางบน (การถดถอย) | แดงทั้งหมด ตรงตามที่บันทึกไว้ |
+| 32 | `accountUsability`: `erased → USABLE` | `refuses every guarded route once the account is erased` — **37 route** ตอบผิด และที่สำคัญที่สุด `GET /orders` ตอบ **200** ไม่ใช่ 403 |
+| 33–35 | ถอด CHECK ทั้งสามซ้ำ *หลัง* เขียนเทสต์ใหม่ | แดงทั้งสามครั้ง |
+
+> ⚠️ **บทเรียนซ้ำอีกครั้ง ที่อยู่ใหม่อีกแล้ว**: ข้อ 20–22 เขียวเพราะสวีตทั้งหมดพิสูจน์ `erased` ผ่าน `erase_user()` ซึ่ง**ไม่เคยเขียนชื่อกลับ** จึงไม่มีคำสั่งไหนไปแตะ CHECK เหล่านั้นเลย · เทสต์ที่พิสูจน์ "ทางที่ถูกต้องทำงานถูก" ไม่ได้พิสูจน์ "ทางที่ผิดถูกปฏิเสธ" และเมื่อ trigger เป็น `UPDATE **OF status**` ทางที่ผิดก็คือคำสั่งที่ไม่เอ่ยถึง `status` เลย
+
+#### ฉ. ราคาที่จ่าย — สิ่งที่รอบนี้ **ไม่ได้** ทำ และต้องมีคนตัดสินใจต่อ
+
+ทั้งหมดนี้ถูกเขียนลงในคอลัมน์ `withheld_scope` ของทุกแถว `user_erasure_requests` ด้วย เพื่อว่า "เราลบคุณแล้ว" จะไม่มีวันเป็นคำกล่าวอ้างที่ฐานข้อมูลพูดถึงข้อมูลที่มันเอื้อมไม่ถึง
+
+1. 🔴 **`orders.contact_email` / `contact_name` / `contact_phone` ยัง NULL ไม่ได้** — `orders_submitted_has_a_contact_channel` ปฏิเสธ · ที่คมกว่านั้น: **การ scrub บางส่วน commit ได้** (name/phone สำเร็จ อีเมลได้ 23514) ทำให้เหลือแถวที่ดูเหมือนถูกลบแล้วบน dashboard แต่ outbox ยังส่งถึงได้ · ต้องการ `orders.contact_erased_at` + แก้ CHECK + CHECK คู่ที่บังคับให้สามคอลัมน์เคลื่อนพร้อมกัน — **อยู่ใน `packages/db/src/schema/order.ts` ซึ่งรอบนี้ไม่ได้เป็นเจ้าของ**
+2. ✅ **`notifications.recipient_key` — ปิดแล้วในรอบนี้ ไม่ใช่ข้อเสนอ** (ข้อความเดิมของหัวข้อนี้บอกว่ายังไม่ได้ทำ ซึ่งตอนนี้เป็นเท็จ) · `erase_user()` ทำ `status='suppressed', suppressed_reason='recipient_erased', recipient_key=NULL` กับแถว `pending`/`dead` ของ `recipient_kind='customer'` ที่ผูกกับออร์เดอร์ของบัญชีนั้น และ `order_events_fan_out_notifications()` เพิ่มสาขาที่ปฏิเสธการจ่าหน้าซองใบใหม่ · ยืนยันที่ชั้นที่อันตรายจริง — `apps/api/tests/notifications/erased-recipient.pg.test.ts` ขับ `NotificationWorker` ตัวจริงด้วย adapter ที่บันทึกทุกข้อความ · **ที่ยังเหลือและระบุไว้ตรงๆ**: แถวที่เป็น `sending` อยู่แล้ว worker จับไปแล้วและอาจส่ง SMTP ไปแล้ว — เรียกคืนไม่ได้ หน้าต่างกว้างเท่ากับหนึ่ง poll interval
+2b. 🔴 **`GET /orders/:orderId` ยังคืนชื่อและอีเมลของคนที่ถูก erase ให้เจ้าหน้าที่** — ยืนยันด้วยการยิงจริงผ่าน HTTP ด้วย principal ที่ถือ **ทุก** permission แล้วกวาดทุก guarded GET: route เดียวที่รั่วคือ route นี้ และรั่วทั้ง `contact_name` และ `contact_email` (`apps/api/src/orders/encode.ts:96-97`) · ไม่ใช่บั๊กใหม่ — เป็นข้อ 1 ข้างบนที่มองเห็นได้จากหน้าจอ: ตราบใดที่ `orders.contact_*` NULL ไม่ได้ dashboard ก็ยังแสดงคนที่ฐานข้อมูลบอกว่า `erased` · `GET /orders` (รายการ) ไม่รั่ว เพราะไม่ได้ส่ง contact ออกมา
+3. 🔴 **`order_events.payload` และ `notification_attempts.recipient_key` เป็น append-only จริง** — ลูกค้าพิมพ์เบอร์โทรลงในเหตุผลการยกเลิกผ่าน API สาธารณะได้ และ `required_payload_keys` **บังคับ** ให้มี `reason` ในการยกเลิกหลัง freeze · ต้องตัดสิน **กฎว่าอะไรเขียนลงไปได้** ก่อน 5b เขียนเหตุผลการปฏิเสธสลิปลงที่เดียวกัน: `payload: { reasonRef: <uuid> }` + ตารางลูกที่ scrub ได้ · หลัง 5b ค่าใช้จ่ายในการ migrate คือการเขียนตาราง append-only ใหม่ ซึ่งแปลว่าไม่มี migration
+4. 🔴 **การลบมี "ของใคร" ที่ตอบไม่ได้** — ออร์เดอร์ที่ guest ส่งและไม่เคยถูก claim มี `customer_user_id IS NULL` และไปถึง `users` ผ่าน foreign key ไม่ได้เลย · `erase_user(uuid)` เอื้อมไม่ถึงตามโครงสร้าง และเทสต์ FK-coverage **มองไม่เห็น** (มีคำเตือนเขียนไว้ทั้งใน `ERASURE_TREATMENTS` และในตัวเทสต์) · ข้อ 6 เรียก funnel นิรนามว่าเส้นทางหลัก → **คำถามถึงเจ้าของกิจการ: การลบ ของ *บัญชี* หรือของ *คน*?** ถ้าเป็นคน หน่วยของการลบคือที่อยู่อีเมล และต้องมี route DSAR ซึ่งข้อ 12.20 บอกว่ายังไม่มี
+5. 🟠 **ไม่มีนาฬิการะยะเก็บรักษา** — ข้อ 13 ยังไม่มีตัวเลข ("5 ปีตามเอกสารทางบัญชี — ต้องยืนยันกับผู้ทำบัญชี") · "ไม่มีอะไรถูกลบ" + "ออร์เดอร์ถูกกันไว้ด้วยข้อยกเว้นทางบัญชี" = เก็บตลอดกาล ซึ่งไม่ใช่สิ่งที่ข้อยกเว้นอนุญาต · การลบเป็นเรื่องสองเหตุการณ์ — scrub ตอนนี้ · **ทำลายเมื่อครบ N ปี** — และมีแค่เหตุการณ์แรกที่มีดีไซน์ · **รอบนี้ไม่ตั้งค่าเริ่มต้นให้เลยโดยตั้งใจ** ไม่มีการลบอัตโนมัติใดๆ ทั้งสิ้น (ตัวเลขที่ประดิษฐ์ขึ้นในโค้ดคือความล้มเหลวที่ข้อ 13 มีไว้ป้องกัน)
+6. 🟠 **ไม่มีช่วงเวลาผ่อนผัน (cooling-off) ที่บังคับ** — `erase_user()` เรียกได้ทันทีหลัง `close_user()` · ตัวเลข "กี่วัน" เป็นคำถามธุรกิจ: **บริษัทเก็บความสามารถที่จะขอโทษไว้นานแค่ไหน** · โครงรองรับครบแล้ว (`closed_at` มีอยู่และรอดผ่านการ erase)
+7. 🟠 **`users.erase` ยังไม่มี route** — `users.read`/`users.write` ก็ไม่มีเช่นกัน (grep ทุก `*.controller.ts`) · ตอนสร้างหน้าจอ ต้องเพิ่มแถวใน `apps/api/tests/admin/route-permissions.test.ts` ในคอมมิตเดียวกับ route — boot audit เรียกร้อง *นโยบายสักอัน* ได้ แต่เรียกร้องนโยบายที่ *ถูก* ไม่ได้ ซึ่งเป็นเหตุผลที่ตารางนั้นมีอยู่
+8. 🟠 **`media_objects` dedup ด้วย checksum** — รูปที่ไบต์เหมือนกันของสองคนใช้แถวเดียวกัน การล้างของคนหนึ่งจึงล้างของอีกคน · ยังไม่เป็นจริงวันนี้ (มีแต่รูปแคตตาล็อกของพนักงาน) แต่สลิปใน 5b และรูปรีวิวในเฟส 7 ลงตารางนี้ · และไม่มีคอลัมน์ไหนบันทึกได้ว่าไบต์ใน object storage ถูกลบจริงแล้ว
+9. 🔴 **trigger ทั้งสองตัวบน `users` เป็น `BEFORE UPDATE **OF status**` — คำสั่งที่ไม่เอ่ยถึง `status` ไม่ปลุกมันเลย** · พบด้วยการกลายพันธุ์แล้วยืนยันด้วยการรันคำสั่งจริงบน tombstone:
+   - `UPDATE users SET display_name = 'สมชาย' WHERE id = <tombstone>` → **ถูกปฏิเสธ** 23514 `users_erased_has_no_name` · แต่ CHECK ตัวนั้น **ไม่มีเทสต์ใดคลุมเลยจนถึงรอบนี้** (ถอดออกแล้วสวีตทั้ง 152 ยังเขียว) — สำหรับคำสั่งประเภทนี้ CHECK ไม่ได้เป็นเข็มขัดเสริม มัน **เป็นการบังคับตัวเดียวที่มี** · ปิดแล้วด้วย `will not let a tombstone be re-personalised by an UPDATE that never names status` ซึ่งคลุม `users_erased_has_no_name` · `users_erased_at_present` · `users_erased_at_shape` ทั้งสามตัว (ทั้งสามเคยเขียวเมื่อถอดออก)
+   - `UPDATE users SET closed_at = now() WHERE id = <tombstone>` → **ผ่าน** · `UPDATE users SET suspended_at = now() WHERE id = <tombstone>` → **ผ่าน** · `closed_at` คือวันที่ลูกค้าขอ ซึ่ง 0009 เรียกว่า "หลักฐานเดียวว่าให้ช่วงผ่อนผันจริง" และไม่มีอะไรกันไม่ให้เขียนทับหลังการ erase · **ยังไม่แก้ในรอบนี้โดยตั้งใจ**: การแก้คือเพิ่มเงื่อนไขใหม่ใน `users_erasure_is_earned()` และขยาย trigger เป็น `BEFORE UPDATE` เต็ม (ปัจจุบันตัวฟังก์ชัน `RETURN NEW` ทันทีเมื่อ `OLD.status = 'erased'` การขยาย trigger เฉยๆ จึงไม่พอ) — เป็นการเปลี่ยนดีไซน์ที่ต้องมีรอบกลายพันธุ์ของตัวเอง ไม่ใช่ assertion ที่ขาดไป
+10. ⚪️ **สิ่งที่รอบนี้ไม่ได้ยืนยัน** — ไม่ได้ตรวจ `apps/dashboard` ว่ามีที่ไหน render ชื่อหรืออีเมลของผู้ใช้ (`apps/web` ตรวจแล้ว: ไม่มีเลย เป็น SPA ที่ไม่แตะ API ผู้ใช้) · ไม่ได้ทดสอบว่า `session_replication_role = replica` ถูกใช้เลี่ยง trigger (ถ้ามีใครสร้าง bypass ต้องเป็น SECURITY DEFINER + ธง transaction-local **ไม่ใช่** สวิตช์ระดับ session ที่ปิด trigger ทุกตัวรวมถึง `order_documents_freeze`)
 
 ### 7.14 เฟส 5a ปิดอะไรไปแล้ว — และแปดอย่างที่แผนไม่ได้ทำนาย
 

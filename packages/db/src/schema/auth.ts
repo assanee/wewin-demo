@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   inet,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -48,9 +49,32 @@ import { sql } from 'drizzle-orm';
  *   times      `timestamptz`, always. The server runs UTC (docker-compose.yml) and every
  *              window in here — a grace period, an expiry — is a comparison against
  *              `now()`, which is meaningless across two frames of reference.
- *   deletion   `on delete cascade` towards the user. An erasure request has to be one
- *              `DELETE FROM users`, and anything that survives it is a leak with a
- *              paper trail.
+ *   deletion   ⚠️ **THIS RULE CHANGED IN 5b. READ IT BEFORE ADDING A TABLE.**
+ *
+ *              It used to say: `on delete cascade` towards the user; an erasure request is
+ *              one `DELETE FROM users`, and anything that survives it is a leak with a
+ *              paper trail. That sentence is now false, and leaving it in place would be
+ *              worse than deleting it, because the next reader would trust it.
+ *
+ *              The business owner's decision (plan 7.15 item 1) is that deletion is a
+ *              status flag: nothing is ever really deleted. `orders.customer_user_id` is
+ *              `ON DELETE RESTRICT`, so a `DELETE FROM users` was already refused for any
+ *              customer who had ever ordered — the cascades below have never once run on
+ *              a real erasure and never will.
+ *
+ *              What replaces them is `erase_user()` in drizzle/0009_user_erasure.sql: a
+ *              named function that deletes each credential table by hand, and a trigger
+ *              (`users_erasure_is_earned`) that refuses to let a row *claim* the `erased`
+ *              status until those rows are actually gone. The cascade clauses stay where
+ *              they are — they are still the right answer for a hard delete in a test
+ *              fixture, and removing a guard because policy has made it unreachable is how
+ *              the next policy change becomes data loss — but they are no longer the
+ *              specification of what personal data hangs off a user.
+ *
+ *              The specification is now `ERASURE_TREATMENTS` in this file, and
+ *              tests/erasure.test.ts fails when a new foreign key to `users` appears
+ *              without one. Read the ⚠️ on that constant: it names, out loud, the class of
+ *              personal data it structurally cannot see.
  */
 
 const timestamps = {
@@ -108,16 +132,133 @@ export const authProvider = pgEnum('auth_provider', ['line', 'google', 'facebook
  */
 export const pkceMethod = pgEnum('pkce_method', ['S256']);
 
-export const userStatus = pgEnum('user_status', ['active', 'suspended']);
+/**
+ * What may be done with an account, and whether the person is still in this database.
+ *
+ * **`text` + CHECK and not `pgEnum`, and the reason is mechanical rather than stylistic.**
+ * `order.ts:40-47` already settled this for order statuses after that set grew once having
+ * been called final: `ALTER TYPE … ADD VALUE` cannot be rolled back, and — verified against
+ * this project's own Postgres 18.4 — a new member cannot be *used* in the transaction that
+ * added it. Drizzle's migrator runs each file in one transaction
+ * (`src/test-database.ts`), so "add `closed` and `erased`, then backfill, then add a CHECK
+ * that mentions them" is not expressible as one migration at all. This set has now grown
+ * from two members to four; it is exactly the set that must not be a one-way door.
+ *
+ * The `{ enum }` narrowing is kept deliberately and is not decoration: it is what makes
+ * `UserStatus` a compile-time trip-wire, so a hand-written `'active' | 'suspended'` union
+ * somewhere in the API is a type error rather than a runtime lie.
+ *
+ *   active     signs in.
+ *   suspended  administrative, reversible, nothing scrubbed. An operator did this.
+ *   closed     "I want my account gone." Sign-in is refused, every session is revoked, and
+ *              **nothing is scrubbed** — the verified address is still held, the provider
+ *              identities are still attached. Reversible: proving control of the account
+ *              again through a provider reinstates it (`IdentityLinkService`), which is the
+ *              only reason it is honest to call this state reversible at all.
+ *   erased     "Forget me", and the scrub has already run. Terminal. Every credential and
+ *              every lookup key is DELETED; the `users` row survives as a tombstone that
+ *              carries no personal data and that nothing can authenticate as.
+ *
+ * `closed` and `erased` are two states because they are two different facts, not two words
+ * for one request: closure is a decision and is instant, erasure is a completed job over
+ * several tables. A design with only one of them either refuses sign-in before the scrub
+ * has run or claims erasure before it happened.
+ */
+export const USER_STATUSES = ['active', 'suspended', 'closed', 'erased'] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
 
-/** Why a session stopped being usable. Kept because "logged out" and "we saw a stolen token" need different words in a support conversation. */
-export const sessionRevocationReason = pgEnum('session_revocation_reason', [
+/**
+ * Why a session stopped being usable. Kept because "logged out" and "we saw a stolen
+ * token" need different words in a support conversation.
+ *
+ * `text` + CHECK for the same reason as `USER_STATUSES`, and this one is the sharper case:
+ * `account_closed` is added *and written* by the same migration — `users_status_revoke_sessions`
+ * revokes the sessions of any account whose status leaves `active` — which as a pgEnum
+ * raises `unsafe use of new value` and fails the deploy that ships the feature.
+ *
+ * `refresh_reuse` and `account_closed` are the database's to write and are deliberately
+ * absent from `RevocationReason` in the API (session.repository.ts): a reason no service
+ * may set is a reason no service can set wrongly.
+ */
+export const SESSION_REVOCATION_REASONS = [
   'logout',
   'refresh_reuse',
   'password_changed',
   'email_changed',
   'revoked_by_admin',
-]);
+  'account_closed',
+] as const;
+export type SessionRevocationReason = (typeof SESSION_REVOCATION_REASONS)[number];
+
+/**
+ * How every table that references `users` is treated by `erase_user()`.
+ *
+ * This constant exists because of what the owner's decision broke. The `on delete cascade`
+ * clauses towards `users` were an *executable* specification of "what personal data hangs
+ * off a person": add a table, give it a cascade, and the one `DELETE FROM users` covered
+ * it. Under never-delete those clauses never fire, so the specification stopped executing
+ * and nothing replaced it — which means a table added in phase 6 gets a cascade clause by
+ * habit, is never deleted from, and its personal data is simply missed.
+ *
+ * `tests/erasure.test.ts` enumerates every foreign key to `users` out of
+ * `information_schema` and fails when one is not named here — keyed `table.column`, because
+ * `user_groups` and `user_erasure_requests` each reference `users` twice and the two columns
+ * do not get the same answer. Adding a referencing table forces a decision instead of
+ * inheriting one.
+ *
+ *   delete    a credential or a lookup key. Removed by `erase_user()`; the trigger
+ *             `users_erasure_is_earned` refuses the `erased` status while any survive.
+ *   scrub     a copy of personal data on a row that must stay. Nulled in place.
+ *   keep      pseudonymous, or an accounting fact. Left exactly as it is.
+ *
+ * ⚠️ **WHAT THIS LIST STRUCTURALLY CANNOT SEE.** It is derived from foreign keys to
+ * `users`, and the largest concentration of personal data in this system reaches `users`
+ * through no foreign key at all: an order submitted by a guest who never signed in carries
+ * `contact_email`, `contact_name` and `contact_phone` with `customer_user_id IS NULL`.
+ * Plan section 6 calls that anonymous funnel the main path. A coverage test built on this
+ * list reports `orders` as covered — because `customer_user_id` is named here — while the
+ * row holding the person is untouched. That gap, and the three append-only tables listed
+ * as `escalated`, are written into plan 7.15 as the price of this decision. Do not read a
+ * green coverage test as "erasure is complete".
+ */
+export const ERASURE_TREATMENTS = {
+  'user_emails.user_id': 'delete',
+  'provider_identities.user_id': 'delete',
+  'password_credentials.user_id': 'delete',
+  'auth_tokens.user_id': 'delete',
+  'sessions.user_id': 'delete',
+  /*
+   * KEPT, against all three design angles, which each listed `user_groups` under "delete
+   * at erased".
+   *
+   * A membership row is a uuid and a group id: it names no person once `display_name` is
+   * null. Deleting it answers a staff member's PDPA request by destroying the company's own
+   * audit — `order_events.actor_user_id` is `ON DELETE RESTRICT`, so the spine goes on
+   * naming that uuid as the actor who cancelled an order forever, and nothing anywhere is
+   * left to say what authority they held when they did it. That is the question a refund
+   * dispute asks. The tombstone stays unreachable regardless: it holds no credential, and
+   * `accountUsability` refuses every non-active status before permissions are consulted.
+   */
+  'user_groups.user_id': 'keep',
+  /* Who granted a membership. Already `set null`, and the comment there says why. */
+  'user_groups.granted_by_user_id': 'keep',
+  /* The claim link survives; the guest's cookie secret is nulled, which is what revokes it. */
+  'guests.claimed_by_user_id': 'scrub',
+  /* The paper trail. It is *about* the erasure and cannot be erased by it. */
+  'user_erasure_requests.user_id': 'keep',
+  'user_erasure_requests.requested_by_user_id': 'keep',
+  /*
+   * ⚠️ ESCALATED, NOT DONE. Accounting records and media this round does not own
+   * (packages/db/src/schema/order.ts, media.ts). `orders.contact_email` cannot even be
+   * nulled today — `orders_submitted_has_a_contact_channel` refuses it — and the spine
+   * refuses UPDATE outright. `media_objects` deduplicates by checksum, so purging one
+   * person's image can purge another's. Named here so the coverage test passes for a stated
+   * reason rather than by omission. Plan 7.15 item 1 carries the full list.
+   */
+  'orders.customer_user_id': 'escalated',
+  'order_events.actor_user_id': 'escalated',
+  'media_objects.uploaded_by_user_id': 'escalated',
+} as const satisfies Record<string, 'delete' | 'scrub' | 'keep' | 'escalated'>;
 
 export const authTokenPurpose = pgEnum('auth_token_purpose', [
   'email_verification',
@@ -163,16 +304,125 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    /** Optional: a password sign-up knows an address and nothing else until the user says otherwise. */
+    /**
+     * Optional: a password sign-up knows an address and nothing else until the user says
+     * otherwise.
+     *
+     * **The only column on this row that names a person**, which is why it is the one people
+     * forget: it is nullable already, so nulling it looks like nothing happened. LINE and
+     * Google both hand over a real name here. `users_erased_has_no_name` makes it a write
+     * error for an `erased` row to hold one.
+     */
     displayName: text('display_name'),
-    status: userStatus('status').notNull().default('active'),
+    status: text('status', { enum: USER_STATUSES }).notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+    /** When the person asked. Set on entering `closed`, and **kept through erasure** — see the CHECK. */
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    /** When the scrub finished. Written by `erase_user()` and by nothing else. */
+    erasedAt: timestamp('erased_at', { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
+    /*
+     * ONE-WAY IMPLICATIONS, NOT BICONDITIONALS, and the difference is load-bearing.
+     *
+     * `users_suspended_at_present` was already written this way; the two new ones copy it
+     * rather than tightening it. A biconditional (`(status = 'closed') = (closed_at is not
+     * null)`) reads stricter and makes the erasure of a closed account unrepresentable: the
+     * UPDATE to `erased` would have to NULL `closed_at` to satisfy it, destroying the date
+     * the customer asked — which is the one fact that proves the cooling-off period was
+     * honoured. The timestamps accumulate as the history they are.
+     */
+    /* The domain half of the `text` + CHECK pair. Declared here, not only in the migration, so `drizzle-kit generate` tracks it and a member added to `USER_STATUSES` without a migration is a diff rather than a 23514 in production. */
+    check(
+      'users_status_known',
+      sql`${table.status} in ('active', 'suspended', 'closed', 'erased')`,
+    ),
     check(
       'users_suspended_at_present',
       sql`${table.status} <> 'suspended' or ${table.suspendedAt} is not null`,
+    ),
+    check('users_closed_at_present', sql`${table.status} <> 'closed' or ${table.closedAt} is not null`),
+    check('users_erased_at_present', sql`${table.status} <> 'erased' or ${table.erasedAt} is not null`),
+    /* The converse: a scrub timestamp on a row that does not say erased is a lie in the other direction. */
+    check('users_erased_at_shape', sql`${table.erasedAt} is null or ${table.status} = 'erased'`),
+    /*
+     * The one scrub target that lives on this row. A same-row CHECK can carry exactly this
+     * much and no more — every other scrub target is a different row, which is why the real
+     * enforcement is a trigger and not a longer list of CHECKs here.
+     */
+    check(
+      'users_erased_has_no_name',
+      sql`${table.status} <> 'erased' or ${table.displayName} is null`,
+    ),
+  ],
+);
+
+/**
+ * One request to be forgotten, and what happened to it.
+ *
+ * A separate table and not five more columns on `users`, because a DSAR has to be
+ * answerable months later with more than a timestamp — who asked, through what channel, on
+ * what basis, what was withheld under the accounting exemption, and who ran it. A status
+ * value cannot carry five facts, and a request has to be able to exist *before* the scrub
+ * runs, which is the state `closed` covers.
+ *
+ * **Append-only, and written in the same transaction as the scrub.** Both are enforced in
+ * drizzle/0009_user_erasure.sql, and the second is not a nicety: without it the durable
+ * fact is the irreversible one and the record justifying it is the erasable one, which is
+ * exactly backwards. `write_txid` + `pg_current_xact_id()` is the mechanism
+ * `notifications_guard_insert()` already uses for the same sentence about outbox rows
+ * (0007_order_guards.sql) — reused rather than reinvented.
+ *
+ * `user_id` is `ON DELETE RESTRICT`: the proof outlives nothing.
+ */
+export const userErasureRequests = pgTable(
+  'user_erasure_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Who asked. NULL means the account holder asked for themselves — a uuid here is a
+     * staff member acting on their behalf, and erasure-as-a-weapon is the residual risk
+     * that makes recording it worth a column. `set null` so the record outlives the
+     * operator's own account, the same reasoning as `user_groups.granted_by_user_id`.
+     */
+    requestedByUserId: uuid('requested_by_user_id').references((): AnyPgColumn => users.id, {
+      onDelete: 'set null',
+    }),
+    /** How the request arrived: `self_service`, `email`, `phone`, `in_person`. Free text on purpose — the list is not ours to close. */
+    channel: text('channel').notNull(),
+    /** Which right is being exercised, in the words of the law being answered. */
+    legalBasis: text('legal_basis').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    /**
+     * What the scrub did *not* reach, and why, as free text.
+     *
+     * Not a nicety either. The accounting exemption is being claimed over `orders`, and a
+     * DSAR answer of "we erased you" that does not say what was withheld is not an answer.
+     * `erase_user()` writes this from a constant so the sentence cannot drift from the
+     * function's actual coverage.
+     */
+    withheldScope: text('withheld_scope'),
+    /**
+     * Which recipe ran. Mirrors `order_documents.pin_schema_version`, for the same reason:
+     * a v2 scrub that covers three more tables must not be silently comparable to a v1
+     * record that claims the same word.
+     */
+    scrubSchemaVersion: integer('scrub_schema_version').notNull().default(1),
+    /** `pg_current_xact_id()` of the transaction that wrote this row. See the note above. */
+    writeTxid: text('write_txid').notNull(),
+  },
+  (table) => [
+    index('user_erasure_requests_user_idx').on(table.userId),
+    check('user_erasure_requests_channel_present', sql`length(btrim(${table.channel})) > 0`),
+    check('user_erasure_requests_basis_present', sql`length(btrim(${table.legalBasis})) > 0`),
+    check(
+      'user_erasure_requests_completed_after_requested',
+      sql`${table.completedAt} is null or ${table.completedAt} >= ${table.requestedAt}`,
     ),
   ],
 );
@@ -537,12 +787,16 @@ export const sessions = pgTable(
     /** Absolute lifetime. A session that is refreshed forever is a session that is never re-authenticated. */
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    revokedReason: sessionRevocationReason('revoked_reason'),
+    revokedReason: text('revoked_reason', { enum: SESSION_REVOCATION_REASONS }),
   },
   (table) => [
     index('sessions_user_idx').on(table.userId),
     index('sessions_expires_at_idx').on(table.expiresAt),
     check('sessions_expires_after_created', sql`${table.expiresAt} > ${table.createdAt}`),
+    check(
+      'sessions_revoked_reason_known',
+      sql`${table.revokedReason} is null or ${table.revokedReason} in ('logout', 'refresh_reuse', 'password_changed', 'email_changed', 'revoked_by_admin', 'account_closed')`,
+    ),
     /* A revocation with no reason is an incident nobody can describe afterwards. */
     check(
       'sessions_revocation_shape',

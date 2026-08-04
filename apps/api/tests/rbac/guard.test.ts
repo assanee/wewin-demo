@@ -40,7 +40,7 @@ const PERMISSIONS: PermissionTable = new Map([
   [NOBODY, {}],
   // Suspended, and deliberately still carrying a permission: the point is that the ban wins
   // over the grant, not that a banned account happens to have nothing.
-  [SUSPENDED, { permissions: ['orders.read', 'orders.refund'] as const, active: false }],
+  [SUSPENDED, { permissions: ['orders.read', 'orders.refund'] as const, status: 'suspended' }],
 ]);
 
 describe('RbacGuard', () => {
