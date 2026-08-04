@@ -1,15 +1,22 @@
 # @wewin/db
 
-The Drizzle schema and migrations for the catalogue and for auth. **Only `apps/api` may
-depend on this package** — see "The import rule" below.
+The Drizzle schema and migrations for the catalogue, for auth, and for orders. **Only
+`apps/api` may depend on this package** — see "The import rule" below.
 
 ```
 pnpm db:up                      # Postgres 18 on localhost:5433 — compose file at the repo root
 cp ../../.env.example ../../.env  # one .env, at the root
 pnpm db:migrate                 # apply drizzle/*.sql
 pnpm db:seed                    # write the 81-product table from @wewin/core into Postgres
-pnpm test                       # 85 tests; skips with a warning when DATABASE_URL is unset
+pnpm test                       # 133 tests; skips with a warning when DATABASE_URL is unset
 ```
+
+⚠️ **`db:seed` now refuses to run on a database that has contracts on it.** It truncates
+the catalogue with `CASCADE`, and `CASCADE` walks foreign keys without respecting
+`ON DELETE RESTRICT` — so on a database with orders it would empty
+`order_document_product_versions` and leave every pinned document with its money and no
+record of which catalogue version it was priced from. A trigger stops it instead
+(`drizzle/0007_order_guards.sql`). Seed a fresh database, or delete the orders first.
 
 `DATABASE_URL` is found by walking up from here to the workspace root (`src/env-file.ts`),
 so the root `.env` is enough for the tests, `db:migrate` and `db:seed` alike. A `.env` in

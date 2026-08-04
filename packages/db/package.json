@@ -16,7 +16,8 @@
     "./compile": "./dist/compile.js",
     "./hash": "./dist/hash.js",
     "./publish": "./dist/publish.js",
-    "./seed": "./dist/seed.js"
+    "./seed": "./dist/seed.js",
+    "./test-database": "./dist/test-database.js"
   },
   "files": [
     "dist",

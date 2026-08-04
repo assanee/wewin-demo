@@ -82,7 +82,7 @@ export class OAuthController {
     const result = await this.oauth.start({
       provider,
       returnTo,
-      guestId: readGuestCookie(request.headers.cookie, this.oauth.cookieSecure),
+      guestCookie: readGuestCookie(request.headers.cookie, this.oauth.cookieSecure),
     });
 
     response.setHeader('Set-Cookie', [...result.cookies]);

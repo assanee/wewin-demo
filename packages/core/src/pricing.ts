@@ -1,5 +1,6 @@
 import type { CustomGroup, OptionValue, Product, SkuGroup } from './types/catalog.js';
 import { type Currency, divRoundHalfUp } from './money.js';
+import { resolveSelections } from './selection.js';
 import { SQ_UM_PER_SQM } from './units.js';
 
 /**
@@ -98,31 +99,22 @@ export function totalFromUnitPrice(unitPriceScaledMinor: bigint, qty: number): b
   );
 }
 
-const skuGroups = (product: Product): SkuGroup[] =>
-  product.groups.filter((group): group is SkuGroup => group.kind === 'sku');
-
 const customGroups = (product: Product): CustomGroup[] =>
   product.groups.filter((group): group is CustomGroup => group.kind === 'custom');
 
 /**
  * Resolve the OptionValue each sku group is currently set to.
- * A missing selection resolves to the group default, because that is what the UI shows.
- * An unknown code resolves to nothing at all — better a missing surcharge than a crash.
+ *
+ * One line, and it used to be five. The five said "an unknown code resolves to nothing at
+ * all — better a missing surcharge than a crash", which was a reasonable thing to want in a
+ * configurator and a hole in a contract: `skuCode.ts` kept the unknown string, so the order
+ * was priced without the upgrade and stamped with the SKU of the upgrade. `resolveSelections`
+ * is now the only answer either of them gets. See selection.ts.
  */
-function selectedValues(product: Product, selections: Record<string, string>): {
-  group: SkuGroup;
-  value: OptionValue;
-}[] {
-  const resolved: { group: SkuGroup; value: OptionValue }[] = [];
-
-  for (const group of skuGroups(product)) {
-    const code = selections[group.code] ?? group.defaultValue;
-    const value = group.values.find((candidate) => candidate.code === code);
-    if (value) resolved.push({ group, value });
-  }
-
-  return resolved;
-}
+const selectedValues = (
+  product: Product,
+  selections: Record<string, string>,
+): { group: SkuGroup; value: OptionValue }[] => resolveSelections(product, selections);
 
 /**
  * Read a measurement in canonical micrometres, falling back to the group default.

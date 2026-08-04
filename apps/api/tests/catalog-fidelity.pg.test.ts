@@ -11,13 +11,12 @@ import { toMicrons } from '@wewin/core/units';
 import { decodeProductDocument, toCategory } from '@wewin/contract/catalog';
 import type { CategoryWire, ProductDocument, ProductDocumentWire } from '@wewin/contract';
 import { CONTRACT_VERSION, CONTRACT_VERSION_HEADER } from '@wewin/contract/version';
-import { createDatabase, createPool } from '@wewin/db/client';
 import { toDocument } from '@wewin/db/compile';
 import { documentHash } from '@wewin/db/hash';
-import { seedCatalog } from '@wewin/db/seed';
 
 import { parseEnv } from '../src/config/env';
 import { bootApp, testEnv, type BootedApp } from './support/app';
+import { reseedCatalogue } from './support/reseed';
 
 /**
  * The phase 3a gate: 81 products went into Postgres and 81 identical products come back.
@@ -82,13 +81,16 @@ const byId = (documents: readonly ProductDocument[]): Map<string, ProductDocumen
  * that was doing what it was supposed to. The claim is about a seeded catalogue, so this
  * seeds one rather than hoping to find one.
  */
+/**
+ * The seeded catalogue, whatever the files that ran before this one did to it.
+ *
+ * Delegated to `tests/support/reseed.ts` since phase 5a: on a database that has acquired a
+ * contract, `seedCatalog` is refused outright — correctly, because `TRUNCATE … CASCADE`
+ * would erase the record of which catalogue version each pinned document was priced from —
+ * and the way back to a seeded catalogue is a fresh database, which is what that helper does.
+ */
 async function reseed(databaseUrl: string): Promise<void> {
-  const pool = createPool(databaseUrl);
-  try {
-    await seedCatalog(createDatabase(pool), 'api-fidelity-test');
-  } finally {
-    await pool.end();
-  }
+  await reseedCatalogue(databaseUrl, 'api-fidelity-test');
 }
 
 async function getJson(baseUrl: string, path: string): Promise<unknown> {

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import pg from 'pg';
 
+import { guestSecretHash, mintGuestSecret } from '../../../../src/rbac';
+
 /**
  * A second connection to the same database, for looking at what the flow left behind.
  *
@@ -165,11 +167,23 @@ export class TestDb {
 
   private readonly createdGuests: string[] = [];
 
-  async createGuest(): Promise<string> {
-    const [guest] = await this.query<{ id: string }>(`insert into guests default values returning id`);
+  /**
+   * A guest, and the cookie value that proves it.
+   *
+   * The cookie is `id.secret` — the id alone is a name, not a capability (see
+   * `rbac/guest-cookie.ts`), and every reader refuses it. So a fixture that wants to be
+   * carried through a sign-in has to mint the same pair the production path mints, hashing
+   * with the same function rather than a second copy of it.
+   */
+  async createGuest(): Promise<{ id: string; cookie: string }> {
+    const secret = mintGuestSecret();
+    const [guest] = await this.query<{ id: string }>(
+      `insert into guests (secret_hash) values ($1) returning id`,
+      [guestSecretHash(secret)],
+    );
     if (guest === undefined) throw new Error('failed to create a guest');
     this.createdGuests.push(guest.id);
-    return guest.id;
+    return { id: guest.id, cookie: `${guest.id}.${secret}` };
   }
 
   async guest(id: string): Promise<{ claimed_by_user_id: string | null } | undefined> {

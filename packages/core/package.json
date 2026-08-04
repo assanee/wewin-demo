@@ -15,6 +15,7 @@
     "./validation": "./dist/validation.js",
     "./elevation": "./dist/elevation.js",
     "./sku": "./dist/skuCode.js",
+    "./selection": "./dist/selection.js",
     "./hash": "./dist/hash.js",
     "./format": "./dist/format.js",
     "./filters": "./dist/filters.js",

@@ -195,6 +195,29 @@ export const guests = pgTable(
   'guests',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * SHA-256 of the secret half of the guest cookie. Hex, 64 characters.
+     *
+     * The cookie used to be the id alone, on the stated reasoning that a cart built without
+     * signing in belongs to whoever holds the browser and that signing the value would buy
+     * nothing. That was right about the cart and wrong about everything downstream, because
+     * of what the id *became*: signing in claims the guest, and claiming now attributes its
+     * orders to the account (`IdentityLinkService.claimGuest`). So anybody who learned a
+     * guest id — from a log line, from a shared browser, from an old cookie — could put it
+     * in their own cookie jar, sign in, and take the cart and every order in it, while the
+     * real owner's cookie stopped working and nothing anywhere reported an incident.
+     *
+     * Knowing the id must therefore not be enough. The cookie carries `id.secret`; this is
+     * the only copy of the secret the server keeps, and it is a hash so that a database dump
+     * is not a drawer full of live capabilities.
+     *
+     * Nullable, because rows created before this column existed have no secret — and that is
+     * exactly the right meaning: such a row can never again be presented as a cookie
+     * (`GuestRepository.isOpenGuest` refuses a null), only reached through the account that
+     * claimed it. There is no migration that could invent one, and inventing one would be
+     * inventing a credential.
+     */
+    secretHash: text('secret_hash'),
     claimedByUserId: uuid('claimed_by_user_id').references(() => users.id, {
       onDelete: 'cascade',
     }),
@@ -208,6 +231,15 @@ export const guests = pgTable(
     check(
       'guests_claim_shape',
       sql`(${table.claimedByUserId} is null) = (${table.claimedAt} is null)`,
+    ),
+    /*
+     * Shape, not existence. A present value must be a hex SHA-256 and nothing else, so that
+     * "the secret is stored hashed" is a property of the table rather than of the one
+     * function that happens to write it today. Null stays legal — see the column.
+     */
+    check(
+      'guests_secret_hash_shape',
+      sql`${table.secretHash} is null or ${table.secretHash} ~ '^[0-9a-f]{64}$'`,
     ),
   ],
 );

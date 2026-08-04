@@ -5,11 +5,12 @@ import { guests } from '@wewin/db/schema';
 import { and, eq, sql } from '@wewin/db/sql';
 
 import { DRIZZLE } from '../database/database.tokens';
+import { guestSecretHash, guestSecretMatches, type GuestCookie } from './guest-cookie';
 
 /**
- * Is this guest id still an anonymous capability?
+ * Is this cookie still an anonymous capability?
  *
- * Two conditions, and the second is a security fix rather than tidiness.
+ * Three conditions, and each one is a security fix rather than tidiness.
  *
  *   **The row exists.** The guard used to believe any well-formed uuid in the cookie, so a
  *   request could be scoped to a `guests.id` that was nobody's — a stale cookie from a wiped
@@ -22,6 +23,15 @@ import { DRIZZLE } from '../database/database.tokens';
  *   cookie in a victim's browser before they sign in. After the claim, whoever holds the id
  *   gets `public`.
  *
+ *   **The secret matches.** The newest of the three, and the one that makes the other two
+ *   worth having. The cookie carries `id.secret`; this compares SHA-256 of what was
+ *   presented against `guests.secret_hash`. Without it, *knowing* a guest id — from a log
+ *   line, an old cookie, a shared browser — was the same thing as *holding* the cart, and
+ *   since claiming a guest now attributes its orders to the claiming account, that was the
+ *   same thing as taking somebody's contract. A row whose `secret_hash` is null predates the
+ *   column and is refused: there is no secret it could match, and inventing one would be
+ *   inventing a credential.
+ *
  * One primary-key lookup on the anonymous path. It is on the funnel, so it is worth saying
  * that the alternative is not "no query" — it is a handler reading a cart by an id nothing
  * checked.
@@ -30,13 +40,16 @@ import { DRIZZLE } from '../database/database.tokens';
 export class GuestRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  async isOpenGuest(guestId: string): Promise<boolean> {
+  async isOpenGuest(cookie: GuestCookie): Promise<boolean> {
     const rows = await this.db
-      .select({ id: guests.id })
+      .select({ secretHash: guests.secretHash })
       .from(guests)
-      .where(and(eq(guests.id, guestId), sql`${guests.claimedByUserId} is null`))
+      .where(and(eq(guests.id, cookie.guestId), sql`${guests.claimedByUserId} is null`))
       .limit(1);
 
-    return rows.length > 0;
+    const stored = rows[0]?.secretHash;
+    if (stored === undefined || stored === null) return false;
+
+    return guestSecretMatches(guestSecretHash(cookie.secret), stored);
   }
 }

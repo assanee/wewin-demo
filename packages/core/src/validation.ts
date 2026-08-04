@@ -2,6 +2,7 @@ import type { CustomGroup, Product, SkuGroup } from './types/catalog.js';
 import type { Dimension, NumExpr, RuleExpr } from './types/rule.js';
 import { AREA_MEASURE_CODES, calcAreaSqUm, measureOf } from './pricing.js';
 import { formatMeasure, formatRange } from './format.js';
+import { resolveSelection } from './selection.js';
 import { gridUmFor, isOnGridUm, type LengthUnit, snapUpUm } from './units.js';
 
 export type Issue = {
@@ -250,6 +251,34 @@ export function validate(
     measures,
     areaSqUm: calcAreaSqUm(product, measures),
   };
+
+  /*
+   * A selection that names nothing this product offers — the hole that made a lower-case
+   * option code a 12,840-baht discount.
+   *
+   * `resolveSelection` falls the price and the SKU back to the group default together, so
+   * nothing diverges any more; what it cannot do is decide whether the customer meant the
+   * default. Only the customer knows that, so it is an `error` and not a `warning`:
+   * `hasBlockingError` is what the configurator's "add to quote" button and the API's
+   * submit both read, and this is precisely the case where continuing would put a window
+   * on a contract that nobody chose.
+   *
+   * Deliberately *not* reported: a key in `selections` that names no group at all. Stored
+   * carts and share links from an older catalogue carry those, they contribute to nothing,
+   * and refusing the whole configuration over a leftover key would strand a customer with
+   * an error they cannot clear.
+   */
+  for (const group of skuGroups(product)) {
+    if (selections[group.code] === undefined) continue;
+    if (resolveSelection(group, selections).recognised) continue;
+
+    issues.push({
+      ruleId: `selection:${group.code}`,
+      severity: 'error',
+      messageTh: `${group.labelTh}ที่เลือกไว้ไม่มีอยู่ในรายการของสินค้านี้ — กรุณาเลือกใหม่`,
+      affects: [group.code],
+    });
+  }
 
   for (const group of customGroups(product)) {
     const value = measureOf(product, measures, group.code);

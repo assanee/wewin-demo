@@ -209,6 +209,22 @@ describe('boot-time route audit', () => {
      * guard, which there isn't one of: it is that the content type was decided by reading
      * the bytes, that SVG cannot be stored at all, and that the response carries `nosniff`
      * and a sandboxing CSP. See src/media/media.controller.ts.
+     *
+     * ── The nine order routes, and the one line this audit cannot print ─────────
+     *
+     * Eight are `[principal]` — a signed-in user *or* an identified guest — and one,
+     * `POST /orders`, is `[anonymous]`, because it is the route that *mints* the principal
+     * and refusing it would close the funnel plan section 6 calls the main path.
+     *
+     * ⚠️ Read what `[principal]` does **not** say. It says a caller has a referent; it says
+     * nothing about which rows that referent reaches, and for these routes that is where all
+     * the authority is: holding `orders.read` turns every one of them into a view of every
+     * order in the company, and `orders.read` + `orders.write` turns the transition route
+     * into authority over all of them. None of that is visible in this table, because it is
+     * decided in the *query* (`src/orders/scope`) — which is exactly where plan 7.4 trap 2
+     * says ownership has to live, and is therefore a limit of the audit rather than a defect
+     * to fix in it. `describeAccess` says so in words on every principal route; the sweep in
+     * `tests/orders/scope/cross-tenant-routes.pg.test.ts` is what actually walks them.
      */
     expect(records.map((record) => `${record.key} [${record.access.kind}]`)).toStrictEqual([
       'DELETE /admin/catalog/products/:productId/draft [permissions]',
@@ -221,6 +237,9 @@ describe('boot-time route audit', () => {
       'GET /admin/catalog/products/:productId/draft [permissions]',
       'GET /admin/media [permissions]',
       'GET /admin/media/:mediaId [permissions]',
+      'GET /admin/notifications [permissions]',
+      'GET /admin/notifications/:notificationId/attempts [permissions]',
+      'GET /admin/notifications/summary [permissions]',
       'GET /auth/oauth/:provider/callback [anonymous]',
       'GET /auth/oauth/:provider/start [anonymous]',
       'GET /auth/oauth/providers [anonymous]',
@@ -233,6 +252,10 @@ describe('boot-time route audit', () => {
       'GET /me [anonymous]',
       'GET /media/:mediaId [anonymous]',
       'GET /meta [anonymous]',
+      'GET /orders [principal]',
+      'GET /orders/:orderId [principal]',
+      'GET /orders/:orderId/document [principal]',
+      'GET /orders/:orderId/events [principal]',
       'PATCH /admin/catalog/option-groups/:groupCode [permissions]',
       'PATCH /admin/catalog/option-groups/:groupCode/values/:valueCode [permissions]',
       'PATCH /admin/catalog/products/:productId/draft [permissions]',
@@ -243,9 +266,14 @@ describe('boot-time route audit', () => {
       'POST /admin/catalog/products/:productId/draft [permissions]',
       'POST /admin/catalog/products/:productId/draft/publish [permissions]',
       'POST /admin/media [permissions]',
+      'POST /admin/notifications/:notificationId/retry [permissions]',
       'POST /auth/logout [authenticated]',
       'POST /auth/oauth/:provider/callback [anonymous]',
       'POST /auth/refresh [anonymous]',
+      'POST /orders [anonymous]',
+      'POST /orders/:orderId/change-requests [principal]',
+      'POST /orders/:orderId/change-requests/:changeRequestId/resolution [principal]',
+      'POST /orders/:orderId/transitions/:toStatus [principal]',
       'PUT /admin/catalog/option-groups/:groupCode/values/:valueCode/availability [permissions]',
       'PUT /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
       'PUT /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',

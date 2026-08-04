@@ -110,23 +110,31 @@ describeWithPg('sign-in hardening', () => {
   /**
    * The guest cart, and what a planted cookie is worth afterwards.
    *
-   * `wewin_guest` is an unsigned bearer id — inherent to a cart you can build without
-   * signing in — so the defence is not integrity on the cookie (an attacker who wants a
-   * valid one simply visits the site). It is that claiming the cart *ends* the id's power:
-   * `guests.claimed_by_user_id` is set, and every reader refuses a claimed row from then on.
+   * Two independent things make a stolen cookie worthless, and they are worth naming apart.
+   *
+   *   **The secret.** `wewin_guest` is `id.secret`; knowing an id — from a log line, an old
+   *   cookie, a shared browser — is not holding the capability. That is what stops the
+   *   attack outright, and it had to be added the moment claiming began *attributing the
+   *   guest's orders to the account* (`IdentityLinkService.claimGuest`), because from then
+   *   on an id was a bearer token for somebody's contract.
+   *
+   *   **The claim ends the id's power anyway.** `guests.claimed_by_user_id` is set and every
+   *   reader refuses a claimed row from then on, so even a genuinely leaked live cookie
+   *   stops working the moment its owner signs in. That is what the second half below still
+   *   proves, and it is the one that does not depend on the secret staying secret.
    */
   describe('the guest cart', () => {
     it('claims the visitor’s cart and stops honouring the id afterwards', async () => {
       const cart = await db.createGuest();
       const jar = new CookieJar();
-      jar.set(guestCookieName(false), cart);
+      jar.set(guestCookieName(false), cart.cookie);
 
       google.account = { subject: subjectFor('cart'), email: emailFor('cart'), emailVerified: true };
       await signIn({ apiBaseUrl: app.baseUrl, provider: google, jar, returnTo: returnTo('cart') });
 
       const userId = app.sessions.lastUserId;
       expect(userId).toBeDefined();
-      expect((await db.guest(cart))?.claimed_by_user_id).toBe(userId);
+      expect((await db.guest(cart.id))?.claimed_by_user_id).toBe(userId);
 
       /*
        * The half that makes a planted cookie worthless. A second sign-in presenting the same
@@ -135,7 +143,7 @@ describeWithPg('sign-in hardening', () => {
        * null and there is nothing to re-point.
        */
       const attacker = new CookieJar();
-      attacker.set(guestCookieName(false), cart);
+      attacker.set(guestCookieName(false), cart.cookie);
       google.reset();
       google.account = {
         subject: subjectFor('cart-attacker'),
@@ -153,7 +161,7 @@ describeWithPg('sign-in hardening', () => {
       expect(state?.guest_id).toBeNull();
       // Still the first account's. The claim guard is `claimed_by_user_id IS NULL`, and it
       // held even though the id was presented by somebody else entirely.
-      expect((await db.guest(cart))?.claimed_by_user_id).toBe(userId);
+      expect((await db.guest(cart.id))?.claimed_by_user_id).toBe(userId);
     });
 
     it('carries no cart for a guest id that names no row', async () => {

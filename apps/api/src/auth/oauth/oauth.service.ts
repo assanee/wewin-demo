@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AppError } from '../../common/errors/app-error';
+import type { GuestCookie } from '../../rbac';
 import { sha256Hex } from './crypto';
 import { OAuthHttp } from './http';
 import { AccountSuspendedError, IdentityLinkService, type LinkedAccount } from './identity-link.service';
@@ -60,7 +61,7 @@ export type OAuthFailureReason = 'denied' | 'failed';
 export interface StartRequest {
   readonly provider: string;
   readonly returnTo: string | undefined;
-  readonly guestId: string | undefined;
+  readonly guestCookie: GuestCookie | undefined;
 }
 
 export interface StartResult {
@@ -139,7 +140,7 @@ export class OAuthService {
     const minted = await this.states.mint({
       provider: provider.name,
       returnTo,
-      guestId: request.guestId,
+      guestCookie: request.guestCookie,
       ttlSeconds: this.config.stateTtlSeconds,
     });
 

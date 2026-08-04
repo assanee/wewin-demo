@@ -1,0 +1,32 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- THE GUEST COOKIE STOPS BEING A NAME AND BECOMES A CAPABILITY
+--
+-- Until now the cookie was `guests.id` alone. The argument for that was written down and was
+-- internally consistent: a cart built without signing in belongs to whoever holds the
+-- browser, and signing the value buys nothing, because an attacker who wants a valid signed
+-- cookie simply visits the site and is given one.
+--
+-- What changed is what the id is *worth*. Signing in claims the guest, and claiming now
+-- attributes that guest's orders to the account — the backfill in
+-- `IdentityLinkService.claimGuest`, which is the repair the comment on
+-- `orders.customer_user_id` has always described. That made the id a bearer token for
+-- somebody's contract:
+--
+--   1. learn a guest id — a log line, a shared browser, an old cookie;
+--   2. put it in your own cookie jar and sign in;
+--   3. the claim succeeds, the orders become readable by the attacker, and the real owner's
+--      cookie is refused from that moment (a claimed guest is not an open guest) with no
+--      unclaim path and nothing anywhere recording an incident.
+--
+-- The cookie is now `id.secret`, and this column holds SHA-256 of the secret, in hex.
+-- Knowing the id is no longer enough for any of the three steps.
+--
+-- ⚠️ NULLABLE, AND DELIBERATELY NOT BACKFILLED. A row created before this migration has no
+-- secret and no honest way to acquire one — inventing a value would be inventing a credential
+-- for a browser that will never present it. `GuestRepository.isOpenGuest` refuses a null, so
+-- such a row can no longer be presented as a cookie at all; it stays reachable through
+-- whatever account claimed it, and an unclaimed one is an abandoned cart. The cost is that an
+-- anonymous cart in flight at deploy time is lost, which is a cost this direction of failure
+-- is allowed to have.
+ALTER TABLE "guests" ADD COLUMN "secret_hash" text;--> statement-breakpoint
+ALTER TABLE "guests" ADD CONSTRAINT "guests_secret_hash_shape" CHECK ("guests"."secret_hash" is null or "guests"."secret_hash" ~ '^[0-9a-f]{64}$');

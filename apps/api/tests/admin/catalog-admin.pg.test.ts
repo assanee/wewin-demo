@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { seedCatalog } from '@wewin/db/seed';
+import { reseedCatalogue } from '../support/reseed';
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { and, eq, inArray, sql } from '@wewin/db/sql';
 import {
@@ -104,18 +104,23 @@ describeWithPg('the catalogue write surface against Postgres', () => {
     call(method, path, { token: editor.token, ...(body === undefined ? {} : { body }) });
 
   beforeAll(async () => {
-    pool = createPool(url ?? '');
-    db = createDatabase(pool);
-
-    await cleanUp(db);
     /*
      * Reseed rather than assume. This suite republishes a seeded product on purpose, and
      * so do others; whichever ran last decides what "seeded" means by the time this one
      * starts. Making each Postgres suite establish its own starting point is what stops
      * the result depending on file order — a green run that came from the order the
      * files happened to load is not evidence about the code.
+     *
+     * **Before the pool is opened**, because since phase 5a re-seeding under a contract means
+     * recreating the database (`tests/support/reseed.ts` explains why both rules are right),
+     * and a connection held across that would be terminated under it.
      */
-    await seedCatalog(db, 'api-admin-test');
+    await reseedCatalogue(url ?? '', 'api-admin-test');
+
+    pool = createPool(url ?? '');
+    db = createDatabase(pool);
+
+    await cleanUp(db);
 
     // Booting first: `PermissionSyncService` upserts the permission rows at boot, and the
     // grants below reference them. Doing it the other way round would fail the FK on a

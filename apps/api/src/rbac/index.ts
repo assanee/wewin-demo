@@ -14,10 +14,12 @@ export {
   AllowAnonymous,
   RequireAuthenticated,
   RequirePermissions,
+  RequirePrincipal,
   describeAccess,
   type AnonymousAccess,
   type AuthenticatedAccess,
   type PermissionsAccess,
+  type PrincipalAccess,
   type RouteAccess,
 } from './access';
 
@@ -36,6 +38,22 @@ export {
   type RequestIdentity,
   type UserIdentity,
 } from './identity';
+
+/**
+ * The guest capability, for the two modules that produce or verify one.
+ *
+ * `mintGuestSecret` and `guestSecretHash` are exported because `POST /orders` is what mints
+ * a guest (a guard that wrote a row per crawler was the alternative) and the OAuth start
+ * endpoint is what carries one through a sign-in. Both need the same two functions the
+ * reader uses, and a second implementation of either would be a second answer to "is this
+ * cookie real".
+ */
+export {
+  guestSecretHash,
+  guestSecretMatches,
+  mintGuestSecret,
+  type GuestCookie,
+} from './guest-cookie';
 
 export {
   PERMISSIONS,

@@ -8,6 +8,17 @@ import { GuardedModule, TEST_USER_HEADER } from './fixtures/guarded.module';
 const GUEST_COOKIE_NAME = guestCookieName(false);
 
 /**
+ * The secret half of the guest cookie.
+ *
+ * `readGuestCookie` refuses a cookie that carries only an id (see `rbac/guest-cookie.ts`: a
+ * name is not a capability), so every fixture here has to present a well-formed one. Whether
+ * it *matches* is `GuestRepository`'s question and is proved against Postgres in
+ * `tests/rbac/guest-capability.pg.test.ts`; these files are about the guard's policy matrix.
+ */
+const GUEST_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const guestCookieValue = (guestId: string): string => `${guestId}.${GUEST_SECRET}`;
+
+/**
  * What the guard does with each principal on each kind of route.
  *
  * The responses carry the *resolved scope*, not just a status, because the interesting
@@ -64,14 +75,14 @@ describe('RbacGuard', () => {
        * the whole path is unrepresentable. This is that referent arriving on a request —
        * the same id a cart row carries a foreign key to.
        */
-      const response = await get('/fixture/anonymous', { cookie: `${GUEST_COOKIE_NAME}=${GUEST}` });
+      const response = await get('/fixture/anonymous', { cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}` });
       expect(response.status).toBe(200);
       expect(await scopeOf(response)).toBe(`guest:${GUEST}`);
     });
 
     it('reads the guest cookie out of a jar with other cookies in it', async () => {
       const response = await get('/fixture/anonymous', {
-        cookie: `locale=th; ${GUEST_COOKIE_NAME}=${GUEST}; theme=dark`,
+        cookie: `locale=th; ${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}; theme=dark`,
       });
       expect(await scopeOf(response)).toBe(`guest:${GUEST}`);
     });
@@ -87,7 +98,7 @@ describe('RbacGuard', () => {
     it('prefers the signed-in identity over a guest cookie that is still in the jar', async () => {
       const response = await get('/fixture/anonymous', {
         [TEST_USER_HEADER]: CLERK,
-        cookie: `${GUEST_COOKIE_NAME}=${GUEST}`,
+        cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}`,
       });
       expect(await scopeOf(response)).toBe(`user:${CLERK}`);
     });
@@ -114,12 +125,12 @@ describe('RbacGuard', () => {
       });
       try {
         const open = await fetch(`${app.baseUrl}/fixture/anonymous`, {
-          headers: { cookie: `${GUEST_COOKIE_NAME}=${GUEST}` },
+          headers: { cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}` },
         });
         expect(await scopeOf(open)).toBe(`guest:${GUEST}`);
 
         const claimed = await fetch(`${app.baseUrl}/fixture/anonymous`, {
-          headers: { cookie: `${GUEST_COOKIE_NAME}=${CLAIMED}` },
+          headers: { cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(CLAIMED)}` },
         });
         expect(claimed.status).toBe(200);
         expect(await scopeOf(claimed)).toBe('public');
@@ -139,7 +150,7 @@ describe('RbacGuard', () => {
       });
       try {
         const response = await fetch(`${app.baseUrl}/fixture/anonymous`, {
-          headers: { cookie: `${GUEST_COOKIE_NAME}=${GUEST}` },
+          headers: { cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}` },
         });
         expect(response.status).toBe(200);
         expect(await scopeOf(response)).toBe('public');
@@ -185,7 +196,7 @@ describe('RbacGuard', () => {
     });
 
     it('turns away a guest with 401 — a cart is not an account', async () => {
-      const response = await get('/fixture/signed-in', { cookie: `${GUEST_COOKIE_NAME}=${GUEST}` });
+      const response = await get('/fixture/signed-in', { cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}` });
       expect(response.status).toBe(401);
     });
 
@@ -242,7 +253,7 @@ describe('RbacGuard', () => {
     it('answers a guest with their cart id and an empty permission set', async () => {
       // The funnel's answer. A menu built from this is the public menu, which is correct —
       // and a client that renders more anyway still gets 403 from the endpoint itself.
-      const response = await get('/me', { cookie: `${GUEST_COOKIE_NAME}=${GUEST}` });
+      const response = await get('/me', { cookie: `${GUEST_COOKIE_NAME}=${guestCookieValue(GUEST)}` });
       expect(response.status).toBe(200);
       expect(await response.json()).toStrictEqual({
         kind: 'guest',

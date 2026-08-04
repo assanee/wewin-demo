@@ -62,6 +62,19 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['PUT /admin/catalog/option-groups/:groupCode/values/:valueCode/availability', ['catalog.write']],
 
   ['POST /admin/catalog/products/:productId/draft/publish', ['catalog.publish']],
+
+  /*
+   * The outbox's operator surface (plan 10.5: `dead` has to surface in a queue, because a
+   * silent delivery failure means the company believes the customer was told). It borrows
+   * `orders.*` for the reason media borrows `catalog.*` above — the messages are about
+   * orders — and that borrowing is recorded as an open question rather than as a decision:
+   * re-sending a message to a customer is not obviously the same authority as editing their
+   * order. See docs/monorepo-plan.md §7.14.
+   */
+  ['GET /admin/notifications', ['orders.read']],
+  ['GET /admin/notifications/summary', ['orders.read']],
+  ['GET /admin/notifications/:notificationId/attempts', ['orders.read']],
+  ['POST /admin/notifications/:notificationId/retry', ['orders.write']],
 ]);
 
 const codesOf = (record: RouteRecord): readonly string[] =>

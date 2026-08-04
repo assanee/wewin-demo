@@ -1,0 +1,155 @@
+import { orders } from '@wewin/db/schema';
+import type { OrderStatus } from '@wewin/db/schema';
+
+import type { OrderIntent, OrderReach } from './order-reach';
+
+/**
+ * An order row that a scoped query returned — and a type nothing else can produce.
+ *
+ * ── The brand, and what it actually buys ────────────────────────────────────────
+ *
+ * Plan 7.4 trap 2 says ownership belongs in the query. That closes the hole for code
+ * written today. What it does not close on its own is the *next* refactor: somebody adds
+ * `db.select().from(orders).where(eq(orders.id, id))` in a service — for a debugging
+ * endpoint, for a report, for a batch job — and hands the row to the same transition
+ * handler the scoped path uses. Every type still lines up, because a row is a row.
+ *
+ * `OWNERSHIP_PROVEN` is a module-private `unique symbol`, so it does not line up. A plain
+ * select produces an object without that key and the compiler refuses it wherever a
+ * `ScopedOrder` is expected. There is no cast anywhere in this module that manufactures
+ * one: `scopedOrder()` below is the sole constructor, it is not exported from `index.ts`,
+ * and it takes the reach that produced the row as an argument it cannot invent.
+ *
+ * That is the strongest statement TypeScript can make about a runtime fact, and it is
+ * worth being precise about its limits: it stops a row from *travelling*, not from being
+ * *read*. A handler that selects an order and returns it straight to the client has not
+ * touched this type. The end-to-end sweep in
+ * `tests/orders/scope/cross-tenant-routes.pg.test.ts` is what covers that case, by asking
+ * the live router for every order route and calling all of them as the wrong customer.
+ *
+ * ── Why every column ────────────────────────────────────────────────────────────
+ *
+ * The row carries the whole order rather than a projection each caller picks. A projection
+ * would mean a second query — or a second query *builder* — the day the state machine
+ * needs `frozen_at` and this returned only the id, and a second builder is a second place
+ * for the ownership term to be missing from. One shape, one query, one filter.
+ */
+
+/**
+ * A real runtime symbol, so the value below can be constructed without a cast.
+ *
+ * Not exported. A module that cannot name the key cannot write it, which is what makes
+ * this a nominal type rather than a naming convention.
+ */
+const OWNERSHIP_PROVEN = Symbol('wewin.orders.ownershipProven');
+
+export interface ScopedOrder {
+  /**
+   * Present only on a row that came back from a query carrying `ownershipFilter(reach)`.
+   *
+   * The value is prose because the value is never read. What is read is the *type*, by the
+   * compiler, at every boundary that takes a `ScopedOrder`.
+   */
+  readonly [OWNERSHIP_PROVEN]: 'loaded by a query that filtered on ownership';
+
+  readonly id: string;
+  /** Null until submit — a draft is a cart and burning a number on browsing publishes the abandonment rate. */
+  readonly orderNo: string | null;
+  readonly status: OrderStatus;
+  /** The event that put this order in `status`. The composite deferrable FK's other half. */
+  readonly statusEventId: string;
+
+  readonly customerUserId: string | null;
+  readonly guestId: string | null;
+
+  readonly contactEmail: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly contactLocale: string;
+
+  readonly supersedesOrderId: string | null;
+
+  /**
+   * The freeze point as a fact, not an inference (plan 7.5(ข)).
+   *
+   * Non-null means aluminium was committed at least once. It survives into `cancelled` and
+   * `superseded`, which is why a caller must read *this* and not the status when deciding
+   * anything about money.
+   */
+  readonly frozenAt: Date | null;
+  readonly submittedAt: Date | null;
+  /** The pinned document this order is contracted on — trap 3. Null before submit. */
+  readonly documentId: string | null;
+
+  readonly currency: string;
+  readonly netThbMinor: bigint | null;
+  readonly vatThbMinor: bigint | null;
+  /** Always VAT-inclusive — plan 4.4, and the one number every other number derives from. */
+  readonly grandTotalThbMinor: bigint | null;
+  /** Pinned at submit because it is a term of the contract, not a value computed later (plan 7.13). */
+  readonly scheduledDepositThbMinor: bigint | null;
+
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+
+  /**
+   * Why this row was visible, and what it was loaded for.
+   *
+   * Carried on the row rather than remembered by the caller so that a handler cannot log
+   * "staff read order X" about a row a customer loaded, and so that an action path can
+   * assert it is holding a row loaded for `act` rather than one that came from a list.
+   */
+  readonly reach: OrderReach;
+  readonly intent: OrderIntent;
+}
+
+/** The columns a scoped select asks for. One shape, so every load returns the same row. */
+export const ORDER_COLUMNS = {
+  id: orders.id,
+  orderNo: orders.orderNo,
+  status: orders.status,
+  statusEventId: orders.statusEventId,
+  customerUserId: orders.customerUserId,
+  guestId: orders.guestId,
+  contactEmail: orders.contactEmail,
+  contactName: orders.contactName,
+  contactPhone: orders.contactPhone,
+  contactLocale: orders.contactLocale,
+  supersedesOrderId: orders.supersedesOrderId,
+  frozenAt: orders.frozenAt,
+  submittedAt: orders.submittedAt,
+  documentId: orders.documentId,
+  currency: orders.currency,
+  netThbMinor: orders.netThbMinor,
+  vatThbMinor: orders.vatThbMinor,
+  grandTotalThbMinor: orders.grandTotalThbMinor,
+  scheduledDepositThbMinor: orders.scheduledDepositThbMinor,
+  createdAt: orders.createdAt,
+  updatedAt: orders.updatedAt,
+} as const;
+
+/** Exactly what a `select(ORDER_COLUMNS)` yields, so the constructor cannot drift from it. */
+export type OrderRow = Omit<ScopedOrder, typeof OWNERSHIP_PROVEN | 'reach' | 'intent'>;
+
+/**
+ * The sole constructor. Not exported from `index.ts`.
+ *
+ * It takes the reach as an argument because the caller must have had one to build the
+ * query — there is no default and nothing to guess. A file that wants to fabricate a
+ * `ScopedOrder` has to import this deep path *and* produce an `OrderReach`, which is two
+ * deliberate acts and shows up in a diff as what it is.
+ */
+export function scopedOrder(row: OrderRow, reach: OrderReach, intent: OrderIntent): ScopedOrder {
+  return { ...row, [OWNERSHIP_PROVEN]: 'loaded by a query that filtered on ownership', reach, intent };
+}
+
+/**
+ * Past the freeze point, from the column rather than from the status.
+ *
+ * `order_status_is_post_freeze()` in the database answers the same question about a
+ * *status*, and `POST_FREEZE_STATUSES` mirrors it. Neither can answer it about a cancelled
+ * order, which is exactly when a cancellation report asks — hence `frozen_at`.
+ */
+export function isPostFreeze(order: ScopedOrder): boolean {
+  return order.frozenAt !== null;
+}

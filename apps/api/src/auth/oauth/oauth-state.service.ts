@@ -5,6 +5,7 @@ import { guests, oauthStates } from '@wewin/db/schema';
 import { and, eq, sql } from '@wewin/db/sql';
 
 import { DRIZZLE } from '../../database/database.tokens';
+import { guestSecretHash, guestSecretMatches, type GuestCookie } from '../../rbac';
 import { randomSecret, sha256Hex } from './crypto';
 import { createPkce } from './pkce';
 import type { ProviderName } from './providers/provider.types';
@@ -36,7 +37,7 @@ import type { ProviderName } from './providers/provider.types';
 export interface MintInput {
   readonly provider: ProviderName;
   readonly returnTo: string;
-  readonly guestId: string | undefined;
+  readonly guestCookie: GuestCookie | undefined;
   readonly ttlSeconds: number;
 }
 
@@ -83,7 +84,7 @@ export class OAuthStateService {
       bindingHash: sha256Hex(binding),
       pkceChallenge: pkce.challenge,
       returnTo: input.returnTo,
-      guestId: await this.knownGuest(input.guestId),
+      guestId: await this.knownGuest(input.guestCookie),
       /*
        * The database's clock, not this process's. The expiry is compared against `now()` in
        * `consume`, and a row written from an app clock that drifted is a flow that expires
@@ -149,15 +150,28 @@ export class OAuthStateService {
    * cookie disagreeing about which rows count is exactly the class of bug this round spent
    * its time on.
    */
-  private async knownGuest(guestId: string | undefined): Promise<string | null> {
-    if (guestId === undefined || !UUID.test(guestId)) return null;
+  private async knownGuest(cookie: GuestCookie | undefined): Promise<string | null> {
+    if (cookie === undefined || !UUID.test(cookie.guestId)) return null;
 
     const [found] = await this.db
-      .select({ id: guests.id })
+      .select({ id: guests.id, secretHash: guests.secretHash })
       .from(guests)
-      .where(and(eq(guests.id, guestId), sql`${guests.claimedByUserId} is null`))
+      .where(and(eq(guests.id, cookie.guestId), sql`${guests.claimedByUserId} is null`))
       .limit(1);
 
-    return found?.id ?? null;
+    if (!found || found.secretHash === null) return null;
+
+    /*
+     * The secret is checked *here* and not only in the guard, and this is the call site that
+     * matters most in the whole application.
+     *
+     * `RbacGuard` verifies the cookie on every request and would already refuse a bare id —
+     * but this endpoint is `AllowAnonymous`, so the guard never builds a guest scope for it,
+     * and the id travels from the cookie into `oauth_states.guest_id` and from there into
+     * `claimGuest`, which now attributes the guest's orders to the account signing in. An
+     * unverified id on this path is precisely the attack the secret exists to stop: put
+     * somebody else's guest id in your own cookie jar, sign in, keep their order.
+     */
+    return guestSecretMatches(guestSecretHash(cookie.secret), found.secretHash) ? found.id : null;
   }
 }

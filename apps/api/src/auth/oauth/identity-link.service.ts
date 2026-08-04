@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Database } from '@wewin/db';
-import { guests, providerIdentities, userEmails, users } from '@wewin/db/schema';
+import { guests, orders, providerIdentities, userEmails, users } from '@wewin/db/schema';
 import { and, eq, sql } from '@wewin/db/sql';
 
 import { DRIZZLE } from '../../database/database.tokens';
@@ -296,14 +296,53 @@ export class IdentityLinkService {
    * afterwards is always "which cart went where".
    */
   async claimGuest(guestId: string, userId: string): Promise<boolean> {
-    const claimed = await this.db
-      .update(guests)
-      .set({ claimedByUserId: userId, claimedAt: sql`now()`, lastSeenAt: sql`now()` })
-      .where(and(eq(guests.id, guestId), sql`${guests.claimedByUserId} is null`))
-      .returning({ id: guests.id });
+    return this.db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(guests)
+        .set({ claimedByUserId: userId, claimedAt: sql`now()`, lastSeenAt: sql`now()` })
+        .where(and(eq(guests.id, guestId), sql`${guests.claimedByUserId} is null`))
+        .returning({ id: guests.id });
 
-    if (claimed.length > 0) this.logger.log(`guest ${guestId} claimed by user ${userId}`);
-    return claimed.length > 0;
+      if (claimed.length === 0) return false;
+
+      /*
+       * ── The backfill, in the same transaction as the claim ──────────────────────
+       *
+       * This is the other half of the claim, and it was missing. Claiming the guest revokes
+       * the cookie (`isOpenGuest` refuses a claimed row) — so without this statement the
+       * cart the visitor had just built became reachable by *nobody* at the exact moment it
+       * converted: the guest scope was gone and no user scope named the row. A submitted
+       * order cannot be deleted, so "reachable by nobody" is permanent.
+       *
+       * `src/orders/scope/order-ownership.ts` used to paper over that with a read-only
+       * rescue predicate — "orders of guests you have claimed" — which worked and was a
+       * second definition of ownership living beside the first. This statement is the repair
+       * the schema comment on `orders.customer_user_id` describes ("signing in *adds* the
+       * user id and leaves the guest id in place"), so that predicate is gone and ownership
+       * is one column again.
+       *
+       * `customer_user_id IS NULL` is the guard that keeps it honest: an order that already
+       * names an account has exactly one owner and a claim does not move it. `orders_guard_update`
+       * permits the NULL → value direction and refuses every other, so this cannot re-point
+       * an order that already belongs to somebody.
+       *
+       * ⚠️ It transfers what the guest built, and that is the point — but note that it is
+       * only as safe as the cookie that named the guest. That is why the cookie carries a
+       * secret and not just the id (`rbac/guest-cookie.ts`): knowing a guest id — from a log
+       * line, from a shared browser — must not be enough to sign in and take somebody's
+       * order with you.
+       */
+      const moved = await tx
+        .update(orders)
+        .set({ customerUserId: userId })
+        .where(and(eq(orders.guestId, guestId), sql`${orders.customerUserId} is null`))
+        .returning({ id: orders.id });
+
+      this.logger.log(
+        `guest ${guestId} claimed by user ${userId}; ${String(moved.length)} order(s) attributed`,
+      );
+      return true;
+    });
   }
 }
 

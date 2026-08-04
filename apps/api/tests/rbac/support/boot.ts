@@ -7,6 +7,7 @@ import type { Database } from '@wewin/db';
 import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.filter';
 import { DRIZZLE } from '../../../src/database/database.tokens';
 import { GuestRepository } from '../../../src/rbac/guest.repository';
+import type { GuestCookie } from '../../../src/rbac/guest-cookie';
 import { PermissionRepository, type EffectivePermissions } from '../../../src/rbac/permission.repository';
 import { RbacModule } from '../../../src/rbac/rbac.module';
 import type { RouteDeclaration } from '../../../src/rbac/route-declarations';
@@ -135,9 +136,16 @@ export async function bootRbacApp(options: RbacAppOptions): Promise<BootedRbacAp
 function fakeGuests(options: RbacAppOptions): GuestRepository {
   const open = options.openGuests;
   const repository: Pick<GuestRepository, 'isOpenGuest'> = {
-    isOpenGuest: (guestId: string): Promise<boolean> => {
+    isOpenGuest: (cookie: GuestCookie): Promise<boolean> => {
       if (options.guestsUnavailable) return Promise.reject(new Error('connection terminated unexpectedly'));
-      return Promise.resolve(open === undefined || open.includes(guestId));
+      /*
+       * The secret is not modelled here on purpose. These suites are about the *guard's*
+       * policy matrix — which scope each route admits — and the real repository is what
+       * decides whether a cookie is a live capability; a second implementation of that check
+       * in a fixture would be a second answer to the question `guest.repository.ts` exists to
+       * answer. `tests/rbac/guest-capability.pg.test.ts` proves the real one against Postgres.
+       */
+      return Promise.resolve(open === undefined || open.includes(cookie.guestId));
     },
   };
   return repository as GuestRepository;

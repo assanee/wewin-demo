@@ -27,6 +27,13 @@ export const ERROR_CODES = [
   'NOT_FOUND',
   'CONFLICT',
   'PAYLOAD_TOO_LARGE',
+  /*
+   * A ceiling was reached, and the caller may try again later. Distinct from `FORBIDDEN` for
+   * the same reason the two above are distinct from each other: nothing about this caller is
+   * refused, only the rate, and a client that treats it as a permission failure will stop
+   * retrying something that would have worked. `Retry-After` carries the window.
+   */
+  'TOO_MANY_REQUESTS',
   'DATABASE_UNAVAILABLE',
   'SERVICE_UNAVAILABLE',
   'INTERNAL',

@@ -25,6 +25,9 @@ describe('the Cookie header parser', () => {
   const A = '00000000-0000-4000-8000-00000000000a';
   const B = '11111111-1111-4111-8111-11111111111b';
   const NAME = guestCookieName(false);
+  /* 43 base64url characters — the shape `readGuestCookie` requires of the secret half. */
+  const SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const value = (id: string): string => `${id}.${SECRET}`;
 
   it('is literally the same function on both sides', () => {
     // Not a behavioural assertion: the point is that there is nothing to keep in step.
@@ -32,22 +35,22 @@ describe('the Cookie header parser', () => {
   });
 
   it('treats a duplicated name as absent rather than picking a winner', () => {
-    const header = `${NAME}=${A}; ${NAME}=${B}`;
+    const header = `${NAME}=${value(A)}; ${NAME}=${value(B)}`;
 
     expect(readCookie(header, NAME)).toBeUndefined();
     expect(readGuestCookie(header, false)).toBeUndefined();
   });
 
   it('treats a duplicated name as absent however the two are ordered', () => {
-    expect(readCookie(`${NAME}=not-a-uuid; ${NAME}=${B}`, NAME)).toBeUndefined();
-    expect(readGuestCookie(`${NAME}=not-a-uuid; ${NAME}=${B}`, false)).toBeUndefined();
-    expect(readGuestCookie(`${NAME}=${B}; ${NAME}=not-a-uuid`, false)).toBeUndefined();
+    expect(readCookie(`${NAME}=not-a-uuid; ${NAME}=${value(B)}`, NAME)).toBeUndefined();
+    expect(readGuestCookie(`${NAME}=not-a-uuid; ${NAME}=${value(B)}`, false)).toBeUndefined();
+    expect(readGuestCookie(`${NAME}=${value(B)}; ${NAME}=not-a-uuid`, false)).toBeUndefined();
   });
 
   it('reads a single occurrence out of a jar with other cookies in it', () => {
-    const header = `locale=th; ${NAME}=${A}; theme=dark`;
-    expect(readCookie(header, NAME)).toBe(A);
-    expect(readGuestCookie(header, false)).toBe(A);
+    const header = `locale=th; ${NAME}=${value(A)}; theme=dark`;
+    expect(readCookie(header, NAME)).toBe(value(A));
+    expect(readGuestCookie(header, false)).toStrictEqual({ guestId: A, secret: SECRET });
   });
 
   it('answers undefined for a header that has none of the name', () => {
@@ -62,17 +65,35 @@ describe('the Cookie header parser', () => {
    * can write `wewin_guest`. A reader that took either name would have bought nothing.
    */
   it('reads only the name that matches this deployment’s cookie profile', () => {
-    const bare = `wewin_guest=${A}`;
-    const hosted = `__Host-wewin_guest=${A}`;
+    const bare = `wewin_guest=${value(A)}`;
+    const hosted = `__Host-wewin_guest=${value(A)}`;
 
     expect(guestCookieName(true)).toBe('__Host-wewin_guest');
     expect(readGuestCookie(bare, true)).toBeUndefined();
-    expect(readGuestCookie(hosted, true)).toBe(A);
+    expect(readGuestCookie(hosted, true)?.guestId).toBe(A);
     expect(readGuestCookie(hosted, false)).toBeUndefined();
   });
 
   it('refuses a guest id that is not a uuid, whatever else the header says', () => {
     expect(readGuestCookie(`${NAME}=' or 1=1--`, false)).toBeUndefined();
     expect(readGuestCookie(`${NAME}=%ZZ`, false)).toBeUndefined();
+    expect(readGuestCookie(`${NAME}=' or 1=1--.${SECRET}`, false)).toBeUndefined();
+  });
+
+  /**
+   * The cookie is a capability, not a name — and a cookie carrying only the name is refused.
+   *
+   * Every cookie issued before `guests.secret_hash` existed is exactly that shape, and so is
+   * every guest id copied out of a log line. Reading one as a secretless capability is the
+   * whole of the attack the secret was added to stop, so the shape check is where it dies:
+   * before any query, before any digest, before anything has looked the id up.
+   */
+  it('refuses the bare id — a cookie with no secret is not a capability', () => {
+    expect(readGuestCookie(`${NAME}=${A}`, false)).toBeUndefined();
+    expect(readGuestCookie(`${NAME}=${A}.`, false)).toBeUndefined();
+    expect(readGuestCookie(`${NAME}=${A}.tooshort`, false)).toBeUndefined();
+    expect(readGuestCookie(`${NAME}=${A}.${SECRET}x`, false)).toBeUndefined();
+    // A secret that is the right length but carries a character base64url has no room for.
+    expect(readGuestCookie(`${NAME}=${A}.${SECRET.slice(1)}+`, false)).toBeUndefined();
   });
 });

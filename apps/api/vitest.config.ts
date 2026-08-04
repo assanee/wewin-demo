@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
+
+import { rootEnv, testDatabaseUrlOrSkip } from './tests/test-db';
 
 /**
  * The connection string lives in the workspace-root `.env`, and it is read here rather
@@ -11,24 +12,20 @@ import { defineConfig } from 'vitest/config';
  * while the run still reported success. Skipped is not passed, and a runner that says
  * "successful" either way is the failure mode this project keeps meeting — so the
  * lookup is explicit and a missing file is visible rather than silently empty.
+ *
+ * What it does **not** hand the workers is the URL as written. Every Postgres-backed suite
+ * here runs against a database of this suite's own, created empty by `tests/globalSetup.ts`
+ * on every run — see `tests/test-db.ts` for why the shared one stopped working the day an
+ * order could be submitted. Both `DATABASE_URL` and `TEST_DATABASE_URL` are overwritten,
+ * because the test files are split between the two names and a file left reading the
+ * developer's own database would be the one that destroyed it.
  */
-function rootEnv(): Record<string, string> {
-  try {
-    return Object.fromEntries(
-      readFileSync(new URL('../../.env', import.meta.url), 'utf8')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0 && !line.startsWith('#'))
-        .map((line) => {
-          const eq = line.indexOf('=');
-          return [line.slice(0, eq).trim(), line.slice(eq + 1).trim().replace(/^["']|["']$/g, '')];
-        })
-        .filter(([key]) => key.length > 0),
-    );
-  } catch {
-    // No .env — the Postgres suites skip themselves and say so. Nothing to invent here.
-    return {};
-  }
+function suiteEnv(): Record<string, string> {
+  const file = rootEnv();
+  const url = testDatabaseUrlOrSkip();
+  if (url === undefined) return file;
+
+  return { ...file, DATABASE_URL: url, TEST_DATABASE_URL: url };
 }
 
 /**
@@ -47,7 +44,7 @@ function rootEnv(): Record<string, string> {
  */
 export default defineConfig({
   test: {
-    env: rootEnv(),
+    env: suiteEnv(),
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     globalSetup: ['tests/globalSetup.ts'],

@@ -23,12 +23,39 @@ export interface AuthenticatedAccess {
   readonly kind: 'authenticated';
 }
 
+/**
+ * A caller that can own rows: a signed-in user **or** an identified guest. Never the public.
+ *
+ * Added in phase 5a, and it exists because the order lifecycle is the first surface where
+ * the other three policies all give the wrong answer.
+ *
+ *   `authenticated` locks the guest out — and plan section 6 is explicit that the
+ *     anonymous visitor is the main funnel: a guest configures, is quoted, and submits an
+ *     order before there is an account. A quote route behind `RequireAuthenticated` is the
+ *     funnel closed.
+ *   `anonymous` lets the public in and, worse, *reads* as a public route in the boot
+ *     audit. An order route printed as `anonymous — …` is the exact misreading plan 7.4
+ *     trap 2 is about: it looks like a decision to publish and is really a decision to let
+ *     the handler sort it out.
+ *   `permissions` is the staff answer. A customer holds no permission over their own
+ *     order and never will — ownership is not a grant, and modelling it as one would mean
+ *     a row in `group_permissions` per customer.
+ *
+ * What this policy asserts is narrow and is worth stating exactly: **there is a principal
+ * with a referent to scope rows by** — `users.id` or `guests.id`. It says nothing about
+ * *which* rows, and it must not be read as though it did. The row filter is
+ * `src/orders/scope`, in the query that loads the order.
+ */
+export interface PrincipalAccess {
+  readonly kind: 'principal';
+}
+
 export interface AnonymousAccess {
   readonly kind: 'anonymous';
   readonly reason: string;
 }
 
-export type RouteAccess = PermissionsAccess | AuthenticatedAccess | AnonymousAccess;
+export type RouteAccess = PermissionsAccess | AuthenticatedAccess | PrincipalAccess | AnonymousAccess;
 
 /** String and not symbol: Nest's `Reflector` and `SetMetadata` both take either, and a string is what shows up in a debugger. */
 export const ROUTE_ACCESS_METADATA = 'wewin:rbac:route-access';
@@ -64,6 +91,19 @@ export function RequireAuthenticated(): CustomDecorator {
 }
 
 /**
+ * Somebody who can own rows — a signed-in user or an identified guest.
+ *
+ * Takes no argument on purpose. There is nothing to configure: either the handler filters
+ * by the caller's referent or it does not, and if it does not, this is the wrong policy.
+ * The handler still has to take `@CurrentScope()` and load through a scoped query; being a
+ * principal is not permission to read somebody else's row, and no guard can know which row
+ * a handler is about.
+ */
+export function RequirePrincipal(): CustomDecorator {
+  return SetMetadata<string, RouteAccess>(ROUTE_ACCESS_METADATA, principalAccess());
+}
+
+/**
  * Deliberately reachable with no principal at all.
  *
  * The `reason` is not documentation for its own sake: it is the difference between a
@@ -90,6 +130,10 @@ export function authenticatedAccess(): AuthenticatedAccess {
   return { kind: 'authenticated' };
 }
 
+export function principalAccess(): PrincipalAccess {
+  return { kind: 'principal' };
+}
+
 export function permissionsAccess(
   ...codes: readonly [PermissionCode, ...PermissionCode[]]
 ): PermissionsAccess {
@@ -105,6 +149,7 @@ export function isRouteAccess(value: unknown): value is RouteAccess {
   const candidate = value as { kind: unknown };
 
   if (candidate.kind === 'authenticated') return true;
+  if (candidate.kind === 'principal') return true;
 
   if (candidate.kind === 'anonymous') {
     return 'reason' in value && typeof (value as { reason: unknown }).reason === 'string';
@@ -130,6 +175,24 @@ export function describeAccess(access: RouteAccess): string {
       return `requires ${access.codes.join(' + ')}`;
     case 'authenticated':
       return 'requires a signed-in user';
+    case 'principal':
+      /*
+       * The second clause is the one worth printing, and it is a limitation being stated
+       * rather than a feature being advertised.
+       *
+       * `principal` says a caller has a referent. It says nothing about *which rows* that
+       * referent reaches — and for the routes that use it, that is where all the authority
+       * is: holding `orders.read` turns every order route into a view of every order in the
+       * company. None of that can appear in this table, because it is decided in the query
+       * (`src/orders/scope`), which is exactly where plan 7.4 trap 2 says ownership has to
+       * live. A permissions review that read only the route table would conclude these
+       * routes carry no permission at all, which is true of the *route* and false of the
+       * feature.
+       */
+      return (
+        'requires a principal that owns rows — a signed-in user or an identified guest; ' +
+        'which rows it reaches is decided in the query, not here (orders.read / orders.write widen it)'
+      );
     case 'anonymous':
       return `anonymous — ${access.reason}`;
   }

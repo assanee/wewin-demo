@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 
 import { attachIdentity, attachScope, cookieHeaderOf, readGuestCookie, readIdentity } from './identity';
+import type { GuestCookie } from './guest-cookie';
 import type { RouteAccess } from './access';
 import { GuestRepository } from './guest.repository';
 import { PermissionRepository } from './permission.repository';
@@ -124,12 +125,16 @@ export class RbacGuard implements CanActivate {
 
     if (identity?.kind === 'guest') return guestScope(identity.guestId);
 
-    const guestId = readGuestCookie(cookieHeaderOf(request), this.options.cookieSecure);
-    if (guestId !== undefined && (await this.openGuest(guestId))) {
-      // Recorded on the request too, so anything downstream that wants the guest id reads
-      // it from the same place the authentication layer would have put it.
-      attachIdentity(request, { kind: 'guest', guestId });
-      return guestScope(guestId);
+    const cookie = readGuestCookie(cookieHeaderOf(request), this.options.cookieSecure);
+    if (cookie !== undefined && (await this.openGuest(cookie))) {
+      /*
+       * Recorded on the request too, so anything downstream that wants the guest id reads
+       * it from the same place the authentication layer would have put it. The *secret* is
+       * deliberately not carried onward: it has done its work here, and an identity object
+       * holding a live credential is a credential that ends up in a log line.
+       */
+      attachIdentity(request, { kind: 'guest', guestId: cookie.guestId });
+      return guestScope(cookie.guestId);
     }
 
     return PUBLIC_SCOPE;
@@ -145,9 +150,9 @@ export class RbacGuard implements CanActivate {
    * whole anonymous funnel — the catalogue, the configurator, `/me` — turns a database blip
    * into a dark storefront.
    */
-  private async openGuest(guestId: string): Promise<boolean> {
+  private async openGuest(cookie: GuestCookie): Promise<boolean> {
     try {
-      return await this.guests.isOpenGuest(guestId);
+      return await this.guests.isOpenGuest(cookie);
     } catch {
       this.logger.debug('Guest cookie could not be checked; serving this request as public');
       return false;
@@ -177,6 +182,27 @@ function allows(access: RouteAccess, scope: Scope): boolean {
         },
         public: () => {
           throw new UnauthorizedException('Sign in to use this endpoint.');
+        },
+      });
+
+    /*
+     * The funnel's own policy: somebody is here and they have a referent to scope rows by.
+     *
+     * A guest passes and the public does not, which is the whole distinction plan section 6
+     * says the fourth scope variant exists to express. Note what this branch deliberately
+     * does *not* do: it does not look at the request, the path or any id in it. Whether the
+     * caller owns the row they named is not a question a guard can answer — the guard runs
+     * before the handler and has never read the row — and answering it here would be plan
+     * 7.4 trap 2 built into the framework. It belongs in the query that loads the order
+     * (src/orders/scope), where the answer is a WHERE clause instead of an `if`.
+     */
+    case 'principal':
+      return matchScope(scope, {
+        user: () => true,
+        guest: () => true,
+        system: () => true,
+        public: () => {
+          throw new UnauthorizedException('กรุณาเข้าสู่ระบบ หรือเริ่มขอใบเสนอราคาก่อน');
         },
       });
 

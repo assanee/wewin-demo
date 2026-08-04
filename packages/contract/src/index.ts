@@ -59,6 +59,38 @@ export type {
 export type { CatalogStaleBodyWire } from './errors.js';
 
 export type {
+  ApproveRedesignRequestWire,
+  AvailableTransitionWire,
+  BounceOrderRequestWire,
+  CancelOrderRequestWire,
+  ChangeRequestResolutionWire,
+  ChangeRequestWire,
+  ConfirmPaymentRequestWire,
+  CreateChangeRequestWire,
+  CreateOrderRequestWire,
+  OrderActorKindWire,
+  OrderContactRequestWire,
+  OrderContactWire,
+  OrderDocumentLineWire,
+  OrderDocumentWire,
+  OrderEventListWire,
+  OrderEventTypeWire,
+  OrderEventWire,
+  OrderLineRequestWire,
+  OrderListWire,
+  OrderMoneyWire,
+  OrderPayloadKindWire,
+  OrderStatusWire,
+  OrderSummaryWire,
+  OrderWire,
+  ResolveChangeRequestWire,
+  StaffCancelOrderRequestWire,
+  SubmitOrderRequestWire,
+  SupersedeOrderRequestWire,
+  VatTreatmentWire,
+} from './order.js';
+
+export type {
   AdminOptionGroupListWire,
   AdminOptionGroupWire,
   AdminOptionValueWire,

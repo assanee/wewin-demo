@@ -6,6 +6,7 @@ import { AuthenticationMiddleware } from './auth/authentication.middleware';
 import type { OAuthConfig } from './auth/oauth/oauth.config';
 import type { SessionConfig } from './auth/session/session.config';
 import { CatalogModule } from './catalog/catalog.module';
+import { JsonBodyMiddleware } from './common/json-body.middleware';
 import { RequestIdMiddleware } from './common/request-id';
 import { ConfigModule } from './config/config.module';
 import type { Env } from './config/env';
@@ -13,6 +14,8 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
+import { NotificationsModule } from './notifications';
+import { OrdersModule } from './orders';
 import { RbacModule } from './rbac/rbac.module';
 
 /*
@@ -69,6 +72,23 @@ export class AppModule implements NestModule {
          * construction, so a graph built with no storage running still boots.
          */
         MediaModule.forRoot(),
+        /*
+         * The order lifecycle (phase 5a) and the outbox that delivers what it appends.
+         *
+         * They are listed together and must stay together. `OrdersModule` writes
+         * `order_events`; a deferred trigger on that table fans a row out into
+         * `notifications` in the same transaction; `NotificationsModule` is the only thing
+         * that drains that table. Registering the first without the second gives a process
+         * that changes an order's status and queues a message no worker will ever pick up —
+         * which is precisely plan 10.1's failure ("committed, and nobody was told"), reached
+         * by a wiring omission rather than by an SMTP outage.
+         *
+         * Neither exports anything the other can import: an order handler still has no way to
+         * reach a transport, which is what stops `sendEmail()` reappearing inside a
+         * transition. See the note at the top of orders.module.ts.
+         */
+        OrdersModule,
+        NotificationsModule.forRoot(),
       ],
     };
   }
@@ -81,7 +101,14 @@ export class AppModule implements NestModule {
      * construction rather than by `APP_GUARD` registration order.
      *
      * '{*splat}' and not '*': Express 5's path parser rejects a bare wildcard.
+     *
+     * `JsonBodyMiddleware` is third because it inspects the parsed body and has nothing to
+     * say about identity; it is *before every controller* because that is the whole of its
+     * job — the one key that `z.strictObject` cannot refuse, refused once for every route
+     * rather than in each schema (see the file for what it is and is not).
      */
-    consumer.apply(RequestIdMiddleware, AuthenticationMiddleware).forRoutes('{*splat}');
+    consumer
+      .apply(RequestIdMiddleware, AuthenticationMiddleware, JsonBodyMiddleware)
+      .forRoutes('{*splat}');
   }
 }

@@ -334,7 +334,7 @@ describeWithPg('OAuth state is bound to the browser', () => {
     const minted = await states.mint({
       provider: 'google',
       returnTo: returnTo('consume-twice'),
-      guestId: undefined,
+      guestCookie: undefined,
       ttlSeconds: 600,
     });
 
@@ -389,9 +389,10 @@ describeWithPg('OAuth state is bound to the browser', () => {
   });
 
   it('carries a guest through the round trip and claims it on the way back', async () => {
-    const guestId = await db.createGuest();
+    const cart = await db.createGuest();
+    const guestId = cart.id;
     const jar = new CookieJar();
-    jar.set('wewin_guest', guestId);
+    jar.set('wewin_guest', cart.cookie);
 
     await signIn({
       apiBaseUrl: app.baseUrl,
