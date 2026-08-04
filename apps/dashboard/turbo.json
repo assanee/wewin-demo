@@ -1,0 +1,47 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+
+  // A package configuration rather than four more entries at the root. Everything below is
+  // true of Next.js and of nothing else in this workspace — a `.next` output directory, an
+  // environment variable that is baked into a browser bundle at build time — and putting it
+  // here means the root file keeps describing the shape all packages share.
+  "extends": ["//"],
+
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      // `.next/cache` is Next's own incremental cache. Including it would put a copy of it
+      // inside Turbo's cache entry, which grows without bound and restores stale artefacts.
+      "outputs": [".next/**", "!.next/cache/**"],
+      // `NEXT_PUBLIC_*` is not read at runtime — it is substituted into the JavaScript the
+      // browser downloads. A build that ran against one API origin has produced a bundle
+      // that can only ever talk to that origin, so pointing it at another must miss the
+      // cache. This is the same rule the root file states for DATABASE_URL and `PG*`.
+      "env": ["NEXT_PUBLIC_*"],
+      // Next reads `.env` from the app directory, which Turbo's default input set does not
+      // know is an input. The root `.env` is already covered by `globalDependencies`.
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
+    },
+
+    // `next build` runs TypeScript itself, with `.next/types` present — which is where the
+    // route union that `src/lib/nav/navigation.ts` is checked against comes from. So `build`
+    // is the strict check and `typecheck` is the fast one: on a clean checkout there is no
+    // `.next/types` yet and `Route` degrades to `string`, which type-checks everything else
+    // exactly as well and cannot catch a link to a page that does not exist.
+    //
+    // Deliberately *not* `"dependsOn": ["build"]`, tempting as that is. It would make the
+    // repository-wide `pnpm typecheck` require NEXT_PUBLIC_API_BASE_URL and a full Next
+    // build to answer a question about types, and the strict check already runs where it
+    // matters — in `pnpm build`, and continuously under `next dev`.
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true,
+      "env": ["NEXT_PUBLIC_*"]
+    }
+  }
+}

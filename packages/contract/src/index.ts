@@ -57,3 +57,34 @@ export type {
 } from './pricing.js';
 
 export type { CatalogStaleBodyWire } from './errors.js';
+
+export type {
+  AdminOptionGroupListWire,
+  AdminOptionGroupWire,
+  AdminOptionValueWire,
+  AdminProductListWire,
+  AdminProductSummaryWire,
+  AdminProductWire,
+  CreateOptionGroupRequestWire,
+  CreateOptionValueRequestWire,
+  CreateProductRequestWire,
+  DraftCustomOptionWire,
+  DraftMutationWire,
+  DraftOptionWire,
+  DraftRuleWire,
+  DraftSkuOptionWire,
+  DraftSummaryWire,
+  DraftWire,
+  ProductFieldsPatchWire,
+  ProductFieldsWire,
+  PublishDraftRequestWire,
+  PublishResultWire,
+  PublishedVersionWire,
+  PutDraftOptionRequestWire,
+  PutDraftRuleRequestWire,
+  SetOptionValueAvailabilityRequestWire,
+  StoredPriceDelta,
+  UpdateOptionGroupRequestWire,
+  UpdateOptionValueRequestWire,
+  UpdateProductDraftRequestWire,
+} from './admin.js';

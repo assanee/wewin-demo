@@ -1,5 +1,6 @@
 import { Module, type DynamicModule, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthenticationMiddleware } from './auth/authentication.middleware';
 import type { OAuthConfig } from './auth/oauth/oauth.config';
@@ -10,6 +11,7 @@ import { ConfigModule } from './config/config.module';
 import type { Env } from './config/env';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
 import { RbacModule } from './rbac/rbac.module';
 
@@ -53,6 +55,20 @@ export class AppModule implements NestModule {
         HealthModule,
         MetaModule,
         CatalogModule,
+        /*
+         * The write side, after the read side for the same non-reason: order does not
+         * matter to Nest here. It is last because it is the only module in this list whose
+         * every endpoint requires a permission, so the boot audit's one-line summary reads
+         * as "the public surface, then the guarded one".
+         */
+        AdminModule,
+        /*
+         * Images. Last, and it is the one module here that reaches something other than
+         * Postgres — an S3-compatible bucket, configured from its own directory rather than
+         * from `Env`, the same way OAuthModule handles its credentials. Nothing connects at
+         * construction, so a graph built with no storage running still boots.
+         */
+        MediaModule.forRoot(),
       ],
     };
   }

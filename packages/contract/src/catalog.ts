@@ -241,7 +241,13 @@ export interface ProductDocument extends CatalogRef {
 const thbAmount = moneyWireSchema('THB');
 const thbRate = moneyRateWireSchema('THB');
 
-const priceDeltaWireSchema: z.ZodType<PriceDeltaWire> = z.discriminatedUnion('type', [
+/*
+ * Exported rather than file-local because `./admin.ts` builds request schemas out of the
+ * same three leaves. A second spelling of "what a price delta looks like" would be a
+ * second thing to keep in step with `option_values`' CHECK constraints, and the write side
+ * accepting a shape the read side cannot emit is the drift this package exists to prevent.
+ */
+export const priceDeltaWireSchema: z.ZodType<PriceDeltaWire> = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }),
   z.object({ type: z.literal('flat'), amount: thbAmount }),
   z.object({ type: z.literal('per_sqm'), amount: thbRate }),
@@ -305,7 +311,7 @@ const numExprWireSchema: z.ZodType<NumExprWire> = z.lazy(() =>
 const comparison = <T extends 'gt' | 'lt' | 'gte' | 'lte'>(op: T) =>
   z.object({ op: z.literal(op), left: numExprWireSchema, right: numExprWireSchema });
 
-const ruleExprWireSchema: z.ZodType<RuleExprWire> = z.lazy(() =>
+export const ruleExprWireSchema: z.ZodType<RuleExprWire> = z.lazy(() =>
   z.discriminatedUnion('op', [
     comparison('gt'),
     comparison('lt'),
@@ -326,7 +332,7 @@ const ruleWireSchema: z.ZodType<RuleWire> = z.object({
   referencedGroupCodes: z.array(z.string().min(1)),
 });
 
-const elevationWireSchema: z.ZodType<ElevationWire> = z.object({
+export const elevationWireSchema: z.ZodType<ElevationWire> = z.object({
   panels: z.number().int().min(1).max(24),
   operation: z.literal(['fixed', 'casement', 'awning', 'slide', 'fold', 'hang', 'vertical']),
   infill: z.literal(['glass', 'louvre', 'mesh']),
@@ -469,7 +475,7 @@ function encodeNumExpr(expr: NumExpr): NumExprWire {
   }
 }
 
-function encodeRuleExpr(expr: RuleExpr): RuleExprWire {
+export function encodeRuleExpr(expr: RuleExpr): RuleExprWire {
   switch (expr.op) {
     case 'gt':
     case 'lt':
@@ -537,7 +543,7 @@ const encodeRule = (rule: Rule): RuleWire => ({
   referencedGroupCodes: referencedGroupCodes(rule.when),
 });
 
-function encodeElevation(elevation: Elevation): ElevationWire {
+export function encodeElevation(elevation: Elevation): ElevationWire {
   const wire: { -readonly [K in keyof ElevationWire]: ElevationWire[K] } = {
     panels: elevation.panels,
     operation: elevation.operation,
@@ -680,7 +686,15 @@ function decodeNumExpr(wire: NumExprWire): NumExpr {
   }
 }
 
-function decodeRuleExpr(wire: RuleExprWire): RuleExpr {
+/**
+ * Exported for the write side: a rule arriving from the dashboard has to become the AST
+ * `product_version_rules.when_expr` stores and the group-code list beside it. Both
+ * conversions already exist (`@wewin/db`'s `toDocRule` and `referencedGroupCodes`) and
+ * both take core's `RuleExpr`, so this is the one step that was missing rather than a new
+ * one. A second wire-to-AST walk in apps/api would be a second place for `area` to forget
+ * that it reads two groups.
+ */
+export function decodeRuleExpr(wire: RuleExprWire): RuleExpr {
   switch (wire.op) {
     case 'gt':
     case 'lt':
@@ -698,7 +712,7 @@ function decodeRuleExpr(wire: RuleExprWire): RuleExpr {
   }
 }
 
-function decodeElevation(wire: ElevationWire): Elevation {
+export function decodeElevation(wire: ElevationWire): Elevation {
   const elevation: Elevation = {
     panels: wire.panels,
     operation: wire.operation,

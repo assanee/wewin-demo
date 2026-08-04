@@ -1,0 +1,72 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    /*
+     * DOM is on here and off in packages/* on purpose. The domain layer's `types: ["node"]`
+     * is what makes "core never touches a browser API" a fact the compiler checks (plan
+     * section 1); this app *is* the browser, so the same rule applied here would be noise.
+     * `node` rides along because next.config.ts and the App Router's server half are Node.
+     */
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolvePackageJsonExports": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "incremental": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    /* Strictness — spec section 1: no `any`, no `@ts-ignore`, no `!` to silence a type. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  /*
+   * `.next/types` and `.next/dev/types` hold what `typedRoutes` generates — the union of
+   * every route that actually exists, which is what turns a `href` in
+   * src/lib/nav/navigation.ts naming a missing page into a compile error rather than a 404
+   * somebody finds by clicking. `next build` writes the first, `next dev` the second.
+   *
+   * `exclude` therefore names `node_modules` and nothing else. It used to also list
+   * `.next`, which reads as tidiness and is not: `exclude` filters `include`, so excluding
+   * the directory silently removed the generated types again and `Route` quietly degraded to
+   * `string`. Verified by pointing a nav entry at `/does-not-exist` and watching `tsc` fail.
+   */
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

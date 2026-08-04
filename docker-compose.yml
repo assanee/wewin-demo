@@ -1,4 +1,4 @@
-# The one Postgres this repository talks to.
+# The one Postgres and the one object store this repository talks to.
 #
 # At the root, and nowhere else, because Docker Compose searches upward from the current
 # directory: a file here is found by `pnpm db:up` at the root, by `packages/db` running
@@ -46,5 +46,71 @@ services:
       retries: 30
       start_period: 5s
 
+  # Uploaded images. S3-compatible, because "S3-compatible" is the one storage interface
+  # that is the same shape on a laptop, in a container, and in front of AWS S3, Cloudflare
+  # R2 or a Thai provider's object store — so the code that talks to it in production is
+  # the code these tests run. The alternative considered and rejected was writing files
+  # into the repository: it survives no deploy, no second process and no restart of a
+  # container with an ephemeral filesystem, and it turns a path-traversal bug into
+  # arbitrary file write on the machine serving the app.
+  #
+  # ⚠️ THIS SERVICE IS A DEVELOPMENT STAND-IN, NOT A PRODUCTION DESIGN. It is one node with
+  # one drive and root credentials in a file that is in git. Production points
+  # STORAGE_ENDPOINT at a real bucket and hands apps/api a *scoped* service account —
+  # PutObject/GetObject/DeleteObject on this bucket's prefix and nothing else. Nothing in
+  # apps/api/src/media assumes MinIO; it speaks SigV4 against whatever endpoint it is given.
+  storage:
+    # Pinned to the release this was verified against rather than :latest, for the same
+    # reason postgres is pinned: an image that changes under a `docker compose pull` is a
+    # different system with the same compose file. Note that recent MinIO community
+    # releases ship no web console — bucket inspection here is `mc` inside the container,
+    # which is also one fewer port listening on the machine:
+    #
+    #   docker compose exec storage sh -c \
+    #     'mc alias set dev http://localhost:9000 wewin wewin-local && mc ls -r dev/wewin-media'
+    #
+    # (the alias is needed: mc's built-in `local` alias carries no credentials, which is
+    # why the healthcheck below uses `mc ready`, an endpoint that needs none.)
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    # `mkdir` before `server`: a directory under the data root *is* a bucket, so the stack
+    # comes up with `wewin-media` already there and nothing has to be provisioned by hand.
+    # apps/api creates it too, on first upload, because a bucket that exists only because
+    # of a line in a compose file is a bucket that does not exist in production.
+    #
+    # The image's own entrypoint is replaced rather than wrapped, and it is worth saying
+    # why it is safe: /usr/bin/docker-entrypoint.sh does two things — it prepends `minio`
+    # to a command that does not start with it (which is what turned `sh -c …` into
+    # `minio sh -c …` and crash-looped the container), and it switches user when
+    # MINIO_USERNAME is set, which the image itself marks DEPRECATED and which nothing here
+    # sets. Everything else is `exec "$@"`.
+    entrypoint: ['/bin/sh', '-c']
+    command: ['mkdir -p /data/wewin-media && exec minio server /data']
+    environment:
+      # Local-only credentials, deliberately unmistakable for real ones. The password is
+      # ten characters because MinIO refuses to start with fewer than eight, which is the
+      # only reason it is not `wewin` like Postgres above.
+      MINIO_ROOT_USER: wewin
+      MINIO_ROOT_PASSWORD: wewin-local
+      TZ: UTC
+    ports:
+      # 9100, not 9000, on the same reasoning as Postgres's 5433: 9000 is where a
+      # developer's unrelated MinIO, or Portainer, or a Go service's admin port already
+      # lives, and pointing an upload endpoint at the wrong bucket is expensive in the same
+      # quiet way as pointing a migration at the wrong database. Inside the container it is
+      # still 9000, so every `mc` command copied from MinIO's own documentation works.
+      - '9100:9000'
+    volumes:
+      - wewin-minio-data:/data
+    healthcheck:
+      # `mc ready local` is MinIO's own readiness check and reports on the *drive*, not
+      # just the socket. `local` is the alias the image configures from MINIO_ROOT_USER.
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
 volumes:
   wewin-pgdata:
+  wewin-minio-data:

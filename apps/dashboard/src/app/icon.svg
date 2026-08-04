@@ -1,0 +1,25 @@
+<!--
+  The tab mark. A file rather than nothing, for one unglamorous reason: with no icon
+  declared, every browser asks for /favicon.ico anyway, Next answers 404, and the console
+  carries a permanent error. A console with one error you have learned to ignore is a
+  console that hides the second one.
+
+  `icon.svg` in `app/` is a file convention — Next emits the <link rel="icon"> itself, so
+  there is no head tag to keep in sync with this file's name.
+
+  Deliberately monochrome and `currentColor`-free: an SVG favicon is rendered outside the
+  page, so it inherits nothing, and the dark-mode variant of a tab icon is a problem worth
+  not having.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#171717" />
+  <path
+    d="M6 10.5 L10.4 21.5 L14 13.8 L17.6 21.5 L22 10.5"
+    fill="none"
+    stroke="#fafafa"
+    stroke-width="2.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="25" cy="11.5" r="2" fill="#fafafa" />
+</svg>

@@ -15,6 +15,15 @@
     { "path": "./packages/contract" },
     { "path": "./packages/db" },
     { "path": "./apps/api" },
-    { "path": "./apps/web" }
+    { "path": "./apps/web" },
+    /*
+     * apps/dashboard is here for completeness, per the rule above, with one caveat worth
+     * writing down: its `Route` type — the thing that makes a navigation entry pointing at a
+     * missing page a compile error — comes from `.next/types`, which only exists after a
+     * `next build` or a `next dev`. On a clean checkout `tsc -b` here type-checks the app
+     * with `Route` degraded to `string`, so it is a weaker check than
+     * `pnpm --filter @wewin/dashboard typecheck` run after a build, not a substitute for it.
+     */
+    { "path": "./apps/dashboard" }
   ]
 }

@@ -190,8 +190,37 @@ describe('boot-time route audit', () => {
      * /auth/refresh` is the one worth pausing on, because "anonymous" there does not mean
      * "open" — the credential is the `__Host-` refresh cookie, which the guard has no way to
      * read. `POST /auth/logout` is the only authenticated route in the process today.
+     *
+     * The eighteen `/admin/catalog` routes are phase 4's, and the review this list exists to
+     * force is a short one for them: **not one of them is anonymous or merely authenticated.**
+     * Every single one states a permission, which is the difference between a dashboard whose
+     * menu hides a button and a dashboard whose API refuses the request (plan section 6).
+     * Three permissions appear, and the split is the point — `catalog.read` for looking,
+     * `catalog.write` for editing a draft, and `catalog.publish` for the one action that
+     * changes what a customer is quoted. Reading them off the `key` alone is not possible, so
+     * the accompanying assertion below names the three sets.
+     *
+     * The five `media` routes are the image library. Four of them are `/admin/media` and
+     * state a permission like everything else in this list; the fifth is the one that is
+     * worth stopping on, because **`GET /media/:mediaId` is anonymous and serves
+     * user-supplied bytes back to a browser**. It has to be — a published product page must
+     * render for a visitor who has never signed in — and the reason it prints beside it in
+     * the boot log is the review this list exists to force. What makes it safe is not the
+     * guard, which there isn't one of: it is that the content type was decided by reading
+     * the bytes, that SVG cannot be stored at all, and that the response carries `nosniff`
+     * and a sandboxing CSP. See src/media/media.controller.ts.
      */
     expect(records.map((record) => `${record.key} [${record.access.kind}]`)).toStrictEqual([
+      'DELETE /admin/catalog/products/:productId/draft [permissions]',
+      'DELETE /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
+      'DELETE /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
+      'DELETE /admin/media/:mediaId [permissions]',
+      'GET /admin/catalog/option-groups [permissions]',
+      'GET /admin/catalog/products [permissions]',
+      'GET /admin/catalog/products/:productId [permissions]',
+      'GET /admin/catalog/products/:productId/draft [permissions]',
+      'GET /admin/media [permissions]',
+      'GET /admin/media/:mediaId [permissions]',
       'GET /auth/oauth/:provider/callback [anonymous]',
       'GET /auth/oauth/:provider/start [anonymous]',
       'GET /auth/oauth/providers [anonymous]',
@@ -202,10 +231,24 @@ describe('boot-time route audit', () => {
       'GET /health/live [anonymous]',
       'GET /health/ready [anonymous]',
       'GET /me [anonymous]',
+      'GET /media/:mediaId [anonymous]',
       'GET /meta [anonymous]',
+      'PATCH /admin/catalog/option-groups/:groupCode [permissions]',
+      'PATCH /admin/catalog/option-groups/:groupCode/values/:valueCode [permissions]',
+      'PATCH /admin/catalog/products/:productId/draft [permissions]',
+      'PATCH /admin/media/:mediaId [permissions]',
+      'POST /admin/catalog/option-groups [permissions]',
+      'POST /admin/catalog/option-groups/:groupCode/values [permissions]',
+      'POST /admin/catalog/products [permissions]',
+      'POST /admin/catalog/products/:productId/draft [permissions]',
+      'POST /admin/catalog/products/:productId/draft/publish [permissions]',
+      'POST /admin/media [permissions]',
       'POST /auth/logout [authenticated]',
       'POST /auth/oauth/:provider/callback [anonymous]',
       'POST /auth/refresh [anonymous]',
+      'PUT /admin/catalog/option-groups/:groupCode/values/:valueCode/availability [permissions]',
+      'PUT /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
+      'PUT /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
     ]);
   });
 });

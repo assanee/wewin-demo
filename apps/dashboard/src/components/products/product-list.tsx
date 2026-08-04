@@ -1,0 +1,361 @@
+'use client';
+
+import Link from 'next/link';
+import type { Route } from 'next';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Search } from 'lucide-react';
+import type { AdminProductSummaryWire, CategoryWire } from '@wewin/contract';
+
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
+import { failureMessage, listCategories, listProducts } from './catalog-api';
+import { PublishStateBadges, formatTimestamp } from './publish-state';
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The list. 81 products today; the shape has to survive 800.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Two costs grow with the catalogue and only one of them is this component's to control.
+ *
+ * **The response.** `GET /admin/catalog/products` has no page parameter — it answers with
+ * every product, and its own contract comment explains the one thing it does to keep that
+ * affordable: a row carries a `DraftSummaryWire` and not a `DraftWire`, so the server does
+ * not compile 81 documents to render a table of names. At 800 products that response is
+ * still one request of summaries, which is the right trade for an internal tool; past a few
+ * thousand it needs a page parameter, and that is a change to the endpoint rather than to
+ * this file. Written down here because the first person to feel it will be reading this.
+ *
+ * **The DOM.** That one *is* here, and is why the table renders a window rather than the
+ * whole filtered set. 800 rows of five cells with three badges each is ~15,000 nodes and a
+ * layout pass on every keystroke; 50 rows is a table that stays responsive while somebody
+ * types. Filtering runs over the full array — it is a string comparison over a few thousand
+ * items and is not what costs anything — so the count line always reports the true total,
+ * and the window only decides how much of it is drawn.
+ *
+ * Search covers the four identifiers a person actually has in hand: the Thai name they read,
+ * the id they saw in a URL, the slug from a storefront link, and the SKU prefix off a
+ * quote. Matching only the name would fail exactly when somebody is chasing something down.
+ */
+
+const PAGE = 50;
+
+type StateFilter = 'all' | 'draft' | 'unpublished' | 'never' | 'live';
+
+const STATE_LABELS: Record<StateFilter, string> = {
+  all: 'ทุกสถานะ',
+  draft: 'มีฉบับร่าง',
+  unpublished: 'แก้ไขแล้วยังไม่เผยแพร่',
+  never: 'ยังไม่เคยเผยแพร่',
+  live: 'เผยแพร่แล้ว',
+};
+
+const matchesState = (product: AdminProductSummaryWire, filter: StateFilter): boolean => {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'draft':
+      return product.draft !== null;
+    case 'unpublished':
+      return product.unpublishedFields.length > 0;
+    case 'never':
+      return product.published === null;
+    case 'live':
+      return product.published !== null;
+  }
+};
+
+/**
+ * Thai sorts by `localeCompare('th')` and not by code point.
+ *
+ * `'ไม้'.localeCompare('กระจก')` is -1 under a code-point sort and +1 under Thai collation,
+ * which is the difference between an alphabetical list and one that only looks alphabetical
+ * to somebody who does not read it.
+ */
+const byName = (left: AdminProductSummaryWire, right: AdminProductSummaryWire): number =>
+  left.nameTh.localeCompare(right.nameTh, 'th');
+
+/** Most recently touched first — a draft's edit, else the publish, else nothing. */
+const touchedAt = (product: AdminProductSummaryWire): number => {
+  const stamp = product.draft?.updatedAt ?? product.published?.publishedAt;
+  return stamp === undefined ? 0 : new Date(stamp).getTime();
+};
+
+type Sort = 'name' | 'recent';
+
+interface LoadState {
+  readonly products: readonly AdminProductSummaryWire[];
+  readonly categories: readonly CategoryWire[];
+}
+
+export function ProductList() {
+  const [loaded, setLoaded] = useState<LoadState | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('all');
+  const [state, setState] = useState<StateFilter>('all');
+  const [sort, setSort] = useState<Sort>('name');
+  const [limit, setLimit] = useState(PAGE);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        /*
+         * The category list is a separate request and a failure of it must not blank the
+         * table: it names the filter's options, and a product row shows its raw category id
+         * perfectly well without one. So both are awaited together and only the product
+         * failure is fatal.
+         */
+        const [products, categories] = await Promise.all([
+          listProducts(),
+          listCategories().catch(() => [] as readonly CategoryWire[]),
+        ]);
+        if (!cancelled) setLoaded({ products: products.products, categories });
+      } catch (cause: unknown) {
+        if (!cancelled) setError(cause);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const categoryLabel = useMemo(() => {
+    const names = new Map(loaded?.categories.map((entry) => [entry.id, entry.labelTh]) ?? []);
+    return (id: string): string => names.get(id) ?? id;
+  }, [loaded]);
+
+  const filtered = useMemo(() => {
+    const products = loaded?.products ?? [];
+    const needle = query.trim().toLowerCase();
+
+    const matched = products.filter((product) => {
+      if (category !== 'all' && product.categoryId !== category) return false;
+      if (!matchesState(product, state)) return false;
+      if (needle === '') return true;
+
+      return (
+        product.nameTh.toLowerCase().includes(needle) ||
+        product.id.toLowerCase().includes(needle) ||
+        product.slug.toLowerCase().includes(needle) ||
+        product.skuPrefix.toLowerCase().includes(needle)
+      );
+    });
+
+    return [...matched].sort(sort === 'name' ? byName : (left, right) => touchedAt(right) - touchedAt(left));
+  }, [loaded, query, category, state, sort]);
+
+  /* A narrowed filter must not leave the window scrolled past its own results. */
+  useEffect(() => {
+    setLimit(PAGE);
+  }, [query, category, state, sort]);
+
+  if (error !== null) {
+    return (
+      <Alert variant="destructive">
+        <AlertTriangle />
+        <AlertTitle>โหลดรายการสินค้าไม่สำเร็จ</AlertTitle>
+        <AlertDescription>{failureMessage(error)}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (loaded === null) {
+    return (
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 8 }, (_, index) => (
+          <Skeleton key={index} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  const shown = filtered.slice(0, limit);
+  const categories = [...loaded.categories].sort((left, right) =>
+    left.labelTh.localeCompare(right.labelTh, 'th'),
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <InputGroup className="w-full sm:w-80">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+            placeholder="ค้นหาชื่อ รหัส สลัก หรือคำนำหน้า SKU"
+            aria-label="ค้นหาสินค้า"
+          />
+        </InputGroup>
+
+        <Select
+          value={category}
+          onValueChange={(value) => {
+            setCategory(value);
+          }}
+        >
+          <SelectTrigger className="w-48" aria-label="กรองตามหมวดหมู่">
+            <SelectValue placeholder="ทุกหมวดหมู่" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+            {categories.map((entry) => (
+              <SelectItem key={entry.id} value={entry.id}>
+                {entry.labelTh}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={state}
+          onValueChange={(value) => {
+            setState(value as StateFilter);
+          }}
+        >
+          <SelectTrigger className="w-56" aria-label="กรองตามสถานะ">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(STATE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={sort}
+          onValueChange={(value) => {
+            setSort(value as Sort);
+          }}
+        >
+          <SelectTrigger className="w-40" aria-label="เรียงลำดับ">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">เรียงตามชื่อ</SelectItem>
+            <SelectItem value="recent">แก้ไขล่าสุดก่อน</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/*
+          No "new product" action here yet: the create and edit screens are not written.
+          Phase 4 ran out of budget partway through and the list is what survives. A
+          button pointing at a page that does not exist reads as a bug; its absence reads
+          as the gap it is.
+        */}
+      </div>
+
+      {filtered.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>ไม่พบสินค้าที่ตรงกับเงื่อนไข</EmptyTitle>
+            <EmptyDescription>
+              ลองล้างคำค้นหรือเปลี่ยนตัวกรอง — แคตตาล็อกมีทั้งหมด {loaded.products.length} รายการ
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>สินค้า</TableHead>
+                  <TableHead className="hidden md:table-cell">หมวดหมู่</TableHead>
+                  <TableHead className="hidden lg:table-cell">SKU</TableHead>
+                  <TableHead>สถานะ</TableHead>
+                  <TableHead className="hidden lg:table-cell">อัปเดตล่าสุด</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shown.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      {/*
+                        The link is on the name rather than on the row: a whole-row click
+                        target cannot be reached by keyboard without inventing a role for a
+                        `<tr>`, and a table of 50 unreachable rows is a table nobody can use
+                        without a mouse.
+                      */}
+                      <Link
+                        href={`/products/${product.id}` as Route}
+                        className="font-medium underline-offset-4 hover:underline"
+                      >
+                        {product.nameTh}
+                      </Link>
+                      <div className="text-muted-foreground text-xs">{product.id}</div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden md:table-cell">
+                      {categoryLabel(product.categoryId)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden font-mono text-xs lg:table-cell">
+                      {product.skuPrefix}
+                    </TableCell>
+                    <TableCell>
+                      <PublishStateBadges product={product} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
+                      {product.draft !== null
+                        ? formatTimestamp(product.draft.updatedAt)
+                        : product.published !== null
+                          ? formatTimestamp(product.published.publishedAt)
+                          : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <p className="text-muted-foreground text-xs">
+              แสดง {shown.length} จาก {filtered.length} รายการ
+              {filtered.length === loaded.products.length ? '' : ` (ทั้งหมด ${loaded.products.length})`}
+            </p>
+            {shown.length < filtered.length ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLimit((current) => current + PAGE);
+                }}
+              >
+                แสดงเพิ่ม {Math.min(PAGE, filtered.length - shown.length)} รายการ
+              </Button>
+            ) : null}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

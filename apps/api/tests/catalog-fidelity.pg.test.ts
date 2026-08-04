@@ -14,7 +14,6 @@ import { CONTRACT_VERSION, CONTRACT_VERSION_HEADER } from '@wewin/contract/versi
 import { createDatabase, createPool } from '@wewin/db/client';
 import { toDocument } from '@wewin/db/compile';
 import { documentHash } from '@wewin/db/hash';
-import { products } from '@wewin/db/schema';
 import { seedCatalog } from '@wewin/db/seed';
 
 import { parseEnv } from '../src/config/env';
@@ -73,13 +72,20 @@ const byId = (documents: readonly ProductDocument[]): Map<string, ProductDocumen
  * `seedCatalog` is what `pnpm db:seed` runs — `src/bin/seed.ts` is a wrapper around it —
  * so the path under test is the shipped one and not a test-local imitation.
  */
-async function seedIfEmpty(databaseUrl: string): Promise<void> {
+/**
+ * Seed unconditionally, every time.
+ *
+ * This was `seedIfEmpty`, which returned as soon as it saw one product — and "not empty"
+ * is the wrong question for a suite whose whole claim is that the database matches the
+ * fixture exactly. Other suites here legitimately add and publish products, so by the
+ * time this one ran the catalogue was 83 products deep and the comparison failed on work
+ * that was doing what it was supposed to. The claim is about a seeded catalogue, so this
+ * seeds one rather than hoping to find one.
+ */
+async function reseed(databaseUrl: string): Promise<void> {
   const pool = createPool(databaseUrl);
   try {
-    const db = createDatabase(pool);
-    const [existing] = await db.select({ id: products.id }).from(products).limit(1);
-    if (existing) return;
-    await seedCatalog(db, 'api-fidelity-test');
+    await seedCatalog(createDatabase(pool), 'api-fidelity-test');
   } finally {
     await pool.end();
   }
@@ -101,7 +107,7 @@ describeWithPg('the catalogue in Postgres is the catalogue in the fixture table'
   let servedWire: Map<string, ProductDocumentWire>;
 
   beforeAll(async () => {
-    await seedIfEmpty(env.DATABASE_URL);
+    await reseed(env.DATABASE_URL);
     booted = await bootApp(testEnv({ DATABASE_URL: env.DATABASE_URL }));
 
     const body = (await getJson(booted.baseUrl, '/catalog/products')) as {
