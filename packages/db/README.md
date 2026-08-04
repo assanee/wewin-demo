@@ -1,14 +1,14 @@
 # @wewin/db
 
-The Drizzle schema and migrations for the catalogue. **Only `apps/api` may depend on
-this package** — see "The import rule" below.
+The Drizzle schema and migrations for the catalogue and for auth. **Only `apps/api` may
+depend on this package** — see "The import rule" below.
 
 ```
 pnpm db:up                      # Postgres 18 on localhost:5433 — compose file at the repo root
 cp ../../.env.example ../../.env  # one .env, at the root
 pnpm db:migrate                 # apply drizzle/*.sql
 pnpm db:seed                    # write the 81-product table from @wewin/core into Postgres
-pnpm test                       # 46 tests; skips with a warning when DATABASE_URL is unset
+pnpm test                       # 85 tests; skips with a warning when DATABASE_URL is unset
 ```
 
 `DATABASE_URL` is found by walking up from here to the workspace root (`src/env-file.ts`),
@@ -122,10 +122,47 @@ matching rule belongs in the root `turbo.json`, which this package does not own:
 with `"tags": ["api"]` in `apps/api/turbo.json`. Until both halves exist,
 `turbo boundaries` has nothing to check and the rule is back to being a review promise.
 
+## Auth — `src/schema/auth.ts`
+
+Written by hand rather than bought in, because LINE decides the shape (plan section 6).
+Everything a hosted provider would have enforced has to be written down here instead, and
+the four vulnerabilities the plan names are all cases where "here" must be Postgres and
+not a service method:
+
+| plan | attack | what closes it |
+|---|---|---|
+| **(a)** account pre-hijacking | attacker registers the victim's address unverified and waits for the victim to arrive through Google | `user_emails_one_verified_owner` — UNIQUE on `address` WHERE verified — plus the `user_emails_strip_unverified` trigger, which deletes every unverified claim on an address inside the statement that proved it |
+| **(b)** OAuth `state` unbound | attacker starts the flow, signs in as themselves, gets the victim's browser to open the callback | `oauth_states.binding_hash`, `NOT NULL` — the digest of a cookie that only ever existed in the browser that started the flow. `SameSite=None` on that cookie because Apple posts back cross-site |
+| **(c)** refresh rotation races | six dashboard panels refresh at the same instant and reuse-detection reads five of them as theft | `rotate_refresh_token()` — one statement, `consumed_at` write-once, and a 15-second grace window that answers `graced` instead of `reused` |
+| **(d)** permission mismatch on boot | release N+1 adds a permission, the rollback to N does not recognise it and will not start | `permissions.code` **is** the primary key, so an upsert at boot is one statement and an unknown code in the database breaks nothing |
+
+Two more things from section 6: `guests` gives the plan's fourth scope variant
+`{ kind: 'guest', guestId }` something real to point at, so the anonymous funnel is
+representable; and there is no `menu` table, because permissions are the single source of
+truth and a hidden menu is not authorisation.
+
+### What holds a secret, and why it is that shape
+
+| column | holds | shape |
+|---|---|---|
+| `refresh_tokens.token_hash` · `auth_tokens.token_hash` · `oauth_states.state_hash` · `oauth_states.binding_hash` | SHA-256 of 256 random bits | `char(64)` + `CHECK ~ '^[0-9a-f]{64}$'` |
+| `password_credentials.password_hash` | argon2id PHC string | `CHECK LIKE '$argon2id$%'` |
+| `oauth_states.pkce_challenge` | the S256 challenge — public, already sent to the provider | plain `text`; the *verifier* rides in the httpOnly cookie and is never stored |
+
+SHA-256 for the random tokens and argon2id for the password is the same decision made
+twice from opposite premises: a 256-bit random token has no search space worth a work
+factor, and a human's password has nothing but search space. The format CHECKs are the
+load-bearing part — a raw base64url token is not 64 lower-case hex characters, so a
+service that forgets to hash fails on the write that did it rather than storing a live
+credential nothing downstream can tell from a digest. A dump of this database contains
+nothing that can be replayed.
+
 ## Migrations
 
-`drizzle/0000_catalog.sql` is generated from `src/schema` — regenerate with
-`pnpm db:generate`, never edit by hand. `drizzle/0001_catalog_freeze.sql` is written by
-hand because drizzle-kit does not generate triggers; it holds the freeze triggers, the
-publish-order note, and two CHECKs on the document blob. Both are applied by the same
-`drizzle-kit migrate`, in order.
+`drizzle/0000_catalog.sql` and `drizzle/0002_auth.sql` are generated from `src/schema` —
+regenerate with `pnpm db:generate`, never edit by hand. `drizzle/0001_catalog_freeze.sql`
+and `drizzle/0003_auth_guards.sql` are written by hand (via `db:generate --custom`)
+because drizzle-kit does not generate triggers or functions: the first holds the freeze
+triggers and the publish-order note, the second holds the auth triggers and
+`rotate_refresh_token()`. All four are applied by the same `drizzle-kit migrate`, in
+order.

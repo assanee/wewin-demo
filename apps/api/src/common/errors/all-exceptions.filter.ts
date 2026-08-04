@@ -17,6 +17,10 @@ import { AppError, type ErrorCode, type ErrorEnvelope, type JsonValue } from './
 /** Codes Nest itself produces before any of our code runs — 404s, malformed JSON bodies. */
 const CODE_BY_STATUS: ReadonlyMap<number, ErrorCode> = new Map([
   [HttpStatus.BAD_REQUEST, 'BAD_REQUEST'],
+  // The guard throws Nest's own UnauthorizedException/ForbiddenException, so these two are
+  // the entries that keep `code` honest for every 401 and 403 in the process.
+  [HttpStatus.UNAUTHORIZED, 'UNAUTHENTICATED'],
+  [HttpStatus.FORBIDDEN, 'FORBIDDEN'],
   [HttpStatus.NOT_FOUND, 'NOT_FOUND'],
   [HttpStatus.CONFLICT, 'CONFLICT'],
   [HttpStatus.PAYLOAD_TOO_LARGE, 'PAYLOAD_TOO_LARGE'],

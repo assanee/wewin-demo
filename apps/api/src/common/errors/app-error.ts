@@ -15,6 +15,15 @@ export type JsonValue = string | number | boolean | null | readonly JsonValue[] 
 export const ERROR_CODES = [
   'BAD_REQUEST',
   'VALIDATION_FAILED',
+  /*
+   * Two codes and not one, because a client does two different things with them.
+   * `UNAUTHENTICATED` means "there is nobody here yet" and the answer is to refresh or sign
+   * in; `FORBIDDEN` means "we know who you are and no", and retrying with a new token is a
+   * loop. Until these existed both serialised as `BAD_REQUEST` — the HTTP status was right
+   * and the envelope, which is the part clients are told to branch on, was a lie.
+   */
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
   'NOT_FOUND',
   'CONFLICT',
   'PAYLOAD_TOO_LARGE',
@@ -62,6 +71,11 @@ export class AppError extends Error {
 
   static validationFailed(message: string, details?: JsonValue): AppError {
     return new AppError('VALIDATION_FAILED', 422, message, details);
+  }
+
+  /** Nobody is here yet. The client refreshes or signs in; retrying unchanged is a loop. */
+  static unauthenticated(message: string, details?: JsonValue): AppError {
+    return new AppError('UNAUTHENTICATED', 401, message, details);
   }
 
   static notFound(message: string, details?: JsonValue): AppError {

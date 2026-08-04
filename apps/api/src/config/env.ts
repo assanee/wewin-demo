@@ -81,6 +81,21 @@ export const envSchema = z.object({
    */
   DATABASE_STATEMENT_TIMEOUT_MS: positiveMs(15_000),
 
+  /*
+   * One flag for every cookie this process sets: the OAuth binding cookie (`__Host-` +
+   * `Secure` + `SameSite=None`), the refresh cookie, and the guest cart cookie. There were
+   * two of these and a red-team pass pointed out the obvious consequence — two flags are
+   * two profiles, and the one nobody sets is the one production runs on.
+   *
+   * Defaults to on, and is only turned off explicitly. `false` is for a laptop with no TLS
+   * terminator, and `parseOAuthConfig` refuses it outright when the callback origin is not
+   * a loopback address, so it cannot be the thing a deployment forgot.
+   */
+  COOKIE_SECURE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+
   LOG_LEVEL: z.enum(LOG_LEVELS).default('log'),
   LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
 

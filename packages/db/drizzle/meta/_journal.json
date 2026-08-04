@@ -15,6 +15,27 @@
       "when": 1785783934035,
       "tag": "0001_catalog_freeze",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785796283753,
+      "tag": "0002_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785796284108,
+      "tag": "0003_auth_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785801138177,
+      "tag": "0004_auth_hardening",
+      "breakpoints": true
     }
   ]
 }

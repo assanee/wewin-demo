@@ -71,7 +71,7 @@ compile ด้วย `tsc` ธรรมดา (ไม่ bundle) แลกมา
 | **0** ✅ | ตั้ง monorepo · แยก `packages/core` · **ไม่เปลี่ยนพฤติกรรมอะไรเลย** ยังเป็น cm ยังเป็นบาท | **ผ่านแล้ว** — 219 เทสต์ผ่านโดยไม่แก้ assertion สักตัว (พิสูจน์ด้วย diff: บรรทัดที่เปลี่ยนในไฟล์เทสต์ทั้ง 13 มีแต่ `import`) · ไฟล์โดเมนทุกไฟล์ byte-identical ยกเว้น `MIN_QTY`/`MAX_QTY` ที่ย้ายไป `constants.ts` ตามข้อ 1 |
 | **1** ✅ | เงิน: `Money` เป็น minor units ใน core (บาทสกุลเดียว) + VAT + กฎปัดเศษ | **ผ่านแล้ว** — เทียบกับ `calcPrice` ของ v1.0.0 ที่ vendor ไว้ 55,000+ ชุด · ตรงกันทุกตัว **ยกเว้น 87 ชุดที่ v1 คิดขาดไป ฿1** (ดูข้อ 4.6) |
 | **2** ✅ | หน่วยวัด: canonical µm + grid + imperial | **ผ่านแล้ว** — 292 เทสต์ · ราคาไม่ขยับสักบาท (`correctedUp` ยังเป็น 87) · พิสูจน์ด้วย mutation test ว่า harness จับสเกลพื้นที่ผิด 1e6 ได้จริง (ข้อ 4.7) |
-| **3** | `apps/api` + Postgres + Drizzle + auth + RBAC · ย้าย catalog เข้า DB (seed จากตารางเดิม) | |
+| **3** ✅ | `apps/api` + Postgres + Drizzle + auth + RBAC · ย้าย catalog เข้า DB | **ผ่านแล้ว** — 795 เทสต์ · core ยัง 296 ไม่ถูกแตะ · ทำเป็นสองรอบ 3a (แคตตาล็อก) และ 3b (auth) · ทั้งสี่ช่องโหว่ในข้อ 6 ปิดแล้วและ mutation test ยืนยันว่าเทสต์แดงเมื่อถอดการแก้ออก · **ยังไม่เคยต่อ provider จริงสักเจ้า** |
 | **4** | `apps/dashboard` + จัดการสินค้า/option/รูป | |
 | **5** | Order + state machine + freeze point + row-level security · **outbox แจ้งเตือน (ข้อ 10)** | outbox ต้องมาพร้อม state machine ไม่ใช่ตามหลัง — ถ้าเผลอเรียกส่งตรงในโค้ด transition จะถอดออกยาก |
 | **6** | i18n 8 ภาษา + Next.js web | เทมเพลตแจ้งเตือน ~96 ข้อความอยู่ในเฟสนี้ |

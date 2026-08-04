@@ -59,6 +59,20 @@ export async function connect(): Promise<Database> {
   return db;
 }
 
+/**
+ * The same pool, for the tests that need two connections at once.
+ *
+ * `tests/auth.test.ts` proves that a unique index and not a service method is what makes
+ * two simultaneous claims on one email address mutually exclusive, and that requires two
+ * transactions open at the same instant — which is two clients, not two awaits on one.
+ * It goes through `connect()` so the migrations are applied exactly once either way.
+ */
+export async function connectPool(): Promise<Pool> {
+  await connect();
+  if (!cached) throw new Error('connect() returned without opening a pool');
+  return cached.pool;
+}
+
 afterAll(async () => {
   const open = cached;
   cached = undefined;
@@ -70,6 +84,7 @@ export const PG = {
   uniqueViolation: '23505',
   foreignKeyViolation: '23503',
   checkViolation: '23514',
+  notNullViolation: '23502',
   /** What the freeze triggers raise, via `USING ERRCODE = 'restrict_violation'`. */
   restrictViolation: '23001',
 } as const;
