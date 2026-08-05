@@ -1,18 +1,10 @@
 import { Check, Ban } from 'lucide-react';
-import type { SkuGroup } from '@wewin/core';
-import type { OptionState } from '@wewin/core/option-states';
-import { OptionGroupBase } from './OptionGroupBase';
+import { OptionGroupBase, OptionLabel, type OptionGroupProps } from './OptionGroupBase';
 
-interface SwatchGroupProps {
-  group: SkuGroup;
-  selected: string;
-  states: Record<string, OptionState>;
-  onSelect: (code: string) => void;
-}
-
-export function SwatchGroup({ group, selected, states, onSelect }: SwatchGroupProps) {
+export function SwatchGroup({ product, group, selected, states, onSelect }: OptionGroupProps) {
   return (
     <OptionGroupBase
+      product={product}
       group={group}
       selected={selected}
       states={states}
@@ -33,9 +25,12 @@ export function SwatchGroup({ group, selected, states, onSelect }: SwatchGroupPr
             className={`h-5 w-5 shrink-0 rounded-xs border border-line ${state.blocked ? 'opacity-40' : ''}`}
             style={{ backgroundColor: value.swatchHex }}
           />
-          <span className={`min-w-0 flex-1 truncate text-small ${state.blocked ? 'line-through' : ''}`}>
-            {value.labelTh}
-          </span>
+          <OptionLabel
+            product={product}
+            group={group}
+            value={value}
+            className={`min-w-0 flex-1 truncate text-small ${state.blocked ? 'line-through' : ''}`}
+          />
           {state.blocked ? (
             <Ban size={13} aria-hidden className="shrink-0 text-danger" />
           ) : isSelected ? (

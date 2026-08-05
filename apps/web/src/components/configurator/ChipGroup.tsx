@@ -1,18 +1,10 @@
 import { Ban } from 'lucide-react';
-import type { SkuGroup } from '@wewin/core';
-import type { OptionState } from '@wewin/core/option-states';
-import { OptionGroupBase } from './OptionGroupBase';
+import { OptionGroupBase, OptionLabel, type OptionGroupProps } from './OptionGroupBase';
 
-interface ChipGroupProps {
-  group: SkuGroup;
-  selected: string;
-  states: Record<string, OptionState>;
-  onSelect: (code: string) => void;
-}
-
-export function ChipGroup({ group, selected, states, onSelect }: ChipGroupProps) {
+export function ChipGroup({ product, group, selected, states, onSelect }: OptionGroupProps) {
   return (
     <OptionGroupBase
+      product={product}
       group={group}
       selected={selected}
       states={states}
@@ -28,9 +20,12 @@ export function ChipGroup({ group, selected, states, onSelect }: ChipGroupProps)
                 : 'border-line bg-panel-2 text-chalk-2 hover:border-line-2'
           }`}
         >
-          <span className={`min-w-0 truncate text-small ${state.blocked ? 'line-through' : ''}`}>
-            {value.labelTh}
-          </span>
+          <OptionLabel
+            product={product}
+            group={group}
+            value={value}
+            className={`min-w-0 truncate text-small ${state.blocked ? 'line-through' : ''}`}
+          />
           {state.blocked ? <Ban size={13} aria-hidden className="shrink-0 text-danger" /> : null}
         </span>
       )}

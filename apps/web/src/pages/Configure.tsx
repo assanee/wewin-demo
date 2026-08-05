@@ -7,15 +7,17 @@ import { defaultStateFor, useConfigurator, type ConfiguratorState } from '../sta
 import { useDisplayUnit } from '../state/displayUnitContext';
 import { useMediaQuery } from '../state/useMediaQuery';
 import { getCustomGroup, getSkuGroup } from '@wewin/core/filters';
-import { formatBaht, formatDimensions, formatLength, formatSqm } from '@wewin/core/format';
-import { sqUmToSqm } from '@wewin/core/pricing';
 import { configHash } from '@wewin/core/hash';
 import { buildShareUrl, readSharedConfig, type SharedConfig } from '@wewin/core/share-link';
 import { useQuote } from '../state/useQuote';
 import { useToast } from '../components/common/useToast';
 import type { QuoteLine } from '@wewin/core/quote';
-import type { CustomGroup, Product, SkuGroup } from '@wewin/core';
+import type { CustomGroup, OptionValue, Product, SkuGroup } from '@wewin/core';
+import type { OptionState } from '@wewin/core/option-states';
+import type { PlainKey } from '../i18n/keys';
+import { useLocale } from '../state/localeContext';
 import { ButtonLink } from '../components/common/Button';
+import { CatalogText } from '../components/common/CatalogText';
 import { BottomSheet } from '../components/common/BottomSheet';
 import { Schematic } from '../components/common/Schematic';
 import { UnitPicker } from '../components/common/UnitPicker';
@@ -35,6 +37,7 @@ export function Configure() {
   const [searchParams] = useSearchParams();
   const product = getProductBySlug(slug ?? '');
   const { getLine, ready } = useQuote();
+  const { t } = useLocale();
 
   if (!product) return <NotFound />;
 
@@ -46,13 +49,13 @@ export function Configure() {
   if (editingLineId && !ready) {
     return (
       <main className="container-page py-16">
-        <p className="text-body text-chalk-2">กำลังโหลดรายการ…</p>
+        <p className="text-body text-chalk-2">{t('configure.loadingLine')}</p>
       </main>
     );
   }
 
-  // A saved line wins over link parameters: opening "แก้ไขการตั้งค่า" on a line is
-  // a stronger intent than whatever query string happens to be along for the ride.
+  // A saved line wins over link parameters: opening the edit action on a line is a
+  // stronger intent than whatever query string happens to be along for the ride.
   const shared = editingLine ? null : readSharedConfig(product, searchParams);
 
   // Keyed on the product and the line so switching either resets the configuration
@@ -81,6 +84,7 @@ function ConfigureProduct({
   // How the sizes on this page are read out, and nothing more. Every measurement the
   // page holds stays canonical micrometres; this reaches only the format calls.
   const { unit } = useDisplayUnit();
+  const { t, f } = useLocale();
   const navigate = useNavigate();
   const { addLine, updateLine } = useQuote();
   const { showToast } = useToast();
@@ -138,18 +142,24 @@ function ConfigureProduct({
 
     if (editingLine) {
       updateLine(editingLine.lineId, draft);
-      showToast({ messageTh: 'บันทึกการแก้ไขแล้ว', action: { labelTh: 'ดูตะกร้า', to: '/quote' } });
+      showToast({
+        messageKey: 'toast.lineSaved',
+        action: { labelKey: 'toast.viewQuote', to: '/quote' },
+      });
       navigate('/quote');
       return;
     }
 
     addLine(draft);
-    showToast({ messageTh: 'เพิ่มลงรายการแล้ว', action: { labelTh: 'ดูตะกร้า', to: '/quote' } });
+    showToast({
+      messageKey: 'toast.lineAdded',
+      action: { labelKey: 'toast.viewQuote', to: '/quote' },
+    });
   };
 
   const profileHex = swatchOf('profile_color', '#7C7F85');
   const glassHex = swatchOf('glass_color', '#C9E4F7');
-  const minBillableSqm = sqUmToSqm(product.minBillableSqUm);
+  const minBillableSqUm = product.minBillableSqUm;
 
   // `location` is read in an event-free render path only through this memo, which
   // falls back to a relative URL so nothing here depends on `window` existing.
@@ -173,7 +183,10 @@ function ConfigureProduct({
   // Only rows with a confirmed value are shown. The unconfirmed ones (profile
   // thickness, standards, warranty) are held as null in company.ts rather than
   // filled with plausible figures — see the note there.
-  const knownSpecs = productSpecs.filter((row) => row.valueTh !== null);
+  const knownSpecs = productSpecs.filter(
+    (row): row is { termKey: typeof row.termKey; valueKey: NonNullable<typeof row.valueKey> } =>
+      row.valueKey !== null,
+  );
 
   // Rendered in exactly one of two places depending on viewport — never both.
   const specTable = (
@@ -181,17 +194,15 @@ function ConfigureProduct({
       <dl>
         {knownSpecs.map((row) => (
           <div
-            key={row.termTh}
+            key={row.termKey}
             className="flex min-w-0 flex-col gap-0.5 border-b border-line px-3 py-2"
           >
-            <dt className="text-caption text-chalk-3">{row.termTh}</dt>
-            <dd className="min-w-0 text-small text-chalk-2">{row.valueTh}</dd>
+            <dt className="text-caption text-chalk-3">{t(row.termKey)}</dt>
+            <dd className="min-w-0 text-small text-chalk-2">{t(row.valueKey)}</dd>
           </div>
         ))}
       </dl>
-      <p className="px-3 py-2 text-caption text-chalk-3">
-        สเปกละเอียด มาตรฐาน และเงื่อนไขรับประกัน สอบถามทีมงานได้ที่ช่องทางติดต่อด้านล่าง
-      </p>
+      <p className="px-3 py-2 text-caption text-chalk-3">{t('configure.spec.note')}</p>
     </div>
   );
 
@@ -204,8 +215,14 @@ function ConfigureProduct({
             <div className="h-55 w-full md:h-70 lg:h-80">
               <ElevationPreview
                 ratio={ratioOf(widthUm, heightUm)}
-                widthLabel={formatLength(widthUm, unit)}
-                heightLabel={formatLength(heightUm, unit)}
+                // Through the locale's formatter, not core's. The drawing layer takes
+                // numerals as strings — `ratioOf` is the one place a canonical length
+                // is widened, and no `bigint` may cross into the SVG — so the
+                // formatting has to happen on this side of that boundary, and the
+                // dimension numerals on a drawing are read the way the reader reads
+                // numbers like everything else on the page.
+                widthLabel={f.length(widthUm, unit)}
+                heightLabel={f.length(heightUm, unit)}
                 elevation={product.elevation}
                 profileHex={profileHex}
                 glassHex={glassHex}
@@ -224,26 +241,28 @@ function ConfigureProduct({
           <ul className="mt-3 grid grid-cols-3 gap-3">
             {(
               [
-                ['ด้านหน้า', widthUm, heightUm],
+                ['configure.view.front', widthUm, heightUm],
                 // Integer division truncates by at most a micrometre, which is a
                 // millionth of a millimetre on a 64px sketch — it can reach neither
                 // a pixel nor a rendered numeral.
-                ['ครึ่งบาน', widthUm / 2n, heightUm],
-                ['ช่องแสงบน', widthUm, heightUm / 3n],
-              ] as [string, bigint, bigint][]
-            ).map(([label, w, h]) => (
-              <li key={label} className="min-w-0 border border-line bg-panel p-2">
+                ['configure.view.halfPanel', widthUm / 2n, heightUm],
+                ['configure.view.transom', widthUm, heightUm / 3n],
+              ] as [PlainKey, bigint, bigint][]
+            ).map(([labelKey, w, h]) => (
+              <li key={labelKey} className="min-w-0 border border-line bg-panel p-2">
                 <div className="h-16 w-full">
                   <Schematic
                     ratio={ratioOf(w, h)}
-                    sizeLabel={formatDimensions(w, h, unit)}
+                    sizeLabel={f.dimensions(w, h, unit)}
                     elevation={product.elevation}
                     profileHex={profileHex}
                     glassHex={glassHex}
                     frameRatio={0.07}
                   />
                 </div>
-                <p className="mt-1 truncate text-center text-caption text-chalk-3">{label}</p>
+                <p className="mt-1 truncate text-center text-caption text-chalk-3">
+                  {t(labelKey)}
+                </p>
               </li>
             ))}
           </ul>
@@ -260,7 +279,9 @@ function ConfigureProduct({
         <div className="flex min-w-0 flex-col gap-6">
           {/* 1. Name + rename */}
           <div className="min-w-0">
-            <p className="text-caption text-chalk-3">{product.nameTh}</p>
+            <p className="text-caption text-chalk-3">
+              <CatalogText at={{ on: 'productName', productId: product.id }} th={product.nameTh} />
+            </p>
             {editingName ? (
               <div className="mt-1 flex items-stretch gap-2">
                 <input
@@ -270,13 +291,13 @@ function ConfigureProduct({
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === 'Escape') setEditingName(false);
                   }}
-                  aria-label="ชื่อรายการนี้"
+                  aria-label={t('configure.name.editLabel')}
                   className="min-w-0 flex-1 rounded-xs border border-line-2 bg-panel-2 px-3 py-2 text-title text-chalk outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => setEditingName(false)}
-                  aria-label="บันทึกชื่อรายการ"
+                  aria-label={t('configure.name.save')}
                   className="flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-xs border border-line text-chalk-2 hover:text-chalk"
                 >
                   <Check size={16} aria-hidden />
@@ -290,14 +311,19 @@ function ConfigureProduct({
                 <button
                   type="button"
                   onClick={() => setEditingName(true)}
-                  aria-label="ตั้งชื่อรายการนี้เอง"
+                  aria-label={t('configure.name.rename')}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xs border border-line text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk"
                 >
                   <Pencil size={15} aria-hidden />
                 </button>
               </div>
             )}
-            <p className="mt-2 max-w-[60ch] text-small text-chalk-2">{product.summaryTh}</p>
+            <p className="mt-2 max-w-[60ch] text-small text-chalk-2">
+              <CatalogText
+                at={{ on: 'productSummary', productId: product.id }}
+                th={product.summaryTh}
+              />
+            </p>
 
             <div className="mt-4">
               <ConfiguratorToolbar
@@ -313,12 +339,12 @@ function ConfigureProduct({
           </div>
 
           {/* 2. Measurements */}
-          <section aria-label="ขนาด" className="flex flex-col gap-4">
+          <section aria-label={t('configure.size.heading')} className="flex flex-col gap-4">
             {/* The picker sits with the fields it retitles rather than off in the
                 header: the customer reaches for it while looking at a tape measure,
                 and this is the one place on the site where the answer is typed. */}
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-              <h2 className="text-body text-chalk">ขนาด</h2>
+              <h2 className="text-body text-chalk">{t('configure.size.heading')}</h2>
               <UnitPicker />
             </div>
 
@@ -326,6 +352,7 @@ function ConfigureProduct({
               {customGroups.map((group) => (
                 <MeasureInput
                   key={group.code}
+                  product={product}
                   group={group}
                   value={config.measures[group.code] ?? group.defaultUm}
                   // The unit comes back from the field rather than being read off the
@@ -337,8 +364,7 @@ function ConfigureProduct({
               ))}
             </div>
             <p className="numeric text-small text-blueprint">
-              พื้นที่ {formatSqm(config.price.areaSqm)} ตร.ม. · คิดขั้นต่ำ{' '}
-              {formatSqm(minBillableSqm)} ตร.ม.
+              {t('configure.area.line', { areaSqUm: config.price.areaSqUm, minBillableSqUm })}
             </p>
           </section>
 
@@ -350,28 +376,42 @@ function ConfigureProduct({
             const onSelect = (code: string) => config.select(group.code, code);
 
             return (
-              <section key={group.code} aria-label={group.labelTh} className="flex flex-col gap-2">
+              <section key={group.code} className="flex flex-col gap-2">
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <h2 className="text-body text-chalk">{group.labelTh}</h2>
+                  <h2 className="text-body text-chalk">
+                    <CatalogText
+                      at={{ on: 'groupLabel', productId: product.id, groupCode: group.code }}
+                      th={group.labelTh}
+                    />
+                  </h2>
                   {group.includeInSkuCode ? (
-                    <span className="text-caption text-chalk-3">มีผลกับรหัสสินค้า</span>
+                    <span className="text-caption text-chalk-3">
+                      {t('configure.group.affectsSku')}
+                    </span>
                   ) : null}
                 </div>
 
                 {group.input === 'swatch' ? (
-                  <SwatchGroup group={group} selected={selected} states={states} onSelect={onSelect} />
+                  <SwatchGroup product={product} group={group} selected={selected} states={states} onSelect={onSelect} />
                 ) : group.input === 'toggle' ? (
-                  <ToggleOption group={group} selected={selected} states={states} onSelect={onSelect} />
+                  <ToggleOption product={product} group={group} selected={selected} states={states} onSelect={onSelect} />
                 ) : (
-                  <ChipGroup group={group} selected={selected} states={states} onSelect={onSelect} />
+                  <ChipGroup product={product} group={group} selected={selected} states={states} onSelect={onSelect} />
                 )}
 
                 {/* Reasons are rendered, not only tooltipped: a tooltip is
-                    unreachable on touch, and this is the explanation that matters. */}
+                    unreachable on touch, and this is the explanation that matters.
+
+                    The reason is the same `Message` the tooltip and the issue panel
+                    get, so the three cannot drift into three translations of one rule. */}
                 {blocked.map((value) => (
-                  <p key={value.code} className="text-caption text-chalk-3">
-                    <span className="text-danger">{value.labelTh}</span> — {states[value.code]?.reasonTh}
-                  </p>
+                  <BlockedReason
+                    key={value.code}
+                    product={product}
+                    group={group}
+                    value={value}
+                    state={states[value.code]}
+                  />
                 ))}
               </section>
             );
@@ -395,11 +435,11 @@ function ConfigureProduct({
 
           {isTablet ? null : specTable}
 
-          <p className="text-caption text-chalk-3">ขั้นตอนขอใบเสนอราคาจะเพิ่มในเวอร์ชันถัดไป</p>
+          <p className="text-caption text-chalk-3">{t('configure.futureQuote')}</p>
 
           <div>
             <ButtonLink to="/products" variant="ghost">
-              กลับไปดูสินค้าทั้งหมด
+              {t('nav.backToProducts')}
             </ButtonLink>
           </div>
         </div>
@@ -420,31 +460,31 @@ function ConfigureProduct({
 
       <BottomSheet
         open={breakdownOpen && !isTablet}
-        titleTh="รายละเอียดราคา"
+        title={t('configure.breakdown.title')}
         size="auto"
         onClose={() => setBreakdownOpen(false)}
       >
         <div className="flex flex-col gap-4">
-          <PriceBreakdownList price={config.price} minBillableSqm={minBillableSqm} />
+          <PriceBreakdownList price={config.price} minBillableSqUm={minBillableSqUm} />
           <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-            <span className="text-small text-chalk-2">จำนวน</span>
+            <span className="text-small text-chalk-2">{t('configure.qty')}</span>
             <div className="flex items-stretch overflow-hidden rounded-xs border border-line">
               <button
                 type="button"
                 onClick={() => config.setQty(Math.max(1, config.qty - 1))}
                 disabled={config.qty <= 1}
-                aria-label="ลดจำนวน 1 ชิ้น"
+                aria-label={t('configure.qty.decrease')}
                 className="flex h-11 w-11 items-center justify-center bg-panel-2 text-chalk-2 disabled:opacity-30"
               >
                 <Minus size={15} aria-hidden />
               </button>
               <output className="numeric flex h-11 w-12 items-center justify-center bg-panel-2 text-body text-chalk">
-                {config.qty}
+                {f.integer(config.qty)}
               </output>
               <button
                 type="button"
                 onClick={() => config.setQty(Math.min(99, config.qty + 1))}
-                aria-label="เพิ่มจำนวน 1 ชิ้น"
+                aria-label={t('configure.qty.increase')}
                 className="flex h-11 w-11 items-center justify-center bg-panel-2 text-chalk-2"
               >
                 <Plus size={15} aria-hidden />
@@ -453,13 +493,56 @@ function ConfigureProduct({
           </div>
 
           <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
-            <span className="text-body text-chalk">ราคารวม</span>
-            <span className="numeric text-title text-lime">{formatBaht(config.price.totalMinor)}</span>
+            <span className="text-body text-chalk">{t('price.total')}</span>
+            <span className="numeric text-title text-lime">{f.baht(config.price.totalMinor)}</span>
           </div>
-          <p className="numeric text-caption text-chalk-3">ราคายังไม่รวม VAT 7%</p>
+          <p className="numeric text-caption text-chalk-3">{t('price.vatExcluded')}</p>
         </div>
       </BottomSheet>
     </main>
+  );
+}
+
+/**
+ * A struck-through option and why it cannot be chosen.
+ *
+ * Its own component because it needs the locale to render a `Message`, and because the
+ * option's own name is catalogue content that has to be able to mark itself Thai.
+ */
+function BlockedReason({
+  product,
+  group,
+  value,
+  state,
+}: {
+  product: Product;
+  group: SkuGroup;
+  value: OptionValue;
+  state: OptionState | undefined;
+}) {
+  const { message } = useLocale();
+  const reason = state?.reason;
+  const rendered = reason ? message(reason) : null;
+
+  return (
+    <p className="text-caption text-chalk-3">
+      <CatalogText
+        at={{
+          on: 'optionLabel',
+          productId: product.id,
+          groupCode: group.code,
+          valueCode: value.code,
+        }}
+        th={value.labelTh}
+        className="text-danger"
+      />
+      {rendered ? (
+        <>
+          {' — '}
+          <span {...(rendered.fallback ? { lang: 'th' } : {})}>{rendered.text}</span>
+        </>
+      ) : null}
+    </p>
   );
 }
 

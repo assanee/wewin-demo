@@ -2,12 +2,14 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import type { Product } from '@wewin/core';
 import { countProfileColors, getCustomGroup, getSkuGroup, measureRange } from '@wewin/core/filters';
-import { formatBaht, formatDimensions, formatLeadTime, formatRange } from '@wewin/core/format';
 import { bahtToMinor } from '@wewin/core/money';
 import type { LengthUnit } from '@wewin/core/units';
 import { Badge } from '../common/Badge';
+import { CatalogText } from '../common/CatalogText';
 import { Schematic } from '../common/Schematic';
 import { useDisplayUnit } from '../../state/displayUnitContext';
+import { useLocale } from '../../state/localeContext';
+import type { Formatters } from '../../i18n/format';
 
 interface ProductCardProps {
   product: Product;
@@ -33,7 +35,11 @@ const defaultSwatch = (product: Product, groupCode: string, fallback: string): s
  * back — a card that re-rounded a catalogue default to show it in inches would be the
  * exact failure plan 4.1 forbids.
  */
-const defaultSize = (product: Product, unit: LengthUnit): { ratio: number; label: string } => {
+const defaultSize = (
+  product: Product,
+  unit: LengthUnit,
+  f: Formatters,
+): { ratio: number; label: string } => {
   const width = getCustomGroup(product, 'width');
   const height = getCustomGroup(product, 'height');
 
@@ -44,7 +50,7 @@ const defaultSize = (product: Product, unit: LengthUnit): { ratio: number; label
 
   return {
     ratio: Number(width.defaultUm) / Number(height.defaultUm),
-    label: formatDimensions(width.defaultUm, height.defaultUm, unit),
+    label: f.dimensions(width.defaultUm, height.defaultUm, unit),
   };
 };
 
@@ -52,7 +58,8 @@ export function ProductCard({ product }: ProductCardProps) {
   // The unit the customer picked, not the one the row was authored in: the badge and
   // the size on the card have to agree with the configurator they lead to.
   const { unit } = useDisplayUnit();
-  const size = defaultSize(product, unit);
+  const { t, f } = useLocale();
+  const size = defaultSize(product, unit, f);
   const range = measureRange(product, 'width');
   const colorCount = countProfileColors(product);
 
@@ -79,20 +86,26 @@ export function ProductCard({ product }: ProductCardProps) {
                  in the tab order and read out as the link. */
               className="after:absolute after:inset-0 after:content-['']"
             >
-              {product.nameTh}
+              <CatalogText at={{ on: 'productName', productId: product.id }} th={product.nameTh} />
             </Link>
           </h3>
-          <p className="mt-1 text-small text-chalk-2">{product.summaryTh}</p>
+          <p className="mt-1 text-small text-chalk-2">
+            <CatalogText
+              at={{ on: 'productSummary', productId: product.id }}
+              th={product.summaryTh}
+            />
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Badge>{colorCount} สีโปรไฟล์</Badge>
+          <Badge>{t('product.colorCount', { count: colorCount })}</Badge>
           {range ? (
             <Badge tone="blueprint" mono>
-              {/* formatRange writes the unit itself, and its own ≈ when a bound
-                  cannot be said exactly in the unit on screen — every authored bound
-                  is off the eighth-inch grid, so imperial always earns the marker. */}
-              ปรับขนาดได้ {formatRange(range.minUm, range.maxUm, unit)}
+              {/* `f.range` writes the unit itself, and its own ≈ when a bound cannot be
+                  said exactly in the unit on screen — every authored bound is off the
+                  eighth-inch grid, so imperial always earns the marker. The catalogue
+                  entry decides where the numbers go in the sentence. */}
+              {t('product.sizeRange', { minUm: range.minUm, maxUm: range.maxUm, unit })}
             </Badge>
           ) : null}
         </div>
@@ -100,13 +113,13 @@ export function ProductCard({ product }: ProductCardProps) {
         <div className="mt-auto flex items-end justify-between gap-3 border-t border-line pt-3">
           <div className="min-w-0">
             {/* Never a per-piece price here — the size is not known yet (spec 7). */}
-            <p className="text-caption text-chalk-3">เริ่มต้น</p>
+            <p className="text-caption text-chalk-3">{t('price.from')}</p>
             <p className="numeric text-lead text-chalk">
-              {formatBaht(bahtToMinor(product.pricePerSqm))}
-              <span className="text-small text-chalk-2"> / ตร.ม.</span>
+              {f.baht(bahtToMinor(product.pricePerSqm))}
+              <span className="text-small text-chalk-2"> {t('price.perSqmSuffix')}</span>
             </p>
             <p className="numeric mt-1 text-caption text-chalk-3">
-              ผลิต {formatLeadTime(product.leadTimeDays)}
+              {t('leadTime.produce', { days: product.leadTimeDays })}
             </p>
           </div>
 

@@ -1,4 +1,4 @@
-import type { SupportedLocale } from '../locale';
+import { SUPPORTED_LOCALES, type SupportedLocale } from '../../i18n';
 
 /**
  * The messages, one per `notification_rules.template_key`.
@@ -177,15 +177,57 @@ const TH: Readonly<Record<string, Renderer>> = {
   ),
 };
 
-const CATALOGUE: Readonly<Record<SupportedLocale, Readonly<Record<string, Renderer>>>> = { th: TH };
+/**
+ * One catalogue per language, seven of them empty.
+ *
+ * A `Record` over all eight and not `{ th: TH }`, because 6a widened `SUPPORTED_LOCALES`
+ * from one to eight and a lookup of `CATALOGUE['my']` on the old shape was `undefined` —
+ * which would have thrown inside `renderTemplate` rather than returning `undefined`, and a
+ * throw in the worker is a retried delivery rather than a dead row somebody reads.
+ *
+ * Empty and not machine-translated. Plan 10.6 sizes this at ~12 events × 8 languages ≈ 96
+ * messages and names it the same translator bottleneck as plan 13's product content. What
+ * this shape buys is that adding a language is adding entries to one object, and
+ * `resolveRenderLocale` starts using them the moment they exist.
+ */
+const EMPTY: Readonly<Record<string, Renderer>> = {};
+
+const CATALOGUE: Readonly<Record<SupportedLocale, Readonly<Record<string, Renderer>>>> =
+  Object.fromEntries(
+    SUPPORTED_LOCALES.map((locale) => [locale, locale === 'th' ? TH : EMPTY]),
+  ) as Record<SupportedLocale, Readonly<Record<string, Renderer>>>;
 
 /** Every key this build can render. Sorted, so a diff of the coverage test reads cleanly. */
 export function templateKeys(locale: SupportedLocale): readonly string[] {
   return Object.keys(CATALOGUE[locale]).sort();
 }
 
+/**
+ * The one lookup, and the reason it is a function rather than an index.
+ *
+ * `CATALOGUE[locale][templateKey]` reaches `Object.prototype` for `templateKey` values that
+ * are not templates at all. Measured, on the real object:
+ *
+ *     'toString'       → a function; renders the string "[object Undefined]"
+ *     'constructor'    → a function; returns an object with no subject and no body,
+ *                        so the email goes out with `undefined` in both
+ *     'valueOf'        → throws, and a throw in the worker is a **retried** delivery
+ *                        rather than a dead row somebody reads
+ *
+ * `hasTemplate` already used `Object.hasOwn` and answered `false` for all three, so the two
+ * functions disagreed about what a template is — and `renderTemplate`'s own doc comment
+ * ("never a placeholder") was false for the first of them. Reachable only through a
+ * `notification_rules.template_key` row, which `rules-coverage.pg.test.ts` checks; but that
+ * test checks `hasTemplate`, which is precisely the predicate the renderer was not using.
+ * One lookup means they cannot disagree again.
+ */
+function templateFor(locale: SupportedLocale, templateKey: string): Renderer | undefined {
+  const catalogue = CATALOGUE[locale];
+  return Object.hasOwn(catalogue, templateKey) ? catalogue[templateKey] : undefined;
+}
+
 export function hasTemplate(locale: SupportedLocale, templateKey: string): boolean {
-  return Object.hasOwn(CATALOGUE[locale], templateKey);
+  return templateFor(locale, templateKey) !== undefined;
 }
 
 /**
@@ -201,6 +243,6 @@ export function renderTemplate(
   templateKey: string,
   context: TemplateContext,
 ): RenderedTemplate | undefined {
-  const renderer = CATALOGUE[locale][templateKey];
+  const renderer = templateFor(locale, templateKey);
   return renderer === undefined ? undefined : renderer(context);
 }

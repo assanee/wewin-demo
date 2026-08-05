@@ -24,6 +24,7 @@ import {
 } from '@wewin/contract/admin';
 
 import { AppError } from '../common/errors/app-error';
+import { code, message } from '../i18n';
 import { DRIZZLE } from '../database/database.tokens';
 import { availabilityOf, type CompiledDraft, type DraftProductRow } from './draft-document';
 import { DraftRepository, type Tx, type VersionRow } from './draft.repository';
@@ -181,7 +182,9 @@ export class CatalogAdminService {
   async getProduct(productId: string): Promise<AdminProductWire> {
     return this.db.transaction(async (tx) => {
       const row = await this.drafts.findProductRow(tx, productId);
-      if (!row) throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+      if (!row) throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
 
       const published = await this.drafts.findVersion(tx, productId, 'published');
       const draft = await this.drafts.findVersion(tx, productId, 'draft');
@@ -284,7 +287,9 @@ export class CatalogAdminService {
   async openDraft(productId: string): Promise<DraftWire> {
     return this.db.transaction(async (tx) => {
       if (!(await this.drafts.lockProduct(tx, productId))) {
-        throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+        throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
       }
 
       const existing = await this.drafts.findVersion(tx, productId, 'draft');
@@ -333,7 +338,9 @@ export class CatalogAdminService {
   async discardDraft(productId: string, expectedDocumentHash: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       if (!(await this.drafts.lockProduct(tx, productId))) {
-        throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+        throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
       }
 
       const draft = await this.requireDraft(tx, productId);
@@ -450,7 +457,9 @@ export class CatalogAdminService {
   async publish(productId: string, request: PublishDraftRequestWire): Promise<PublishResultWire> {
     const draft = await this.db.transaction(async (tx) => {
       if (!(await this.drafts.lockProduct(tx, productId))) {
-        throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+        throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
       }
 
       const found = await this.requireDraft(tx, productId);
@@ -549,7 +558,9 @@ export class CatalogAdminService {
   ): Promise<DraftWire> {
     return this.db.transaction(async (tx) => {
       if (!(await this.drafts.lockProduct(tx, productId))) {
-        throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+        throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
       }
 
       const draft = await this.requireDraft(tx, productId);
@@ -567,7 +578,9 @@ export class CatalogAdminService {
     if (draft) return draft;
 
     if (!(await this.drafts.productExists(tx, productId))) {
-      throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+      throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
     }
 
     /*

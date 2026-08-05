@@ -1,4 +1,5 @@
 import { AppError } from '../common/errors/app-error';
+import { message, type NullaryMessageKey } from '../i18n';
 
 /**
  * The quote guards in `packages/db`, translated into answers a salesperson can act on.
@@ -73,32 +74,17 @@ function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
  * the alternative is matching on the trigger's English message text, which turns every
  * reword into a silently mistranslated error.
  */
-const EXPLANATIONS: ReadonlyMap<string, string> = new Map([
-  [
-    'quote_overrides_one_active_per_line',
-    'รายการนี้มีราคาที่ตกลงไว้อยู่แล้ว — ระบบกำลังแทนที่ให้ กรุณาลองใหม่อีกครั้ง',
-  ],
-  [
-    'quote_overrides_one_active_per_document',
-    'ใบเสนอราคานี้มียอดรวมที่ตกลงไว้อยู่แล้ว — ระบบกำลังแทนที่ให้ กรุณาลองใหม่อีกครั้ง',
-  ],
-  ['quote_lines_order_seq_key', 'มีการเพิ่มรายการพร้อมกัน — กรุณาลองใหม่อีกครั้ง'],
-  [
-    'quote_overrides_value_differs',
-    'ราคาที่กรอกเท่ากับราคาที่ระบบคำนวณอยู่แล้ว — ถ้าต้องการยืนยันราคานี้ ให้ยกเลิกราคาที่ตกลงไว้เดิมแทน',
-  ],
-  ['quote_overrides_money_nonnegative', 'ราคาติดลบไม่ได้'],
-  ['quote_overrides_days_nonnegative', 'ระยะเวลาส่งมอบติดลบไม่ได้'],
-  ['quote_lines_charge_nonzero', 'รายการที่เป็นศูนย์บาทไม่มีความหมาย'],
-  ['quote_lines_qty_positive', 'จำนวนต้องเป็นอย่างน้อย 1'],
-  [
-    'quote_overrides_other_needs_a_note',
-    'เหตุผล "อื่นๆ" ต้องเขียนคำอธิบายกำกับด้วย',
-  ],
-  [
-    'quote_overrides_entry_mode_fits_anchor',
-    'ช่องที่กรอกไม่ตรงกับสิ่งที่กำลังแก้ไข',
-  ],
+const EXPLANATIONS: ReadonlyMap<string, NullaryMessageKey> = new Map([
+  ['quote_overrides_one_active_per_line', 'error.quote.override_already_on_line'],
+  ['quote_overrides_one_active_per_document', 'error.quote.override_already_on_document'],
+  ['quote_lines_order_seq_key', 'error.quote.concurrent_line'],
+  ['quote_overrides_value_differs', 'error.quote.override_equals_computed'],
+  ['quote_overrides_money_nonnegative', 'error.quote.override_money_negative'],
+  ['quote_overrides_days_nonnegative', 'error.quote.override_days_negative'],
+  ['quote_lines_charge_nonzero', 'error.quote.line_charge_zero'],
+  ['quote_lines_qty_positive', 'error.quote.line_qty_positive'],
+  ['quote_overrides_other_needs_a_note', 'error.quote.override_other_needs_a_note'],
+  ['quote_overrides_entry_mode_fits_anchor', 'error.quote.override_entry_mode_mismatch'],
 ]);
 
 /** What the caller was trying to do, so a nameless trigger can still produce a useful sentence. */
@@ -109,21 +95,18 @@ export type QuoteOperation =
   | 'write_override'
   | 'supersede_override';
 
-const RESTRICT_MESSAGES: Record<QuoteOperation, string> = {
-  write_line: 'แก้ไขใบเสนอราคานี้ไม่ได้ในสถานะปัจจุบัน — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง',
+const RESTRICT_MESSAGES: Record<QuoteOperation, NullaryMessageKey> = {
+  write_line: 'error.quote.frozen.write_line',
   /*
-   * ⭐ Plan 7.9(ง)(2), as the sentence the salesperson reads. The database refused because the
-   * line carries a live `line_total` override, and ฿17,000 for two is not ฿17,000 for three —
-   * `quoteReducer.ts:68` would have dropped that promise silently. The recovery is one extra
-   * deliberate act, not a retry.
+   * ⭐ Plan 7.9(ง)(2), as the sentence the salesperson reads — now one key per operation.
+   * Five keys and not one key with an `operation` param: each names a *different recovery*,
+   * and a translator handed one sentence with a placeholder has no way to know that
+   * "reprice" and "remove" need different verbs.
    */
-  reprice_line:
-    'รายการนี้มีราคาที่ตกลงกับลูกค้าไว้แล้ว — ต้องยกเลิกหรือแก้ราคาที่ตกลงไว้ก่อนจึงจะเปลี่ยนจำนวนหรือรายละเอียดได้',
-  remove_line:
-    'รายการนี้มีราคาที่ตกลงกับลูกค้าไว้แล้ว — ต้องยกเลิกราคาที่ตกลงไว้ก่อนจึงจะลบรายการได้',
-  write_override: 'แก้ไขราคาในใบเสนอราคานี้ไม่ได้ในสถานะปัจจุบัน — กรุณาโหลดข้อมูลใหม่',
-  supersede_override:
-    'ราคาที่ตกลงไว้รายการนี้ถูกแก้ไขไปแล้วโดยคนอื่น — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง',
+  reprice_line: 'error.quote.frozen.reprice_line',
+  remove_line: 'error.quote.frozen.remove_line',
+  write_override: 'error.quote.frozen.write_override',
+  supersede_override: 'error.quote.frozen.supersede_override',
 };
 
 /**
@@ -140,16 +123,17 @@ export function translateQuoteError(error: unknown, operation: QuoteOperation): 
   const named = pg.constraint;
   const explained = named === undefined ? undefined : EXPLANATIONS.get(named);
   const details = named === undefined ? undefined : { constraint: named };
+  const say = (fallback: NullaryMessageKey) => message(explained ?? fallback);
 
   switch (pg.code) {
     case UNIQUE_VIOLATION:
-      return AppError.conflict(explained ?? 'ข้อมูลนี้ซ้ำกับที่มีอยู่แล้ว', details);
+      return AppError.conflict(say('error.quote.duplicate'), details);
 
     case FOREIGN_KEY_VIOLATION:
-      return AppError.validationFailed(explained ?? 'อ้างถึงข้อมูลที่ไม่มีอยู่', details);
+      return AppError.validationFailed(say('error.quote.missing_reference'), details);
 
     case CHECK_VIOLATION:
-      return AppError.validationFailed(explained ?? 'ข้อมูลไม่ผ่านเงื่อนไขของใบเสนอราคา', details);
+      return AppError.validationFailed(say('error.quote.check_failed'), details);
 
     case RESTRICT_VIOLATION:
       /*
@@ -158,16 +142,14 @@ export function translateQuoteError(error: unknown, operation: QuoteOperation): 
        * 409's contract — here is the state, reconcile and try again — is the honest one. The
        * message is what carries the difference, which is why it is chosen by the operation.
        */
-      return AppError.conflict(RESTRICT_MESSAGES[operation], {
+      return AppError.conflict(message(RESTRICT_MESSAGES[operation]), {
         reason: 'quote_guard',
         operation,
       });
 
     case LOCK_NOT_AVAILABLE:
     case QUERY_CANCELED:
-      return AppError.conflict('ใบเสนอราคานี้กำลังถูกแก้ไขอยู่ — กรุณาลองใหม่อีกครั้ง', {
-        reason: 'locked',
-      });
+      return AppError.conflict(message('error.quote.locked'), { reason: 'locked' });
 
     default:
       return error;

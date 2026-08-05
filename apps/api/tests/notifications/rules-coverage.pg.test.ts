@@ -7,8 +7,8 @@ import {
   ORDER_EVENT_TYPES,
   isDeliberatelySilent,
 } from '../../src/notifications/event-coverage';
-import { SUPPORTED_LOCALES } from '../../src/notifications/locale';
-import { hasTemplate } from '../../src/notifications/templates/templates';
+import { FALLBACK_LOCALE, SUPPORTED_LOCALES } from '../../src/notifications/locale';
+import { hasTemplate, templateKeys } from '../../src/notifications/templates/templates';
 
 /**
  * The two silences that look exactly like a working system.
@@ -98,18 +98,39 @@ describeWithPg('notification rules cover every event, and this build can render 
     }
   });
 
-  it('can render every enabled rule, in every locale it may be asked for', () => {
-    const missing: string[] = [];
-
-    for (const rule of rules.filter((candidate) => candidate.is_enabled)) {
-      for (const locale of SUPPORTED_LOCALES) {
-        if (!hasTemplate(locale, rule.template_key)) missing.push(`${rule.template_key} (${locale})`);
-      }
-    }
+  it('can render every enabled rule in the fallback language', () => {
+    const missing = rules
+      .filter((candidate) => candidate.is_enabled)
+      .filter((rule) => !hasTemplate(FALLBACK_LOCALE, rule.template_key))
+      .map((rule) => rule.template_key);
 
     // ⓶. A migration that adds a rule ahead of the deploy that adds its template fails here
     // rather than in production, where it would be a permanently dead message of one kind.
+    //
+    // 6a: `FALLBACK_LOCALE` rather than a loop over `SUPPORTED_LOCALES`, and that is not a
+    // weakening. The loop asserted completeness in every supported language, which was
+    // trivially true while there was one; with eight it would demand ~96 translations that
+    // plan 10.6 names as a translator's job. What actually protects delivery is that the
+    // *fallback* is complete — `resolveRenderLocale` sends every untranslated message here —
+    // and that is what is asserted. The direction the loop could not see is the next test.
     expect(missing, `rules naming a template this build cannot render: ${missing.join(', ')}`).toStrictEqual([]);
+  });
+
+  it('has no template in any language that no rule asks for', () => {
+    // The other direction, and it is new. A partial catalogue is now a supported state, so
+    // a translator's typo — `order.deliverd.customer` in the German catalogue — would sit
+    // there rendering nothing, forever, with the fallback quietly covering for it. Nothing
+    // before this round could have noticed.
+    const wanted = new Set(rules.map((rule) => rule.template_key));
+    const orphans: string[] = [];
+
+    for (const locale of SUPPORTED_LOCALES) {
+      for (const key of templateKeys(locale)) {
+        if (!wanted.has(key)) orphans.push(`${key} (${locale})`);
+      }
+    }
+
+    expect(orphans, `templates no rule names: ${orphans.join(', ')}`).toStrictEqual([]);
   });
 
   it('names an event type this build knows, on every rule', () => {

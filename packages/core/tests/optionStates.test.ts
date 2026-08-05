@@ -49,9 +49,20 @@ describe('optionStatesFor — compatibility blocking', () => {
   test('reports the rule message as the reason, so the tooltip can explain itself', () => {
     const states = optionStatesFor(product('awn-4t'), AWN, { width: 2_600_000n, height: 1_600_000n });
 
-    expect(states['glass_thickness']?.['LAM']?.reasonTh).toBe(
-      'กระจกสองชั้นรองรับความกว้างไม่เกิน 200 cm',
-    );
+    // The reason is the blocking issue's message, passed through whole. Pinning the
+    // key and the ref as well as the Thai says something the old string assertion
+    // could not: that the tooltip and the issue panel are showing the *same* message
+    // and cannot drift into two translations of one rule.
+    expect(states['glass_thickness']?.['LAM']?.reason).toEqual({
+      key: 'issue.rule',
+      params: {
+        message: {
+          kind: 'catalogText',
+          ref: { on: 'ruleMessage', productId: 'awn-4t', ruleId: 'awn4t-lam-width' },
+          th: 'กระจกสองชั้นรองรับความกว้างไม่เกิน 200 cm',
+        },
+      },
+    });
   });
 
   test('keeps the currently selected value blocked when it is itself the problem', () => {
@@ -87,9 +98,16 @@ describe('optionStatesFor — warnings never block', () => {
     const states = optionStatesFor(product('sld-2p'), selections, { width: 1_800_000n, height: 2_600_000n });
 
     expect(states['glass_thickness']?.['LAM']?.blocked).toBe(false);
-    expect(states['glass_thickness']?.['LAM']?.warnTh).toBe(
-      'กระจกสองชั้นที่ความสูงเกิน 250 cm อาจต้องเสริมเสา ทีมงานจะยืนยันอีกครั้ง',
-    );
+    expect(states['glass_thickness']?.['LAM']?.warn).toEqual({
+      key: 'issue.rule',
+      params: {
+        message: {
+          kind: 'catalogText',
+          ref: { on: 'ruleMessage', productId: 'sld-2p', ruleId: 'sld2-lam-height' },
+          th: 'กระจกสองชั้นที่ความสูงเกิน 250 cm อาจต้องเสริมเสา ทีมงานจะยืนยันอีกครั้ง',
+        },
+      },
+    });
   });
 });
 
@@ -110,7 +128,56 @@ describe('optionStatesFor — stock', () => {
     const states = optionStatesFor({ ...base, groups }, AWN, { width: 3_200_000n, height: 1_600_000n });
 
     expect(states['profile_color']?.['BK']?.blocked).toBe(true);
-    expect(states['profile_color']?.['BK']?.reasonTh).toBe('ตอนนี้สีนี้ยังไม่พร้อมผลิต');
+    expect(states['profile_color']?.['BK']?.reason).toEqual({
+      key: 'option.unavailable',
+      params: {
+        group: {
+          kind: 'catalogText',
+          ref: { on: 'groupLabel', productId: 'awn-4t', groupCode: 'profile_color' },
+          th: 'สีโปรไฟล์อะลูมิเนียม',
+        },
+        option: {
+          kind: 'catalogText',
+          ref: {
+            on: 'optionLabel',
+            productId: 'awn-4t',
+            groupCode: 'profile_color',
+            valueCode: 'BK',
+          },
+          th: 'ดำ',
+        },
+      },
+    });
+  });
+
+  test('names the group it is talking about, instead of assuming every group is a colour', () => {
+    // The Thai constant this replaced said "ตอนนี้สีนี้ยังไม่พร้อมผลิต" — "this *colour*
+    // is not available" — and came back for every sku group. `insect_screen` is not a
+    // colour, and neither is `lock_type`. Turning the group into a param fixed a bug
+    // that had been invisible for as long as the message was a constant, and this is
+    // the assertion the old string test could not have made.
+    const base = product('awn-4t');
+    const groups = base.groups.map((group) =>
+      group.kind === 'sku' && group.code === 'insect_screen'
+        ? ({
+            ...group,
+            values: group.values.map((value) =>
+              value.code === 'NS1' ? { ...value, available: false } : value,
+            ),
+          } satisfies SkuGroup)
+        : group,
+    );
+
+    const reason = optionStatesFor({ ...base, groups }, AWN, {
+      width: 3_200_000n,
+      height: 1_600_000n,
+    })['insect_screen']?.['NS1']?.reason;
+
+    expect(reason?.key).toBe('option.unavailable');
+    expect(reason?.params).toMatchObject({
+      group: { ref: { on: 'groupLabel', groupCode: 'insect_screen' } },
+      option: { ref: { on: 'optionLabel', groupCode: 'insect_screen', valueCode: 'NS1' } },
+    });
   });
 });
 

@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { FALLBACK_LOCALE, resolveRenderLocale, preferredLocaleOf } from '../../src/notifications/locale';
+import {
+  FALLBACK_LOCALE,
+  isSupportedLocale,
+  preferredLocaleOf,
+  resolveRenderLocale,
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+} from '../../src/notifications/locale';
+
 import { hasTemplate, renderTemplate, templateKeys } from '../../src/notifications/templates/templates';
+
+/** Any key that exists in Thai. The resolution is per template, so it needs a real one. */
+const KEY = 'order.delivered.customer';
 
 /**
  * The prose, and the locale seam in front of it.
@@ -93,18 +104,62 @@ describe('locale resolution — plan 10.6', () => {
     // A browser reports `th-TH`. Failing to match it against a `th` catalogue would send
     // Thai customers the fallback — which is also Thai today, which is exactly why the bug
     // would go unnoticed until the day it is not.
-    expect(resolveRenderLocale('th-TH').rendered).toBe('th');
-    expect(resolveRenderLocale('TH').rendered).toBe('th');
-    expect(resolveRenderLocale('th_TH').rendered).toBe('th');
+    expect(resolveRenderLocale('th-TH', KEY).rendered).toBe('th');
+    expect(resolveRenderLocale('TH', KEY).rendered).toBe('th');
+    expect(resolveRenderLocale('th_TH', KEY).rendered).toBe('th');
   });
 
   it('records the requested language even when it cannot be honoured', () => {
     // This is the whole point of returning a pair. `notification_attempts.locale` stores the
     // *rendered* value, so "we sent them Thai because we have no English yet" is a fact in
     // the evidence table rather than something reconstructed during a dispute.
-    const resolved = resolveRenderLocale('en-GB');
+    const resolved = resolveRenderLocale('en-GB', KEY);
 
     expect(resolved.requested).toBe('en-GB');
     expect(resolved.rendered).toBe('th');
+    // 6a: and it is now marked as a degradation rather than left to be inferred from
+    // `requested !== rendered`, which is also true of `th-TH` → `th` and is not one.
+    expect(resolved.degraded).toBe(true);
+    expect(resolveRenderLocale('th-TH', KEY).degraded).toBe(false);
+  });
+
+  it('falls back per template, not per language', () => {
+    // ⭐ 6a widened SUPPORTED_LOCALES from one to eight. Had `resolveRenderLocale` stayed
+    // "is this in the list?", `en` would now resolve to `en`, `renderTemplate` would return
+    // undefined, and the worker treats undefined as a PERMANENT failure — every recipient
+    // who ever set a preference would have stopped receiving mail, silently, into the dead
+    // queue. The resolution is per template key for exactly that reason.
+    expect(isSupportedLocale('en')).toBe(true);
+    expect(hasTemplate('en', KEY)).toBe(false);
+    expect(resolveRenderLocale('en', KEY).rendered).toBe('th');
+
+    // And the day an English template for one event lands, that event resolves to `en`
+    // while the others still resolve to `th`. Asserted through the same predicate the
+    // resolver uses, so this cannot pass while the resolver asks a different question.
+    const covered = (locale: SupportedLocale, key: string): boolean => hasTemplate(locale, key);
+    expect(covered('th', KEY)).toBe(true);
+    expect(covered('th', 'order.nonexistent.customer')).toBe(false);
+  });
+
+  it('a key that is only on Object.prototype is not a template', () => {
+    // Reachable from `notification_rules.template_key`, which is a `text` column a migration
+    // writes. `hasTemplate` used `Object.hasOwn` and answered `false` for all four below;
+    // `renderTemplate` used a bare index and did not, so the two disagreed about what a
+    // template is and the renderer's own doc comment ("never a placeholder") was false.
+    //
+    // Measured on the real object before the fix:
+    //   'toString'       → rendered the string "[object Undefined]"
+    //   'constructor'    → an email whose subject and body were both literally `undefined`
+    //   'valueOf'        → threw, and a throw in the worker is a RETRIED delivery rather
+    //                      than a dead row somebody reads
+    for (const key of ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      expect(hasTemplate('th', key), key).toBe(false);
+      expect(renderTemplate('th', key, CONTEXT), key).toBeUndefined();
+    }
+  });
+
+  it('supports the eight languages the plan names', () => {
+    expect([...SUPPORTED_LOCALES]).toStrictEqual(['de', 'en', 'hi', 'la', 'my', 'th', 'vi', 'zh']);
+    expect(FALLBACK_LOCALE).toBe('th');
   });
 });

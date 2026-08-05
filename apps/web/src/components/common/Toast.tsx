@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Check, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ToastCtx, type ToastContextValue, type ToastPayload } from './useToast';
+import { useLocale } from '../../state/localeContext';
 
 const VISIBLE_MS = 4000;
 
@@ -14,6 +15,7 @@ const VISIBLE_MS = 4000;
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<(ToastPayload & { key: number }) | null>(null);
+  const { t } = useLocale();
 
   const showToast = useCallback((payload: ToastPayload) => {
     setToast({ ...payload, key: Date.now() });
@@ -48,7 +50,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className="pointer-events-auto flex w-full max-w-105 items-center gap-3 rounded-xs border border-sel-line bg-panel px-4 py-3"
           >
             <Check size={16} aria-hidden className="shrink-0 text-sel-line" />
-            <p className="min-w-0 flex-1 text-small text-chalk">{toast.messageTh}</p>
+            <p className="min-w-0 flex-1 text-small text-chalk">{t(toast.messageKey)}</p>
 
             {toast.action ? (
               <Link
@@ -56,14 +58,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 onClick={() => setToast(null)}
                 className="shrink-0 text-small text-chalk underline underline-offset-4"
               >
-                {toast.action.labelTh}
+                {t(toast.action.labelKey)}
               </Link>
             ) : null}
 
             <button
               type="button"
               onClick={() => setToast(null)}
-              aria-label="ปิดข้อความ"
+              aria-label={t('toast.dismiss')}
               className="-me-1 flex h-11 w-11 shrink-0 items-center justify-center text-chalk-3 transition-colors duration-180 ease-out hover:text-chalk"
             >
               <X size={15} aria-hidden />

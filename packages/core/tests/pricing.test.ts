@@ -211,11 +211,88 @@ describe('calcPrice — breakdown lines', () => {
       2,
     );
 
+    // Was three joined Thai strings. Each row now names its parts, which is what makes
+    // eight catalogues possible: the two option rows carry the group label and the
+    // value label as separate catalogue references, so `·` — a typographic choice, not
+    // content — belongs to the locale and not to `pricing.ts`.
     expect(price.lines).toEqual([
-      { label: 'ราคาฐานตามพื้นที่', amountMinor: 768000n },
-      { label: 'สีโปรไฟล์อะลูมิเนียม · ลายไม้เข้ม', amountMinor: 61440n },
-      { label: 'สีกระจก · สีเขียว', amountMinor: 92160n },
+      {
+        label: {
+          key: 'price.line.base',
+          params: { billableArea: { kind: 'area', sqUm: 5_120_000_000_000n } },
+        },
+        amountMinor: 768000n,
+      },
+      {
+        label: {
+          key: 'price.line.option',
+          params: {
+            group: {
+              kind: 'catalogText',
+              ref: { on: 'groupLabel', productId: 'awn-4t', groupCode: 'profile_color' },
+              th: 'สีโปรไฟล์อะลูมิเนียม',
+            },
+            option: {
+              kind: 'catalogText',
+              ref: {
+                on: 'optionLabel',
+                productId: 'awn-4t',
+                groupCode: 'profile_color',
+                valueCode: 'DW',
+              },
+              th: 'ลายไม้เข้ม',
+            },
+          },
+        },
+        amountMinor: 61440n,
+      },
+      {
+        label: {
+          key: 'price.line.option',
+          params: {
+            group: {
+              kind: 'catalogText',
+              ref: { on: 'groupLabel', productId: 'awn-4t', groupCode: 'glass_color' },
+              th: 'สีกระจก',
+            },
+            option: {
+              kind: 'catalogText',
+              ref: {
+                on: 'optionLabel',
+                productId: 'awn-4t',
+                groupCode: 'glass_color',
+                valueCode: 'GRN',
+              },
+              th: 'สีเขียว',
+            },
+          },
+        },
+        amountMinor: 92160n,
+      },
     ]);
+  });
+
+  test('the base row carries the area it charged for, floor and all', () => {
+    // 80 × 60 cm is 0.48 m², under awn-4t's 1.5 m² floor, so the base charge is for an
+    // area nobody entered. The old label — "ราคาฐานตามพื้นที่" — could not say that in
+    // any language; the row now carries the exact µm² the price was computed from.
+    // This is the "threshold is an area" case: no length in sight, and no division on
+    // the way out, so a locale rendering it in m² cannot move the number.
+    const small = awn(
+      { profile_color: 'SG', glass_color: 'CLR', glass_thickness: 'T5', insect_screen: 'NS0' },
+      cm(80),
+      cm(60),
+    1,
+    );
+
+    expect(small.lines[0]?.label).toEqual({
+      key: 'price.line.base',
+      params: { billableArea: { kind: 'area', sqUm: product('awn-4t').minBillableSqUm } },
+    });
+    // Not the ordered area — that is the whole point of the floor being visible.
+    expect(small.lines[0]?.label.params).not.toEqual({
+      billableArea: { kind: 'area', sqUm: cm(80) * cm(60) },
+    });
   });
 
   test('omits options that add nothing, so the accordion shows only real charges', () => {
@@ -226,7 +303,15 @@ describe('calcPrice — breakdown lines', () => {
       1,
     );
 
-    expect(price.lines).toEqual([{ label: 'ราคาฐานตามพื้นที่', amountMinor: 450000n }]);
+    expect(price.lines).toEqual([
+      {
+        label: {
+          key: 'price.line.base',
+          params: { billableArea: { kind: 'area', sqUm: 3_000_000_000_000n } },
+        },
+        amountMinor: 450000n,
+      },
+    ]);
   });
 
   test('line amounts sum to unitPrice', () => {

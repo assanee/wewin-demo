@@ -3,6 +3,7 @@ import type { CatalogRef, ProductDocument } from '@wewin/contract';
 import type { StaleBaselineWire } from '@wewin/contract/quote';
 
 import { AppError, type JsonValue } from '../common/errors/app-error';
+import { message } from '../i18n';
 
 /**
  * The refusals — plan 7.9(จ), where the 409 changes shape.
@@ -45,8 +46,13 @@ import { AppError, type JsonValue } from '../common/errors/app-error';
 export const QUOTE_STALE = 'quote_stale';
 export const QUOTE_BASELINES_STALE = 'quote_baselines_stale';
 
-export const CATALOG_STALE_MESSAGE_TH =
-  'แคตตาล็อกมีการเผยแพร่เวอร์ชันใหม่ระหว่างที่คุณกำลังแก้ไข — กรุณาตรวจสอบราคาปัจจุบันอีกครั้ง';
+/**
+ * Said to a salesperson mid-edit, and deliberately not the same key the configurator uses.
+ *
+ * `orders/pg-errors.ts` owns `error.stale.catalog_while_configuring` — same event, different
+ * reader, different sentence. Two constants before this change; two keys after it.
+ */
+export const CATALOG_STALE_MESSAGE = message('error.stale.catalog_while_editing_quote');
 
 /**
  * The quote moved under this request.
@@ -57,7 +63,7 @@ export const CATALOG_STALE_MESSAGE_TH =
  * response in the API.
  */
 export function quoteStale(sent: string, current: string): AppError {
-  return AppError.conflict('ใบเสนอราคานี้ถูกแก้ไขโดยคนอื่นระหว่างที่คุณกำลังทำรายการ — กรุณาโหลดใหม่', {
+  return AppError.conflict(message('error.stale.quote_edited_by_someone_else'), {
     reason: QUOTE_STALE,
     sent,
     current,
@@ -66,7 +72,7 @@ export function quoteStale(sent: string, current: string): AppError {
 
 /** A published version moved under the line being edited. The same body every other endpoint sends. */
 export function catalogStale(sent: CatalogRef, current: ProductDocument): AppError {
-  return AppError.conflict(CATALOG_STALE_MESSAGE_TH, {
+  return AppError.conflict(CATALOG_STALE_MESSAGE, {
     /*
      * `Exact` is opaque on purpose (contract/exact.ts): it exposes no readable member, so it
      * is not structurally a `JsonValue` even though it serialises as one. The assertion is
@@ -89,14 +95,11 @@ export function catalogStale(sent: CatalogRef, current: ProductDocument): AppErr
  * which of eleven lines to read.
  */
 export function baselinesStale(stale: readonly StaleBaselineWire[]): AppError {
-  return AppError.conflict(
-    'แคตตาล็อกเปลี่ยนหลังจากที่ตกลงราคาไว้ — ต้องยืนยันราคาที่ตกลงใหม่ทีละรายการก่อนส่งใบเสนอราคา',
-    {
-      reason: QUOTE_BASELINES_STALE,
-      /* `Exact` again: opaque in TypeScript, an object on the wire. */
-      lines: stale as unknown as JsonValue,
-    },
-  );
+  return AppError.conflict(message('error.stale.override_baselines'), {
+    reason: QUOTE_BASELINES_STALE,
+    /* `Exact` again: opaque in TypeScript, an object on the wire. */
+    lines: stale as unknown as JsonValue,
+  });
 }
 
 /**

@@ -101,8 +101,10 @@ describe('leadTimeSpan', () => {
 
 describe('billableFloorSpan', () => {
   test('spans the smallest to the largest minimum billable area', () => {
-    // lvr-adj-3 bills from 1.0 sqm (louver kit), sld-2p from 2.0 (window_wide).
-    expect(billableFloorSpan(FIXTURE)).toEqual([1, 2]);
+    // lvr-adj-3 bills from 1.0 sqm (louver kit), sld-2p from 2.0 (window_wide) — and the
+    // span is now the exact µm² count, not a `number` of square metres. The division out is
+    // display, and display is `@wewin/i18n`'s job.
+    expect(billableFloorSpan(FIXTURE)).toEqual([1_000_000_000_000n, 2_000_000_000_000n]);
   });
 
   test('is null for an empty catalog', () => {

@@ -10,17 +10,18 @@ import {
   profileColorFacets,
   type CatalogFilters,
 } from '@wewin/core/filters';
-import { formatInteger } from '@wewin/core/format';
 import { Button } from '../components/common/Button';
 import { BottomSheet } from '../components/common/BottomSheet';
 import { FilterPanel } from '../components/catalog/FilterPanel';
 import { ProductCard } from '../components/catalog/ProductCard';
 import { useIsDesktop } from '../state/useMediaQuery';
+import { useLocale } from '../state/localeContext';
 
 export function Catalog() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [sheetOpen, setSheetOpen] = useState(false);
   const isDesktop = useIsDesktop();
+  const { t, f } = useLocale();
 
   // The category facet lives in the URL so a category card links straight into a
   // filtered catalog and the result stays shareable. The rest is local state.
@@ -62,9 +63,9 @@ export function Catalog() {
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
       <div className="mb-6 flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-        <h1 className="text-title text-chalk lg:text-display">สินค้าทั้งหมด</h1>
+        <h1 className="text-title text-chalk lg:text-display">{t('catalog.heading')}</h1>
         <p className="numeric text-small text-chalk-2" aria-live="polite">
-          {formatInteger(results.length)} รายการ
+          {t('catalog.resultCount', { count: results.length })}
         </p>
       </div>
 
@@ -72,10 +73,10 @@ export function Catalog() {
       <div className="mb-4 lg:hidden">
         <Button onClick={() => setSheetOpen(true)} className="w-full">
           <SlidersHorizontal size={18} aria-hidden />
-          ตัวกรอง
+          {t('filter.title')}
           {isFilterActive(filters) ? (
             <span className="numeric rounded-xs bg-sel-bg px-2 text-caption text-chalk">
-              {formatInteger(filters.categoryIds.length + filters.profileColorCodes.length)}
+              {f.integer(filters.categoryIds.length + filters.profileColorCodes.length)}
             </span>
           ) : null}
         </Button>
@@ -102,12 +103,12 @@ export function Catalog() {
             </ul>
           ) : (
             <div className="border border-line bg-panel px-6 py-14 text-center">
-              <p className="text-lead text-chalk">ยังไม่มีสินค้าที่ตรงเงื่อนไขนี้</p>
+              <p className="text-lead text-chalk">{t('catalog.empty.title')}</p>
               <p className="mx-auto mt-2 max-w-[42ch] text-body text-chalk-2">
-                ลองเอาตัวกรองบางอย่างออก แล้วดูรายการทั้งหมดอีกครั้ง
+                {t('catalog.empty.body')}
               </p>
               <div className="mt-6 flex justify-center">
-                <Button onClick={clearAll}>ล้างตัวกรอง</Button>
+                <Button onClick={clearAll}>{t('filter.clear')}</Button>
               </div>
             </div>
           )}
@@ -116,11 +117,11 @@ export function Catalog() {
 
       <BottomSheet
         open={sheetOpen && !isDesktop}
-        titleTh="ตัวกรอง"
+        title={t('filter.title')}
         onClose={() => setSheetOpen(false)}
         footer={
           <Button variant="primary" className="w-full" onClick={() => setSheetOpen(false)}>
-            ดูผลลัพธ์ ({formatInteger(results.length)} รายการ)
+            {t('filter.showResults', { count: results.length })}
           </Button>
         }
       >

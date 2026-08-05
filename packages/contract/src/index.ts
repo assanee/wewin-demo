@@ -45,6 +45,12 @@ export type {
 } from './catalog.js';
 
 export type {
+  CatalogTextRefWire,
+  MessageParamWire,
+  MessageWire,
+} from './message.js';
+
+export type {
   IssueWire,
   OptionStateWire,
   OptionStatesWire,

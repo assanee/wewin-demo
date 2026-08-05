@@ -1,23 +1,15 @@
 import { Ban } from 'lucide-react';
-import type { SkuGroup } from '@wewin/core';
-import type { OptionState } from '@wewin/core/option-states';
-import { OptionGroupBase } from './OptionGroupBase';
-
-interface ToggleOptionProps {
-  group: SkuGroup;
-  selected: string;
-  states: Record<string, OptionState>;
-  onSelect: (code: string) => void;
-}
+import { OptionGroupBase, OptionLabel, type OptionGroupProps } from './OptionGroupBase';
 
 /**
  * A two-value sku group. Rendered as a segmented control rather than a switch:
  * both states are named options that appear in the sku_code, and a switch would
  * hide the name of the state you are not in.
  */
-export function ToggleOption({ group, selected, states, onSelect }: ToggleOptionProps) {
+export function ToggleOption({ product, group, selected, states, onSelect }: OptionGroupProps) {
   return (
     <OptionGroupBase
+      product={product}
       group={group}
       selected={selected}
       states={states}
@@ -33,9 +25,12 @@ export function ToggleOption({ group, selected, states, onSelect }: ToggleOption
                 : 'bg-panel-2 text-chalk-2 hover:text-chalk'
           }`}
         >
-          <span className={`min-w-0 truncate text-small ${state.blocked ? 'line-through' : ''}`}>
-            {value.labelTh}
-          </span>
+          <OptionLabel
+            product={product}
+            group={group}
+            value={value}
+            className={`min-w-0 truncate text-small ${state.blocked ? 'line-through' : ''}`}
+          />
           {state.blocked ? <Ban size={13} aria-hidden className="shrink-0 text-danger" /> : null}
         </span>
       )}

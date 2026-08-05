@@ -1,6 +1,7 @@
 import 'client-only';
 
 import { getAccessToken, setAccessToken, type AccessToken } from './access-token';
+import { LOCALE_HEADER, preferredLocale } from '../i18n/locale';
 import { apiUrl } from './config';
 import { ApiError, apiErrorFromResponse, networkError } from './errors';
 
@@ -132,6 +133,19 @@ export async function apiFetch(path: string, options: ApiFetchOptions = {}): Pro
     const headers = new Headers(init.headers);
     if (token !== null) headers.set('Authorization', `Bearer ${token.value}`);
     if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+    /*
+     * The language, stated once for every call this app makes.
+     *
+     * apps/api renders an error's sentence in the language it is asked for, and falls back
+     * to `Accept-Language` when this header is absent. Absent is the wrong answer here: a
+     * staff laptop configured `en-US` would get the API's *partial* English catalogue —
+     * eleven English sentences among ninety Thai ones — which reads as a rendering bug
+     * rather than a language setting. See lib/i18n/locale.ts.
+     *
+     * `if (!headers.has(...))` so an individual call can still override it; nothing does
+     * today, and a document endpoint that must not be renegotiated eventually will.
+     */
+    if (!headers.has(LOCALE_HEADER)) headers.set(LOCALE_HEADER, preferredLocale());
 
     try {
       return await fetch(apiUrl(path), { ...init, headers, credentials: 'include' });

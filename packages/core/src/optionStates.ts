@@ -1,19 +1,23 @@
 import type { Product, SkuGroup } from './types/catalog.js';
+import { groupLabel, type Message, optionLabel } from './message.js';
 import { validate } from './validation.js';
 import type { LengthUnit } from './units.js';
 
 export interface OptionState {
   blocked: boolean;
-  /** Why it cannot be chosen — shown as a tooltip on the struck-through option. */
-  reasonTh?: string;
+  /**
+   * Why it cannot be chosen — shown as a tooltip on the struck-through option.
+   *
+   * Renamed from `reasonTh`: a field whose name says Thai and whose value is a
+   * locale-free message is a lie the next reader has to discover for themselves.
+   */
+  reason?: Message;
   /** Non-blocking caveat attached to choosing it. */
-  warnTh?: string;
+  warn?: Message;
 }
 
 /** groupCode -> valueCode -> state */
 export type OptionStates = Record<string, Record<string, OptionState>>;
-
-const OUT_OF_STOCK_TH = 'ตอนนี้สีนี้ยังไม่พร้อมผลิต';
 
 const skuGroups = (product: Product): SkuGroup[] =>
   product.groups.filter((group): group is SkuGroup => group.kind === 'sku');
@@ -44,7 +48,21 @@ export function optionStatesFor(
 
     for (const value of group.values) {
       if (!value.available) {
-        groupStates[value.code] = { blocked: true, reasonTh: OUT_OF_STOCK_TH };
+        // The Thai constant this replaces read "ตอนนี้สีนี้ยังไม่พร้อมผลิต" — "this
+        // *colour* is not available" — and was returned for every sku group, including
+        // `insect_screen` and `lock_type`. Naming the group and the value as params
+        // rather than baking one group's noun into the sentence fixes that on the way
+        // past: the locale writes one sentence with two holes in it.
+        groupStates[value.code] = {
+          blocked: true,
+          reason: {
+            key: 'option.unavailable',
+            params: {
+              group: groupLabel(product, group),
+              option: optionLabel(product, group, value),
+            },
+          },
+        };
         continue;
       }
 
@@ -56,8 +74,8 @@ export function optionStatesFor(
       const warning = relevant.find((issue) => issue.severity === 'warning');
 
       const state: OptionState = { blocked: error !== undefined };
-      if (error) state.reasonTh = error.messageTh;
-      if (warning) state.warnTh = warning.messageTh;
+      if (error) state.reason = error.message;
+      if (warning) state.warn = warning.message;
 
       groupStates[value.code] = state;
     }

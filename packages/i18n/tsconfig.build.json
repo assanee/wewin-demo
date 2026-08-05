@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+
+    /*
+     * `ES2023` plus the Intl typings this package is built on.
+     *
+     * `Intl.NumberFormat.prototype.format` accepting a decimal *string* is the
+     * NumberFormat v3 signature, and it is what lets an exact money amount reach the
+     * formatter without passing through a `number` on the way. TypeScript ships that
+     * overload in `esnext.intl`; without it the only alternatives are a cast or a
+     * float, and both are forbidden here — one by the house rules, the other by
+     * plan 4.3.
+     */
+    "lib": ["ES2023", "ESNext.Intl"],
+
+    /*
+     * Node types, NOT DOM — the same call core and contract make. This package is
+     * imported by a NestJS process, by a Next.js server render and by a browser
+     * bundle. `Intl` is a language built-in available in all three; `navigator` and
+     * `document` are not, and must stay a compile error here.
+     */
+    "types": ["node"],
+
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+
+    /* Strictness — spec section 1: no `any`, no `@ts-ignore` */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}

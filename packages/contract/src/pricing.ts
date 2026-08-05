@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { MAX_QTY, MIN_QTY } from '@wewin/core/constants';
 import type { Currency } from '@wewin/core/money';
 import type { LengthUnit } from '@wewin/core/units';
-import type { PriceBreakdown, PriceLine } from '@wewin/core/pricing';
+import { type PriceBreakdown, type PriceLine, sqUmToSqm } from '@wewin/core/pricing';
 import type { Issue } from '@wewin/core/validation';
 import type { OptionState, OptionStates } from '@wewin/core/option-states';
 import {
@@ -15,13 +15,23 @@ import {
   scaledMoneyWireSchema,
 } from './money.js';
 import {
+  type AreaWire,
   type LengthWire,
+  areaWireSchema,
+  decodeSqUm,
   decodeUm,
+  encodeSqUm,
   encodeUm,
   lengthUnitSchema,
   lengthWireSchema,
 } from './measure.js';
 import { type CatalogRef, catalogRefShape } from './catalog.js';
+import {
+  type MessageWire,
+  encodeMessage,
+  messageWireSchema,
+  requireMessage,
+} from './message.js';
 import { toBigInt } from './exact.js';
 
 /**
@@ -39,7 +49,16 @@ import { toBigInt } from './exact.js';
  * ------------------------------------------------------------------ */
 
 export interface PriceLineWire {
-  readonly label: string;
+  /**
+   * What the row is called — a key and its values, never a sentence.
+   *
+   * It was `string`, and that was the boundary at which plan section 5 quietly stopped
+   * being paid. Core emits `{ key, params }` and `apps/web` renders it in eight languages,
+   * but only because the storefront prices locally from bundled fixtures; the moment it
+   * asks the API for a price (plan 5.5 / 8.2, phase 6b) a `string` here would be a Thai
+   * sentence again, chosen by the server before the reader's browser was consulted.
+   */
+  readonly label: MessageWire;
   readonly amountMinor: MoneyWire;
 }
 
@@ -52,13 +71,15 @@ export interface PriceLineWire {
  * one figure plan 4.3(b) calls the number on the contract — and the schema refuses a
  * breakdown whose amounts do not all agree with it.
  *
- * `areaSqm` and `billableSqm` stay plain JSON numbers, as they are plain numbers in
- * core: they are the area divided out for a person to read and nothing may multiply
- * them back up (pricing.ts:47-57).
+ * The two areas travel **only** in their exact form, as square micrometres. Core keeps a
+ * `number` alongside for a stored snapshot to survive JSON with, and putting both on the
+ * wire would be two spellings of one quantity — which `exact.ts` already says is one
+ * quantity that hashes two ways, and which phase 6a caught disagreeing on screen by a
+ * hundredth of a square metre. `toPriceBreakdown` divides the exact value out again.
  */
 export interface PriceBreakdownWire {
-  readonly areaSqm: number;
-  readonly billableSqm: number;
+  readonly areaSqUm: AreaWire;
+  readonly billableSqUm: AreaWire;
   readonly baseMinor: MoneyWire;
   readonly percentTotalMinor: MoneyWire;
   readonly perSqmTotalMinor: MoneyWire;
@@ -71,26 +92,25 @@ export interface PriceBreakdownWire {
 }
 
 /**
- * The issue list, unchanged.
+ * The issue list, keyed.
  *
- * Plan 5 requires `Issue` to stop being a sentence and become `{ key, params }`, and
- * that change belongs to core — `validation.ts:263` builds the string, and moving it
- * touches `optionStates`, the quote reducer, two components and their tests. Carrying
- * `messageTh` here now means this DTO changes when core does, which is the honest
- * position: inventing the keyed form in the contract first would leave the API
- * translating between two shapes of the same idea.
+ * `messageTh` was carried here through phase 5 with a note saying it would change when
+ * core did. Core changed; this is that change. The field is renamed as well as retyped on
+ * purpose — a field whose name says Thai and whose value is a locale-free message is a lie
+ * the next reader has to discover, which is the same reasoning `optionStates.ts` used when
+ * it dropped its own `Th` suffixes.
  */
 export interface IssueWire {
   readonly ruleId: string;
   readonly severity: 'error' | 'warning';
-  readonly messageTh: string;
+  readonly message: MessageWire;
   readonly affects: readonly string[];
 }
 
 export interface OptionStateWire {
   readonly blocked: boolean;
-  readonly reasonTh?: string | undefined;
-  readonly warnTh?: string | undefined;
+  readonly reason?: MessageWire | undefined;
+  readonly warn?: MessageWire | undefined;
 }
 
 /** groupCode -> valueCode -> state */
@@ -162,14 +182,14 @@ const anyMoney = moneyWireSchema();
 const anyScaledMoney = scaledMoneyWireSchema();
 
 const priceLineWireSchema: z.ZodType<PriceLineWire> = z.object({
-  label: z.string(),
+  label: messageWireSchema,
   amountMinor: anyMoney,
 });
 
 export const priceBreakdownWireSchema: z.ZodType<PriceBreakdownWire> = z
   .object({
-    areaSqm: z.number().finite().nonnegative(),
-    billableSqm: z.number().finite().nonnegative(),
+    areaSqUm: areaWireSchema,
+    billableSqUm: areaWireSchema,
     baseMinor: anyMoney,
     percentTotalMinor: anyMoney,
     perSqmTotalMinor: anyMoney,
@@ -211,14 +231,14 @@ export const priceBreakdownWireSchema: z.ZodType<PriceBreakdownWire> = z
 const issueWireSchema: z.ZodType<IssueWire> = z.object({
   ruleId: z.string().min(1),
   severity: z.literal(['error', 'warning']),
-  messageTh: z.string(),
+  message: messageWireSchema,
   affects: z.array(z.string()),
 });
 
 const optionStateWireSchema: z.ZodType<OptionStateWire> = z.object({
   blocked: z.boolean(),
-  reasonTh: z.string().optional(),
-  warnTh: z.string().optional(),
+  reason: messageWireSchema.optional(),
+  warn: messageWireSchema.optional(),
 });
 
 const optionStatesWireSchema: z.ZodType<OptionStatesWire> = z.record(
@@ -249,15 +269,15 @@ export const priceResponseWireSchema: z.ZodType<PriceResponseWire> = z.object({
  * ------------------------------------------------------------------ */
 
 const encodePriceLine = (line: PriceLine, currency: Currency): PriceLineWire => ({
-  label: line.label,
+  label: encodeMessage(line.label),
   amountMinor: encodeMinor(line.amountMinor, currency),
 });
 
 export function encodePriceBreakdown(price: PriceBreakdown): PriceBreakdownWire {
   const currency = price.currency;
   return {
-    areaSqm: price.areaSqm,
-    billableSqm: price.billableSqm,
+    areaSqUm: encodeSqUm(price.areaSqUm),
+    billableSqUm: encodeSqUm(price.billableSqUm),
     baseMinor: encodeMinor(price.baseMinor, currency),
     percentTotalMinor: encodeMinor(price.percentTotalMinor, currency),
     perSqmTotalMinor: encodeMinor(price.perSqmTotalMinor, currency),
@@ -273,7 +293,7 @@ export function encodePriceBreakdown(price: PriceBreakdown): PriceBreakdownWire 
 const encodeIssue = (issue: Issue): IssueWire => ({
   ruleId: issue.ruleId,
   severity: issue.severity,
-  messageTh: issue.messageTh,
+  message: encodeMessage(issue.message),
   affects: [...issue.affects],
 });
 
@@ -281,8 +301,8 @@ function encodeOptionState(state: OptionState): OptionStateWire {
   const wire: { -readonly [K in keyof OptionStateWire]: OptionStateWire[K] } = {
     blocked: state.blocked,
   };
-  if (state.reasonTh !== undefined) wire.reasonTh = state.reasonTh;
-  if (state.warnTh !== undefined) wire.warnTh = state.warnTh;
+  if (state.reason !== undefined) wire.reason = encodeMessage(state.reason);
+  if (state.warn !== undefined) wire.warn = encodeMessage(state.warn);
   return wire;
 }
 
@@ -328,9 +348,17 @@ export const encodePriceResponse = (response: PriceResponse): PriceResponseWire 
  * ------------------------------------------------------------------ */
 
 export function toPriceBreakdown(wire: PriceBreakdownWire): PriceBreakdown {
+  const areaSqUm = decodeSqUm(wire.areaSqUm);
+  const billableSqUm = decodeSqUm(wire.billableSqUm);
+
   return {
-    areaSqm: wire.areaSqm,
-    billableSqm: wire.billableSqm,
+    // Derived here rather than carried, so the exact count and the number a person reads
+    // cannot arrive disagreeing. `sqUmToSqm` is core's own single division out of canonical
+    // area — this side of the wire does not get to invent a second one.
+    areaSqm: sqUmToSqm(areaSqUm),
+    billableSqm: sqUmToSqm(billableSqUm),
+    areaSqUm,
+    billableSqUm,
     currency: currencyOf(wire.totalMinor),
     baseMinor: toBigInt(wire.baseMinor),
     percentTotalMinor: toBigInt(wire.percentTotalMinor),
@@ -341,7 +369,7 @@ export function toPriceBreakdown(wire: PriceBreakdownWire): PriceBreakdown {
     qty: wire.qty,
     totalMinor: toBigInt(wire.totalMinor),
     lines: wire.lines.map((line) => ({
-      label: line.label,
+      label: requireMessage(line.label),
       amountMinor: toBigInt(line.amountMinor),
     })),
   };
@@ -350,7 +378,7 @@ export function toPriceBreakdown(wire: PriceBreakdownWire): PriceBreakdown {
 const toIssue = (wire: IssueWire): Issue => ({
   ruleId: wire.ruleId,
   severity: wire.severity,
-  messageTh: wire.messageTh,
+  message: requireMessage(wire.message),
   affects: [...wire.affects],
 });
 
@@ -360,8 +388,8 @@ function toOptionStates(wire: OptionStatesWire): OptionStates {
     const group: Record<string, OptionState> = {};
     for (const [valueCode, state] of Object.entries(values)) {
       const decoded: OptionState = { blocked: state.blocked };
-      if (state.reasonTh !== undefined) decoded.reasonTh = state.reasonTh;
-      if (state.warnTh !== undefined) decoded.warnTh = state.warnTh;
+      if (state.reason !== undefined) decoded.reason = requireMessage(state.reason);
+      if (state.warn !== undefined) decoded.warn = requireMessage(state.warn);
       group[valueCode] = decoded;
     }
     states[groupCode] = group;

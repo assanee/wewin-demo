@@ -7,7 +7,12 @@
  */
 
 import { divRoundHalfUp } from './money.js';
-import { EIGHTH_INCH_UM, type LengthUnit, MICRONS_PER_UNIT } from './units.js';
+import {
+  EIGHTH_INCH_UM,
+  type LengthUnit,
+  MICRONS_PER_UNIT,
+  SQ_UM_PER_SQM,
+} from './units.js';
 
 const THAI_LOCALE = 'th-TH';
 
@@ -32,9 +37,41 @@ export function formatBaht(minor: bigint): string {
   return whole < 0n ? `-฿${magnitude}` : `฿${magnitude}`;
 }
 
-/** Square metres, always two decimals (spec section 5). */
+/**
+ * Square metres, always two decimals (spec section 5) — from a `number`.
+ *
+ * ⚠️ **Prefer `formatSqmExact` wherever the square micrometres are still in hand**, which
+ * is everywhere a `PriceBreakdown` or a `price.line.base` param is. This overload exists
+ * for the one honest case left: a stored snapshot that kept only the `number`.
+ *
+ * The two do not always agree, and it is not a rounding-mode difference that could be
+ * settled by choosing one. `toFixed` operates on a `double`, and 21.255 m² is
+ * 21.254999999999999449… once it has been through one — so this writes `21.25` where the
+ * exact path writes `21.26`. Phase 6a had both on the same screen.
+ */
 export function formatSqm(value: number): string {
   return safe(value).toFixed(2);
+}
+
+/**
+ * Square metres, two decimals, from an exact count of square micrometres.
+ *
+ * The one area formatter the screen should use. All `bigint`: `divRoundHalfUp` to the
+ * hundredth and the point inserted by hand, so there is no `double` anywhere on the path
+ * and the rounding rule is the same half-up the rest of the system uses for money.
+ *
+ * Not localised — this returns canonical digits with an ASCII point, exactly like
+ * `formatLength`. `@wewin/i18n` substitutes glyphs afterwards; core does not know what a
+ * locale is.
+ */
+export function formatSqmExact(sqUm: bigint): string {
+  const hundredths = divRoundHalfUp(sqUm * 100n, SQ_UM_PER_SQM);
+  const negative = hundredths < 0n;
+  const magnitude = negative ? -hundredths : hundredths;
+  const whole = magnitude / 100n;
+  const fraction = (magnitude % 100n).toString().padStart(2, '0');
+
+  return `${negative ? '-' : ''}${whole.toString()}.${fraction}`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -159,9 +196,17 @@ export function formatRange(minUm: bigint, maxUm: bigint, unit: LengthUnit): str
   return `${marker}${formatLength(minUm, unit)}–${formatLength(maxUm, unit)}${unitSuffix(unit)}`;
 }
 
-/** Plain counts and day ranges. */
+/**
+ * Plain counts and day ranges.
+ *
+ * The `safe` collapse happens **after** the round, not before. `Math.round(-0.2)` *produces*
+ * `-0`, so collapsing the input leaves the output signed — and `toLocaleString` renders that
+ * as `-0`, which spec section 11 forbids. It went unnoticed for two phases because nothing
+ * fed this a small negative; phase 6a found it by routing the same value through `Intl` in
+ * `@wewin/i18n`, where the identical mistake was reproduced from this line.
+ */
 export function formatInteger(value: number): string {
-  return Math.round(safe(value)).toLocaleString(THAI_LOCALE, { maximumFractionDigits: 0 });
+  return safe(Math.round(safe(value))).toLocaleString(THAI_LOCALE, { maximumFractionDigits: 0 });
 }
 
 /** Lead time as a range, e.g. "10–14 วัน". */

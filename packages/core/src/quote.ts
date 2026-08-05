@@ -1,6 +1,7 @@
 import type { Product } from './types/catalog.js';
+import { isMessage, reviveMessage } from './message.js';
 import { type PriceBreakdown, totalFromUnitPrice } from './pricing.js';
-import type { Issue } from './validation.js';
+import { type Issue, isIssue, reviveIssue } from './validation.js';
 import { MAX_QTY, MIN_QTY } from './constants.js';
 import { isLengthUnit, type LengthUnit } from './units.js';
 
@@ -210,8 +211,16 @@ export function longestLeadTime(
  * v2 group hardcoded `unit: 'cm'` — but because `unitPriceScaledMinor` changed scale
  * by a factor of 10^6 in the same commit, and a migration is a thing somebody has to
  * keep correct forever. A lost cart can be rebuilt in a minute.
+ *
+ * v3 → v4 is the structured-message change. It is easy to read as cosmetic and it is
+ * not: a v3 entry held `lines[0].label: "ราคาฐานตามพื้นที่"` and `warnings[0].messageTh`,
+ * both plain strings with nothing in them to misread. A v4 entry holds a square
+ * micrometre count inside the label and micrometres inside a warning's params, and both
+ * cross `JSON.stringify` as digit strings. A v3 payload read under v4 rules loses every
+ * label and every warning; read leniently it would keep them as strings that a renderer
+ * would interpolate verbatim. Same rule as before: the version travels with the data.
  */
-export const QUOTE_STORAGE_KEY = 'aluform.quote.v3';
+export const QUOTE_STORAGE_KEY = 'aluform.quote.v4';
 
 /**
  * Written into the payload itself, not only into the key.
@@ -223,7 +232,7 @@ export const QUOTE_STORAGE_KEY = 'aluform.quote.v3';
  * mismatched payload renders as a plausible price or a plausible size rather than as a
  * crash. The version has to travel with the data.
  */
-export const QUOTE_SCHEMA_VERSION = 3;
+export const QUOTE_SCHEMA_VERSION = 4;
 
 /** `JSON.stringify` throws on a bigint, so money crosses the storage boundary as digits. */
 const replacer = (_key: string, value: unknown): unknown =>
@@ -275,12 +284,38 @@ const isQuoteLine = (value: unknown): value is QuoteLine => {
     line.priceSnapshot !== null &&
     typeof line.priceSnapshot.totalMinor === 'bigint' &&
     typeof line.priceSnapshot.unitPriceScaledMinor === 'bigint' &&
-    Array.isArray(line.warnings)
+    // The exact areas, checked the way the money is. They are what every area on the
+    // screen is now rendered from, and one that came back as `"5120000000000"` would
+    // reach `formatSqmExact` as a string and multiply by 100n into concatenation.
+    typeof line.priceSnapshot.areaSqUm === 'bigint' &&
+    typeof line.priceSnapshot.billableSqUm === 'bigint' &&
+    // Reaches inside the breakdown, the way the `measures` check does. A row's label
+    // stopped being a string in v4 and now carries a square micrometre count; one that
+    // came back as `"5128000000000"` would render as digits in a sentence.
+    Array.isArray(line.priceSnapshot.lines) &&
+    line.priceSnapshot.lines.every(
+      (row: unknown) =>
+        typeof row === 'object' &&
+        row !== null &&
+        typeof (row as { amountMinor?: unknown }).amountMinor === 'bigint' &&
+        isMessage((row as { label?: unknown }).label),
+    ) &&
+    // Was `Array.isArray(line.warnings)` and nothing more, which was enough while a
+    // warning was a sentence. A warning carries micrometres now.
+    Array.isArray(line.warnings) &&
+    line.warnings.every(isIssue)
   );
 };
 
-/** Money fields on a stored snapshot, revived from their digit strings. */
-const MONEY_FIELDS = [
+/**
+ * Exact-integer fields on a stored snapshot, revived from their digit strings.
+ *
+ * Money and area in one list, because `readMinor` does not care what is being counted —
+ * it accepts canonical digits and returns a `bigint`. Keeping two lists would mean two
+ * places to forget a field, and forgetting one is not a crash: it is a string reaching a
+ * formatter that will happily concatenate it.
+ */
+const EXACT_FIELDS = [
   'baseMinor',
   'percentTotalMinor',
   'perSqmTotalMinor',
@@ -288,13 +323,15 @@ const MONEY_FIELDS = [
   'unitPriceMinor',
   'unitPriceScaledMinor',
   'totalMinor',
+  'areaSqUm',
+  'billableSqUm',
 ] as const;
 
 function reviveSnapshot(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
   const snapshot = { ...(value as Record<string, unknown>) };
 
-  for (const field of MONEY_FIELDS) {
+  for (const field of EXACT_FIELDS) {
     const minor = readMinor(snapshot[field]);
     if (minor === null) return value; // leave it broken; isQuoteLine drops the line
     snapshot[field] = minor;
@@ -303,12 +340,47 @@ function reviveSnapshot(value: unknown): unknown {
   if (Array.isArray(snapshot.lines)) {
     snapshot.lines = snapshot.lines.map((row: unknown) => {
       if (typeof row !== 'object' || row === null) return row;
+
+      // Two fields, revived independently, and neither one judged here — a field that
+      // will not convert is left exactly as storage held it and `isQuoteLine` refuses
+      // the line. Coupling them would make the money check stand in for the label
+      // check by accident, which is a guard with no evidence behind it: the label is
+      // a `Message` now and its params hold integers, so a row can arrive with sound
+      // money and a label that is still a v3 sentence.
+      const revived: Record<string, unknown> = { ...row };
+
       const amountMinor = readMinor((row as { amountMinor?: unknown }).amountMinor);
-      return amountMinor === null ? row : { ...row, amountMinor };
+      if (amountMinor !== null) revived.amountMinor = amountMinor;
+
+      const label = reviveMessage((row as { label?: unknown }).label);
+      if (label !== null) revived.label = label;
+
+      return revived;
     });
   }
 
   return snapshot;
+}
+
+/**
+ * Warnings, revived the way the breakdown rows are.
+ *
+ * A single unrevivable warning leaves the array as it was found rather than dropping
+ * that one entry: warnings travel with a quote so the sales team sees them when issuing
+ * it (spec section 6), and a line that quietly arrives with one fewer caveat than it was
+ * saved with is worse than a line that fails to load.
+ */
+function reviveWarnings(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+
+  const revived: Issue[] = [];
+  for (const entry of value) {
+    const issue = reviveIssue(entry);
+    if (issue === null) return value;
+    revived.push(issue);
+  }
+
+  return revived;
 }
 
 /**
@@ -358,12 +430,17 @@ export function parseStoredQuote(raw: string | null): QuoteLine[] {
     return lines
       .map((line: unknown) => {
         if (typeof line !== 'object' || line === null) return line;
-        const stored = line as { priceSnapshot?: unknown; measures?: unknown };
+        const stored = line as {
+          priceSnapshot?: unknown;
+          measures?: unknown;
+          warnings?: unknown;
+        };
 
         return {
           ...line,
           priceSnapshot: reviveSnapshot(stored.priceSnapshot),
           measures: reviveMeasures(stored.measures),
+          warnings: reviveWarnings(stored.warnings),
         };
       })
       .filter(isQuoteLine);

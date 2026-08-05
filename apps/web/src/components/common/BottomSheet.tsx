@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useLocale } from '../../state/localeContext';
 
 interface BottomSheetProps {
   open: boolean;
-  titleTh: string;
+  /** Already translated by the caller — the set of sheet titles is open. */
+  title: string;
   onClose: () => void;
   children: ReactNode;
   /** Pinned to the bottom of the sheet, above the safe area. */
@@ -28,7 +30,8 @@ const FOCUSABLE =
  * whatever opened it on close. All DOM access is inside effects so nothing touches
  * `window` during render (spec section 12 keeps the SSR migration path open).
  */
-export function BottomSheet({ open, titleTh, onClose, children, footer, size = 'full' }: BottomSheetProps) {
+export function BottomSheet({ open, title, onClose, children, footer, size = 'full' }: BottomSheetProps) {
+  const { t } = useLocale();
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -83,7 +86,7 @@ export function BottomSheet({ open, titleTh, onClose, children, footer, size = '
     <div className="fixed inset-0 z-50">
       <button
         type="button"
-        aria-label={`ปิด${titleTh}`}
+        aria-label={t('sheet.closeNamed', { title })}
         onClick={onClose}
         className="absolute inset-0 h-full w-full cursor-default bg-black/70"
       />
@@ -104,12 +107,12 @@ export function BottomSheet({ open, titleTh, onClose, children, footer, size = '
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
           <h2 id={titleId} className="text-lead">
-            {titleTh}
+            {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="ปิด"
+            aria-label={t('sheet.close')}
             className="flex h-11 w-11 items-center justify-center rounded-xs border border-line text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk"
           >
             <X size={18} aria-hidden />

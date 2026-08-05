@@ -1,4 +1,5 @@
 import { AppError } from '../common/errors/app-error';
+import { message, type NullaryMessageKey } from '../i18n';
 
 /**
  * The order guards in `packages/db`, translated into answers a client can act on.
@@ -36,8 +37,15 @@ const RESTRICT_VIOLATION = '23001';
 const LOCK_NOT_AVAILABLE = '55P03';
 const QUERY_CANCELED = '57014';
 
-export const CATALOG_STALE_MESSAGE_TH =
-  'แคตตาล็อกมีการเผยแพร่เวอร์ชันใหม่ระหว่างที่คุณกำลังเลือก — กรุณาตรวจสอบราคาปัจจุบันอีกครั้ง';
+/**
+ * The catalogue moved while a customer was configuring.
+ *
+ * A key rather than the constant it used to be, and the two audiences stay two keys: this
+ * one is said in the configurator, `error.stale.catalog_while_editing_quote` to a
+ * salesperson. They were two constants before and collapsing them now would be a behaviour
+ * change wearing a refactor's clothes.
+ */
+export const CATALOG_STALE_MESSAGE = message('error.stale.catalog_while_configuring');
 
 /**
  * Find the driver error however deeply it has been wrapped.
@@ -74,24 +82,18 @@ function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
  * mechanism and not an oversight: the alternative is matching on the trigger's message text,
  * which turns every message reword into a silently mistranslated error.
  */
-const EXPLANATIONS: ReadonlyMap<string, string> = new Map([
-  [
-    'order_change_requests_one_open',
-    'มีคำขอแก้ไขที่ยังไม่ได้ตอบอยู่แล้ว — ต้องปิดคำขอเดิมก่อนจึงจะเปิดใหม่ได้',
-  ],
-  ['orders_supersedes_order_key', 'ออร์เดอร์นี้ถูกออกใบใหม่แทนไปแล้ว'],
-  ['order_events_order_seq_key', 'มีการเปลี่ยนแปลงออร์เดอร์นี้พร้อมกัน — กรุณาลองใหม่อีกครั้ง'],
-  ['orders_order_no_unique', 'เลขที่ออร์เดอร์นี้ถูกใช้ไปแล้ว'],
-  ['orders_has_an_owner', 'ออร์เดอร์ต้องมีเจ้าของเสมอ'],
-  ['orders_submitted_has_a_contact_channel', 'ต้องมีอีเมลสำหรับติดต่อก่อนจึงจะส่งใบเสนอราคาได้'],
-  ['orders_contact_email_shape', 'รูปแบบอีเมลไม่ถูกต้อง'],
-  ['orders_total_foots', 'ยอดรวมไม่ตรงกับผลบวกของยอดก่อนภาษีและภาษี'],
-  ['orders_scheduled_deposit_within_total', 'ยอดมัดจำต้องไม่เกินยอดรวมของสัญญา'],
-  ['order_documents_order_revision_key', 'มีการแก้ไขใบเสนอราคาพร้อมกัน — กรุณาโหลดใหม่'],
-  [
-    'orders_awaiting_payment_is_pre_freeze',
-    'ออร์เดอร์ที่เข้าสู่การผลิตแล้วกลับไปสถานะรอชำระเงินไม่ได้',
-  ],
+const EXPLANATIONS: ReadonlyMap<string, NullaryMessageKey> = new Map([
+  ['order_change_requests_one_open', 'error.order.change_request_already_open'],
+  ['orders_supersedes_order_key', 'error.order.already_superseded'],
+  ['order_events_order_seq_key', 'error.order.concurrent_event'],
+  ['orders_order_no_unique', 'error.order.order_no_taken'],
+  ['orders_has_an_owner', 'error.order.needs_an_owner'],
+  ['orders_submitted_has_a_contact_channel', 'error.order.needs_a_contact_channel'],
+  ['orders_contact_email_shape', 'error.order.contact_email_shape'],
+  ['orders_total_foots', 'error.order.total_does_not_foot'],
+  ['orders_scheduled_deposit_within_total', 'error.order.deposit_exceeds_total'],
+  ['order_documents_order_revision_key', 'error.order.concurrent_document'],
+  ['orders_awaiting_payment_is_pre_freeze', 'error.order.cannot_return_to_awaiting_payment'],
 ]);
 
 /**
@@ -109,16 +111,17 @@ export function translateOrderError(error: unknown): unknown {
   const named = pg.constraint;
   const explained = named === undefined ? undefined : EXPLANATIONS.get(named);
   const details = named === undefined ? undefined : { constraint: named };
+  const say = (fallback: NullaryMessageKey) => message(explained ?? fallback);
 
   switch (pg.code) {
     case UNIQUE_VIOLATION:
-      return AppError.conflict(explained ?? 'ข้อมูลนี้ซ้ำกับที่มีอยู่แล้ว', details);
+      return AppError.conflict(say('error.order.duplicate'), details);
 
     case FOREIGN_KEY_VIOLATION:
-      return AppError.validationFailed(explained ?? 'อ้างถึงข้อมูลที่ไม่มีอยู่', details);
+      return AppError.validationFailed(say('error.order.missing_reference'), details);
 
     case CHECK_VIOLATION:
-      return AppError.validationFailed(explained ?? 'ข้อมูลไม่ผ่านเงื่อนไขของออร์เดอร์', details);
+      return AppError.validationFailed(say('error.order.check_failed'), details);
 
     case RESTRICT_VIOLATION:
       /*
@@ -128,10 +131,9 @@ export function translateOrderError(error: unknown): unknown {
        * production was being confirmed. "Reload and look again" is both the honest message
        * and the correct action, and it is a 409 for the same reason a stale catalogue is.
        */
-      return AppError.conflict(
-        'สถานะของออร์เดอร์เปลี่ยนไปแล้วระหว่างที่ทำรายการ — กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง',
-        { reason: 'order_state_changed' },
-      );
+      return AppError.conflict(message('error.order.state_changed'), {
+        reason: 'order_state_changed',
+      });
 
     case LOCK_NOT_AVAILABLE:
     case QUERY_CANCELED:
@@ -141,9 +143,7 @@ export function translateOrderError(error: unknown): unknown {
        * same request is the right thing to do, which is what a 409 tells a client and a 503
        * does not.
        */
-      return AppError.conflict('ออร์เดอร์นี้กำลังถูกแก้ไขอยู่ — กรุณาลองใหม่อีกครั้ง', {
-        reason: 'locked',
-      });
+      return AppError.conflict(message('error.order.locked'), { reason: 'locked' });
 
     default:
       return error;

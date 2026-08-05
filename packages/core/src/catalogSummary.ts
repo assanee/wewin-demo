@@ -1,5 +1,4 @@
 import type { Category, Product } from './types/catalog.js';
-import { sqUmToSqm } from './pricing.js';
 
 /**
  * Catalog-wide aggregates for the marketing surfaces (home page, footer).
@@ -41,12 +40,26 @@ export function leadTimeSpan(products: Product[]): [number, number] | null {
   ];
 }
 
-/** In square metres, because this is copy for a marketing badge, not an input to a price. */
-export function billableFloorSpan(products: Product[]): [number, number] | null {
+/**
+ * The smallest and largest billable floor in the catalogue, in **exact square micrometres**.
+ *
+ * It used to divide out to `number` square metres here, on the grounds that this is copy for
+ * a marketing badge and not an input to a price. True, and still the wrong place to do it:
+ * the badge is rendered next to configurator areas that come from `bigint`, and phase 6a
+ * found the two rounding paths writing different hundredths of the same quantity. The
+ * division is display, so it belongs in the formatter — `@wewin/i18n`'s `formatArea` — and
+ * there is now exactly one of them.
+ */
+export function billableFloorSpan(products: Product[]): [bigint, bigint] | null {
   if (products.length === 0) return null;
 
-  const floors = products.map((product) => sqUmToSqm(product.minBillableSqUm));
-  return [Math.min(...floors), Math.max(...floors)];
+  let low = products[0]?.minBillableSqUm ?? 0n;
+  let high = low;
+  for (const product of products) {
+    if (product.minBillableSqUm < low) low = product.minBillableSqUm;
+    if (product.minBillableSqUm > high) high = product.minBillableSqUm;
+  }
+  return [low, high];
 }
 
 /**

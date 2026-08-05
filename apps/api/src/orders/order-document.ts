@@ -21,6 +21,7 @@ import {
 import { catalogStaleBody } from '@wewin/contract/errors';
 
 import { AppError, type JsonValue } from '../common/errors/app-error';
+import { encodeCoreMessage, message, pinnedLocaleOf } from '../i18n';
 /*
  * The pure engine, imported from its own file rather than through `../quotes` — that barrel
  * re-exports `QuotesModule`, and pulling a Nest module into the pricing path would make an
@@ -32,7 +33,7 @@ import {
   type ComputedLine,
   type LiveOverride,
 } from '../quotes/overrides';
-import { CATALOG_STALE_MESSAGE_TH } from './pg-errors';
+import { CATALOG_STALE_MESSAGE } from './pg-errors';
 
 /**
  * Turning a cart into the document an order is contracted on — plan 7.4 trap 3.
@@ -123,6 +124,14 @@ export interface PriceOrderParams {
   /** `productId` → what is published right now. */
   readonly catalog: ReadonlyMap<string, CatalogEntry>;
   readonly vat: TaxRule;
+  /**
+   * The language the customer was reading when they agreed to this — plan 10.6.
+   *
+   * A `string` and not a `SupportedLocale`, because the value arrives from a request body
+   * (`z.string().min(2).max(16)`, which accepts `klingon`) or from `orders.contact_locale`,
+   * a `text` column with rows older than this file. It is narrowed on the way into the
+   * document by `pinnedLocaleOf`, which is the *only* place that narrowing happens.
+   */
   readonly locale: string;
   readonly coreVersion: string;
   readonly revision: number;
@@ -172,7 +181,7 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
        * open configurator back for it at the moment a publish has just invalidated all of
        * them at once.
        */
-      throw AppError.conflict(CATALOG_STALE_MESSAGE_TH, {
+      throw AppError.conflict(CATALOG_STALE_MESSAGE, {
         lineNo,
         /*
          * `Exact` is opaque on purpose (contract/exact.ts): it exposes no readable member,
@@ -190,12 +199,13 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
     const issues = validate(entry.product, request.selections, request.measures, request.enteredUnits);
 
     if (hasBlockingError(issues)) {
-      throw AppError.validationFailed('รายการนี้ผลิตไม่ได้ตามที่กำหนดไว้', {
+      throw AppError.validationFailed(message('error.line.cannot_be_made'), {
         lineNo,
+        /* Keys and params, not a Thai sentence — see the same map in `quotes/pricing.ts`. */
         issues: issues.map((issue) => ({
           ruleId: issue.ruleId,
           severity: issue.severity,
-          messageTh: issue.messageTh,
+          message: encodeCoreMessage(issue.message) as unknown as JsonValue,
         })),
       });
     }
@@ -317,7 +327,23 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
     revision: params.revision,
     documentHash: '',
     currency: 'THB',
-    pinnedLocale: params.locale,
+    /*
+     * ⭐ PINNED, AND NARROWED HERE RATHER THAN NEGOTIATED LATER — plan 10.6 + 7.13.
+     *
+     * > เอกสาร ใช้ภาษาที่ตรึงตอน `submit_for_payment` … เอกสารที่พิมพ์ซ้ำแล้วได้คนละภาษา
+     * > คือเอกสารที่ใช้อ้างอิงไม่ได้
+     *
+     * The locale joins the other seven things pinned in this transaction rather than
+     * becoming an eighth mechanism — it is inside the document, so `documentHash` covers it
+     * and a reprint in a different language would be a different hash, which is the property
+     * that makes the pin worth anything.
+     *
+     * `pinnedLocaleOf` is what makes the stored value one of the eight. Before it, `locale`
+     * was written through unchecked: a client sending `"locale":"klingon"` pinned `klingon`,
+     * and the reprint two years later would have had to invent a rule for it on the spot.
+     * Now the invention happens once, here, at the moment there is still a person to ask.
+     */
+    pinnedLocale: pinnedLocaleOf(params.locale),
     pinnedCoreVersion: params.coreVersion,
     vat: { rateBp: params.vat.rateBp, treatment: params.vat.treatment },
     lines: frozenLines,

@@ -1,16 +1,74 @@
 import type { CustomGroup, Product, SkuGroup } from './types/catalog.js';
 import type { Dimension, NumExpr, RuleExpr } from './types/rule.js';
 import { AREA_MEASURE_CODES, calcAreaSqUm, measureOf } from './pricing.js';
-import { formatMeasure, formatRange } from './format.js';
+import {
+  groupLabel,
+  isMessage,
+  lengthParam,
+  lengthRangeParam,
+  type Message,
+  reviveMessage,
+  ruleMessage,
+} from './message.js';
 import { resolveSelection } from './selection.js';
 import { gridUmFor, isOnGridUm, type LengthUnit, snapUpUm } from './units.js';
 
+export type IssueSeverity = 'error' | 'warning';
+
+/**
+ * Something wrong with a configuration, said in a way eight languages can render.
+ *
+ * `messageTh` was a Thai sentence this file *built* — see the module comment in
+ * `message.ts` for why that had to stop. `message` is a key plus values now; nothing in
+ * this file formats a number or concatenates a clause, and it no longer imports
+ * `format.ts` at all.
+ *
+ * The message is nested rather than spread onto `Issue` so that the same `Message`
+ * value serves an issue, an option tooltip and a price breakdown row unchanged, and one
+ * validator and one reviver cover all three.
+ */
 export type Issue = {
   ruleId: string;
-  severity: 'error' | 'warning';
-  messageTh: string;
+  severity: IssueSeverity;
+  message: Message;
   affects: string[]; // groupCodes the UI should highlight
 };
+
+const isSeverity = (value: unknown): value is IssueSeverity =>
+  value === 'error' || value === 'warning';
+
+/**
+ * True when `value` is a sound `Issue`.
+ *
+ * Needed because an `Issue` is now persisted with numbers inside it: a quote line
+ * carries its warnings to storage, and a warning that came back with `um: "3200000"`
+ * would interpolate as a string rather than a length. Before this change a stored
+ * warning was a sentence and there was nothing in it to get wrong.
+ */
+export function isIssue(value: unknown): value is Issue {
+  if (typeof value !== 'object' || value === null) return false;
+  const issue = value as Partial<Issue>;
+
+  return (
+    typeof issue.ruleId === 'string' &&
+    isSeverity(issue.severity) &&
+    Array.isArray(issue.affects) &&
+    issue.affects.every((code) => typeof code === 'string') &&
+    isMessage(issue.message)
+  );
+}
+
+/** Read an `Issue` back out of JSON, restoring the micrometres its params carry. */
+export function reviveIssue(value: unknown): Issue | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const stored = value as { message?: unknown };
+
+  const message = reviveMessage(stored.message);
+  if (message === null) return null;
+
+  const revived: unknown = { ...value, message };
+  return isIssue(revived) ? revived : null;
+}
 
 const customGroups = (product: Product): CustomGroup[] =>
   product.groups.filter((group): group is CustomGroup => group.kind === 'custom');
@@ -275,7 +333,10 @@ export function validate(
     issues.push({
       ruleId: `selection:${group.code}`,
       severity: 'error',
-      messageTh: `${group.labelTh}ที่เลือกไว้ไม่มีอยู่ในรายการของสินค้านี้ — กรุณาเลือกใหม่`,
+      message: {
+        key: 'issue.selection.unknown',
+        params: { group: groupLabel(product, group) },
+      },
       affects: [group.code],
     });
   }
@@ -283,13 +344,18 @@ export function validate(
   for (const group of customGroups(product)) {
     const value = measureOf(product, measures, group.code);
     const unit = enteredUnits[group.code] ?? group.unit;
-    const say = (um: bigint): string => formatMeasure(um, unit);
 
     if (value < group.minUm || value > group.maxUm) {
       issues.push({
         ruleId: `range:${group.code}`,
         severity: 'error',
-        messageTh: `${group.labelTh}ต้องอยู่ระหว่าง ${formatRange(group.minUm, group.maxUm, unit)}`,
+        message: {
+          key: 'issue.range.outOfRange',
+          params: {
+            group: groupLabel(product, group),
+            range: lengthRangeParam(group.minUm, group.maxUm, unit),
+          },
+        },
         affects: [group.code],
       });
       // Out of range already tells the customer what to fix; a step warning on the
@@ -310,18 +376,35 @@ export function validate(
     // not on it, and in that case the maximum *renders* as the mark just above it —
     // "the next value, 157 1/2", is over the 157 1/2" maximum" is a sentence nobody
     // can act on. The value below is for the message and goes nowhere near `measures`.
+    //
+    // Two outcomes, two keys. The Thai version glued one of two advice clauses onto a
+    // shared stem, which only works in a language where the stem happens to come
+    // first; each of these is now a whole sentence in the target language.
     if (snapped > group.maxUm) {
       const grid = gridFor(group, unit);
       const largestOnGrid = group.maxUm - (group.maxUm % grid);
-      const advice =
-        largestOnGrid >= group.minUm
-          ? `ค่าสูงสุดที่ปรับได้คือ ${say(largestOnGrid)}`
-          : `และไม่มีค่าที่ลงตัวในช่วง ${formatRange(group.minUm, group.maxUm, unit)}`;
 
       issues.push({
         ruleId: `step:${group.code}`,
         severity: 'error',
-        messageTh: `${group.labelTh}ปรับได้ทีละ ${say(grid)} ${advice}`,
+        message:
+          largestOnGrid >= group.minUm
+            ? {
+                key: 'issue.step.aboveLargestMark',
+                params: {
+                  group: groupLabel(product, group),
+                  step: lengthParam(grid, unit),
+                  largest: lengthParam(largestOnGrid, unit),
+                },
+              }
+            : {
+                key: 'issue.step.noMarkInRange',
+                params: {
+                  group: groupLabel(product, group),
+                  step: lengthParam(grid, unit),
+                  range: lengthRangeParam(group.minUm, group.maxUm, unit),
+                },
+              },
         affects: [group.code],
       });
       continue;
@@ -330,7 +413,14 @@ export function validate(
     issues.push({
       ruleId: `step:${group.code}`,
       severity: 'warning',
-      messageTh: `${group.labelTh}ปรับได้ทีละ ${say(gridFor(group, unit))} ระบบจะปัดเป็น ${say(snapped)}`,
+      message: {
+        key: 'issue.step.willSnapUp',
+        params: {
+          group: groupLabel(product, group),
+          step: lengthParam(gridFor(group, unit), unit),
+          snapped: lengthParam(snapped, unit),
+        },
+      },
       affects: [group.code],
     });
   }
@@ -340,7 +430,10 @@ export function validate(
       issues.push({
         ruleId: rule.id,
         severity: rule.severity,
-        messageTh: rule.messageTh,
+        // The sentence stays the catalogue's, addressable by `ref` so a translated
+        // catalogue can replace it. Core does not own this text and never will:
+        // 81 products × 8 languages is a person's job (plan section 13).
+        message: { key: 'issue.rule', params: { message: ruleMessage(product, rule) } },
         affects: affectedGroups(rule.when),
       });
     }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { snapToStep, validate } from '../src/validation.js';
 import { getProductById } from '../src/data/products.js';
+import { rendersExactlyIn } from '../src/format.js';
 import { toMicrons } from '../src/units.js';
 import type { CustomGroup, Product } from '../src/types/catalog.js';
 
@@ -258,10 +259,81 @@ describe('validate — no grid mark left below the maximum', () => {
   test('names the largest mark that fits, exactly, rather than the maximum', () => {
     // The maximum itself is 98.4252… in, which the eighth grid can only approximate;
     // advising it would be advising a value the customer cannot type back.
-    const message = overshoot()[0]?.messageTh ?? '';
+    //
+    // Was a substring check on the built sentence — `toContain('98 3/8"')` and
+    // `not.toContain('≈')`. Both claims survive and get sharper: the µm value is
+    // pinned exactly rather than through whatever `formatLength` happened to print,
+    // and "no ≈" becomes the property that produced it, that the advised value lands
+    // on the eighth grid. A renderer in any of the eight languages inherits both.
+    const message = overshoot()[0]?.message;
 
-    expect(message).toContain('98 3/8"'); // 3,175 × 787 µm
-    expect(message).not.toContain('≈');
+    expect(message?.key).toBe('issue.step.aboveLargestMark');
+    expect(message?.params).toMatchObject({
+      largest: { kind: 'length', um: 2_498_725n, unit: 'in' }, // 3,175 × 787 µm
+      step: { kind: 'length', um: 3_175n, unit: 'in' },
+    });
+    expect(rendersExactlyIn(2_498_725n, 'in')).toBe(true);
+  });
+
+  test('phrases the step on the grid the customer typed on, not the authored one', () => {
+    // The same field entered in centimetres is a different statement: a 5 mm step, and
+    // no overshoot at all. `unit` travels in the param because it is meaning — which
+    // grid this sentence is about — and not a formatting choice the renderer may take.
+    const metric = validate(product('awn-4t'), AWN_OK, { width: cm(320), height: 2_499_000n });
+
+    expect(metric[0]?.message.key).toBe('issue.step.willSnapUp');
+    expect(metric[0]?.message.params).toMatchObject({
+      step: { kind: 'length', um: 5_000n, unit: 'cm' },
+      snapped: { kind: 'length', um: 2_500_000n, unit: 'cm' },
+    });
+
+    // And the same shape of message on the imperial grid, well short of the maximum so
+    // it stays a warning. Without this the assertions above would hold just as well if
+    // the message carried the *authored* unit, since awn-4t is authored in centimetres
+    // — and every step message would then be phrased on a grid the customer is not
+    // working to. 3,175 × 504 = 1,600,200 µm is the next eighth above 160.01 cm.
+    const imperial = validate(
+      product('awn-4t'),
+      AWN_OK,
+      { width: cm(320), height: 1_600_100n },
+      { height: 'in' },
+    );
+
+    expect(imperial[0]?.message.key).toBe('issue.step.willSnapUp');
+    expect(imperial[0]?.message.params).toMatchObject({
+      step: { kind: 'length', um: 3_175n, unit: 'in' },
+      snapped: { kind: 'length', um: 1_600_200n, unit: 'in' },
+    });
+  });
+
+  test('falls back to a whole-sentence key when no mark fits the range at all', () => {
+    // The two outcomes were one Thai sentence with one of two clauses glued on. They
+    // are two keys now, because the join only works in a language whose word order
+    // puts the stem first.
+    // The eighth-inch marks near this range are 3,175 × 315 = 1,000,125 µm and
+    // 3,175 × 316 = 1,003,300 µm. A range of 1,000,200–1,003,000 sits strictly between
+    // them, so nothing a customer types in inches can ever land inside it.
+    const narrow: CustomGroup = {
+      ...customGroup('awn-4t', 'width'),
+      minUm: 1_000_200n,
+      maxUm: 1_003_000n,
+    };
+    const shrunk: Product = {
+      ...product('awn-4t'),
+      groups: product('awn-4t').groups.map((group) =>
+        group.kind === 'custom' && group.code === 'width' ? narrow : group,
+      ),
+    };
+
+    const issues = validate(shrunk, AWN_OK, { width: 1_000_300n, height: cm(160) }, { width: 'in' });
+    const step = issues.find((issue) => issue.ruleId === 'step:width');
+
+    expect(step?.severity).toBe('error');
+    expect(step?.message.key).toBe('issue.step.noMarkInRange');
+    expect(step?.message.params).toMatchObject({
+      range: { kind: 'lengthRange', minUm: 1_000_200n, maxUm: 1_003_000n, unit: 'in' },
+      step: { kind: 'length', um: 3_175n, unit: 'in' },
+    });
   });
 });
 
@@ -293,7 +365,22 @@ describe('validate — defaults', () => {
       { width: cm(260), height: cm(160) },
     );
 
-    expect(issues[0]?.messageTh).toBe('กระจกสองชั้นรองรับความกว้างไม่เกิน 200 cm');
+    // A rule's sentence is catalogue content, not a code string — 81 products × 8
+    // languages is a person's job (plan 13). So it stays exactly the authored Thai and
+    // gains a `ref` that says which catalogue string it is, which is the only way a
+    // translated catalogue can ever replace it. The old assertion pinned the sentence;
+    // this pins the sentence *and* that it is addressable, and that it arrives with
+    // the identity of the rule that produced it rather than as loose prose.
+    expect(issues[0]?.message).toEqual({
+      key: 'issue.rule',
+      params: {
+        message: {
+          kind: 'catalogText',
+          ref: { on: 'ruleMessage', productId: 'awn-4t', ruleId: 'awn4t-lam-width' },
+          th: 'กระจกสองชั้นรองรับความกว้างไม่เกิน 200 cm',
+        },
+      },
+    });
     expect(issues[0]?.affects).toEqual(expect.arrayContaining(['glass_thickness', 'width']));
   });
 });

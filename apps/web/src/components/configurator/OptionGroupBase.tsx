@@ -1,6 +1,9 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react';
-import type { OptionValue, SkuGroup } from '@wewin/core';
+import type { OptionValue, Product, SkuGroup } from '@wewin/core';
 import type { OptionState } from '@wewin/core/option-states';
+import { CatalogText } from '../common/CatalogText';
+import { useCatalogText } from '../../i18n/useCatalogText';
+import { useLocale } from '../../state/localeContext';
 
 export interface OptionRenderArgs {
   value: OptionValue;
@@ -8,14 +11,58 @@ export interface OptionRenderArgs {
   state: OptionState;
 }
 
-interface OptionGroupBaseProps {
+/**
+ * What the three skins — swatches, chips, toggles — all take.
+ *
+ * Named and shared because `product` is new this round and had to be threaded through
+ * every one of them: a catalogue string is addressed per product version, since two
+ * products both have a `width` group and may word it differently. Declaring the shape
+ * once means a fourth skin cannot quietly omit it.
+ */
+export interface OptionGroupProps {
+  product: Product;
   group: SkuGroup;
   selected: string;
   states: Record<string, OptionState>;
   onSelect: (code: string) => void;
+}
+
+interface OptionGroupBaseProps extends OptionGroupProps {
   renderOption: (args: OptionRenderArgs) => ReactNode;
   /** Tailwind classes for the option container. */
   layoutClass: string;
+}
+
+/**
+ * An option's own name, marked `lang="th"` while its translation is missing.
+ *
+ * One component rather than three copies of the ref literal: the ref is what a
+ * translated catalogue is looked up by, and three hand-written copies of it would be
+ * three chances to drop `productId` and silently return another product's word.
+ */
+export function OptionLabel({
+  product,
+  group,
+  value,
+  className,
+}: {
+  product: Product;
+  group: SkuGroup;
+  value: OptionValue;
+  className?: string;
+}) {
+  return (
+    <CatalogText
+      at={{
+        on: 'optionLabel',
+        productId: product.id,
+        groupCode: group.code,
+        valueCode: value.code,
+      }}
+      th={value.labelTh}
+      {...(className === undefined ? {} : { className })}
+    />
+  );
 }
 
 const MOVE_KEYS = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
@@ -32,6 +79,7 @@ const MOVE_KEYS = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'E
  * that the customer must be able to find that out.
  */
 export function OptionGroupBase({
+  product,
   group,
   selected,
   states,
@@ -40,6 +88,8 @@ export function OptionGroupBase({
   layoutClass,
 }: OptionGroupBaseProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { message } = useLocale();
+  const catalogText = useCatalogText();
 
   const focusAt = (index: number) => {
     const buttons = containerRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
@@ -88,13 +138,25 @@ export function OptionGroupBase({
     <div
       ref={containerRef}
       role="radiogroup"
-      aria-label={group.labelTh}
+      // An accessible name is an attribute value, so it cannot carry a `lang` marker
+      // the way visible text can — this is the one place a Thai fallback goes into a
+      // German page unannounced. Named here rather than left to be discovered.
+      aria-label={catalogText(
+        { on: 'groupLabel', productId: product.id, groupCode: group.code },
+        group.labelTh,
+      )}
       onKeyDown={onKeyDown}
       className={layoutClass}
     >
       {group.values.map((value) => {
         const state = states[value.code] ?? { blocked: false };
         const isSelected = value.code === selected;
+
+        // `reasonTh`/`warnTh` were sentences `optionStates.ts` built. They are
+        // `Message` values now, and the *same* values the issue panel receives — which
+        // is what stops the tooltip and the panel drifting into two translations of
+        // one rule.
+        const tooltip = state.blocked ? state.reason : state.warn;
 
         return (
           <button
@@ -106,7 +168,7 @@ export function OptionGroupBase({
             aria-disabled={state.blocked || undefined}
             // Roving tabindex: one stop per group, then arrows move within it.
             tabIndex={isSelected ? 0 : -1}
-            title={state.blocked ? state.reasonTh : state.warnTh}
+            {...(tooltip ? { title: message(tooltip).text } : {})}
             onClick={() => {
               if (!state.blocked) onSelect(value.code);
             }}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocale } from '../../state/localeContext';
 
 interface QrCodeProps {
   value: string;
@@ -24,6 +25,7 @@ const QUIET_ZONE = 4; // modules — the spec's minimum margin, or scanners stru
 export function QrCode({ value, size = 200 }: QrCodeProps) {
   const [matrix, setMatrix] = useState<boolean[][] | null>(null);
   const [failed, setFailed] = useState(false);
+  const { t } = useLocale();
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +60,7 @@ export function QrCode({ value, size = 200 }: QrCodeProps) {
 
   if (failed) {
     return (
-      <p className="text-small text-chalk-3">สร้าง QR ไม่สำเร็จ ใช้ปุ่มคัดลอกลิงก์แทนได้</p>
+      <p className="text-small text-chalk-3">{t('qr.failed')}</p>
     );
   }
 
@@ -82,7 +84,7 @@ export function QrCode({ value, size = 200 }: QrCodeProps) {
       viewBox={`0 0 ${span} ${span}`}
       shapeRendering="crispEdges"
       role="img"
-      aria-label="คิวอาร์โค้ดของลิงก์การตั้งค่านี้"
+      aria-label={t('qr.alt')}
       className="rounded-xs"
     >
       <rect width={span} height={span} fill="var(--color-chalk)" />

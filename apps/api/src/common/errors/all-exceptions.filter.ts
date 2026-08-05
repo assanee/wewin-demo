@@ -11,8 +11,27 @@ import type { Request, Response } from 'express';
 
 import { ENV } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import {
+  encodeServerMessage,
+  message,
+  normaliseLocale,
+  parseAcceptLanguage,
+  renderInThai,
+  renderServerMessage,
+  type ServerMessage,
+} from '../../i18n';
 import { getRequestId } from '../request-id';
 import { AppError, type ErrorCode, type ErrorEnvelope, type JsonValue } from './app-error';
+
+/**
+ * An explicit choice, which beats what the browser was configured with.
+ *
+ * A person who picked Vietnamese in the app has said something more specific than
+ * `Accept-Language: en-GB,en;q=0.9`, and a header is the right place for it: it needs to
+ * reach every endpoint without appearing in 200 route signatures, and unlike a query
+ * parameter it does not fragment a cache key or leak into a shared URL.
+ */
+const LOCALE_HEADER = 'x-wewin-locale';
 
 /** Codes Nest itself produces before any of our code runs — 404s, malformed JSON bodies. */
 const CODE_BY_STATUS: ReadonlyMap<number, ErrorCode> = new Map([
@@ -32,8 +51,28 @@ const CODE_BY_STATUS: ReadonlyMap<number, ErrorCode> = new Map([
 interface Normalised {
   readonly status: number;
   readonly code: ErrorCode;
+  /** The Thai sentence — what goes in the log, and what an un-migrated call site produced. */
   readonly message: string;
+  /** Present when this error has a key, which is what lets the answer change language. */
+  readonly serverMessage: ServerMessage | undefined;
   readonly details: JsonValue | undefined;
+}
+
+/**
+ * What language to answer this request in.
+ *
+ * The explicit header first, then `Accept-Language`, then nothing — and `null` rather than
+ * Thai for "nothing", because `renderServerMessage` distinguishes *no preference* from *a
+ * preference we could not honour* and only the second is a degradation worth reporting.
+ */
+function requestedLocaleOf(request: Request): string | null {
+  const explicit = request.headers[LOCALE_HEADER];
+  const named = Array.isArray(explicit) ? explicit[0] : explicit;
+  if (typeof named === 'string' && normaliseLocale(named) !== null) return named;
+
+  const accept = request.headers['accept-language'];
+  const header = Array.isArray(accept) ? accept.join(',') : accept;
+  return parseAcceptLanguage(header);
 }
 
 @Catch()
@@ -46,22 +85,49 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
-    const { status, code, message, details } = this.normalise(exception);
+    const normalised = this.normalise(exception);
+    const { status, code, details, serverMessage } = normalised;
 
     /*
      * 5xx is our bug and gets the stack; 4xx is the caller's and would otherwise fill the
      * log with noise anyone can generate by typing a wrong URL.
+     *
+     * The *Thai* sentence is logged, never the rendered one. A German customer's error and
+     * the log line an engineer greps for have to be the same string, and the only way they
+     * can be is if the log does not follow the customer's language.
      */
+    const { message } = normalised;
     if (status >= 500) {
       this.logger.error(`${request.method} ${request.url} -> ${status} ${code}: ${message}`, stackOf(exception));
     } else {
       this.logger.debug(`${request.method} ${request.url} -> ${status} ${code}: ${message}`);
     }
 
+    /*
+     * ⭐ The one place an error becomes prose in somebody's language.
+     *
+     * An un-migrated call site has no `serverMessage` and its Thai string is answered as-is,
+     * with no `messageKey` and no `locale` — a client can therefore tell "this one cannot be
+     * translated yet" from "this one was translated and came out Thai anyway".
+     */
+    const rendered =
+      serverMessage === undefined ? undefined : renderServerMessage(serverMessage, requestedLocaleOf(request));
+    const wire = serverMessage === undefined ? undefined : encodeServerMessage(serverMessage);
+
     const envelope: ErrorEnvelope = {
       error: {
         code,
-        message,
+        message: rendered?.text ?? message,
+        ...(wire === undefined ? {} : { messageKey: wire.key, messageParams: wire.params as JsonValue }),
+        ...(rendered === undefined
+          ? {}
+          : {
+              locale: {
+                requested: rendered.locale.requested,
+                rendered: rendered.locale.rendered,
+                degraded: rendered.locale.degraded,
+              },
+            }),
         ...(details === undefined ? {} : { details }),
         requestId: getRequestId(request),
         path: request.url,
@@ -80,13 +146,25 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   private normalise(exception: unknown): Normalised {
     if (exception instanceof AppError) {
-      return { status: exception.status, code: exception.code, message: exception.message, details: exception.details };
+      return {
+        status: exception.status,
+        code: exception.code,
+        message: exception.message,
+        serverMessage: exception.serverMessage,
+        details: exception.details,
+      };
     }
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const code = CODE_BY_STATUS.get(status) ?? (status >= 500 ? 'INTERNAL' : 'BAD_REQUEST');
-      return { status, code, message: messageOf(exception), details: undefined };
+      /*
+       * No key. Nest's own messages — a 404 for an unrouted path, zod's field list — are
+       * generated by a library and are not sentences this catalogue owns. Inventing keys for
+       * them would mean a catalogue entry per validation error message, which is a catalogue
+       * of somebody else's strings.
+       */
+      return { status, code, message: messageOf(exception), serverMessage: undefined, details: undefined };
     }
 
     const infrastructural = classifyInfrastructural(exception);
@@ -96,12 +174,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
      * An unrecognised throw is a bug in this service. Its message may name a table, a
      * column or a connection string, so outside development the client gets nothing but
      * the request id — which is enough to find the logged stack.
+     *
+     * In production it now goes through the catalogue like everything else. It was the
+     * literal English `'Internal server error.'` with `serverMessage: undefined`, which made
+     * the 500 — the error a client is most likely to actually meet — the one response that
+     * skipped the language negotiation the rest of this file exists to do, and answered a
+     * Thai customer in English.
+     *
+     * Development keeps the raw throw, unkeyed: the whole point of it is to be the
+     * exception's own words, and a key would replace them with a sentence.
      */
-    const message =
-      this.env.NODE_ENV === 'development'
-        ? `${exception instanceof Error ? exception.message : String(exception)}`
-        : 'Internal server error.';
-    return { status: 500, code: 'INTERNAL', message, details: undefined };
+    if (this.env.NODE_ENV === 'development') {
+      const message = exception instanceof Error ? exception.message : String(exception);
+      return { status: 500, code: 'INTERNAL', message, serverMessage: undefined, details: undefined };
+    }
+
+    return normalisedFrom(500, 'INTERNAL', message('error.internal.unexpected'));
   }
 }
 
@@ -136,12 +224,11 @@ function classifyInfrastructural(exception: unknown): Normalised | undefined {
 
   const type = (exception as { type?: unknown }).type;
   if (type === 'entity.too.large') {
-    return {
-      status: HttpStatus.PAYLOAD_TOO_LARGE,
-      code: 'PAYLOAD_TOO_LARGE',
-      message: 'ข้อมูลที่ส่งมามีขนาดใหญ่เกินกว่าที่ระบบรับได้',
-      details: undefined,
-    };
+    return normalisedFrom(
+      HttpStatus.PAYLOAD_TOO_LARGE,
+      'PAYLOAD_TOO_LARGE',
+      message('error.http.payload_too_large'),
+    );
   }
 
   /*
@@ -152,15 +239,20 @@ function classifyInfrastructural(exception: unknown): Normalised | undefined {
    * quietly downgraded from "this is a bug" to "we are busy".
    */
   if (exception.message === 'timeout exceeded when trying to connect') {
-    return {
-      status: HttpStatus.SERVICE_UNAVAILABLE,
-      code: 'SERVICE_UNAVAILABLE',
-      message: 'ระบบกำลังมีคำขอพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง',
-      details: undefined,
-    };
+    return normalisedFrom(HttpStatus.SERVICE_UNAVAILABLE, 'SERVICE_UNAVAILABLE', message('error.http.busy'));
   }
 
   return undefined;
+}
+
+/**
+ * A `Normalised` built from a key, with the Thai rendering filled in for the log.
+ *
+ * These two are not `AppError`s — they are recognised third-party throws — so they take the
+ * long way round to the same place: a key on the envelope, Thai in the log.
+ */
+function normalisedFrom(status: number, code: ErrorCode, serverMessage: ServerMessage): Normalised {
+  return { status, code, message: renderInThai(serverMessage), serverMessage, details: undefined };
 }
 
 function messageOf(exception: HttpException): string {

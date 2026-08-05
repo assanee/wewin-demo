@@ -1,4 +1,5 @@
 import { AppError } from '../../common/errors/app-error';
+import { message, type NullaryMessageKey } from '../../i18n';
 
 /**
  * The money guards in `packages/db`, translated into answers a client can act on.
@@ -74,26 +75,17 @@ function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
  * oversight, because the alternative is matching on message text and turning every reword into
  * a silently mistranslated error.
  */
-const EXPLANATIONS: ReadonlyMap<string, string> = new Map([
-  [
-    'refunds_accrual_entry_key',
-    'ยอดค้างจ่ายก้อนนี้มีคำขอคืนเงินอยู่แล้ว — เงินก้อนเดียวคืนได้ครั้งเดียว',
-  ],
-  [
-    'refunds_approver_is_not_requester',
-    'ผู้อนุมัติต้องไม่ใช่ผู้ยื่นคำขอคืนเงิน',
-  ],
-  [
-    'refunds_disburser_is_not_approver',
-    'ผู้กดโอนเงินคืนต้องไม่ใช่ผู้อนุมัติ',
-  ],
-  ['refunds_amount_positive', 'ยอดคืนเงินต้องมากกว่าศูนย์'],
-  ['refunds_currency_is_thb', 'ระบบคืนเงินเป็นเงินบาทเท่านั้น'],
-  ['refunds_status_shape', 'สถานะของคำขอคืนเงินกับข้อมูลผู้อนุมัติ/ผู้โอนไม่สอดคล้องกัน'],
-  ['refunds_payee_last4_shape', 'เลขบัญชีสี่หลักท้ายต้องเป็นตัวเลขสี่หลัก'],
-  ['ledger_postings_amount_nonzero', 'รายการบัญชีที่เป็นศูนย์ไม่มีความหมาย'],
-  ['ledger_entries_slip_required', 'รายการบัญชีประเภทนี้ต้องอ้างอิงสลิป'],
-  ['ledger_entries_variance_shape', 'รายการส่วนต่างต้องระบุประเภทของส่วนต่าง'],
+const EXPLANATIONS: ReadonlyMap<string, NullaryMessageKey> = new Map([
+  ['refunds_accrual_entry_key', 'error.money.accrual_already_refunded'],
+  ['refunds_approver_is_not_requester', 'error.money.approver_is_requester'],
+  ['refunds_disburser_is_not_approver', 'error.money.disburser_is_approver'],
+  ['refunds_amount_positive', 'error.money.refund_amount_positive'],
+  ['refunds_currency_is_thb', 'error.money.refund_currency_is_thb'],
+  ['refunds_status_shape', 'error.money.refund_status_shape'],
+  ['refunds_payee_last4_shape', 'error.money.payee_last4_shape'],
+  ['ledger_postings_amount_nonzero', 'error.money.posting_amount_nonzero'],
+  ['ledger_entries_slip_required', 'error.money.entry_needs_a_slip'],
+  ['ledger_entries_variance_shape', 'error.money.variance_needs_a_kind'],
 ]);
 
 /**
@@ -110,16 +102,17 @@ export function translatePaymentError(error: unknown): unknown {
   const named = pg.constraint;
   const explained = named === undefined ? undefined : EXPLANATIONS.get(named);
   const details = named === undefined ? undefined : { constraint: named };
+  const say = (fallback: NullaryMessageKey) => message(explained ?? fallback);
 
   switch (pg.code) {
     case UNIQUE_VIOLATION:
-      return AppError.conflict(explained ?? 'รายการนี้ซ้ำกับที่มีอยู่แล้ว', details);
+      return AppError.conflict(say('error.money.duplicate'), details);
 
     case FOREIGN_KEY_VIOLATION:
-      return AppError.validationFailed(explained ?? 'อ้างถึงข้อมูลที่ไม่มีอยู่', details);
+      return AppError.validationFailed(say('error.money.missing_reference'), details);
 
     case CHECK_VIOLATION:
-      return AppError.validationFailed(explained ?? 'ข้อมูลไม่ผ่านเงื่อนไขของระบบการเงิน', details);
+      return AppError.validationFailed(say('error.money.check_failed'), details);
 
     case RESTRICT_VIOLATION:
       /*
@@ -129,16 +122,13 @@ export function translatePaymentError(error: unknown): unknown {
        * the correct action, and it must not say which, because the difference is not
        * something the caller can act on differently.
        */
-      return AppError.conflict(
-        'สถานะทางการเงินของรายการนี้เปลี่ยนไปแล้วระหว่างที่ทำรายการ — กรุณาโหลดข้อมูลใหม่แล้วตรวจสอบอีกครั้ง',
-        { reason: 'payment_state_changed' },
-      );
+      return AppError.conflict(message('error.money.state_changed'), {
+        reason: 'payment_state_changed',
+      });
 
     case LOCK_NOT_AVAILABLE:
     case QUERY_CANCELED:
-      return AppError.conflict('รายการนี้กำลังถูกดำเนินการอยู่ — กรุณาลองใหม่อีกครั้ง', {
-        reason: 'locked',
-      });
+      return AppError.conflict(message('error.money.locked'), { reason: 'locked' });
 
     default:
       return error;

@@ -1,5 +1,6 @@
 import type { Elevation } from '@wewin/core/elevation';
 import { ElevationDrawing } from './ElevationDrawing';
+import { useLocale } from '../../state/localeContext';
 
 interface SchematicProps {
   /**
@@ -48,6 +49,8 @@ export function Schematic({
   glassHex,
   frameRatio = 0.045,
 }: SchematicProps) {
+  const { t } = useLocale();
+
   // A square is the honest fallback for a proportion that is not one: a zero or a
   // NaN width would otherwise collapse the viewBox and take the whole card with it.
   const proportion = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
@@ -63,7 +66,11 @@ export function Schematic({
       preserveAspectRatio="xMidYMid meet"
       className="h-full w-full"
       role="img"
-      aria-label={sizeLabel === '' ? 'ภาพร่างสัดส่วน' : `ภาพร่างสัดส่วน ${sizeLabel}`}
+      aria-label={
+        sizeLabel === ''
+          ? t('drawing.schematic')
+          : t('drawing.schematic.sized', { size: sizeLabel })
+      }
     >
       <ElevationDrawing
         frame={{ x: 0, y: 0, width: w, height: h }}

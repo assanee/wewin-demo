@@ -113,6 +113,62 @@ describe('planAllocations', () => {
       differenceThbMinor: '-40',
       slipAmountThbMinor: DEPOSIT.toString(),
     });
+
+    /*
+     * 6a: this short allocation reaches the *room left* branch, and the key says so.
+     *
+     * Worth pinning because the two branches share `reason: 'allocations_do_not_foot'` in
+     * `details` and say completely different things to the reviewer — "put the money on an
+     * instalment" versus "your total does not match the photograph". Before the keys, the
+     * only way to tell them apart was to read the Thai.
+     */
+    expect(caught?.serverMessage?.key).toBe('error.slip.foot_with_room_left');
+    /*
+     * The whole sentence, not three `toContain`s. Three of the params are money and two of
+     * them can be swapped without changing the set of figures in the string — a `toContain`
+     * suite passes with `roomLeft` and `slip` exchanged, which tells the reviewer the
+     * schedule can absorb ฿5,529.60 when it can absorb ฿12,902.80.
+     */
+    expect(caught?.message).toBe(
+      'ยอดที่ตัดชำระรวม ฿5,529.20 แต่สลิปใบนี้เป็นเงิน ฿5,529.60 ' +
+        'และตารางงวดยังรับได้อีก ฿12,902.80 — เงินที่ยังมีงวดรองรับต้องตัดเข้างวด ไม่ใช่ค้างเป็นเงินรับล่วงหน้า',
+    );
+  });
+
+  /**
+   * The other footing branch — the one whose sentence names the difference.
+   *
+   * Reached by allocating *more* than the slip across instalments that can each take it, so
+   * there is no room left over to be told about. `foot_with_room_left` above is the short
+   * case; this is the long one, and the two are the reason `differenceThbMinor` and the
+   * sentence's `ต่างกัน` are separate things.
+   */
+  it('names the difference when the allocations exceed the slip', () => {
+    const instalments = thirtySeventy();
+
+    let caught: AppError | undefined;
+    try {
+      planAllocations({
+        slipAmountThbMinor: GRAND - 40n,
+        allocations: [
+          { instalmentId: instalments[0]?.id ?? '', amountThbMinor: encodeThb(DEPOSIT) },
+          { instalmentId: instalments[1]?.id ?? '', amountThbMinor: encodeThb(BALANCE) },
+        ],
+        instalments,
+      });
+    } catch (error) {
+      caught = error as AppError;
+    }
+
+    expect(caught?.serverMessage?.key).toBe('error.slip.foot_mismatch');
+    /*
+     * `ต่างกัน ฿0.40` and never `ต่างกัน -฿0.40`. The message says the figures *differ by*
+     * forty satang, so its param is a magnitude — a minus sign in that clause reads as a
+     * negative amount of money rather than a shortfall. The signed value is not lost; it is
+     * on `differenceThbMinor`, which is where a client reads the direction.
+     */
+    expect(caught?.message).toContain('ต่างกัน ฿0.40');
+    expect(caught?.details).toMatchObject({ differenceThbMinor: '40' });
   });
 
   /**

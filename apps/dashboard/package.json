@@ -20,6 +20,7 @@
   "dependencies": {
     "@wewin/contract": "workspace:*",
     "@wewin/core": "workspace:*",
+    "@wewin/i18n": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "client-only": "^0.0.1",
     "clsx": "^2.1.1",

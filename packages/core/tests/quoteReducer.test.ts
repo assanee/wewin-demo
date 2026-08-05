@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   QUOTE_SCHEMA_VERSION,
+  QUOTE_STORAGE_KEY,
   emptyQuote,
   longestLeadTime,
   parseStoredQuote,
@@ -13,6 +14,7 @@ import {
   type QuoteState,
 } from '../src/quote.js';
 import { PRICE_SCALE, calcPrice, totalFromUnitPrice } from '../src/pricing.js';
+import { type Issue, validate } from '../src/validation.js';
 import { buildSkuCode } from '../src/skuCode.js';
 import { configHash } from '../src/hash.js';
 import { getProductById } from '../src/data/products.js';
@@ -468,10 +470,149 @@ describe('quote persistence', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * Structured messages in storage — new in v4
+ *
+ * A stored line used to hold `lines[0].label: "ราคาฐานตามพื้นที่"` and
+ * `warnings[0].messageTh`, both plain strings with nothing in them to misread. Both now
+ * hold integers — a square micrometre count in the label, micrometres in a warning's
+ * params — and `JSON.stringify` turns a bigint into digits or throws. This is the same
+ * hazard `measures` has, arriving in two new places.
+ * ------------------------------------------------------------------ */
+
+describe('quote persistence — messages carry numbers now', () => {
+  /** The warning a real line carries: off-step height, phrased on the grid entered. */
+  const stepWarning = (): Issue => {
+    const issues = validate(product('awn-4t'), {}, { width: cm(320), height: cm(160.3) });
+    const warning = issues.find((issue) => issue.severity === 'warning');
+    if (!warning) throw new Error('fixture: expected a step warning');
+    return warning;
+  };
+
+  const warned = (): QuoteLine =>
+    lineFor('awn-4t', { width: cm(320), height: cm(1603) / 10n }, {
+      lineId: 'a',
+      warnings: [stepWarning()],
+    });
+
+  test('a warning survives storage with its micrometres still micrometres', () => {
+    const [restored] = parseStoredQuote(serialiseQuote(state(warned())));
+    const param = restored?.warnings[0]?.message.params;
+
+    expect(restored?.warnings).toEqual([stepWarning()]);
+    // `toEqual` alone would pass on `"1605000"`, because it is the same characters —
+    // this is the assertion that the reviver ran.
+    expect(typeof (param as { snapped?: { um?: unknown } }).snapped?.um).toBe('bigint');
+  });
+
+  test('a breakdown row label survives with its area still an integer', () => {
+    const [restored] = parseStoredQuote(serialiseQuote(state(warned())));
+    const label = restored?.priceSnapshot.lines[0]?.label;
+
+    expect(label?.key).toBe('price.line.base');
+    expect(label?.params).toEqual({
+      billableArea: { kind: 'area', sqUm: cm(320) * (cm(1603) / 10n) },
+    });
+  });
+
+  /** A well-formed stored quote with one field of the first line replaced. */
+  const storedWith = (field: 'warnings' | 'label', replacement: unknown): string => {
+    const payload = JSON.parse(serialiseQuote(state(warned()))) as {
+      lines: Record<string, unknown>[];
+    };
+
+    // The same replacer `serialiseQuote` uses, because a replacement built from a live
+    // `Issue` still carries bigints and `JSON.stringify` throws on one.
+    const digits = (_key: string, value: unknown): unknown =>
+      typeof value === 'bigint' ? value.toString() : value;
+
+    return JSON.stringify(
+      {
+        ...payload,
+        lines: payload.lines.map((line) => {
+          if (field === 'warnings') return { ...line, warnings: replacement };
+
+          const snapshot = line.priceSnapshot as { lines: Record<string, unknown>[] };
+          return {
+            ...line,
+            priceSnapshot: {
+              ...snapshot,
+              lines: snapshot.lines.map((row, index) =>
+                index === 0 ? { ...row, label: replacement } : row,
+              ),
+            },
+          };
+        }),
+      },
+      digits,
+    );
+  };
+
+  test('drops a line whose warning did not survive as a message', () => {
+    // The control: the same helper with the real thing still keeps the line.
+    expect(parseStoredQuote(storedWith('warnings', []))).toHaveLength(1);
+
+    // A v3 warning. It reads as a perfectly good object and would render as nothing.
+    expect(
+      parseStoredQuote(
+        storedWith('warnings', [
+          { ruleId: 'step:height', severity: 'warning', affects: ['height'], messageTh: 'เตือน' },
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  test('drops a line whose breakdown row lost its label', () => {
+    // A v3 label — a Thai sentence. It would render verbatim in all eight languages.
+    expect(parseStoredQuote(storedWith('label', 'ราคาฐานตามพื้นที่'))).toEqual([]);
+    // The right key with the area missing: nothing to interpolate, so nothing to show.
+    expect(
+      parseStoredQuote(storedWith('label', { key: 'price.line.base', params: {} })),
+    ).toEqual([]);
+  });
+
+  test('drops a line whose breakdown row lost its money', () => {
+    // The other half of the same row. A satang count that survived as a JSON number
+    // rather than as digits is the pre-bigint shape, and it reads as a real amount —
+    // the label check above would not notice, and this one has to.
+    const payload = JSON.parse(serialiseQuote(state(warned()))) as {
+      lines: { priceSnapshot: { lines: Record<string, unknown>[] } }[];
+    };
+    const first = payload.lines[0]?.priceSnapshot.lines[0];
+    if (!first) throw new Error('fixture: expected a breakdown row');
+    first.amountMinor = 768000;
+
+    expect(parseStoredQuote(JSON.stringify(payload))).toEqual([]);
+  });
+
+  test('one unreadable warning condemns the line rather than quietly shortening the list', () => {
+    // Warnings travel with a quote so the sales team sees them when it is issued
+    // (spec section 6). A line that loads with one fewer caveat than it was saved with
+    // is worse than one that fails to load, because nobody can tell.
+    expect(
+      parseStoredQuote(storedWith('warnings', [stepWarning(), { ruleId: 'x' }])),
+    ).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * Storage schema version — the debt phase 1 left open
  * ------------------------------------------------------------------ */
 
 describe('quote storage carries its own schema version', () => {
+  test('the version moved with the representation, and the key moved with it', () => {
+    /*
+     * Pinned as a literal, the way `pricing-parity` pins `correctedUp`. Every other
+     * assertion in this file reads `QUOTE_SCHEMA_VERSION` symbolically and would go on
+     * passing if v4's structured labels and warnings had shipped under v3's number —
+     * which is precisely the change plan 4.5 says must never happen quietly, because a
+     * v3 payload read under v4 rules loses every label and every warning rather than
+     * failing. If this line has to move, something about what is *in* the payload
+     * moved, and whoever moved it has to say so out loud.
+     */
+    expect(QUOTE_SCHEMA_VERSION).toBe(4);
+    expect(QUOTE_STORAGE_KEY).toBe(`aluform.quote.v${String(QUOTE_SCHEMA_VERSION)}`);
+  });
+
   test('serialiseQuote writes the version into the payload, not just the key', () => {
     const a = lineFor('awn-4t', { width: cm(320), height: cm(160) }, { lineId: 'a' });
     const parsed: unknown = JSON.parse(serialiseQuote({ lines: [a], hydrated: true }));

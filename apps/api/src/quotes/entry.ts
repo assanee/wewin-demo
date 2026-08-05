@@ -1,4 +1,5 @@
 import { divRoundHalfUp, roundToUnit } from '@wewin/core/money';
+import { asciiNumerals } from '@wewin/i18n/numerals';
 import type { OverrideAnchorWire, OverrideEntryModeWire } from '@wewin/contract/quote';
 
 /**
@@ -44,8 +45,15 @@ const BP_DECIMALS = 2;
 /** Two decimal places of a *baht* is exactly one satang. */
 const MINOR_DECIMALS = 2;
 
-/** Thai digits, because a Thai keyboard produces them and refusing them is not a rule. */
-const THAI_DIGITS = '๐๑๒๓๔๕๖๗๘๙';
+// The Thai digit table that used to live here is now `@wewin/i18n`'s `asciiNumerals`, and
+// it covers all eight languages' keyboards rather than one.
+//
+// The comment it replaces argued — correctly — that "a Thai keyboard produces them and
+// refusing them is not a rule". Phase 6a made Hindi and Burmese first-class locales, and
+// their keyboards produce their own digits in exactly the sense that argument names. Before
+// this, `"๘,๕๐๐"` parsed to ฿8,500 while `"८,५००"` and `"၈,၅၀၀"` were rejected — and rejected
+// with the *wrong diagnosis*, `มีเครื่องหมายจุลภาคอยู่ผิดตำแหน่ง`, because with the digits
+// unrecognised the comma was the only thing left that looked wrong.
 
 export class EntryError extends Error {
   /** Prose the salesperson reads, in Thai. The caller turns it into a 422. */
@@ -68,12 +76,10 @@ export class EntryError extends Error {
  */
 function clean(text: string): string {
   let out = '';
-  for (const character of text.trim()) {
-    const thai = THAI_DIGITS.indexOf(character);
-    if (thai >= 0) {
-      out += String(thai);
-      continue;
-    }
+  // Digits first, punctuation untouched: `asciiNumerals` rewrites only glyphs it knows to
+  // be digits, so a European `8.500` and a mis-typed `85,00` reach `scan` exactly as typed
+  // and are still told apart there.
+  for (const character of asciiNumerals(text.trim())) {
     if (character === ' ' || character === ' ' || character === '฿') continue;
     out += character;
   }

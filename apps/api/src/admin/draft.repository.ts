@@ -31,6 +31,7 @@ import {
 import { decodeElevation } from '@wewin/contract/catalog';
 
 import { AppError } from '../common/errors/app-error';
+import { code, message } from '../i18n';
 import { DRIZZLE } from '../database/database.tokens';
 import {
   compileDraft,
@@ -213,7 +214,9 @@ export class DraftRepository {
 
   private async loadProductRow(tx: Tx, productId: string): Promise<DraftProductRow> {
     const row = await this.findProductRow(tx, productId);
-    if (!row) throw AppError.notFound(`ไม่พบสินค้ารหัส "${productId}"`, { productId });
+    if (!row) throw AppError.notFound(message('error.catalog.product_not_found', { productId: code(productId) }), {
+        productId,
+      });
     return row;
   }
 

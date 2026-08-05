@@ -1,4 +1,5 @@
 import { AppError } from '../../common/errors/app-error';
+import { message, type NullaryMessageKey } from '../../i18n';
 import { translateOrderError } from '../../orders';
 
 /**
@@ -72,23 +73,21 @@ function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
  * which is why the `restrict_violation` branch is generic — matching on the trigger's
  * message text would turn every message reword into a silently mistranslated error.
  */
-const EXPLANATIONS: ReadonlyMap<string, string> = new Map([
-  [
-    'payment_slips_reviewer_is_not_submitter',
-    'ผู้ตรวจสลิปต้องไม่ใช่ผู้อัปโหลดสลิปใบเดียวกัน — การตรวจด้วยคนคือมาตรการควบคุมเดียวของระบบนี้',
-  ],
-  ['payment_slips_amount_positive', 'ยอดเงินบนสลิปต้องมากกว่าศูนย์'],
-  ['payment_slips_currency_is_thb', 'ระบบรับสลิปเป็นเงินบาทเท่านั้น'],
-  ['payment_slips_review_shape', 'สถานะของสลิปกับข้อมูลผู้ตรวจไม่สอดคล้องกัน'],
-  ['payment_slips_erasure_shape', 'รูปสลิปที่ถูกลบแล้วใส่กลับไม่ได้ — ลบได้อย่างเดียว'],
-  ['payment_slips_payer_last4_shape', 'เลขท้ายบัญชีต้องเป็นตัวเลขสี่หลัก'],
-  [
-    'slip_allocations_slip_instalment_key',
-    'ระบุงวดเดียวกันซ้ำในสลิปใบเดียว — ให้รวมเป็นบรรทัดเดียว',
-  ],
-  ['slip_allocations_amount_positive', 'ยอดที่ตัดชำระแต่ละงวดต้องมากกว่าศูนย์'],
-  ['ledger_postings_amount_nonzero', 'รายการบัญชีที่เป็นศูนย์ไม่มีความหมาย'],
-  ['refunds_accrual_entry_key', 'รายการตั้งค้างนี้ถูกอ้างถึงโดยการคืนเงินอื่นแล้ว'],
+const EXPLANATIONS: ReadonlyMap<string, NullaryMessageKey> = new Map([
+  ['payment_slips_reviewer_is_not_submitter', 'error.slip.reviewer_is_submitter'],
+  ['payment_slips_amount_positive', 'error.slip.amount_positive'],
+  ['payment_slips_currency_is_thb', 'error.slip.currency_is_thb'],
+  ['payment_slips_review_shape', 'error.slip.review_shape'],
+  ['payment_slips_erasure_shape', 'error.slip.erasure_shape'],
+  ['payment_slips_payer_last4_shape', 'error.slip.payer_last4_shape'],
+  ['slip_allocations_slip_instalment_key', 'error.slip.instalment_repeated_in_slip'],
+  ['slip_allocations_amount_positive', 'error.slip.allocation_amount_positive'],
+  ['ledger_postings_amount_nonzero', 'error.slip.posting_amount_nonzero'],
+  /*
+   * The same constraint name as `error.money.accrual_already_refunded`, and a different
+   * sentence — see the note on that key. Namespacing by domain is what keeps both.
+   */
+  ['refunds_accrual_entry_key', 'error.slip.accrual_already_refunded'],
 ]);
 
 export function translateSlipError(error: unknown): unknown {
@@ -98,13 +97,14 @@ export function translateSlipError(error: unknown): unknown {
   const named = pg.constraint;
   const explained = named === undefined ? undefined : EXPLANATIONS.get(named);
   const details = named === undefined ? undefined : { constraint: named };
+  const say = (fallback: NullaryMessageKey) => message(explained ?? fallback);
 
   switch (pg.code) {
     case UNIQUE_VIOLATION:
-      return AppError.conflict(explained ?? 'ข้อมูลนี้ซ้ำกับที่มีอยู่แล้ว', details);
+      return AppError.conflict(say('error.slip.duplicate'), details);
 
     case CHECK_VIOLATION:
-      return AppError.validationFailed(explained ?? 'ข้อมูลไม่ผ่านเงื่อนไขของการชำระเงิน', details);
+      return AppError.validationFailed(say('error.slip.check_failed'), details);
 
     case RESTRICT_VIOLATION:
       /*
@@ -114,12 +114,10 @@ export function translateSlipError(error: unknown): unknown {
        * the slip. Both mean the same thing to the person holding the mouse — look again at
        * what is on the screen — and neither is a reason to retry the identical request.
        */
-      return AppError.conflict(
-        explained ??
-          'รายการชำระเงินนี้ไม่ผ่านการตรวจสอบของฐานข้อมูล — ' +
-            'ยอดที่ตัดชำระต้องเท่ากับยอดบนสลิปพอดี และตารางงวดอาจถูกแก้ไขระหว่างที่คุณกำลังตรวจ กรุณาโหลดใหม่แล้วตรวจอีกครั้ง',
-        { reason: 'payment_guard_refused', ...(details ?? {}) },
-      );
+      return AppError.conflict(say('error.slip.guard_refused'), {
+        reason: 'payment_guard_refused',
+        ...(details ?? {}),
+      });
 
     default:
       /*

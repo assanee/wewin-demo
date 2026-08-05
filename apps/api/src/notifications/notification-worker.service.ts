@@ -132,7 +132,12 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
      * the phase-6 seam for a signed-in customer.
      */
     const preferred = preferredLocaleOf({ contactLocale: notification.contactLocale });
-    const locale = resolveRenderLocale(preferred);
+    /*
+     * Per template, not per language — see locale.ts. `SUPPORTED_LOCALES` is eight now and
+     * the template catalogue is one, so asking "is `my` supported?" would answer yes and
+     * then fail to render.
+     */
+    const locale = resolveRenderLocale(preferred, notification.templateKey);
 
     const rendered = renderTemplate(locale.rendered, notification.templateKey, {
       orderNo: notification.orderNo,

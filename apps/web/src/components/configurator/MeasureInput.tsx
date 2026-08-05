@@ -1,12 +1,17 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
-import type { CustomGroup, LengthUnit } from '@wewin/core';
+import type { CustomGroup, LengthUnit, Product } from '@wewin/core';
 import { gridFor } from '@wewin/core/validation';
 import { parseMeasure, snapUpUm } from '@wewin/core/units';
-import { formatLength, formatMeasure, formatRange } from '@wewin/core/format';
+import { formatLength } from '@wewin/core/format';
 import { useDisplayUnit } from '../../state/displayUnitContext';
+import { useLocale } from '../../state/localeContext';
+import { CatalogText } from '../common/CatalogText';
+import { useCatalogText } from '../../i18n/useCatalogText';
 
 interface MeasureInputProps {
+  /** For the group's ref: a catalogue label is addressed per product version. */
+  product: Product;
   group: CustomGroup;
   /** Canonical micrometres, like every other length in the app. */
   value: bigint;
@@ -41,9 +46,18 @@ const DEBOUNCE_MS = 120;
  * is not editing it. A snap only ever happens on a value a person committed, on the
  * grid of the unit they were looking at when they committed it.
  */
-export function MeasureInput({ group, value, onChange, invalid = false }: MeasureInputProps) {
+export function MeasureInput({
+  product,
+  group,
+  value,
+  onChange,
+  invalid = false,
+}: MeasureInputProps) {
   const inputId = useId();
   const helperId = useId();
+  const { t } = useLocale();
+  const catalogText = useCatalogText();
+  const groupRef = { on: 'groupLabel', productId: product.id, groupCode: group.code } as const;
 
   // The unit on screen, not the one the catalogue was authored in. Every format and
   // every parse below already asked for a unit rather than assuming cm, so this is
@@ -51,6 +65,19 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
   const { unit } = useDisplayUnit();
   const imperial = unit === 'in' || unit === 'ft';
   const grid = gridFor(group, unit);
+  // **Core's rendering, not the locale's — the one number on the site that stays
+  // canonical.** Everything else on screen goes through `Formatters`, which writes
+  // digits, separators and grouping the way CLDR says the locale does. This string
+  // does not, because it is not only displayed: `parseMeasure` reads it straight back
+  // on blur and on every ± press. Handing the field `၃၂၀` or `320,5` would mean
+  // `parseMeasure` returning `null`, the blur falling through to `group.defaultUm`,
+  // and a window silently resizing itself because somebody changed language.
+  //
+  // The input is therefore ASCII with a `.` point in all eight locales, and the
+  // helper line underneath — which nobody types into — is localised normally. That
+  // asymmetry is deliberate and it is the same boundary phase 2 drew: a value a
+  // person types round-trips through one parser, and only the readings around it are
+  // free to be written differently.
   const rendered = formatLength(value, unit);
 
   const [text, setText] = useState(rendered);
@@ -162,7 +189,7 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={inputId} className="flex items-baseline justify-between gap-2 text-body text-chalk">
-        <span className="min-w-0 truncate">{group.labelTh}</span>
+        <CatalogText at={groupRef} th={group.labelTh} className="min-w-0 truncate" />
         <span className="numeric shrink-0 text-caption text-chalk-3">{unit}</span>
       </label>
 
@@ -175,7 +202,11 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
           type="button"
           onClick={() => step(nextDown)}
           disabled={atMin}
-          aria-label={`ลด${group.labelTh} ${formatMeasure(grid, unit)}`}
+          aria-label={t('measure.decrease', {
+            group: catalogText(groupRef, group.labelTh),
+            stepUm: grid,
+            unit,
+          })}
           className="flex h-11 w-11 shrink-0 items-center justify-center border-e border-line bg-panel-2 text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk disabled:opacity-30"
         >
           <Minus size={16} aria-hidden />
@@ -218,7 +249,11 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
           type="button"
           onClick={() => step(nextUp)}
           disabled={atMax}
-          aria-label={`เพิ่ม${group.labelTh} ${formatMeasure(grid, unit)}`}
+          aria-label={t('measure.increase', {
+            group: catalogText(groupRef, group.labelTh),
+            stepUm: grid,
+            unit,
+          })}
           className="flex h-11 w-11 shrink-0 items-center justify-center border-s border-line bg-panel-2 text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk disabled:opacity-30"
         >
           <Plus size={16} aria-hidden />
@@ -226,8 +261,16 @@ export function MeasureInput({ group, value, onChange, invalid = false }: Measur
       </div>
 
       <p id={helperId} className="numeric text-caption text-chalk-3">
-        {formatRange(group.minUm, group.maxUm, unit)} · ทีละ {formatLength(grid, unit)}
-        {group.helperTh ? <span className="font-body"> · {group.helperTh}</span> : null}
+        {t('measure.helper', { minUm: group.minUm, maxUm: group.maxUm, gridUm: grid, unit })}
+        {group.helperTh ? (
+          <span className="font-body">
+            {' · '}
+            <CatalogText
+              at={{ on: 'groupHelper', productId: product.id, groupCode: group.code }}
+              th={group.helperTh}
+            />
+          </span>
+        ) : null}
       </p>
     </div>
   );

@@ -37,8 +37,28 @@ describe('an absolute figure is taken exactly as typed', () => {
     }
   });
 
-  it('reads Thai digits', () => {
-    expect(money('line_total', '๘๕๐๐')).toEqual({ kind: 'money', overrideThbMinor: 850_000n });
+  it("reads any of the eight languages' digits, not only Thai", () => {
+    // Thai was the only one accepted, on the stated grounds that a Thai keyboard produces
+    // Thai digits and refusing them is not a rule. That argument is right and it is not
+    // about Thai: phase 6a made Hindi and Burmese first-class, and their keyboards produce
+    // their own digits in exactly the same sense. `८,५००` and `၈,၅၀၀` were rejected — and
+    // rejected with the *wrong reason*, "the comma is in the wrong place", because with the
+    // digits unrecognised the comma was the only thing left that looked wrong.
+    for (const typed of ['๘,๕๐๐', '८,५००', '၈,၅၀၀', '໘,໕໐໐', '8,500']) {
+      expect(money('line_total', typed), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: 850_000n,
+      });
+    }
+  });
+
+  it('and still refuses the two that only look like numbers', () => {
+    // The normaliser rewrites digits and nothing else, so the punctuation evidence `scan`
+    // needs survives: `85,00` is somebody's ฿85.00 typed European-style, `8.500` is
+    // somebody's ฿8,500 typed the same way, and answering ฿8,500 for either would be
+    // guessing at a figure that is a promise to a customer.
+    expect(() => money('line_total', '๘๕,๐๐')).toThrow(EntryError);
+    expect(() => money('line_total', '८.५००')).toThrow(EntryError);
   });
 
   /*

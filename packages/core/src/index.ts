@@ -30,6 +30,23 @@ export type { Dimension, NumExpr, RuleExpr } from './types/rule.js';
 export type { LengthUnit } from './units.js';
 
 export type { Elevation, PanelInfill, PanelOperation } from './elevation.js';
-export type { PriceBreakdown } from './pricing.js';
-export type { Issue } from './validation.js';
+export type { PriceBreakdown, PriceLine } from './pricing.js';
+export type { Issue, IssueSeverity } from './validation.js';
+export type { OptionState, OptionStates } from './optionStates.js';
 export type { QuoteAction, QuoteLine, QuoteState } from './quote.js';
+
+/**
+ * The message scheme (plan 5). A locale catalogue is written against `MessageKey` and
+ * `MessageParamsByKey`; nothing in core renders a message, and nothing here formats.
+ */
+export type {
+  AreaParam,
+  CatalogTextParam,
+  CatalogTextRef,
+  LengthParam,
+  LengthRangeParam,
+  Message,
+  MessageKey,
+  MessageParam,
+  MessageParamsByKey,
+} from './message.js';

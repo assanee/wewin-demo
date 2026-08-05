@@ -1,5 +1,7 @@
 import { Copy, Pencil, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { MAX_QTY } from '@wewin/core/constants';
+import { useLocale } from '../../state/localeContext';
 
 interface QuoteActionsProps {
   editHref: string;
@@ -13,15 +15,17 @@ const ACTION_CLASS =
   'flex h-11 w-11 items-center justify-center rounded-xs border border-line text-chalk-2 transition-colors duration-180 ease-out hover:border-line-2 hover:text-chalk';
 
 export function QuoteActions({ editHref, onDuplicate, onRemove, nickname }: QuoteActionsProps) {
+  const { t } = useLocale();
+
   return (
     <div className="flex items-center gap-2">
-      <Link to={editHref} aria-label={`แก้ไขการตั้งค่า ${nickname}`} className={ACTION_CLASS}>
+      <Link to={editHref} aria-label={t('quote.action.edit', { nickname })} className={ACTION_CLASS}>
         <Pencil size={15} aria-hidden />
       </Link>
       <button
         type="button"
         onClick={onDuplicate}
-        aria-label={`ทำซ้ำรายการ ${nickname}`}
+        aria-label={t('quote.action.duplicate', { nickname })}
         className={ACTION_CLASS}
       >
         <Copy size={15} aria-hidden />
@@ -29,7 +33,7 @@ export function QuoteActions({ editHref, onDuplicate, onRemove, nickname }: Quot
       <button
         type="button"
         onClick={onRemove}
-        aria-label={`ลบรายการ ${nickname}`}
+        aria-label={t('quote.action.remove', { nickname })}
         className={`${ACTION_CLASS} hover:border-danger hover:text-danger`}
       >
         <Trash2 size={15} aria-hidden />
@@ -45,28 +49,31 @@ interface QtyStepperProps {
 }
 
 export function QuoteQtyStepper({ qty, nickname, onChange }: QtyStepperProps) {
+  const { t, f } = useLocale();
+
   return (
     <div className="inline-flex items-stretch overflow-hidden rounded-xs border border-line">
       <button
         type="button"
         onClick={() => onChange(qty - 1)}
         disabled={qty <= 1}
-        aria-label={`ลดจำนวน ${nickname} 1 ชิ้น`}
+        aria-label={t('quote.qty.decrease', { nickname })}
         className="flex h-11 w-11 items-center justify-center bg-panel-2 text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk disabled:opacity-30"
       >
         −
       </button>
       <output
-        aria-label={`จำนวน ${nickname}`}
+        aria-label={t('quote.qty.label', { nickname })}
         className="numeric flex h-11 w-11 items-center justify-center bg-panel-2 text-body text-chalk"
       >
-        {qty}
+        {f.integer(qty)}
       </output>
       <button
         type="button"
         onClick={() => onChange(qty + 1)}
-        disabled={qty >= 99}
-        aria-label={`เพิ่มจำนวน ${nickname} 1 ชิ้น`}
+        // Was the literal 99, one of two copies of a cap that already has a name.
+        disabled={qty >= MAX_QTY}
+        aria-label={t('quote.qty.increase', { nickname })}
         className="flex h-11 w-11 items-center justify-center bg-panel-2 text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk disabled:opacity-30"
       >
         +

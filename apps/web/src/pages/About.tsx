@@ -1,16 +1,19 @@
 import { Clock, Mail, MapPin, MessageCircle, Phone, Truck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { categories, products } from '@wewin/core/fixtures';
-import { company } from '../data/company';
+import { company, type ContactChannel } from '../data/company';
 import {
   billableFloorSpan,
   leadTimeSpan,
   lowestPricePerSqm,
   summarizeCategories,
 } from '@wewin/core/catalog-summary';
-import { formatBaht, formatInteger, formatLeadTime, formatSqm } from '@wewin/core/format';
 import { bahtToMinor } from '@wewin/core/money';
 import { ButtonLink } from '../components/common/Button';
+import { CatalogText } from '../components/common/CatalogText';
+import { useLocale } from '../state/localeContext';
+import { SOURCE_LOCALE } from '../i18n/locales';
+import type { PlainKey } from '../i18n/keys';
 
 /**
  * Everything here is either a figure derived from products.ts or a sentence the
@@ -22,6 +25,10 @@ import { ButtonLink } from '../components/common/Button';
  * numbers are on the table before you ask.
  */
 export function About() {
+  const { t, f, locale } = useLocale();
+  // The registered name, the address and the published hours are source content in
+  // Thai — see `data/company.ts`. Marked, not translated.
+  const sourceLang = locale === SOURCE_LOCALE ? {} : { lang: SOURCE_LOCALE };
   const summaries = summarizeCategories(products, categories);
   const catalogFrom = lowestPricePerSqm(products);
   const catalogLeadTime = leadTimeSpan(products);
@@ -39,78 +46,99 @@ export function About() {
           </p>
 
           <h1 id="about-heading" className="mt-4 text-display text-chalk">
-            เกี่ยวกับเรา
+            {t('about.heading')}
           </h1>
 
-          <p className="mt-5 text-lead text-chalk-2">
-            {company.legalNameTh} ผลิต{company.makesTh} สั่งทำตามขนาดหน้างานจริง
-            โรงงานอยู่ที่จังหวัดพิษณุโลก และ{company.serviceAreaTh}
-          </p>
+          {/* The intro is catalogue prose and nothing else. The two Thai company
+              clauses it used to splice in — what we make, where we deliver — are below,
+              each as its own element carrying `lang="th"`.
 
-          <p className="mt-4 max-w-[62ch] text-body text-chalk-2">
-            เว็บนี้คือเครื่องมือคำนวณราคาของเราเอง กรอกความกว้างกับความสูงของช่องเปิด
-            แล้วเห็นราคาเต็มจำนวนได้ทันทีโดยไม่ต้องติดต่อใครก่อน
-          </p>
+              That is not tidiness. `…makes บานเกล็ดปรับระดับได้…, and we จัดส่งและติดตั้ง…`
+              is a Thai *verb phrase* conjugated into an English grammatical frame: it
+              cannot be marked, because it is mid-string; it cannot be declined, which
+              German needs; and it cannot take a postposition, which Hindi needs. Core's
+              own `message.ts` declares the pre-composed clause abolished, and this page
+              was still building one. */}
+          <p className="mt-5 text-lead text-chalk-2">{t('about.intro')}</p>
+
+          <dl className="mt-5 flex flex-col gap-3">
+            <div>
+              <dt className="text-caption text-chalk-3">{t('about.fact.makes')}</dt>
+              <dd className="text-body text-chalk-2" {...sourceLang}>
+                {company.makesTh}
+              </dd>
+            </div>
+            {company.serviceAreaTh === null ? null : (
+              <div>
+                <dt className="text-caption text-chalk-3">{t('about.fact.serviceArea')}</dt>
+                <dd className="text-body text-chalk-2" {...sourceLang}>
+                  {company.serviceAreaTh}
+                </dd>
+              </div>
+            )}
+            <div>
+              <dt className="text-caption text-chalk-3">{t('about.fact.legalName')}</dt>
+              <dd className="text-body text-chalk-2" {...sourceLang}>
+                {company.legalNameTh}
+              </dd>
+            </div>
+          </dl>
+
+          <p className="mt-4 max-w-[62ch] text-body text-chalk-2">{t('about.tool')}</p>
         </div>
       </section>
 
       {/* ---- The stance ---- */}
       <section aria-labelledby="stance-heading" className="container-page pb-14 md:pb-20">
         <h2 id="stance-heading" className="text-title text-chalk">
-          ทำไมเราเปิดราคาให้เห็น
+          {t('about.stance.heading')}
         </h2>
 
         <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <StanceNote titleTh="ถามราคาไม่ควรต้องแลกกับเบอร์โทร">
-            งานสั่งทำส่วนใหญ่ต้องทิ้งเบอร์ไว้ก่อนถึงจะได้ตัวเลข
-            แปลว่าคนที่แค่อยากรู้งบคร่าวๆ ต้องยอมรับสายที่ตามมา เราตัดขั้นตอนนั้นออก
-          </StanceNote>
-
-          <StanceNote titleTh="ราคาต้องแยกให้เห็นว่ามาจากอะไร">
-            หน้าคำนวณราคาแสดงทุกบรรทัดที่ประกอบกันเป็นยอด ทั้งค่าพื้นที่ ค่าสี ค่ากระจก
-            และค่าอุปกรณ์ ถ้าตัวเลขเปลี่ยน จะเห็นว่าเปลี่ยนเพราะอะไร
-          </StanceNote>
-
-          <StanceNote titleTh="ข้อจำกัดบอกก่อน ไม่ใช่บอกทีหลัง">
-            พื้นที่คิดเงินขั้นต่ำ ขนาดที่ผลิตไม่ได้ และสิ่งที่ราคายังไม่รวม
-            อยู่บนหน้าเว็บตั้งแต่ก่อนกรอกขนาด ไม่ใช่ไปโผล่ตอนคุยกัน
-          </StanceNote>
+          <StanceNote titleKey="about.stance.noPhone.title" bodyKey="about.stance.noPhone.body" />
+          <StanceNote
+            titleKey="about.stance.itemised.title"
+            bodyKey="about.stance.itemised.body"
+          />
+          <StanceNote titleKey="about.stance.limits.title" bodyKey="about.stance.limits.body" />
         </div>
       </section>
 
       {/* ---- What we make ---- */}
       <section aria-labelledby="range-heading" className="container-page pb-14 md:pb-20">
         <h2 id="range-heading" className="text-title text-chalk">
-          สิ่งที่เราผลิต
+          {t('about.range.heading')}
         </h2>
-        <p className="mt-2 max-w-[60ch] text-body text-chalk-2">
-          ตัวเลขทั้งหมดนี้อ่านจากแคตตาล็อกจริงที่ใช้คำนวณราคา ไม่ได้เขียนแยกไว้ต่างหาก
-        </p>
+        <p className="mt-2 max-w-[60ch] text-body text-chalk-2">{t('about.range.body')}</p>
 
         <dl className="mt-6 grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-2 lg:grid-cols-4">
           <Fact
-            termTh="แบบให้เลือก"
-            value={`${formatInteger(products.length)} แบบ`}
-            noteTh={`ใน ${formatInteger(stockedCategories.length)} หมวด`}
+            termKey="home.fact.designs"
+            value={t('count.designs', { count: products.length })}
+            note={t('about.fact.designs.note', { categories: stockedCategories.length })}
           />
           <Fact
-            termTh="ราคาเริ่มต้น"
-            value={catalogFrom === null ? '—' : `${formatBaht(bahtToMinor(catalogFrom))} / ตร.ม.`}
-            noteTh="ยังไม่รวม VAT 7%"
-          />
-          <Fact
-            termTh="ระยะเวลาผลิต"
-            value={catalogLeadTime === null ? '—' : formatLeadTime(catalogLeadTime)}
-            noteTh="แล้วแต่แบบ"
-          />
-          <Fact
-            termTh="พื้นที่คิดเงินขั้นต่ำ"
+            termKey="home.fact.startingPrice"
             value={
-              billableFloor
-                ? `${formatSqm(billableFloor[0])}–${formatSqm(billableFloor[1])} ตร.ม.`
-                : '—'
+              catalogFrom === null
+                ? t('value.unknown')
+                : `${f.baht(bahtToMinor(catalogFrom))} ${t('price.perSqmSuffix')}`
             }
-            noteTh="บานเล็กกว่านี้คิดที่ขั้นต่ำ"
+            note={t('about.fact.startingPrice.note')}
+          />
+          <Fact
+            termKey="home.fact.leadTime"
+            value={
+              catalogLeadTime === null
+                ? t('value.unknown')
+                : t('leadTime.range', { days: catalogLeadTime })
+            }
+            note={t('about.fact.leadTime.note')}
+          />
+          <Fact
+            termKey="about.fact.floor"
+            value={t('home.pricing.floor.range', { span: billableFloor })}
+            note={t('about.fact.floor.note')}
           />
         </dl>
 
@@ -122,11 +150,13 @@ export function About() {
               key={summary.category.id}
               className="flex min-w-0 items-baseline justify-between gap-3 border-b border-line py-2"
             >
-              <span className="min-w-0 truncate text-body text-chalk-2">
-                {summary.category.labelTh}
-              </span>
+              <CatalogText
+                at={{ on: 'categoryLabel', categoryId: summary.category.id }}
+                th={summary.category.labelTh}
+                className="min-w-0 truncate text-body text-chalk-2"
+              />
               <span className="numeric shrink-0 text-small text-chalk-3">
-                {formatInteger(summary.productCount)} แบบ
+                {t('count.designs', { count: summary.productCount })}
               </span>
             </li>
           ))}
@@ -134,7 +164,7 @@ export function About() {
 
         <div className="mt-8">
           <ButtonLink to="/products" variant="primary" size="lg">
-            ดูสินค้าและคำนวณราคา
+            {t('home.hero.cta')}
           </ButtonLink>
         </div>
       </section>
@@ -142,27 +172,28 @@ export function About() {
       {/* ---- Where and how to reach us ---- */}
       <section aria-labelledby="contact-heading" className="container-page pb-16 md:pb-24">
         <h2 id="contact-heading" className="text-title text-chalk">
-          ที่ตั้งและการติดต่อ
+          {t('about.contact.heading')}
         </h2>
 
         <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <InfoCard titleTh="โรงงานและสำนักงาน" Icon={MapPin}>
-            <p className="text-body text-chalk-2">{company.addressTh}</p>
-          </InfoCard>
-
-          <InfoCard titleTh="การจัดส่งและติดตั้ง" Icon={Truck}>
-            <p className="text-body text-chalk-2">{company.serviceAreaTh}</p>
-            <p className="mt-2 text-small text-chalk-3">
-              ค่าติดตั้งและค่าขนส่งไม่รวมอยู่ในราคาบนเว็บ เพราะขึ้นกับหน้างานและระยะทาง
-              ทีมงานจะประเมินให้ในใบเสนอราคา
+          <InfoCard titleKey="about.card.factory" Icon={MapPin}>
+            <p className="text-body text-chalk-2" {...sourceLang}>
+              {company.addressTh}
             </p>
           </InfoCard>
 
-          <InfoCard titleTh="เวลาทำการ" Icon={Clock}>
-            <p className="text-body text-chalk-2">{company.businessHoursTh}</p>
-            <p className="mt-2 text-small text-chalk-3">
-              นอกเวลาทำการ ทิ้งข้อความไว้ทาง LINE หรืออีเมลได้ ทีมงานจะตอบกลับในวันทำการถัดไป
+          <InfoCard titleKey="about.card.delivery" Icon={Truck}>
+            <p className="text-body text-chalk-2" {...sourceLang}>
+              {company.serviceAreaTh}
             </p>
+            <p className="mt-2 text-small text-chalk-3">{t('about.card.delivery.note')}</p>
+          </InfoCard>
+
+          <InfoCard titleKey="about.card.hours" Icon={Clock}>
+            <p className="text-body text-chalk-2" {...sourceLang}>
+              {company.businessHoursTh}
+            </p>
+            <p className="mt-2 text-small text-chalk-3">{t('about.card.hours.note')}</p>
           </InfoCard>
         </div>
 
@@ -172,29 +203,14 @@ export function About() {
         <ul className="mt-6 flex flex-col gap-2 md:flex-row md:flex-wrap">
           {company.phones.map((phone) => (
             <li key={phone.valueTh} className="min-w-0">
-              <ChannelChip
-                valueTh={phone.valueTh}
-                href={phone.href}
-                labelTh={phone.labelTh}
-                Icon={Phone}
-              />
+              <ChannelChip channel={phone} Icon={Phone} />
             </li>
           ))}
           <li className="min-w-0">
-            <ChannelChip
-              valueTh={company.line.valueTh}
-              href={company.line.href}
-              labelTh={company.line.labelTh}
-              Icon={MessageCircle}
-            />
+            <ChannelChip channel={company.line} Icon={MessageCircle} />
           </li>
           <li className="min-w-0">
-            <ChannelChip
-              valueTh={company.email.valueTh}
-              href={company.email.href}
-              labelTh={company.email.labelTh}
-              Icon={Mail}
-            />
+            <ChannelChip channel={company.email} Icon={Mail} />
           </li>
         </ul>
       </section>
@@ -202,75 +218,77 @@ export function About() {
   );
 }
 
-function StanceNote({ titleTh, children }: { titleTh: string; children: React.ReactNode }) {
+function StanceNote({ titleKey, bodyKey }: { titleKey: PlainKey; bodyKey: PlainKey }) {
+  const { t } = useLocale();
+
   return (
     <div className="flex min-w-0 flex-col border border-line bg-panel p-4 md:p-5">
-      <h3 className="font-display text-lead text-chalk">{titleTh}</h3>
-      <p className="mt-3 min-w-0 text-small text-chalk-2">{children}</p>
+      <h3 className="font-display text-lead text-chalk">{t(titleKey)}</h3>
+      <p className="mt-3 min-w-0 text-small text-chalk-2">{t(bodyKey)}</p>
     </div>
   );
 }
 
-function Fact({ termTh, value, noteTh }: { termTh: string; value: string; noteTh: string }) {
+function Fact({ termKey, value, note }: { termKey: PlainKey; value: string; note: string }) {
+  const { t } = useLocale();
+
   return (
     <div className="min-w-0 bg-panel px-4 py-4 md:px-5">
-      <dt className="text-caption text-chalk-3">{termTh}</dt>
+      <dt className="text-caption text-chalk-3">{t(termKey)}</dt>
       <dd className="min-w-0">
         <span className="numeric block truncate text-lead text-chalk">{value}</span>
-        <span className="block text-caption text-chalk-3">{noteTh}</span>
+        <span className="block text-caption text-chalk-3">{note}</span>
       </dd>
     </div>
   );
 }
 
 function InfoCard({
-  titleTh,
+  titleKey,
   Icon,
   children,
 }: {
-  titleTh: string;
+  titleKey: PlainKey;
   Icon: LucideIcon;
   children: React.ReactNode;
 }) {
+  const { t } = useLocale();
+
   return (
     <div className="flex min-w-0 flex-col border border-line bg-panel p-4 md:p-5">
       <div className="flex items-center gap-2">
         <Icon size={15} aria-hidden className="shrink-0 text-chalk-3" />
-        <h3 className="font-display text-lead text-chalk">{titleTh}</h3>
+        <h3 className="font-display text-lead text-chalk">{t(titleKey)}</h3>
       </div>
       <div className="mt-3 min-w-0">{children}</div>
     </div>
   );
 }
 
-function ChannelChip({
-  valueTh,
-  href,
-  labelTh,
-  Icon,
-}: {
-  valueTh: string;
-  href?: string | undefined;
-  labelTh: string;
-  Icon: LucideIcon;
-}) {
+function ChannelChip({ channel, Icon }: { channel: ContactChannel; Icon: LucideIcon }) {
+  const { t } = useLocale();
+
   const inner = (
     <>
       <Icon size={15} aria-hidden className="shrink-0 text-chalk-3" />
-      <span className="sr-only">{labelTh}: </span>
-      <span className="numeric min-w-0 truncate text-small">{valueTh}</span>
+      <span className="sr-only">{t(channel.labelKey)}: </span>
+      {/* Never through `f.integer`: a phone number identifies a line, it is not a
+          quantity, and grouping or transliterating it makes it undiallable. */}
+      <span className="numeric min-w-0 truncate text-small">{channel.valueTh}</span>
     </>
   );
 
   const shared =
     'flex min-h-11 min-w-0 items-center gap-2 rounded-xs border border-line bg-panel-2 px-3 text-chalk-2';
 
-  if (!href) return <span className={shared}>{inner}</span>;
+  if (!channel.href) return <span className={shared}>{inner}</span>;
 
   return (
     <a
-      href={href}
-      {...(href.startsWith('http') ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+      href={channel.href}
+      {...(channel.href.startsWith('http')
+        ? { target: '_blank', rel: 'noreferrer noopener' }
+        : {})}
       className={`${shared} transition-colors duration-180 ease-out hover:border-line-2 hover:text-chalk`}
     >
       {inner}

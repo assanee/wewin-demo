@@ -1,18 +1,24 @@
 import { useId, type ReactElement } from 'react';
 import { LENGTH_UNITS, type LengthUnit } from '@wewin/core/units';
 import { useDisplayUnit } from '../../state/displayUnitContext';
+import { useLocale } from '../../state/localeContext';
+import type { PlainKey } from '../../i18n/keys';
 
 /**
  * Spoken names, because `mm` and `m` are one character apart and a screen reader
  * announcing "em" twice tells the customer nothing. The visible label stays the
- * abbreviation the sizes themselves are written with.
+ * abbreviation the sizes themselves are written with — `cm` is `cm` in all eight, and
+ * translating an SI symbol would be a mistake, not a feature.
+ *
+ * Keys rather than Thai, so the announcement follows the page. This table is the map
+ * from a unit to its key; the words are in the catalogues.
  */
-const UNIT_NAMES_TH: Record<LengthUnit, string> = {
-  mm: 'มิลลิเมตร',
-  cm: 'เซนติเมตร',
-  m: 'เมตร',
-  in: 'นิ้ว',
-  ft: 'ฟุต',
+const UNIT_NAME_KEYS: Record<LengthUnit, PlainKey> = {
+  mm: 'unit.name.mm',
+  cm: 'unit.name.cm',
+  m: 'unit.name.m',
+  in: 'unit.name.in',
+  ft: 'unit.name.ft',
 };
 
 /**
@@ -29,6 +35,7 @@ const UNIT_NAMES_TH: Record<LengthUnit, string> = {
  */
 export function UnitPicker(): ReactElement {
   const { unit, setUnit } = useDisplayUnit();
+  const { t } = useLocale();
   // Radios group by `name` across the whole document, so a second picker sharing a
   // literal would let an arrow key jump from one to the other.
   const groupName = useId();
@@ -39,12 +46,12 @@ export function UnitPicker(): ReactElement {
           says so where there is room for it, and the group carries the same meaning to
           assistive tech at every width. */}
       <span aria-hidden className="hidden shrink-0 text-caption text-chalk-2 md:inline">
-        หน่วย
+        {t('unit.pickerLabel')}
       </span>
 
       <div
         role="radiogroup"
-        aria-label="หน่วยที่ใช้แสดงขนาด"
+        aria-label={t('unit.groupLabel')}
         // Sized by its content at base so it cannot push the wordmark or the cart off a
         // 360px header, and pinned to 224px from md up — 44px a segment, the touch target
         // the narrow viewport is the only place we cannot afford.
@@ -64,7 +71,7 @@ export function UnitPicker(): ReactElement {
                 value={candidate}
                 checked={isSelected}
                 onChange={() => setUnit(candidate)}
-                aria-label={UNIT_NAMES_TH[candidate]}
+                aria-label={t(UNIT_NAME_KEYS[candidate])}
                 className="peer sr-only"
               />
               {/* The fill alone would leave the current unit legible only to someone who

@@ -3,6 +3,8 @@ import { Check, Copy, QrCode as QrIcon, Redo2, RotateCcw, Share2, Undo2 } from '
 import type { LucideIcon } from 'lucide-react';
 import { BottomSheet } from '../common/BottomSheet';
 import { QrCode } from './QrCode';
+import { useLocale } from '../../state/localeContext';
+import type { PlainKey } from '../../i18n/keys';
 
 interface ConfiguratorToolbarProps {
   onUndo: () => void;
@@ -36,6 +38,7 @@ export function ConfiguratorToolbar({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const { t } = useLocale();
 
   useEffect(() => {
     if (!copied) return;
@@ -77,33 +80,37 @@ export function ConfiguratorToolbar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="จัดการการตั้งค่า">
-        <ToolButton icon={Undo2} labelTh="ย้อนกลับ" onClick={onUndo} disabled={!canUndo} />
-        <ToolButton icon={Redo2} labelTh="ทำซ้ำ" onClick={onRedo} disabled={!canRedo} />
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label={t('toolbar.groupLabel')}
+      >
+        <ToolButton icon={Undo2} labelKey="toolbar.undo" onClick={onUndo} disabled={!canUndo} />
+        <ToolButton icon={Redo2} labelKey="toolbar.redo" onClick={onRedo} disabled={!canRedo} />
         <ToolButton
           icon={RotateCcw}
-          labelTh="กลับค่าเริ่มต้น"
+          labelKey="toolbar.reset"
           onClick={onReset}
           disabled={isPristine}
         />
 
         <span aria-hidden className="mx-1 h-6 w-px bg-line" />
 
-        <ToolButton icon={Share2} labelTh="แชร์ลิงก์การตั้งค่านี้" onClick={openShare} />
-        <ToolButton icon={QrIcon} labelTh="สร้าง QR ของลิงก์นี้" onClick={openQr} />
+        <ToolButton icon={Share2} labelKey="toolbar.share" onClick={openShare} />
+        <ToolButton icon={QrIcon} labelKey="toolbar.qr" onClick={openQr} />
       </div>
 
       <BottomSheet
         open={sheetOpen}
-        titleTh={showQr ? 'QR ของลิงก์นี้' : 'แชร์ลิงก์'}
+        title={showQr ? t('share.qr.title') : t('share.sheet.title')}
         size="auto"
         onClose={() => setSheetOpen(false)}
       >
         <div className="flex flex-col gap-4">
-          <p className="text-small text-chalk-2">
-            ลิงก์นี้เปิดหน้าตั้งค่าพร้อมขนาดและตัวเลือกชุดเดียวกับที่เห็นอยู่
-            ส่งให้ช่างหรือคนที่บ้านดูต่อได้เลย
-          </p>
+          {/* The link carries sizes and the units they were typed in, and neither the
+              display unit nor the language. A link is the configuration; whoever opens
+              it reads it in whatever they themselves prefer. */}
+          <p className="text-small text-chalk-2">{t('share.body')}</p>
 
           {showQr ? (
             <div className="flex justify-center">
@@ -118,7 +125,7 @@ export function ConfiguratorToolbar({
             <button
               type="button"
               onClick={copyLink}
-              aria-label="คัดลอกลิงก์"
+              aria-label={t('share.copyLink')}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xs border border-line text-chalk-2 transition-colors duration-180 ease-out hover:border-line-2 hover:text-chalk"
             >
               {copied ? <Check size={15} aria-hidden /> : <Copy size={15} aria-hidden />}
@@ -126,7 +133,7 @@ export function ConfiguratorToolbar({
           </div>
 
           <p aria-live="polite" className="text-caption text-chalk-3">
-            {copied ? 'คัดลอกลิงก์แล้ว' : ' '}
+            {copied ? t('share.copied') : ' '}
           </p>
 
           {!showQr ? (
@@ -136,7 +143,7 @@ export function ConfiguratorToolbar({
               className="inline-flex min-h-11 items-center gap-2 self-start text-small text-chalk-2 underline underline-offset-4 transition-colors duration-180 ease-out hover:text-chalk"
             >
               <QrIcon size={15} aria-hidden />
-              แสดงเป็น QR
+              {t('share.showQr')}
             </button>
           ) : null}
         </div>
@@ -147,22 +154,25 @@ export function ConfiguratorToolbar({
 
 function ToolButton({
   icon: Icon,
-  labelTh,
+  labelKey,
   onClick,
   disabled = false,
 }: {
   icon: LucideIcon;
-  labelTh: string;
+  labelKey: PlainKey;
   onClick: () => void;
   disabled?: boolean;
 }) {
+  const { t } = useLocale();
+  const label = t(labelKey);
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={labelTh}
-      title={labelTh}
+      aria-label={label}
+      title={label}
       className="flex h-11 w-11 items-center justify-center rounded-xs border border-line bg-panel-2 text-chalk-2 transition-colors duration-180 ease-out hover:border-line-2 hover:text-chalk disabled:opacity-30"
     >
       <Icon size={16} aria-hidden />

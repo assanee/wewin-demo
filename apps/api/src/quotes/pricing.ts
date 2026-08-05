@@ -6,7 +6,8 @@ import type { Product } from '@wewin/core';
 import { encodeUm } from '@wewin/contract/measure';
 import type { PriceRequest } from '@wewin/contract/pricing';
 
-import { AppError } from '../common/errors/app-error';
+import { AppError, type JsonValue } from '../common/errors/app-error';
+import { encodeCoreMessage, message } from '../i18n';
 
 /**
  * `calcPrice`, called from the quote editor — and **`calcPrice` is not touched**.
@@ -53,12 +54,19 @@ export function priceLine(product: Product, request: PriceRequest, lineLabel: st
   const issues = validate(product, request.selections, request.measures, request.enteredUnits);
 
   if (hasBlockingError(issues)) {
-    throw AppError.validationFailed('รายการนี้ผลิตไม่ได้ตามที่กำหนดไว้', {
+    throw AppError.validationFailed(message('error.line.cannot_be_made'), {
       line: lineLabel,
+      /*
+       * `message` and not `messageTh`. Core stopped building Thai sentences this round
+       * (plan section 5), so an issue now carries a key and its params, and this encodes
+       * them the way every other `bigint` crosses this wire: micrometres as digit strings.
+       * A client renders them with `reviveMessage` from `@wewin/core/message` — the same
+       * reviver the storefront reads its own localStorage with.
+       */
       issues: issues.map((issue) => ({
         ruleId: issue.ruleId,
         severity: issue.severity,
-        messageTh: issue.messageTh,
+        message: encodeCoreMessage(issue.message) as unknown as JsonValue,
       })),
     });
   }

@@ -29,6 +29,7 @@
     "@nestjs/platform-express": "^11.1.28",
     "@wewin/contract": "workspace:*",
     "@wewin/core": "workspace:*",
+    "@wewin/i18n": "workspace:*",
     "@wewin/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.22.0",

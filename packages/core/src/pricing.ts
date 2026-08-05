@@ -1,4 +1,5 @@
 import type { CustomGroup, OptionValue, Product, SkuGroup } from './types/catalog.js';
+import { areaParam, groupLabel, type Message, optionLabel } from './message.js';
 import { type Currency, divRoundHalfUp } from './money.js';
 import { resolveSelections } from './selection.js';
 import { SQ_UM_PER_SQM } from './units.js';
@@ -40,7 +41,15 @@ const SCALE = PRICE_SCALE;
 const THB_ROUND_TO_MINOR = 100n;
 
 export interface PriceLine {
-  label: string;
+  /**
+   * What the row is called, as a key and its values (plan 5).
+   *
+   * Was `` `${group.labelTh} · ${value.labelTh}` `` — a row naming two catalogue
+   * strings, joined by a separator this file chose. Both labels are content a
+   * translator owns and the separator is a typographic decision the locale owns, so
+   * none of the three belonged here. See `message.ts`.
+   */
+  label: Message;
   /** Minor units, rounded for display. Plan 4.3(b): these do not sum to the total. */
   amountMinor: bigint;
 }
@@ -54,9 +63,27 @@ export interface PriceBreakdown {
    * back up. They stay `number` so a stored snapshot survives JSON unchanged — a
    * quote line's own record of how big the window was is the last witness left if
    * `measures` is ever lost, and it should not depend on a revive path to exist.
+   *
+   * ⚠️ **Do not format these for display.** Use the two `bigint` fields below and
+   * `formatSqmExact`. Phase 6a found the reason the hard way: `sqUmToSqm(21255000000000n)`
+   * is 21.254999999999999449… as a `double`, so `toFixed(2)` writes `21.25` while the
+   * exact half-up of the same area writes `21.26`. Both numbers were on one screen at
+   * once — `PriceSummary` from here, the base row's label from `billableSqUm` — and they
+   * disagreed for 11.8% of the catalogue's reachable configurations.
    */
   areaSqm: number;
   billableSqm: number;
+  /**
+   * The same two areas, exact — an integer count of square micrometres.
+   *
+   * These are the values the price was actually computed from, carried out rather than
+   * recomputed by a reader. `billableSqUm` is the ordered area or the product's floor,
+   * whichever is larger, and is the identical value the `price.line.base` label carries;
+   * a screen that renders one of them from here and the other from the label is
+   * guaranteed to agree with itself.
+   */
+  areaSqUm: bigint;
+  billableSqUm: bigint;
   currency: Currency;
   baseMinor: bigint;
   percentTotalMinor: bigint;
@@ -192,11 +219,19 @@ export function calcPrice(
   const baseScaled = billableSqUm * pricePerSqm * 100n;
 
   const lines: PriceLine[] = [];
-  const pushLine = (label: string, scaled: bigint): void => {
+  const pushLine = (label: Message, scaled: bigint): void => {
     lines.push({ label, amountMinor: divRoundHalfUp(scaled, SCALE) });
   };
 
-  pushLine('ราคาฐานตามพื้นที่', baseScaled);
+  // The base row now says which area it charged for. `billableSqUm` is the ordered area
+  // or the product's floor, whichever is larger — so on a small window this param is the
+  // floor, and the row can finally explain a base price that does not match the size on
+  // the screen. It is the exact `bigint` the price was computed from; nothing divides it
+  // on the way out, and `sqUmToSqm` stays a display-only step the renderer takes.
+  pushLine(
+    { key: 'price.line.base', params: { billableArea: areaParam(billableSqUm) } },
+    baseScaled,
+  );
 
   let percentScaled = 0n;
   let perSqmScaled = 0n;
@@ -227,7 +262,18 @@ export function calcPrice(
 
     // An option that costs nothing extra is already visible in the chip group;
     // repeating it here as a zero row only pads the accordion.
-    if (scaled !== 0n) pushLine(`${group.labelTh} · ${value.labelTh}`, scaled);
+    if (scaled !== 0n) {
+      pushLine(
+        {
+          key: 'price.line.option',
+          params: {
+            group: groupLabel(product, group),
+            option: optionLabel(product, group, value),
+          },
+        },
+        scaled,
+      );
+    }
   }
 
   const unitPriceScaled = baseScaled + percentScaled + perSqmScaled + flatScaled;
@@ -245,6 +291,8 @@ export function calcPrice(
   return {
     areaSqm: sqUmToSqm(areaSqUm),
     billableSqm: sqUmToSqm(billableSqUm),
+    areaSqUm,
+    billableSqUm,
     currency: 'THB',
     baseMinor: divRoundHalfUp(baseScaled, SCALE),
     percentTotalMinor: divRoundHalfUp(percentScaled, SCALE),

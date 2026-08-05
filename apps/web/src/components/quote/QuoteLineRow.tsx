@@ -1,8 +1,8 @@
-import { AlertTriangle } from 'lucide-react';
 import type { QuoteLine } from '@wewin/core/quote';
-import { formatBaht, formatDimensions } from '@wewin/core/format';
 import { useDisplayUnit } from '../../state/displayUnitContext';
+import { useLocale } from '../../state/localeContext';
 import { QuoteActions, QuoteQtyStepper } from './QuoteActions';
+import { QuoteLineWarning } from './QuoteLineWarning';
 
 interface QuoteLineRowProps {
   line: QuoteLine;
@@ -14,6 +14,7 @@ interface QuoteLineRowProps {
 /** Desktop only (lg). The mobile equivalent is QuoteLineCard — never both at once. */
 export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: QuoteLineRowProps) {
   const { unit: displayUnit } = useDisplayUnit();
+  const { f } = useLocale();
   const widthUm = line.measures['width'] ?? 0n;
   const heightUm = line.measures['height'] ?? 0n;
   // Per line, in the unit it was typed in — not all lines in the current display unit.
@@ -33,12 +34,7 @@ export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: Quote
     <tr className="border-b border-line last:border-b-0 align-top">
       <td className="min-w-0 py-3 pe-3">
         <p className="min-w-0 truncate text-body text-chalk">{line.nickname}</p>
-        {line.warnings.length > 0 ? (
-          <p className="mt-1 flex items-start gap-1.5 text-caption text-warn">
-            <AlertTriangle size={13} aria-hidden className="mt-[3px] shrink-0" />
-            <span className="min-w-0">{line.warnings[0]?.messageTh}</span>
-          </p>
-        ) : null}
+        <QuoteLineWarning line={line} className="mt-1 text-caption" />
       </td>
 
       <td className="py-3 pe-3">
@@ -46,7 +42,7 @@ export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: Quote
       </td>
 
       <td className="numeric py-3 pe-3 text-small text-blueprint whitespace-nowrap">
-        {formatDimensions(widthUm, heightUm, unit)}
+        {f.dimensions(widthUm, heightUm, unit)}
       </td>
 
       <td className="py-3 pe-3">
@@ -54,11 +50,11 @@ export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: Quote
       </td>
 
       <td className="numeric py-3 pe-3 text-end text-small text-chalk-2 whitespace-nowrap">
-        {formatBaht(line.priceSnapshot.unitPriceMinor)}
+        {f.baht(line.priceSnapshot.unitPriceMinor)}
       </td>
 
       <td className="numeric py-3 pe-3 text-end text-body text-chalk whitespace-nowrap">
-        {formatBaht(line.priceSnapshot.totalMinor)}
+        {f.baht(line.priceSnapshot.totalMinor)}
       </td>
 
       <td className="py-3">

@@ -38,6 +38,9 @@ importers:
       '@wewin/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wewin/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@types/pg@8.20.3)(pg@8.22.0)
@@ -87,6 +90,9 @@ importers:
       '@wewin/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@wewin/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -157,6 +163,9 @@ importers:
       '@wewin/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@wewin/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       lucide-react:
         specifier: ^1.28.0
         version: 1.28.0(react@19.2.8)
@@ -197,6 +206,9 @@ importers:
       vite:
         specifier: ^8.2.0
         version: 8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
 
   packages/contract:
     dependencies:
@@ -254,6 +266,22 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
+
+  packages/i18n:
+    dependencies:
+      '@wewin/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
       typescript:
         specifier: ~6.0.2
         version: 6.0.3

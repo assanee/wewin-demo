@@ -1,0 +1,38 @@
+{
+  "name": "@wewin/i18n",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "//": "The root export is types only, for the same reason core's and contract's are: a component that only needs the `Locale` union must not drag eight catalogues and an Intl cache into its bundle. Every runtime value comes from a subpath.",
+  "sideEffects": ["./dist/coverage-cli.js"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    },
+    "./locales": "./dist/locales.js",
+    "./format": "./dist/format.js",
+    "./numerals": "./dist/numerals.js",
+    "./catalog": "./dist/catalog.js",
+    "./translate": "./dist/translate.js",
+    "./coverage": "./dist/coverage.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint",
+    "coverage:i18n": "node dist/coverage-cli.js"
+  },
+  "dependencies": {
+    "@wewin/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

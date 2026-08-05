@@ -13,6 +13,7 @@
     "./measure": "./dist/measure.js",
     "./money": "./dist/money.js",
     "./catalog": "./dist/catalog.js",
+    "./message": "./dist/message.js",
     "./admin": "./dist/admin.js",
     "./order": "./dist/order.js",
     "./quote": "./dist/quote.js",

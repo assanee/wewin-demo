@@ -2,9 +2,11 @@ import { Check } from 'lucide-react';
 import type { Category } from '@wewin/core';
 import type { CatalogFilters, ProfileColorFacet } from '@wewin/core/filters';
 import { isFilterActive } from '@wewin/core/filters';
-import { formatBaht } from '@wewin/core/format';
 import { bahtToMinor } from '@wewin/core/money';
 import { Button } from '../common/Button';
+import { CatalogText } from '../common/CatalogText';
+import { useLocale } from '../../state/localeContext';
+import { SOURCE_LOCALE } from '../../i18n/locales';
 
 interface FilterPanelProps {
   filters: CatalogFilters;
@@ -17,10 +19,10 @@ interface FilterPanelProps {
 const toggle = (list: string[], value: string): string[] =>
   list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 
-function Section({ titleTh, children }: { titleTh: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="border-t border-line py-4 first:border-t-0 first:pt-0">
-      <h3 className="mb-3 text-small tracking-[0.08em] text-chalk-3 uppercase">{titleTh}</h3>
+      <h3 className="mb-3 text-small tracking-[0.08em] text-chalk-3 uppercase">{title}</h3>
       {children}
     </section>
   );
@@ -32,19 +34,21 @@ function Section({ titleTh, children }: { titleTh: string; children: React.React
  * a facet added here appears in both without a second edit.
  */
 export function FilterPanel({ filters, onChange, categories, colorFacets, bounds }: FilterPanelProps) {
+  const { t, f, locale } = useLocale();
   const active = isFilterActive(filters);
+  const sourceLang = locale === SOURCE_LOCALE ? {} : { lang: SOURCE_LOCALE };
 
   return (
     <div className="flex flex-col">
       {active ? (
         <div className="mb-4 flex justify-end">
           <Button variant="ghost" onClick={() => onChange({ ...filters, categoryIds: [], profileColorCodes: [], minPricePerSqm: null, maxPricePerSqm: null })}>
-            ล้างตัวกรอง
+            {t('filter.clear')}
           </Button>
         </div>
       ) : null}
 
-      <Section titleTh="หมวดหมู่">
+      <Section title={t('filter.section.category')}>
         <ul className="flex flex-col gap-1">
           {categories.map((category) => {
             const checked = filters.categoryIds.includes(category.id);
@@ -70,9 +74,11 @@ export function FilterPanel({ filters, onChange, categories, colorFacets, bounds
                   >
                     <Check size={12} strokeWidth={3} />
                   </span>
-                  <span className={`min-w-0 truncate text-body ${checked ? 'text-chalk' : 'text-chalk-2'}`}>
-                    {category.labelTh}
-                  </span>
+                  <CatalogText
+                    at={{ on: 'categoryLabel', categoryId: category.id }}
+                    th={category.labelTh}
+                    className={`min-w-0 truncate text-body ${checked ? 'text-chalk' : 'text-chalk-2'}`}
+                  />
                 </label>
               </li>
             );
@@ -80,7 +86,7 @@ export function FilterPanel({ filters, onChange, categories, colorFacets, bounds
         </ul>
       </Section>
 
-      <Section titleTh="สีโปรไฟล์">
+      <Section title={t('filter.section.profileColor')}>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-[repeat(auto-fit,minmax(140px,1fr))]">
           {colorFacets.map((facet) => {
             const checked = filters.profileColorCodes.includes(facet.code);
@@ -104,23 +110,31 @@ export function FilterPanel({ filters, onChange, categories, colorFacets, bounds
                   className="h-4 w-4 shrink-0 rounded-xs border border-line"
                   style={{ backgroundColor: facet.swatchHex }}
                 />
-                <span className="min-w-0 truncate text-small">{facet.labelTh}</span>
+                {/* The one catalogue string on the site with no `ContentRef`, and
+                    deliberately so: a facet is the *same* colour aggregated across
+                    many products, so it has no single `productId` to be addressed by.
+                    Translating it belongs with the catalogue documents in 6b, where a
+                    profile colour can be a shared entity rather than a label repeated
+                    on 81 products. Until then it renders Thai and says so. */}
+                <span className="min-w-0 truncate text-small" {...sourceLang}>
+                  {facet.labelTh}
+                </span>
               </label>
             );
           })}
         </div>
       </Section>
 
-      <Section titleTh="ราคาต่อ ตร.ม.">
+      <Section title={t('filter.section.pricePerSqm')}>
         <div className="flex flex-col gap-3">
           <div className="numeric flex items-baseline justify-between text-small text-chalk-2">
-            <span>{formatBaht(bahtToMinor(filters.minPricePerSqm ?? bounds.min))}</span>
-            <span className="text-chalk-3">ถึง</span>
-            <span>{formatBaht(bahtToMinor(filters.maxPricePerSqm ?? bounds.max))}</span>
+            <span>{f.baht(bahtToMinor(filters.minPricePerSqm ?? bounds.min))}</span>
+            <span className="text-chalk-3">{t('filter.priceTo')}</span>
+            <span>{f.baht(bahtToMinor(filters.maxPricePerSqm ?? bounds.max))}</span>
           </div>
 
           <label className="flex flex-col gap-1">
-            <span className="text-caption text-chalk-3">ไม่เกิน</span>
+            <span className="text-caption text-chalk-3">{t('filter.priceMax')}</span>
             <input
               type="range"
               min={bounds.min}

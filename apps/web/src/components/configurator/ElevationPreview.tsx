@@ -1,4 +1,6 @@
+import type { LengthUnit } from '@wewin/core/units';
 import { useElementSize } from '../../state/useElementSize';
+import { useLocale } from '../../state/localeContext';
 import { ElevationDrawing } from '../common/ElevationDrawing';
 import type { Elevation } from '@wewin/core/elevation';
 
@@ -19,8 +21,14 @@ interface ElevationPreviewProps {
   glassHex: string;
   /** Dimension lines turn danger-coloured while the measurements are out of bounds. */
   invalid?: boolean;
-  /** The unit both numerals are in, stated once at the foot of the drawing. */
-  unit: string;
+  /**
+   * The unit both numerals are in, stated once at the foot of the drawing.
+   *
+   * Narrowed from `string` this round: the accessible name is a catalogue entry now,
+   * and a drawing labelled with a unit the app does not have is not a thing that
+   * should type-check.
+   */
+  unit: LengthUnit;
 }
 
 /* Fixed pixel gutters for the dimension lines, independent of the drawing scale. */
@@ -53,6 +61,7 @@ export function ElevationPreview({
   unit,
 }: ElevationPreviewProps) {
   const [ref, size] = useElementSize<HTMLDivElement>();
+  const { t } = useLocale();
 
   const boxW = size.width;
   const boxH = size.height;
@@ -88,9 +97,12 @@ export function ElevationPreview({
       ref={ref}
       className="h-full w-full"
       role="img"
-      aria-label={`ภาพแบบ ${widthLabel} × ${heightLabel} ${unit}${
-        invalid ? ' ขนาดยังอยู่นอกช่วงที่ผลิตได้' : ''
-      }`}
+      aria-label={t('drawing.elevation', {
+        width: widthLabel,
+        height: heightLabel,
+        unit,
+        invalid,
+      })}
     >
       {ready ? (
         <svg width={boxW} height={boxH} viewBox={`0 0 ${boxW} ${boxH}`} aria-hidden>
@@ -153,7 +165,7 @@ export function ElevationPreview({
             fill="var(--color-chalk-3)"
             style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}
           >
-            หน่วย: {unit}
+            {t('drawing.unitNote', { unit })}
           </text>
         </svg>
       ) : null}

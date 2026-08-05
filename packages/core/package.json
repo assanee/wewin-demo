@@ -13,6 +13,7 @@
     "./units": "./dist/units.js",
     "./pricing": "./dist/pricing.js",
     "./validation": "./dist/validation.js",
+    "./message": "./dist/message.js",
     "./elevation": "./dist/elevation.js",
     "./sku": "./dist/skuCode.js",
     "./selection": "./dist/selection.js",

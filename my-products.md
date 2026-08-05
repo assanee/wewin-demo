@@ -1,0 +1,1626 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - link "ข้ามไปเนื้อหาหลัก" [ref=f1e3420] [cursor=pointer]:
+      - /url: "#main"
+    - banner [ref=f1e5]:
+      - generic [ref=f1e6]:
+        - link "WEWIN180 หน้าหลัก" [ref=f1e3421] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f1e8]: WEWIN180
+        - navigation "เมนูหลัก" [ref=f1e3422]:
+          - link "สินค้า" [ref=f1e3423] [cursor=pointer]:
+            - /url: /products
+          - link "เกี่ยวกับเรา" [ref=f1e3424] [cursor=pointer]:
+            - /url: /about
+        - generic [ref=f1e12]:
+          - generic [ref=f1e13]:
+            - generic [ref=f1e14]: ภาษา
+            - combobox "ภาษา" [ref=f1e3425] [cursor=pointer]:
+              - option "Deutsch"
+              - option "English"
+              - option "हिन्दी"
+              - option "Latina"
+              - option "မြန်မာ" [selected]
+              - option "ไทย"
+              - option "Tiếng Việt"
+              - option "中文"
+            - generic [ref=f1e3426]: ข้อความบางส่วนยังไม่มีคำแปล จึงแสดงเป็นภาษาไทย
+          - link "ตะกร้า ตะกร้าว่าง" [ref=f1e3427] [cursor=pointer]:
+            - /url: /quote
+            - generic [ref=f1e20]: ตะกร้า
+            - generic [ref=f1e21]: ตะกร้าว่าง
+    - main [ref=f1e23]:
+      - generic [ref=f1e24]:
+        - heading "สินค้าทั้งหมด" [level=1] [ref=f1e3428]
+        - paragraph [ref=f1e26]: 81 รายการ
+      - generic [ref=f1e27]:
+        - complementary [ref=f1e28]:
+          - generic [ref=f1e30]:
+            - generic [ref=f1e31]:
+              - heading "หมวดหมู่" [level=3] [ref=f1e3429]
+              - list [ref=f1e33]:
+                - listitem [ref=f1e34]:
+                  - generic [ref=f1e35] [cursor=pointer]:
+                    - checkbox "ระแนงและป้องกันแสงแดด" [ref=f1e36]
+                    - generic [ref=f1e40]: ระแนงและป้องกันแสงแดด
+                - listitem [ref=f1e41]:
+                  - generic [ref=f1e42] [cursor=pointer]:
+                    - checkbox "2in1 บานมัลติฟังก์ชัน" [ref=f1e43]
+                    - generic [ref=f1e47]: 2in1 บานมัลติฟังก์ชัน
+                - listitem [ref=f1e48]:
+                  - generic [ref=f1e49] [cursor=pointer]:
+                    - checkbox "บานเฟี้ยม" [ref=f1e50]
+                    - generic [ref=f1e54]: บานเฟี้ยม
+                - listitem [ref=f1e55]:
+                  - generic [ref=f1e56] [cursor=pointer]:
+                    - checkbox "บานเปิด" [ref=f1e57]
+                    - generic [ref=f1e61]: บานเปิด
+                - listitem [ref=f1e62]:
+                  - generic [ref=f1e63] [cursor=pointer]:
+                    - checkbox "บานสวิง" [ref=f1e64]
+                    - generic [ref=f1e68]: บานสวิง
+                - listitem [ref=f1e69]:
+                  - generic [ref=f1e70] [cursor=pointer]:
+                    - checkbox "บานแขวน" [ref=f1e71]
+                    - generic [ref=f1e75]: บานแขวน
+                - listitem [ref=f1e76]:
+                  - generic [ref=f1e77] [cursor=pointer]:
+                    - checkbox "บานเลื่อน" [ref=f1e78]
+                    - generic [ref=f1e82]: บานเลื่อน
+                - listitem [ref=f1e83]:
+                  - generic [ref=f1e84] [cursor=pointer]:
+                    - checkbox "บานเลื่อนแนวตั้ง" [ref=f1e85]
+                    - generic [ref=f1e89]: บานเลื่อนแนวตั้ง
+                - listitem [ref=f1e90]:
+                  - generic [ref=f1e91] [cursor=pointer]:
+                    - checkbox "บานปิดตาย" [ref=f1e92]
+                    - generic [ref=f1e96]: บานปิดตาย
+                - listitem [ref=f1e97]:
+                  - generic [ref=f1e98] [cursor=pointer]:
+                    - checkbox "มุ้งกันยุงและแมลง" [ref=f1e99]
+                    - generic [ref=f1e103]: มุ้งกันยุงและแมลง
+            - generic [ref=f1e104]:
+              - heading "สีโปรไฟล์" [level=3] [ref=f1e3430]
+              - generic [ref=f1e106]:
+                - generic [ref=f1e107] [cursor=pointer]:
+                  - checkbox "ลายไม้เข้ม" [ref=f1e108]
+                  - generic [ref=f1e110]: ลายไม้เข้ม
+                - generic [ref=f1e111] [cursor=pointer]:
+                  - checkbox "ลายไม้อ่อน" [ref=f1e112]
+                  - generic [ref=f1e114]: ลายไม้อ่อน
+                - generic [ref=f1e115] [cursor=pointer]:
+                  - checkbox "เทาซาฮาร่า" [ref=f1e116]
+                  - generic [ref=f1e118]: เทาซาฮาร่า
+                - generic [ref=f1e119] [cursor=pointer]:
+                  - checkbox "ดำ" [ref=f1e120]
+                  - generic [ref=f1e122]: ดำ
+                - generic [ref=f1e123] [cursor=pointer]:
+                  - checkbox "อบขาว" [ref=f1e124]
+                  - generic [ref=f1e126]: อบขาว
+            - generic [ref=f1e127]:
+              - heading "ราคาต่อ ตร.ม." [level=3] [ref=f1e3431]
+              - generic [ref=f1e129]:
+                - generic [ref=f1e130]:
+                  - generic [ref=f1e131]: ฿900
+                  - generic [ref=f1e132]: ถึง
+                  - generic [ref=f1e133]: ฿5,000
+                - generic [ref=f1e134] [cursor=pointer]:
+                  - generic [ref=f1e135]: ไม่เกิน
+                  - slider "ไม่เกิน" [ref=f1e3432]: "5000"
+        - list [ref=f1e138]:
+          - listitem [ref=f1e139]:
+            - article [ref=f1e140]:
+              - img "ภาพร่างสัดส่วน 300 × 200 cm" [ref=f1e143]
+              - generic [ref=f1e148]:
+                - generic [ref=f1e149]:
+                  - heading "ระแนงปรับได้" [level=3] [ref=f1e150]:
+                    - link "ระแนงปรับได้" [ref=f1e151] [cursor=pointer]:
+                      - /url: /products/lvr-adj
+                  - paragraph [ref=f1e152]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e153]:
+                  - generic [ref=f1e154]: 3 สีโปรไฟล์
+                  - generic [ref=f1e156]: ปรับขนาดได้ 60–600 cm
+                - generic [ref=f1e159]:
+                  - paragraph [ref=f1e160]: เริ่มต้น
+                  - paragraph [ref=f1e161]:
+                    - text: ฿2,200
+                    - generic [ref=f1e162]: / ตร.ม.
+                  - paragraph [ref=f1e163]: ผลิต 14–21 วัน
+          - listitem [ref=f1e166]:
+            - article [ref=f1e167]:
+              - img "ภาพร่างสัดส่วน 300 × 200 cm" [ref=f1e170]
+              - generic [ref=f1e178]:
+                - generic [ref=f1e179]:
+                  - heading "ระแนงปรับได้ แบ่ง 2" [level=3] [ref=f1e180]:
+                    - link "ระแนงปรับได้ แบ่ง 2" [ref=f1e181] [cursor=pointer]:
+                      - /url: /products/lvr-adj-2
+                  - paragraph [ref=f1e182]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e183]:
+                  - generic [ref=f1e184]: 3 สีโปรไฟล์
+                  - generic [ref=f1e186]: ปรับขนาดได้ 60–600 cm
+                - generic [ref=f1e189]:
+                  - paragraph [ref=f1e190]: เริ่มต้น
+                  - paragraph [ref=f1e191]:
+                    - text: ฿2,300
+                    - generic [ref=f1e192]: / ตร.ม.
+                  - paragraph [ref=f1e193]: ผลิต 14–21 วัน
+          - listitem [ref=f1e196]:
+            - article [ref=f1e197]:
+              - img "ภาพร่างสัดส่วน 300 × 200 cm" [ref=f1e200]
+              - generic [ref=f1e211]:
+                - generic [ref=f1e212]:
+                  - heading "ระแนงปรับได้ แบ่ง 3" [level=3] [ref=f1e213]:
+                    - link "ระแนงปรับได้ แบ่ง 3" [ref=f1e214] [cursor=pointer]:
+                      - /url: /products/lvr-adj-3
+                  - paragraph [ref=f1e215]: ระแนงอะลูมิเนียมปรับองศาใบได้ แบ่งชุดควบคุม 3 ช่วง คุมแสงและลมได้อิสระในแต่ละช่วง
+                - generic [ref=f1e216]:
+                  - generic [ref=f1e217]: 3 สีโปรไฟล์
+                  - generic [ref=f1e219]: ปรับขนาดได้ 60–600 cm
+                - generic [ref=f1e222]:
+                  - paragraph [ref=f1e223]: เริ่มต้น
+                  - paragraph [ref=f1e224]:
+                    - text: ฿2,400
+                    - generic [ref=f1e225]: / ตร.ม.
+                  - paragraph [ref=f1e226]: ผลิต 14–21 วัน
+          - listitem [ref=f1e229]:
+            - article [ref=f1e230]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e233]
+              - generic [ref=f1e245]:
+                - generic [ref=f1e246]:
+                  - heading "บานเลื่อนสลับ - ระแนงปรับได้" [level=3] [ref=f1e247]:
+                    - link "บานเลื่อนสลับ - ระแนงปรับได้" [ref=f1e248] [cursor=pointer]:
+                      - /url: /products/lvr-slide-swap
+                  - paragraph [ref=f1e249]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e250]:
+                  - generic [ref=f1e251]: 3 สีโปรไฟล์
+                  - generic [ref=f1e253]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e256]:
+                  - paragraph [ref=f1e257]: เริ่มต้น
+                  - paragraph [ref=f1e258]:
+                    - text: ฿3,400
+                    - generic [ref=f1e259]: / ตร.ม.
+                  - paragraph [ref=f1e260]: ผลิต 14–21 วัน
+          - listitem [ref=f1e263]:
+            - article [ref=f1e264]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e267]
+              - generic [ref=f1e289]:
+                - generic [ref=f1e290]:
+                  - heading "บานเลื่อน แบ่ง 4 อิสระ - ระแนงปรับได้" [level=3] [ref=f1e291]:
+                    - link "บานเลื่อน แบ่ง 4 อิสระ - ระแนงปรับได้" [ref=f1e292] [cursor=pointer]:
+                      - /url: /products/lvr-slide-4free
+                  - paragraph [ref=f1e293]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e294]:
+                  - generic [ref=f1e295]: 3 สีโปรไฟล์
+                  - generic [ref=f1e297]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e300]:
+                  - paragraph [ref=f1e301]: เริ่มต้น
+                  - paragraph [ref=f1e302]:
+                    - text: ฿3,900
+                    - generic [ref=f1e303]: / ตร.ม.
+                  - paragraph [ref=f1e304]: ผลิต 14–21 วัน
+          - listitem [ref=f1e307]:
+            - article [ref=f1e308]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e311]
+              - generic [ref=f1e321]:
+                - generic [ref=f1e322]:
+                  - heading "บานเลื่อน เดี่ยว - ระแนงปรับได้" [level=3] [ref=f1e323]:
+                    - link "บานเลื่อน เดี่ยว - ระแนงปรับได้" [ref=f1e324] [cursor=pointer]:
+                      - /url: /products/lvr-slide-single
+                  - paragraph [ref=f1e325]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e326]:
+                  - generic [ref=f1e327]: 3 สีโปรไฟล์
+                  - generic [ref=f1e329]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e332]:
+                  - paragraph [ref=f1e333]: เริ่มต้น
+                  - paragraph [ref=f1e334]:
+                    - text: ฿3,100
+                    - generic [ref=f1e335]: / ตร.ม.
+                  - paragraph [ref=f1e336]: ผลิต 14–21 วัน
+          - listitem [ref=f1e339]:
+            - article [ref=f1e340]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e343]
+              - generic [ref=f1e360]:
+                - generic [ref=f1e361]:
+                  - heading "บานเลื่อน แบ่ง 3 - ระแนงปรับได้" [level=3] [ref=f1e362]:
+                    - link "บานเลื่อน แบ่ง 3 - ระแนงปรับได้" [ref=f1e363] [cursor=pointer]:
+                      - /url: /products/lvr-slide-3
+                  - paragraph [ref=f1e364]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e365]:
+                  - generic [ref=f1e366]: 3 สีโปรไฟล์
+                  - generic [ref=f1e368]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e371]:
+                  - paragraph [ref=f1e372]: เริ่มต้น
+                  - paragraph [ref=f1e373]:
+                    - text: ฿3,700
+                    - generic [ref=f1e374]: / ตร.ม.
+                  - paragraph [ref=f1e375]: ผลิต 14–21 วัน
+          - listitem [ref=f1e378]:
+            - article [ref=f1e379]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e382]
+              - generic [ref=f1e404]:
+                - generic [ref=f1e405]:
+                  - heading "บานเลื่อน แบ่ง 4 เปิดกลาง - ระแนงปรับได้" [level=3] [ref=f1e406]:
+                    - link "บานเลื่อน แบ่ง 4 เปิดกลาง - ระแนงปรับได้" [ref=f1e407] [cursor=pointer]:
+                      - /url: /products/lvr-slide-4c
+                  - paragraph [ref=f1e408]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e409]:
+                  - generic [ref=f1e410]: 3 สีโปรไฟล์
+                  - generic [ref=f1e412]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e415]:
+                  - paragraph [ref=f1e416]: เริ่มต้น
+                  - paragraph [ref=f1e417]:
+                    - text: ฿3,800
+                    - generic [ref=f1e418]: / ตร.ม.
+                  - paragraph [ref=f1e419]: ผลิต 14–21 วัน
+          - listitem [ref=f1e422]:
+            - article [ref=f1e423]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e426]
+              - generic [ref=f1e438]:
+                - generic [ref=f1e439]:
+                  - heading "บานแขวนสลับ - ระแนงปรับได้" [level=3] [ref=f1e440]:
+                    - link "บานแขวนสลับ - ระแนงปรับได้" [ref=f1e441] [cursor=pointer]:
+                      - /url: /products/lvr-hang-swap
+                  - paragraph [ref=f1e442]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e443]:
+                  - generic [ref=f1e444]: 3 สีโปรไฟล์
+                  - generic [ref=f1e446]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e449]:
+                  - paragraph [ref=f1e450]: เริ่มต้น
+                  - paragraph [ref=f1e451]:
+                    - text: ฿3,500
+                    - generic [ref=f1e452]: / ตร.ม.
+                  - paragraph [ref=f1e453]: ผลิต 14–21 วัน
+          - listitem [ref=f1e456]:
+            - article [ref=f1e457]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e460]
+              - generic [ref=f1e482]:
+                - generic [ref=f1e483]:
+                  - heading "บานแขวน แบ่ง 4 อิสระ - ระแนงปรับได้" [level=3] [ref=f1e484]:
+                    - link "บานแขวน แบ่ง 4 อิสระ - ระแนงปรับได้" [ref=f1e485] [cursor=pointer]:
+                      - /url: /products/lvr-hang-4free
+                  - paragraph [ref=f1e486]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e487]:
+                  - generic [ref=f1e488]: 3 สีโปรไฟล์
+                  - generic [ref=f1e490]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e493]:
+                  - paragraph [ref=f1e494]: เริ่มต้น
+                  - paragraph [ref=f1e495]:
+                    - text: ฿4,000
+                    - generic [ref=f1e496]: / ตร.ม.
+                  - paragraph [ref=f1e497]: ผลิต 14–21 วัน
+          - listitem [ref=f1e500]:
+            - article [ref=f1e501]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e504]
+              - generic [ref=f1e514]:
+                - generic [ref=f1e515]:
+                  - heading "บานแขวน เดี่ยว - ระแนงปรับได้" [level=3] [ref=f1e516]:
+                    - link "บานแขวน เดี่ยว - ระแนงปรับได้" [ref=f1e517] [cursor=pointer]:
+                      - /url: /products/lvr-hang-single
+                  - paragraph [ref=f1e518]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e519]:
+                  - generic [ref=f1e520]: 3 สีโปรไฟล์
+                  - generic [ref=f1e522]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e525]:
+                  - paragraph [ref=f1e526]: เริ่มต้น
+                  - paragraph [ref=f1e527]:
+                    - text: ฿3,200
+                    - generic [ref=f1e528]: / ตร.ม.
+                  - paragraph [ref=f1e529]: ผลิต 14–21 วัน
+          - listitem [ref=f1e532]:
+            - article [ref=f1e533]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e536]
+              - generic [ref=f1e553]:
+                - generic [ref=f1e554]:
+                  - heading "บานแขวน แบ่ง 3 - ระแนงปรับได้" [level=3] [ref=f1e555]:
+                    - link "บานแขวน แบ่ง 3 - ระแนงปรับได้" [ref=f1e556] [cursor=pointer]:
+                      - /url: /products/lvr-hang-3
+                  - paragraph [ref=f1e557]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e558]:
+                  - generic [ref=f1e559]: 3 สีโปรไฟล์
+                  - generic [ref=f1e561]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e564]:
+                  - paragraph [ref=f1e565]: เริ่มต้น
+                  - paragraph [ref=f1e566]:
+                    - text: ฿3,800
+                    - generic [ref=f1e567]: / ตร.ม.
+                  - paragraph [ref=f1e568]: ผลิต 14–21 วัน
+          - listitem [ref=f1e571]:
+            - article [ref=f1e572]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e575]
+              - generic [ref=f1e597]:
+                - generic [ref=f1e598]:
+                  - heading "บานแขวน แบ่ง 4 เปิดกลาง - ระแนงปรับได้" [level=3] [ref=f1e599]:
+                    - link "บานแขวน แบ่ง 4 เปิดกลาง - ระแนงปรับได้" [ref=f1e600] [cursor=pointer]:
+                      - /url: /products/lvr-hang-4c
+                  - paragraph [ref=f1e601]: ใบระแนงอะลูมิเนียมปรับองศาได้ คุมแสงและลมโดยไม่ต้องปิดช่องทั้งหมด
+                - generic [ref=f1e602]:
+                  - generic [ref=f1e603]: 3 สีโปรไฟล์
+                  - generic [ref=f1e605]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e608]:
+                  - paragraph [ref=f1e609]: เริ่มต้น
+                  - paragraph [ref=f1e610]:
+                    - text: ฿3,900
+                    - generic [ref=f1e611]: / ตร.ม.
+                  - paragraph [ref=f1e612]: ผลิต 14–21 วัน
+          - listitem [ref=f1e615]:
+            - article [ref=f1e616]:
+              - img "ภาพร่างสัดส่วน 180 × 220 cm" [ref=f1e619]
+              - generic [ref=f1e627]:
+                - generic [ref=f1e628]:
+                  - heading "ประตูบานเปิด เดี่ยว - ระแนงปรับได้" [level=3] [ref=f1e629]:
+                    - link "ประตูบานเปิด เดี่ยว - ระแนงปรับได้" [ref=f1e630] [cursor=pointer]:
+                      - /url: /products/lvr-door-single
+                  - paragraph [ref=f1e631]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e632]:
+                  - generic [ref=f1e633]: 3 สีโปรไฟล์
+                  - generic [ref=f1e635]: ปรับขนาดได้ 120–500 cm
+                - generic [ref=f1e638]:
+                  - paragraph [ref=f1e639]: เริ่มต้น
+                  - paragraph [ref=f1e640]:
+                    - text: ฿3,300
+                    - generic [ref=f1e641]: / ตร.ม.
+                  - paragraph [ref=f1e642]: ผลิต 18–25 วัน
+          - listitem [ref=f1e645]:
+            - article [ref=f1e646]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e649]
+              - generic [ref=f1e663]:
+                - generic [ref=f1e664]:
+                  - heading "ประตูบานเปิด คู่ - ระแนงปรับได้" [level=3] [ref=f1e665]:
+                    - link "ประตูบานเปิด คู่ - ระแนงปรับได้" [ref=f1e666] [cursor=pointer]:
+                      - /url: /products/lvr-door-double
+                  - paragraph [ref=f1e667]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e668]:
+                  - generic [ref=f1e669]: 3 สีโปรไฟล์
+                  - generic [ref=f1e671]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e674]:
+                  - paragraph [ref=f1e675]: เริ่มต้น
+                  - paragraph [ref=f1e676]:
+                    - text: ฿3,500
+                    - generic [ref=f1e677]: / ตร.ม.
+                  - paragraph [ref=f1e678]: ผลิต 18–25 วัน
+          - listitem [ref=f1e681]:
+            - article [ref=f1e682]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e685]
+              - generic [ref=f1e699]:
+                - generic [ref=f1e700]:
+                  - heading "ประตูบานเปิด คู่แม่ลูก - ระแนงปรับได้" [level=3] [ref=f1e701]:
+                    - link "ประตูบานเปิด คู่แม่ลูก - ระแนงปรับได้" [ref=f1e702] [cursor=pointer]:
+                      - /url: /products/lvr-door-uneven
+                  - paragraph [ref=f1e703]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e704]:
+                  - generic [ref=f1e705]: 3 สีโปรไฟล์
+                  - generic [ref=f1e707]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e710]:
+                  - paragraph [ref=f1e711]: เริ่มต้น
+                  - paragraph [ref=f1e712]:
+                    - text: ฿3,600
+                    - generic [ref=f1e713]: / ตร.ม.
+                  - paragraph [ref=f1e714]: ผลิต 18–25 วัน
+          - listitem [ref=f1e717]:
+            - article [ref=f1e718]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e721]
+              - generic [ref=f1e735]:
+                - generic [ref=f1e736]:
+                  - heading "ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว - ระแนงปรับได้" [level=3] [ref=f1e737]:
+                    - link "ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว - ระแนงปรับได้" [ref=f1e738] [cursor=pointer]:
+                      - /url: /products/lvr-door-uneven-3in
+                  - paragraph [ref=f1e739]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e740]:
+                  - generic [ref=f1e741]: 3 สีโปรไฟล์
+                  - generic [ref=f1e743]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e746]:
+                  - paragraph [ref=f1e747]: เริ่มต้น
+                  - paragraph [ref=f1e748]:
+                    - text: ฿3,900
+                    - generic [ref=f1e749]: / ตร.ม.
+                  - paragraph [ref=f1e750]: ผลิต 18–25 วัน
+          - listitem [ref=f1e753]:
+            - article [ref=f1e754]:
+              - img "ภาพร่างสัดส่วน 180 × 220 cm" [ref=f1e757]
+              - generic [ref=f1e765]:
+                - generic [ref=f1e766]:
+                  - heading "ประตูบานสวิง เดี่ยว - ระแนงปรับได้" [level=3] [ref=f1e767]:
+                    - link "ประตูบานสวิง เดี่ยว - ระแนงปรับได้" [ref=f1e768] [cursor=pointer]:
+                      - /url: /products/lvr-swing-single
+                  - paragraph [ref=f1e769]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e770]:
+                  - generic [ref=f1e771]: 3 สีโปรไฟล์
+                  - generic [ref=f1e773]: ปรับขนาดได้ 120–500 cm
+                - generic [ref=f1e776]:
+                  - paragraph [ref=f1e777]: เริ่มต้น
+                  - paragraph [ref=f1e778]:
+                    - text: ฿3,600
+                    - generic [ref=f1e779]: / ตร.ม.
+                  - paragraph [ref=f1e780]: ผลิต 18–25 วัน
+          - listitem [ref=f1e783]:
+            - article [ref=f1e784]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e787]
+              - generic [ref=f1e801]:
+                - generic [ref=f1e802]:
+                  - heading "ประตูบานสวิง คู่ - ระแนงปรับได้" [level=3] [ref=f1e803]:
+                    - link "ประตูบานสวิง คู่ - ระแนงปรับได้" [ref=f1e804] [cursor=pointer]:
+                      - /url: /products/lvr-swing-double
+                  - paragraph [ref=f1e805]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e806]:
+                  - generic [ref=f1e807]: 3 สีโปรไฟล์
+                  - generic [ref=f1e809]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e812]:
+                  - paragraph [ref=f1e813]: เริ่มต้น
+                  - paragraph [ref=f1e814]:
+                    - text: ฿3,800
+                    - generic [ref=f1e815]: / ตร.ม.
+                  - paragraph [ref=f1e816]: ผลิต 18–25 วัน
+          - listitem [ref=f1e819]:
+            - article [ref=f1e820]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e823]
+              - generic [ref=f1e837]:
+                - generic [ref=f1e838]:
+                  - heading "ประตูบานสวิง คู่แม่ลูก - ระแนงปรับได้" [level=3] [ref=f1e839]:
+                    - link "ประตูบานสวิง คู่แม่ลูก - ระแนงปรับได้" [ref=f1e840] [cursor=pointer]:
+                      - /url: /products/lvr-swing-uneven
+                  - paragraph [ref=f1e841]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e842]:
+                  - generic [ref=f1e843]: 3 สีโปรไฟล์
+                  - generic [ref=f1e845]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e848]:
+                  - paragraph [ref=f1e849]: เริ่มต้น
+                  - paragraph [ref=f1e850]:
+                    - text: ฿3,900
+                    - generic [ref=f1e851]: / ตร.ม.
+                  - paragraph [ref=f1e852]: ผลิต 18–25 วัน
+          - listitem [ref=f1e855]:
+            - article [ref=f1e856]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e859]
+              - generic [ref=f1e873]:
+                - generic [ref=f1e874]:
+                  - heading "บานเฟี้ยม แบ่ง 2 - ระแนงปรับได้" [level=3] [ref=f1e875]:
+                    - link "บานเฟี้ยม แบ่ง 2 - ระแนงปรับได้" [ref=f1e876] [cursor=pointer]:
+                      - /url: /products/lvr-fold-2
+                  - paragraph [ref=f1e877]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e878]:
+                  - generic [ref=f1e879]: 3 สีโปรไฟล์
+                  - generic [ref=f1e881]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e884]:
+                  - paragraph [ref=f1e885]: เริ่มต้น
+                  - paragraph [ref=f1e886]:
+                    - text: ฿4,200
+                    - generic [ref=f1e887]: / ตร.ม.
+                  - paragraph [ref=f1e888]: ผลิต 18–25 วัน
+          - listitem [ref=f1e891]:
+            - article [ref=f1e892]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e895]
+              - generic [ref=f1e921]:
+                - generic [ref=f1e922]:
+                  - heading "บานเฟี้ยม แบ่ง 4 - ระแนงปรับได้" [level=3] [ref=f1e923]:
+                    - link "บานเฟี้ยม แบ่ง 4 - ระแนงปรับได้" [ref=f1e924] [cursor=pointer]:
+                      - /url: /products/lvr-fold-4
+                  - paragraph [ref=f1e925]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e926]:
+                  - generic [ref=f1e927]: 3 สีโปรไฟล์
+                  - generic [ref=f1e929]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e932]:
+                  - paragraph [ref=f1e933]: เริ่มต้น
+                  - paragraph [ref=f1e934]:
+                    - text: ฿4,400
+                    - generic [ref=f1e935]: / ตร.ม.
+                  - paragraph [ref=f1e936]: ผลิต 18–25 วัน
+          - listitem [ref=f1e939]:
+            - article [ref=f1e940]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e943]
+              - generic [ref=f1e981]:
+                - generic [ref=f1e982]:
+                  - heading "บานเฟี้ยม แบ่ง 6 - ระแนงปรับได้" [level=3] [ref=f1e983]:
+                    - link "บานเฟี้ยม แบ่ง 6 - ระแนงปรับได้" [ref=f1e984] [cursor=pointer]:
+                      - /url: /products/lvr-fold-6
+                  - paragraph [ref=f1e985]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e986]:
+                  - generic [ref=f1e987]: 3 สีโปรไฟล์
+                  - generic [ref=f1e989]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e992]:
+                  - paragraph [ref=f1e993]: เริ่มต้น
+                  - paragraph [ref=f1e994]:
+                    - text: ฿4,600
+                    - generic [ref=f1e995]: / ตร.ม.
+                  - paragraph [ref=f1e996]: ผลิต 18–25 วัน
+          - listitem [ref=f1e999]:
+            - article [ref=f1e1000]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1003]
+              - generic [ref=f1e1053]:
+                - generic [ref=f1e1054]:
+                  - heading "บานเฟี้ยม แบ่ง 8 - ระแนงปรับได้" [level=3] [ref=f1e1055]:
+                    - link "บานเฟี้ยม แบ่ง 8 - ระแนงปรับได้" [ref=f1e1056] [cursor=pointer]:
+                      - /url: /products/lvr-fold-8
+                  - paragraph [ref=f1e1057]: บานเปิดที่ใช้ใบระแนงปรับองศาแทนกระจก ได้ทั้งความเป็นส่วนตัวและการระบายอากาศ
+                - generic [ref=f1e1058]:
+                  - generic [ref=f1e1059]: 3 สีโปรไฟล์
+                  - generic [ref=f1e1061]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1064]:
+                  - paragraph [ref=f1e1065]: เริ่มต้น
+                  - paragraph [ref=f1e1066]:
+                    - text: ฿4,800
+                    - generic [ref=f1e1067]: / ตร.ม.
+                  - paragraph [ref=f1e1068]: ผลิต 18–25 วัน
+          - listitem [ref=f1e1071]:
+            - article [ref=f1e1072]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e1075]
+              - generic [ref=f1e1085]:
+                - generic [ref=f1e1086]:
+                  - heading "2in1 บานแขวน-เปิด แบ่ง 2" [level=3] [ref=f1e1087]:
+                    - link "2in1 บานแขวน-เปิด แบ่ง 2" [ref=f1e1088] [cursor=pointer]:
+                      - /url: /products/multi-hang-cas-2
+                  - paragraph [ref=f1e1089]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e1090]:
+                  - generic [ref=f1e1091]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1093]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e1096]:
+                  - paragraph [ref=f1e1097]: เริ่มต้น
+                  - paragraph [ref=f1e1098]:
+                    - text: ฿3,200
+                    - generic [ref=f1e1099]: / ตร.ม.
+                  - paragraph [ref=f1e1100]: ผลิต 10–14 วัน
+          - listitem [ref=f1e1103]:
+            - article [ref=f1e1104]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e1107]
+              - generic [ref=f1e1125]:
+                - generic [ref=f1e1126]:
+                  - heading "2in1 บานแขวน-เปิด แบ่ง 4" [level=3] [ref=f1e1127]:
+                    - link "2in1 บานแขวน-เปิด แบ่ง 4" [ref=f1e1128] [cursor=pointer]:
+                      - /url: /products/multi-hang-cas-4
+                  - paragraph [ref=f1e1129]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e1130]:
+                  - generic [ref=f1e1131]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1133]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e1136]:
+                  - paragraph [ref=f1e1137]: เริ่มต้น
+                  - paragraph [ref=f1e1138]:
+                    - text: ฿3,500
+                    - generic [ref=f1e1139]: / ตร.ม.
+                  - paragraph [ref=f1e1140]: ผลิต 10–14 วัน
+          - listitem [ref=f1e1143]:
+            - article [ref=f1e1144]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1147]
+              - generic [ref=f1e1164]:
+                - generic [ref=f1e1165]:
+                  - heading "2in1 บานแขวน-เฟี้ยม แบ่ง 3" [level=3] [ref=f1e1166]:
+                    - link "2in1 บานแขวน-เฟี้ยม แบ่ง 3" [ref=f1e1167] [cursor=pointer]:
+                      - /url: /products/multi-hang-fold-3
+                  - paragraph [ref=f1e1168]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1169]:
+                  - generic [ref=f1e1170]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1172]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1175]:
+                  - paragraph [ref=f1e1176]: เริ่มต้น
+                  - paragraph [ref=f1e1177]:
+                    - text: ฿3,800
+                    - generic [ref=f1e1178]: / ตร.ม.
+                  - paragraph [ref=f1e1179]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1182]:
+            - article [ref=f1e1183]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1186]
+              - generic [ref=f1e1218]:
+                - generic [ref=f1e1219]:
+                  - heading "2in1 บานแขวน-เฟี้ยม แบ่ง 6" [level=3] [ref=f1e1220]:
+                    - link "2in1 บานแขวน-เฟี้ยม แบ่ง 6" [ref=f1e1221] [cursor=pointer]:
+                      - /url: /products/multi-hang-fold-6
+                  - paragraph [ref=f1e1222]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1223]:
+                  - generic [ref=f1e1224]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1226]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1229]:
+                  - paragraph [ref=f1e1230]: เริ่มต้น
+                  - paragraph [ref=f1e1231]:
+                    - text: ฿4,100
+                    - generic [ref=f1e1232]: / ตร.ม.
+                  - paragraph [ref=f1e1233]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1236]:
+            - article [ref=f1e1237]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1240]
+              - generic [ref=f1e1252]:
+                - generic [ref=f1e1253]:
+                  - heading "บานเฟี้ยม แบ่ง 2" [level=3] [ref=f1e1254]:
+                    - link "บานเฟี้ยม แบ่ง 2" [ref=f1e1255] [cursor=pointer]:
+                      - /url: /products/fold-2
+                  - paragraph [ref=f1e1256]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1257]:
+                  - generic [ref=f1e1258]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1260]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1263]:
+                  - paragraph [ref=f1e1264]: เริ่มต้น
+                  - paragraph [ref=f1e1265]:
+                    - text: ฿3,400
+                    - generic [ref=f1e1266]: / ตร.ม.
+                  - paragraph [ref=f1e1267]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1270]:
+            - article [ref=f1e1271]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1274]
+              - generic [ref=f1e1296]:
+                - generic [ref=f1e1297]:
+                  - heading "บานเฟี้ยม แบ่ง 4" [level=3] [ref=f1e1298]:
+                    - link "บานเฟี้ยม แบ่ง 4" [ref=f1e1299] [cursor=pointer]:
+                      - /url: /products/fold-4
+                  - paragraph [ref=f1e1300]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1301]:
+                  - generic [ref=f1e1302]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1304]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1307]:
+                  - paragraph [ref=f1e1308]: เริ่มต้น
+                  - paragraph [ref=f1e1309]:
+                    - text: ฿3,600
+                    - generic [ref=f1e1310]: / ตร.ม.
+                  - paragraph [ref=f1e1311]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1314]:
+            - article [ref=f1e1315]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1318]
+              - generic [ref=f1e1350]:
+                - generic [ref=f1e1351]:
+                  - heading "บานเฟี้ยม แบ่ง 6" [level=3] [ref=f1e1352]:
+                    - link "บานเฟี้ยม แบ่ง 6" [ref=f1e1353] [cursor=pointer]:
+                      - /url: /products/fold-6
+                  - paragraph [ref=f1e1354]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1355]:
+                  - generic [ref=f1e1356]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1358]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1361]:
+                  - paragraph [ref=f1e1362]: เริ่มต้น
+                  - paragraph [ref=f1e1363]:
+                    - text: ฿3,800
+                    - generic [ref=f1e1364]: / ตร.ม.
+                  - paragraph [ref=f1e1365]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1368]:
+            - article [ref=f1e1369]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1372]
+              - generic [ref=f1e1414]:
+                - generic [ref=f1e1415]:
+                  - heading "บานเฟี้ยม แบ่ง 8" [level=3] [ref=f1e1416]:
+                    - link "บานเฟี้ยม แบ่ง 8" [ref=f1e1417] [cursor=pointer]:
+                      - /url: /products/fold-8
+                  - paragraph [ref=f1e1418]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1419]:
+                  - generic [ref=f1e1420]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1422]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1425]:
+                  - paragraph [ref=f1e1426]: เริ่มต้น
+                  - paragraph [ref=f1e1427]:
+                    - text: ฿4,000
+                    - generic [ref=f1e1428]: / ตร.ม.
+                  - paragraph [ref=f1e1429]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1432]:
+            - article [ref=f1e1433]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1436]
+              - generic [ref=f1e1488]:
+                - generic [ref=f1e1489]:
+                  - heading "บานเฟี้ยม แบ่ง 10" [level=3] [ref=f1e1490]:
+                    - link "บานเฟี้ยม แบ่ง 10" [ref=f1e1491] [cursor=pointer]:
+                      - /url: /products/fold-10
+                  - paragraph [ref=f1e1492]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1493]:
+                  - generic [ref=f1e1494]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1496]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1499]:
+                  - paragraph [ref=f1e1500]: เริ่มต้น
+                  - paragraph [ref=f1e1501]:
+                    - text: ฿4,200
+                    - generic [ref=f1e1502]: / ตร.ม.
+                  - paragraph [ref=f1e1503]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1506]:
+            - article [ref=f1e1507]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1510]
+              - generic [ref=f1e1572]:
+                - generic [ref=f1e1573]:
+                  - heading "บานเฟี้ยม แบ่ง 12" [level=3] [ref=f1e1574]:
+                    - link "บานเฟี้ยม แบ่ง 12" [ref=f1e1575] [cursor=pointer]:
+                      - /url: /products/fold-12
+                  - paragraph [ref=f1e1576]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1577]:
+                  - generic [ref=f1e1578]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1580]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1583]:
+                  - paragraph [ref=f1e1584]: เริ่มต้น
+                  - paragraph [ref=f1e1585]:
+                    - text: ฿4,400
+                    - generic [ref=f1e1586]: / ตร.ม.
+                  - paragraph [ref=f1e1587]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1590]:
+            - article [ref=f1e1591]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1594]
+              - generic [ref=f1e1606]:
+                - generic [ref=f1e1607]:
+                  - heading "บานเฟี้ยม ไร้รางล่าง แบ่ง 2" [level=3] [ref=f1e1608]:
+                    - link "บานเฟี้ยม ไร้รางล่าง แบ่ง 2" [ref=f1e1609] [cursor=pointer]:
+                      - /url: /products/fold-nt-2
+                  - paragraph [ref=f1e1610]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1611]:
+                  - generic [ref=f1e1612]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1614]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1617]:
+                  - paragraph [ref=f1e1618]: เริ่มต้น
+                  - paragraph [ref=f1e1619]:
+                    - text: ฿4,000
+                    - generic [ref=f1e1620]: / ตร.ม.
+                  - paragraph [ref=f1e1621]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1624]:
+            - article [ref=f1e1625]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1628]
+              - generic [ref=f1e1650]:
+                - generic [ref=f1e1651]:
+                  - heading "บานเฟี้ยม ไร้รางล่าง แบ่ง 4" [level=3] [ref=f1e1652]:
+                    - link "บานเฟี้ยม ไร้รางล่าง แบ่ง 4" [ref=f1e1653] [cursor=pointer]:
+                      - /url: /products/fold-nt-4
+                  - paragraph [ref=f1e1654]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1655]:
+                  - generic [ref=f1e1656]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1658]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1661]:
+                  - paragraph [ref=f1e1662]: เริ่มต้น
+                  - paragraph [ref=f1e1663]:
+                    - text: ฿4,200
+                    - generic [ref=f1e1664]: / ตร.ม.
+                  - paragraph [ref=f1e1665]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1668]:
+            - article [ref=f1e1669]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1672]
+              - generic [ref=f1e1704]:
+                - generic [ref=f1e1705]:
+                  - heading "บานเฟี้ยม ไร้รางล่าง แบ่ง 6" [level=3] [ref=f1e1706]:
+                    - link "บานเฟี้ยม ไร้รางล่าง แบ่ง 6" [ref=f1e1707] [cursor=pointer]:
+                      - /url: /products/fold-nt-6
+                  - paragraph [ref=f1e1708]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1709]:
+                  - generic [ref=f1e1710]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1712]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1715]:
+                  - paragraph [ref=f1e1716]: เริ่มต้น
+                  - paragraph [ref=f1e1717]:
+                    - text: ฿4,400
+                    - generic [ref=f1e1718]: / ตร.ม.
+                  - paragraph [ref=f1e1719]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1722]:
+            - article [ref=f1e1723]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1726]
+              - generic [ref=f1e1768]:
+                - generic [ref=f1e1769]:
+                  - heading "บานเฟี้ยม ไร้รางล่าง แบ่ง 8" [level=3] [ref=f1e1770]:
+                    - link "บานเฟี้ยม ไร้รางล่าง แบ่ง 8" [ref=f1e1771] [cursor=pointer]:
+                      - /url: /products/fold-nt-8
+                  - paragraph [ref=f1e1772]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1773]:
+                  - generic [ref=f1e1774]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1776]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1779]:
+                  - paragraph [ref=f1e1780]: เริ่มต้น
+                  - paragraph [ref=f1e1781]:
+                    - text: ฿4,600
+                    - generic [ref=f1e1782]: / ตร.ม.
+                  - paragraph [ref=f1e1783]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1786]:
+            - article [ref=f1e1787]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1790]
+              - generic [ref=f1e1842]:
+                - generic [ref=f1e1843]:
+                  - heading "บานเฟี้ยม ไร้รางล่าง แบ่ง 10" [level=3] [ref=f1e1844]:
+                    - link "บานเฟี้ยม ไร้รางล่าง แบ่ง 10" [ref=f1e1845] [cursor=pointer]:
+                      - /url: /products/fold-nt-10
+                  - paragraph [ref=f1e1846]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1847]:
+                  - generic [ref=f1e1848]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1850]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1853]:
+                  - paragraph [ref=f1e1854]: เริ่มต้น
+                  - paragraph [ref=f1e1855]:
+                    - text: ฿4,800
+                    - generic [ref=f1e1856]: / ตร.ม.
+                  - paragraph [ref=f1e1857]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1860]:
+            - article [ref=f1e1861]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1864]
+              - generic [ref=f1e1926]:
+                - generic [ref=f1e1927]:
+                  - heading "บานเฟี้ยม ไร้รางล่าง แบ่ง 12" [level=3] [ref=f1e1928]:
+                    - link "บานเฟี้ยม ไร้รางล่าง แบ่ง 12" [ref=f1e1929] [cursor=pointer]:
+                      - /url: /products/fold-nt-12
+                  - paragraph [ref=f1e1930]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1931]:
+                  - generic [ref=f1e1932]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1934]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e1937]:
+                  - paragraph [ref=f1e1938]: เริ่มต้น
+                  - paragraph [ref=f1e1939]:
+                    - text: ฿5,000
+                    - generic [ref=f1e1940]: / ตร.ม.
+                  - paragraph [ref=f1e1941]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1944]:
+            - article [ref=f1e1945]:
+              - img "ภาพร่างสัดส่วน 180 × 220 cm" [ref=f1e1948]
+              - generic [ref=f1e1955]:
+                - generic [ref=f1e1956]:
+                  - heading "ประตูบานเปิด เดี่ยว" [level=3] [ref=f1e1957]:
+                    - link "ประตูบานเปิด เดี่ยว" [ref=f1e1958] [cursor=pointer]:
+                      - /url: /products/cas-door-single
+                  - paragraph [ref=f1e1959]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1960]:
+                  - generic [ref=f1e1961]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1963]: ปรับขนาดได้ 120–500 cm
+                - generic [ref=f1e1966]:
+                  - paragraph [ref=f1e1967]: เริ่มต้น
+                  - paragraph [ref=f1e1968]:
+                    - text: ฿2,400
+                    - generic [ref=f1e1969]: / ตร.ม.
+                  - paragraph [ref=f1e1970]: ผลิต 14–20 วัน
+          - listitem [ref=f1e1973]:
+            - article [ref=f1e1974]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e1977]
+              - generic [ref=f1e1989]:
+                - generic [ref=f1e1990]:
+                  - heading "ประตูบานเปิด คู่" [level=3] [ref=f1e1991]:
+                    - link "ประตูบานเปิด คู่" [ref=f1e1992] [cursor=pointer]:
+                      - /url: /products/cas-door-double
+                  - paragraph [ref=f1e1993]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e1994]:
+                  - generic [ref=f1e1995]: 5 สีโปรไฟล์
+                  - generic [ref=f1e1997]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2000]:
+                  - paragraph [ref=f1e2001]: เริ่มต้น
+                  - paragraph [ref=f1e2002]:
+                    - text: ฿2,600
+                    - generic [ref=f1e2003]: / ตร.ม.
+                  - paragraph [ref=f1e2004]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2007]:
+            - article [ref=f1e2008]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2011]
+              - generic [ref=f1e2023]:
+                - generic [ref=f1e2024]:
+                  - heading "ประตูบานเปิด คู่แม่ลูก" [level=3] [ref=f1e2025]:
+                    - link "ประตูบานเปิด คู่แม่ลูก" [ref=f1e2026] [cursor=pointer]:
+                      - /url: /products/cas-door-uneven
+                  - paragraph [ref=f1e2027]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2028]:
+                  - generic [ref=f1e2029]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2031]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2034]:
+                  - paragraph [ref=f1e2035]: เริ่มต้น
+                  - paragraph [ref=f1e2036]:
+                    - text: ฿2,700
+                    - generic [ref=f1e2037]: / ตร.ม.
+                  - paragraph [ref=f1e2038]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2041]:
+            - article [ref=f1e2042]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2045]
+              - generic [ref=f1e2057]:
+                - generic [ref=f1e2058]:
+                  - heading "ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว" [level=3] [ref=f1e2059]:
+                    - link "ประตูบานเปิด คู่แม่ลูก กรอบ 3 นิ้ว" [ref=f1e2060] [cursor=pointer]:
+                      - /url: /products/cas-door-uneven-3in
+                  - paragraph [ref=f1e2061]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2062]:
+                  - generic [ref=f1e2063]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2065]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2068]:
+                  - paragraph [ref=f1e2069]: เริ่มต้น
+                  - paragraph [ref=f1e2070]:
+                    - text: ฿3,000
+                    - generic [ref=f1e2071]: / ตร.ม.
+                  - paragraph [ref=f1e2072]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2075]:
+            - article [ref=f1e2076]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2079]
+              - generic [ref=f1e2086]:
+                - generic [ref=f1e2087]:
+                  - heading "หน้าต่างบานเปิด" [level=3] [ref=f1e2088]:
+                    - link "หน้าต่างบานเปิด" [ref=f1e2089] [cursor=pointer]:
+                      - /url: /products/cas-win-1
+                  - paragraph [ref=f1e2090]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2091]:
+                  - generic [ref=f1e2092]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2094]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2097]:
+                  - paragraph [ref=f1e2098]: เริ่มต้น
+                  - paragraph [ref=f1e2099]:
+                    - text: ฿1,600
+                    - generic [ref=f1e2100]: / ตร.ม.
+                  - paragraph [ref=f1e2101]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2104]:
+            - article [ref=f1e2105]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2108]
+              - generic [ref=f1e2120]:
+                - generic [ref=f1e2121]:
+                  - heading "หน้าต่างบานเปิด 2" [level=3] [ref=f1e2122]:
+                    - link "หน้าต่างบานเปิด 2" [ref=f1e2123] [cursor=pointer]:
+                      - /url: /products/cas-win-2
+                  - paragraph [ref=f1e2124]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2125]:
+                  - generic [ref=f1e2126]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2128]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2131]:
+                  - paragraph [ref=f1e2132]: เริ่มต้น
+                  - paragraph [ref=f1e2133]:
+                    - text: ฿1,700
+                    - generic [ref=f1e2134]: / ตร.ม.
+                  - paragraph [ref=f1e2135]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2138]:
+            - article [ref=f1e2139]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2142]
+              - generic [ref=f1e2159]:
+                - generic [ref=f1e2160]:
+                  - heading "หน้าต่างบานเปิด 3" [level=3] [ref=f1e2161]:
+                    - link "หน้าต่างบานเปิด 3" [ref=f1e2162] [cursor=pointer]:
+                      - /url: /products/cas-win-3
+                  - paragraph [ref=f1e2163]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2164]:
+                  - generic [ref=f1e2165]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2167]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2170]:
+                  - paragraph [ref=f1e2171]: เริ่มต้น
+                  - paragraph [ref=f1e2172]:
+                    - text: ฿1,800
+                    - generic [ref=f1e2173]: / ตร.ม.
+                  - paragraph [ref=f1e2174]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2177]:
+            - article [ref=f1e2178]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2181]
+              - generic [ref=f1e2203]:
+                - generic [ref=f1e2204]:
+                  - heading "หน้าต่างบานเปิด 4" [level=3] [ref=f1e2205]:
+                    - link "หน้าต่างบานเปิด 4" [ref=f1e2206] [cursor=pointer]:
+                      - /url: /products/cas-win-4
+                  - paragraph [ref=f1e2207]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2208]:
+                  - generic [ref=f1e2209]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2211]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2214]:
+                  - paragraph [ref=f1e2215]: เริ่มต้น
+                  - paragraph [ref=f1e2216]:
+                    - text: ฿1,900
+                    - generic [ref=f1e2217]: / ตร.ม.
+                  - paragraph [ref=f1e2218]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2221]:
+            - article [ref=f1e2222]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2225]
+              - generic [ref=f1e2232]:
+                - generic [ref=f1e2233]:
+                  - heading "หน้าต่างบานกระทุ้ง" [level=3] [ref=f1e2234]:
+                    - link "หน้าต่างบานกระทุ้ง" [ref=f1e2235] [cursor=pointer]:
+                      - /url: /products/awn-1
+                  - paragraph [ref=f1e2236]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2237]:
+                  - generic [ref=f1e2238]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2240]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2243]:
+                  - paragraph [ref=f1e2244]: เริ่มต้น
+                  - paragraph [ref=f1e2245]:
+                    - text: ฿1,350
+                    - generic [ref=f1e2246]: / ตร.ม.
+                  - paragraph [ref=f1e2247]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2250]:
+            - article [ref=f1e2251]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2254]
+              - generic [ref=f1e2266]:
+                - generic [ref=f1e2267]:
+                  - heading "หน้าต่างบานกระทุ้ง 2" [level=3] [ref=f1e2268]:
+                    - link "หน้าต่างบานกระทุ้ง 2" [ref=f1e2269] [cursor=pointer]:
+                      - /url: /products/awn-2
+                  - paragraph [ref=f1e2270]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2271]:
+                  - generic [ref=f1e2272]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2274]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2277]:
+                  - paragraph [ref=f1e2278]: เริ่มต้น
+                  - paragraph [ref=f1e2279]:
+                    - text: ฿1,400
+                    - generic [ref=f1e2280]: / ตร.ม.
+                  - paragraph [ref=f1e2281]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2284]:
+            - article [ref=f1e2285]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2288]
+              - generic [ref=f1e2305]:
+                - generic [ref=f1e2306]:
+                  - heading "หน้าต่างบานกระทุ้ง 3" [level=3] [ref=f1e2307]:
+                    - link "หน้าต่างบานกระทุ้ง 3" [ref=f1e2308] [cursor=pointer]:
+                      - /url: /products/awn-3
+                  - paragraph [ref=f1e2309]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2310]:
+                  - generic [ref=f1e2311]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2313]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2316]:
+                  - paragraph [ref=f1e2317]: เริ่มต้น
+                  - paragraph [ref=f1e2318]:
+                    - text: ฿1,450
+                    - generic [ref=f1e2319]: / ตร.ม.
+                  - paragraph [ref=f1e2320]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2323]:
+            - article [ref=f1e2324]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2327]
+              - generic [ref=f1e2349]:
+                - generic [ref=f1e2350]:
+                  - heading "หน้าต่างบานกระทุ้ง 4" [level=3] [ref=f1e2351]:
+                    - link "หน้าต่างบานกระทุ้ง 4" [ref=f1e2352] [cursor=pointer]:
+                      - /url: /products/awn-4t
+                  - paragraph [ref=f1e2353]: บานกระทุ้งเปิดออกด้านนอก ระบายอากาศได้แม้ฝนตก พร้อมช่องแสงบน 4 ช่อง เหมาะกับห้องนอนและห้องน้ำ
+                - generic [ref=f1e2354]:
+                  - generic [ref=f1e2355]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2357]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2360]:
+                  - paragraph [ref=f1e2361]: เริ่มต้น
+                  - paragraph [ref=f1e2362]:
+                    - text: ฿1,500
+                    - generic [ref=f1e2363]: / ตร.ม.
+                  - paragraph [ref=f1e2364]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2367]:
+            - article [ref=f1e2368]:
+              - img "ภาพร่างสัดส่วน 180 × 220 cm" [ref=f1e2371]
+              - generic [ref=f1e2378]:
+                - generic [ref=f1e2379]:
+                  - heading "ประตูบานสวิง เดี่ยว" [level=3] [ref=f1e2380]:
+                    - link "ประตูบานสวิง เดี่ยว" [ref=f1e2381] [cursor=pointer]:
+                      - /url: /products/swing-single
+                  - paragraph [ref=f1e2382]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2383]:
+                  - generic [ref=f1e2384]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2386]: ปรับขนาดได้ 120–500 cm
+                - generic [ref=f1e2389]:
+                  - paragraph [ref=f1e2390]: เริ่มต้น
+                  - paragraph [ref=f1e2391]:
+                    - text: ฿2,800
+                    - generic [ref=f1e2392]: / ตร.ม.
+                  - paragraph [ref=f1e2393]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2396]:
+            - article [ref=f1e2397]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2400]
+              - generic [ref=f1e2412]:
+                - generic [ref=f1e2413]:
+                  - heading "ประตูบานสวิง คู่" [level=3] [ref=f1e2414]:
+                    - link "ประตูบานสวิง คู่" [ref=f1e2415] [cursor=pointer]:
+                      - /url: /products/swing-double
+                  - paragraph [ref=f1e2416]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2417]:
+                  - generic [ref=f1e2418]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2420]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2423]:
+                  - paragraph [ref=f1e2424]: เริ่มต้น
+                  - paragraph [ref=f1e2425]:
+                    - text: ฿3,000
+                    - generic [ref=f1e2426]: / ตร.ม.
+                  - paragraph [ref=f1e2427]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2430]:
+            - article [ref=f1e2431]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2434]
+              - generic [ref=f1e2446]:
+                - generic [ref=f1e2447]:
+                  - heading "ประตูบานสวิง คู่แม่ลูก" [level=3] [ref=f1e2448]:
+                    - link "ประตูบานสวิง คู่แม่ลูก" [ref=f1e2449] [cursor=pointer]:
+                      - /url: /products/swing-uneven
+                  - paragraph [ref=f1e2450]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2451]:
+                  - generic [ref=f1e2452]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2454]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2457]:
+                  - paragraph [ref=f1e2458]: เริ่มต้น
+                  - paragraph [ref=f1e2459]:
+                    - text: ฿3,100
+                    - generic [ref=f1e2460]: / ตร.ม.
+                  - paragraph [ref=f1e2461]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2464]:
+            - article [ref=f1e2465]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2468]
+              - generic [ref=f1e2478]:
+                - generic [ref=f1e2479]:
+                  - heading "บานแขวน สลับ" [level=3] [ref=f1e2480]:
+                    - link "บานแขวน สลับ" [ref=f1e2481] [cursor=pointer]:
+                      - /url: /products/hang-swap
+                  - paragraph [ref=f1e2482]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2483]:
+                  - generic [ref=f1e2484]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2486]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2489]:
+                  - paragraph [ref=f1e2490]: เริ่มต้น
+                  - paragraph [ref=f1e2491]:
+                    - text: ฿2,500
+                    - generic [ref=f1e2492]: / ตร.ม.
+                  - paragraph [ref=f1e2493]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2496]:
+            - article [ref=f1e2497]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2500]
+              - generic [ref=f1e2508]:
+                - generic [ref=f1e2509]:
+                  - heading "บานแขวน เดี่ยว" [level=3] [ref=f1e2510]:
+                    - link "บานแขวน เดี่ยว" [ref=f1e2511] [cursor=pointer]:
+                      - /url: /products/hang-single
+                  - paragraph [ref=f1e2512]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2513]:
+                  - generic [ref=f1e2514]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2516]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2519]:
+                  - paragraph [ref=f1e2520]: เริ่มต้น
+                  - paragraph [ref=f1e2521]:
+                    - text: ฿2,300
+                    - generic [ref=f1e2522]: / ตร.ม.
+                  - paragraph [ref=f1e2523]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2526]:
+            - article [ref=f1e2527]:
+              - img "ภาพร่างสัดส่วน 320 × 160 cm" [ref=f1e2530]
+              - generic [ref=f1e2538]:
+                - generic [ref=f1e2539]:
+                  - heading "บานแขวน เดี่ยว - ซ่อนผนัง" [level=3] [ref=f1e2540]:
+                    - link "บานแขวน เดี่ยว - ซ่อนผนัง" [ref=f1e2541] [cursor=pointer]:
+                      - /url: /products/hang-single-pocket
+                  - paragraph [ref=f1e2542]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2543]:
+                  - generic [ref=f1e2544]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2546]: ปรับขนาดได้ 60–400 cm
+                - generic [ref=f1e2549]:
+                  - paragraph [ref=f1e2550]: เริ่มต้น
+                  - paragraph [ref=f1e2551]:
+                    - text: ฿2,900
+                    - generic [ref=f1e2552]: / ตร.ม.
+                  - paragraph [ref=f1e2553]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2556]:
+            - article [ref=f1e2557]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2560]
+              - generic [ref=f1e2578]:
+                - generic [ref=f1e2579]:
+                  - heading "บานแขวน แบ่ง 4 เปิดกลาง" [level=3] [ref=f1e2580]:
+                    - link "บานแขวน แบ่ง 4 เปิดกลาง" [ref=f1e2581] [cursor=pointer]:
+                      - /url: /products/hang-4c
+                  - paragraph [ref=f1e2582]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2583]:
+                  - generic [ref=f1e2584]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2586]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2589]:
+                  - paragraph [ref=f1e2590]: เริ่มต้น
+                  - paragraph [ref=f1e2591]:
+                    - text: ฿2,800
+                    - generic [ref=f1e2592]: / ตร.ม.
+                  - paragraph [ref=f1e2593]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2596]:
+            - article [ref=f1e2597]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2600]
+              - generic [ref=f1e2618]:
+                - generic [ref=f1e2619]:
+                  - heading "บานแขวน แบ่ง 4 เปิดกลาง - ซ่อนผนัง" [level=3] [ref=f1e2620]:
+                    - link "บานแขวน แบ่ง 4 เปิดกลาง - ซ่อนผนัง" [ref=f1e2621] [cursor=pointer]:
+                      - /url: /products/hang-4c-pocket
+                  - paragraph [ref=f1e2622]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2623]:
+                  - generic [ref=f1e2624]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2626]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2629]:
+                  - paragraph [ref=f1e2630]: เริ่มต้น
+                  - paragraph [ref=f1e2631]:
+                    - text: ฿3,400
+                    - generic [ref=f1e2632]: / ตร.ม.
+                  - paragraph [ref=f1e2633]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2636]:
+            - article [ref=f1e2637]:
+              - img "ภาพร่างสัดส่วน 180 × 220 cm" [ref=f1e2640]
+              - generic [ref=f1e2650]:
+                - generic [ref=f1e2651]:
+                  - heading "ประตูบานเลื่อน สลับ" [level=3] [ref=f1e2652]:
+                    - link "ประตูบานเลื่อน สลับ" [ref=f1e2653] [cursor=pointer]:
+                      - /url: /products/sld-2p
+                  - paragraph [ref=f1e2654]: บานเลื่อนสองบานบนรางคู่ เปิดได้ครึ่งช่อง เหมาะกับทางออกระเบียงและห้องนั่งเล่น
+                - generic [ref=f1e2655]:
+                  - generic [ref=f1e2656]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2658]: ปรับขนาดได้ 120–500 cm
+                - generic [ref=f1e2661]:
+                  - paragraph [ref=f1e2662]: เริ่มต้น
+                  - paragraph [ref=f1e2663]:
+                    - text: ฿2,100
+                    - generic [ref=f1e2664]: / ตร.ม.
+                  - paragraph [ref=f1e2665]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2668]:
+            - article [ref=f1e2669]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2672]
+              - generic [ref=f1e2690]:
+                - generic [ref=f1e2691]:
+                  - heading "ประตูบานเลื่อน แบ่ง 4 เปิดกลาง" [level=3] [ref=f1e2692]:
+                    - link "ประตูบานเลื่อน แบ่ง 4 เปิดกลาง" [ref=f1e2693] [cursor=pointer]:
+                      - /url: /products/sld-door-4c
+                  - paragraph [ref=f1e2694]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2695]:
+                  - generic [ref=f1e2696]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2698]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2701]:
+                  - paragraph [ref=f1e2702]: เริ่มต้น
+                  - paragraph [ref=f1e2703]:
+                    - text: ฿2,400
+                    - generic [ref=f1e2704]: / ตร.ม.
+                  - paragraph [ref=f1e2705]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2708]:
+            - article [ref=f1e2709]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2712]
+              - generic [ref=f1e2726]:
+                - generic [ref=f1e2727]:
+                  - heading "ประตูบานเลื่อน แบ่ง 3 อิสระ" [level=3] [ref=f1e2728]:
+                    - link "ประตูบานเลื่อน แบ่ง 3 อิสระ" [ref=f1e2729] [cursor=pointer]:
+                      - /url: /products/sld-door-3free
+                  - paragraph [ref=f1e2730]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2731]:
+                  - generic [ref=f1e2732]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2734]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2737]:
+                  - paragraph [ref=f1e2738]: เริ่มต้น
+                  - paragraph [ref=f1e2739]:
+                    - text: ฿2,500
+                    - generic [ref=f1e2740]: / ตร.ม.
+                  - paragraph [ref=f1e2741]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2744]:
+            - article [ref=f1e2745]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2748]
+              - generic [ref=f1e2762]:
+                - generic [ref=f1e2763]:
+                  - heading "ประตูบานเลื่อน แบ่ง 3" [level=3] [ref=f1e2764]:
+                    - link "ประตูบานเลื่อน แบ่ง 3" [ref=f1e2765] [cursor=pointer]:
+                      - /url: /products/sld-door-3
+                  - paragraph [ref=f1e2766]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2767]:
+                  - generic [ref=f1e2768]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2770]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2773]:
+                  - paragraph [ref=f1e2774]: เริ่มต้น
+                  - paragraph [ref=f1e2775]:
+                    - text: ฿2,300
+                    - generic [ref=f1e2776]: / ตร.ม.
+                  - paragraph [ref=f1e2777]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2780]:
+            - article [ref=f1e2781]:
+              - img "ภาพร่างสัดส่วน 360 × 240 cm" [ref=f1e2784]
+              - generic [ref=f1e2810]:
+                - generic [ref=f1e2811]:
+                  - heading "ประตูบานเลื่อน แบ่ง 6 เปิดกลาง" [level=3] [ref=f1e2812]:
+                    - link "ประตูบานเลื่อน แบ่ง 6 เปิดกลาง" [ref=f1e2813] [cursor=pointer]:
+                      - /url: /products/sld-door-6c
+                  - paragraph [ref=f1e2814]: ประตูกระจกบานหนา พร้อมวงกบและระบบล็อกที่เลือกได้
+                - generic [ref=f1e2815]:
+                  - generic [ref=f1e2816]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2818]: ปรับขนาดได้ 180–800 cm
+                - generic [ref=f1e2821]:
+                  - paragraph [ref=f1e2822]: เริ่มต้น
+                  - paragraph [ref=f1e2823]:
+                    - text: ฿2,700
+                    - generic [ref=f1e2824]: / ตร.ม.
+                  - paragraph [ref=f1e2825]: ผลิต 14–20 วัน
+          - listitem [ref=f1e2828]:
+            - article [ref=f1e2829]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2832]
+              - generic [ref=f1e2842]:
+                - generic [ref=f1e2843]:
+                  - heading "บานเลื่อน สลับ" [level=3] [ref=f1e2844]:
+                    - link "บานเลื่อน สลับ" [ref=f1e2845] [cursor=pointer]:
+                      - /url: /products/sld-win-swap
+                  - paragraph [ref=f1e2846]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2847]:
+                  - generic [ref=f1e2848]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2850]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2853]:
+                  - paragraph [ref=f1e2854]: เริ่มต้น
+                  - paragraph [ref=f1e2855]:
+                    - text: ฿1,700
+                    - generic [ref=f1e2856]: / ตร.ม.
+                  - paragraph [ref=f1e2857]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2860]:
+            - article [ref=f1e2861]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2864]
+              - generic [ref=f1e2882]:
+                - generic [ref=f1e2883]:
+                  - heading "บานเลื่อน แบ่ง 4 เปิดกลาง" [level=3] [ref=f1e2884]:
+                    - link "บานเลื่อน แบ่ง 4 เปิดกลาง" [ref=f1e2885] [cursor=pointer]:
+                      - /url: /products/sld-win-4c
+                  - paragraph [ref=f1e2886]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2887]:
+                  - generic [ref=f1e2888]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2890]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2893]:
+                  - paragraph [ref=f1e2894]: เริ่มต้น
+                  - paragraph [ref=f1e2895]:
+                    - text: ฿1,900
+                    - generic [ref=f1e2896]: / ตร.ม.
+                  - paragraph [ref=f1e2897]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2900]:
+            - article [ref=f1e2901]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2904]
+              - generic [ref=f1e2918]:
+                - generic [ref=f1e2919]:
+                  - heading "บานเลื่อน แบ่ง 3 อิสระ" [level=3] [ref=f1e2920]:
+                    - link "บานเลื่อน แบ่ง 3 อิสระ" [ref=f1e2921] [cursor=pointer]:
+                      - /url: /products/sld-win-3free
+                  - paragraph [ref=f1e2922]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2923]:
+                  - generic [ref=f1e2924]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2926]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2929]:
+                  - paragraph [ref=f1e2930]: เริ่มต้น
+                  - paragraph [ref=f1e2931]:
+                    - text: ฿2,000
+                    - generic [ref=f1e2932]: / ตร.ม.
+                  - paragraph [ref=f1e2933]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2936]:
+            - article [ref=f1e2937]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2940]
+              - generic [ref=f1e2954]:
+                - generic [ref=f1e2955]:
+                  - heading "บานเลื่อน แบ่ง 3" [level=3] [ref=f1e2956]:
+                    - link "บานเลื่อน แบ่ง 3" [ref=f1e2957] [cursor=pointer]:
+                      - /url: /products/sld-win-3
+                  - paragraph [ref=f1e2958]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e2959]:
+                  - generic [ref=f1e2960]: 5 สีโปรไฟล์
+                  - generic [ref=f1e2962]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e2965]:
+                  - paragraph [ref=f1e2966]: เริ่มต้น
+                  - paragraph [ref=f1e2967]:
+                    - text: ฿1,850
+                    - generic [ref=f1e2968]: / ตร.ม.
+                  - paragraph [ref=f1e2969]: ผลิต 10–14 วัน
+          - listitem [ref=f1e2972]:
+            - article [ref=f1e2973]:
+              - img "ภาพร่างสัดส่วน 360 × 180 cm" [ref=f1e2976]
+              - generic [ref=f1e3002]:
+                - generic [ref=f1e3003]:
+                  - heading "บานเลื่อน แบ่ง 6 เปิดกลาง" [level=3] [ref=f1e3004]:
+                    - link "บานเลื่อน แบ่ง 6 เปิดกลาง" [ref=f1e3005] [cursor=pointer]:
+                      - /url: /products/sld-win-6c
+                  - paragraph [ref=f1e3006]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e3007]:
+                  - generic [ref=f1e3008]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3010]: ปรับขนาดได้ 90–600 cm
+                - generic [ref=f1e3013]:
+                  - paragraph [ref=f1e3014]: เริ่มต้น
+                  - paragraph [ref=f1e3015]:
+                    - text: ฿2,150
+                    - generic [ref=f1e3016]: / ตร.ม.
+                  - paragraph [ref=f1e3017]: ผลิต 10–14 วัน
+          - listitem [ref=f1e3020]:
+            - article [ref=f1e3021]:
+              - img "ภาพร่างสัดส่วน 120 × 200 cm" [ref=f1e3024]
+              - generic [ref=f1e3031]:
+                - generic [ref=f1e3032]:
+                  - heading "บานเลื่อนแนวตั้ง" [level=3] [ref=f1e3033]:
+                    - link "บานเลื่อนแนวตั้ง" [ref=f1e3034] [cursor=pointer]:
+                      - /url: /products/vert-slide
+                  - paragraph [ref=f1e3035]: หน้าต่างกระจกพร้อมวงกบอะลูมิเนียม เลือกสีกระจกและความหนาได้
+                - generic [ref=f1e3036]:
+                  - generic [ref=f1e3037]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3039]: ปรับขนาดได้ 60–200 cm
+                - generic [ref=f1e3042]:
+                  - paragraph [ref=f1e3043]: เริ่มต้น
+                  - paragraph [ref=f1e3044]:
+                    - text: ฿2,600
+                    - generic [ref=f1e3045]: / ตร.ม.
+                  - paragraph [ref=f1e3046]: ผลิต 10–14 วัน
+          - listitem [ref=f1e3049]:
+            - article [ref=f1e3050]:
+              - img "ภาพร่างสัดส่วน 200 × 150 cm" [ref=f1e3053]
+              - generic [ref=f1e3057]:
+                - generic [ref=f1e3058]:
+                  - heading "บานติดตาย" [level=3] [ref=f1e3059]:
+                    - link "บานติดตาย" [ref=f1e3060] [cursor=pointer]:
+                      - /url: /products/fixed-1
+                  - paragraph [ref=f1e3061]: ช่องแสงติดตาย รับแสงเต็มที่ กันเสียงและฝุ่นได้ดีที่สุดในกลุ่ม
+                - generic [ref=f1e3062]:
+                  - generic [ref=f1e3063]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3065]: ปรับขนาดได้ 40–400 cm
+                - generic [ref=f1e3068]:
+                  - paragraph [ref=f1e3069]: เริ่มต้น
+                  - paragraph [ref=f1e3070]:
+                    - text: ฿1,100
+                    - generic [ref=f1e3071]: / ตร.ม.
+                  - paragraph [ref=f1e3072]: ผลิต 7–12 วัน
+          - listitem [ref=f1e3075]:
+            - article [ref=f1e3076]:
+              - img "ภาพร่างสัดส่วน 200 × 150 cm" [ref=f1e3079]
+              - generic [ref=f1e3085]:
+                - generic [ref=f1e3086]:
+                  - heading "บานติดตาย 2" [level=3] [ref=f1e3087]:
+                    - link "บานติดตาย 2" [ref=f1e3088] [cursor=pointer]:
+                      - /url: /products/fixed-2
+                  - paragraph [ref=f1e3089]: ช่องแสงติดตาย รับแสงเต็มที่ กันเสียงและฝุ่นได้ดีที่สุดในกลุ่ม
+                - generic [ref=f1e3090]:
+                  - generic [ref=f1e3091]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3093]: ปรับขนาดได้ 40–400 cm
+                - generic [ref=f1e3096]:
+                  - paragraph [ref=f1e3097]: เริ่มต้น
+                  - paragraph [ref=f1e3098]:
+                    - text: ฿1,150
+                    - generic [ref=f1e3099]: / ตร.ม.
+                  - paragraph [ref=f1e3100]: ผลิต 7–12 วัน
+          - listitem [ref=f1e3103]:
+            - article [ref=f1e3104]:
+              - img "ภาพร่างสัดส่วน 200 × 150 cm" [ref=f1e3107]
+              - generic [ref=f1e3115]:
+                - generic [ref=f1e3116]:
+                  - heading "บานติดตาย 3" [level=3] [ref=f1e3117]:
+                    - link "บานติดตาย 3" [ref=f1e3118] [cursor=pointer]:
+                      - /url: /products/fixed-3
+                  - paragraph [ref=f1e3119]: ช่องแสงติดตาย รับแสงเต็มที่ กันเสียงและฝุ่นได้ดีที่สุดในกลุ่ม
+                - generic [ref=f1e3120]:
+                  - generic [ref=f1e3121]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3123]: ปรับขนาดได้ 40–400 cm
+                - generic [ref=f1e3126]:
+                  - paragraph [ref=f1e3127]: เริ่มต้น
+                  - paragraph [ref=f1e3128]:
+                    - text: ฿1,200
+                    - generic [ref=f1e3129]: / ตร.ม.
+                  - paragraph [ref=f1e3130]: ผลิต 7–12 วัน
+          - listitem [ref=f1e3133]:
+            - article [ref=f1e3134]:
+              - img "ภาพร่างสัดส่วน 200 × 150 cm" [ref=f1e3137]
+              - generic [ref=f1e3147]:
+                - generic [ref=f1e3148]:
+                  - heading "บานติดตาย 4" [level=3] [ref=f1e3149]:
+                    - link "บานติดตาย 4" [ref=f1e3150] [cursor=pointer]:
+                      - /url: /products/fixed-4
+                  - paragraph [ref=f1e3151]: ช่องแสงติดตาย รับแสงเต็มที่ กันเสียงและฝุ่นได้ดีที่สุดในกลุ่ม
+                - generic [ref=f1e3152]:
+                  - generic [ref=f1e3153]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3155]: ปรับขนาดได้ 40–400 cm
+                - generic [ref=f1e3158]:
+                  - paragraph [ref=f1e3159]: เริ่มต้น
+                  - paragraph [ref=f1e3160]:
+                    - text: ฿1,250
+                    - generic [ref=f1e3161]: / ตร.ม.
+                  - paragraph [ref=f1e3162]: ผลิต 7–12 วัน
+          - listitem [ref=f1e3165]:
+            - article [ref=f1e3166]:
+              - img "ภาพร่างสัดส่วน 200 × 150 cm" [ref=f1e3169]
+              - generic [ref=f1e3181]:
+                - generic [ref=f1e3182]:
+                  - heading "บานติดตาย 5" [level=3] [ref=f1e3183]:
+                    - link "บานติดตาย 5" [ref=f1e3184] [cursor=pointer]:
+                      - /url: /products/fixed-5
+                  - paragraph [ref=f1e3185]: ช่องแสงติดตาย รับแสงเต็มที่ กันเสียงและฝุ่นได้ดีที่สุดในกลุ่ม
+                - generic [ref=f1e3186]:
+                  - generic [ref=f1e3187]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3189]: ปรับขนาดได้ 40–400 cm
+                - generic [ref=f1e3192]:
+                  - paragraph [ref=f1e3193]: เริ่มต้น
+                  - paragraph [ref=f1e3194]:
+                    - text: ฿1,300
+                    - generic [ref=f1e3195]: / ตร.ม.
+                  - paragraph [ref=f1e3196]: ผลิต 7–12 วัน
+          - listitem [ref=f1e3199]:
+            - article [ref=f1e3200]:
+              - img "ภาพร่างสัดส่วน 200 × 150 cm" [ref=f1e3203]
+              - generic [ref=f1e3217]:
+                - generic [ref=f1e3218]:
+                  - heading "บานติดตาย 6" [level=3] [ref=f1e3219]:
+                    - link "บานติดตาย 6" [ref=f1e3220] [cursor=pointer]:
+                      - /url: /products/fixed-6
+                  - paragraph [ref=f1e3221]: ช่องแสงติดตาย รับแสงเต็มที่ กันเสียงและฝุ่นได้ดีที่สุดในกลุ่ม
+                - generic [ref=f1e3222]:
+                  - generic [ref=f1e3223]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3225]: ปรับขนาดได้ 40–400 cm
+                - generic [ref=f1e3228]:
+                  - paragraph [ref=f1e3229]: เริ่มต้น
+                  - paragraph [ref=f1e3230]:
+                    - text: ฿1,350
+                    - generic [ref=f1e3231]: / ตร.ม.
+                  - paragraph [ref=f1e3232]: ผลิต 7–12 วัน
+          - listitem [ref=f1e3235]:
+            - article [ref=f1e3236]:
+              - img "ภาพร่างสัดส่วน 180 × 220 cm" [ref=f1e3239]
+              - generic [ref=f1e3247]:
+                - generic [ref=f1e3248]:
+                  - heading "มุ้งลวดสแตนเลส ประตู" [level=3] [ref=f1e3249]:
+                    - link "มุ้งลวดสแตนเลส ประตู" [ref=f1e3250] [cursor=pointer]:
+                      - /url: /products/screen-ss-door
+                  - paragraph [ref=f1e3251]: มุ้งกันแมลงกรอบอะลูมิเนียม ติดคู่กับบานเดิมหรือติดแยกก็ได้
+                - generic [ref=f1e3252]:
+                  - generic [ref=f1e3253]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3255]: ปรับขนาดได้ 120–500 cm
+                - generic [ref=f1e3258]:
+                  - paragraph [ref=f1e3259]: เริ่มต้น
+                  - paragraph [ref=f1e3260]:
+                    - text: ฿1,400
+                    - generic [ref=f1e3261]: / ตร.ม.
+                  - paragraph [ref=f1e3262]: ผลิต 7–10 วัน
+          - listitem [ref=f1e3265]:
+            - article [ref=f1e3266]:
+              - img "ภาพร่างสัดส่วน 100 × 200 cm" [ref=f1e3269]
+              - generic [ref=f1e3276]:
+                - generic [ref=f1e3277]:
+                  - heading "มุ้งจีบอลูมิเนียม เดี่ยว" [level=3] [ref=f1e3278]:
+                    - link "มุ้งจีบอลูมิเนียม เดี่ยว" [ref=f1e3279] [cursor=pointer]:
+                      - /url: /products/screen-alu-single
+                  - paragraph [ref=f1e3280]: มุ้งกันแมลงกรอบอะลูมิเนียม ติดคู่กับบานเดิมหรือติดแยกก็ได้
+                - generic [ref=f1e3281]:
+                  - generic [ref=f1e3282]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3284]: ปรับขนาดได้ 40–200 cm
+                - generic [ref=f1e3287]:
+                  - paragraph [ref=f1e3288]: เริ่มต้น
+                  - paragraph [ref=f1e3289]:
+                    - text: ฿1,200
+                    - generic [ref=f1e3290]: / ตร.ม.
+                  - paragraph [ref=f1e3291]: ผลิต 7–10 วัน
+          - listitem [ref=f1e3294]:
+            - article [ref=f1e3295]:
+              - img "ภาพร่างสัดส่วน 100 × 200 cm" [ref=f1e3298]
+              - generic [ref=f1e3305]:
+                - generic [ref=f1e3306]:
+                  - heading "มุ้งจีบไฟเบอร์ เดี่ยว" [level=3] [ref=f1e3307]:
+                    - link "มุ้งจีบไฟเบอร์ เดี่ยว" [ref=f1e3308] [cursor=pointer]:
+                      - /url: /products/screen-fiber-single
+                  - paragraph [ref=f1e3309]: มุ้งกันแมลงกรอบอะลูมิเนียม ติดคู่กับบานเดิมหรือติดแยกก็ได้
+                - generic [ref=f1e3310]:
+                  - generic [ref=f1e3311]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3313]: ปรับขนาดได้ 40–200 cm
+                - generic [ref=f1e3316]:
+                  - paragraph [ref=f1e3317]: เริ่มต้น
+                  - paragraph [ref=f1e3318]:
+                    - text: ฿900
+                    - generic [ref=f1e3319]: / ตร.ม.
+                  - paragraph [ref=f1e3320]: ผลิต 7–10 วัน
+          - listitem [ref=f1e3323]:
+            - article [ref=f1e3324]:
+              - img "ภาพร่างสัดส่วน 100 × 200 cm" [ref=f1e3327]
+              - generic [ref=f1e3334]:
+                - generic [ref=f1e3335]:
+                  - heading "มุ้งจีบไฟเบอร์ เก็บราง เดี่ยว" [level=3] [ref=f1e3336]:
+                    - link "มุ้งจีบไฟเบอร์ เก็บราง เดี่ยว" [ref=f1e3337] [cursor=pointer]:
+                      - /url: /products/screen-fiber-track-single
+                  - paragraph [ref=f1e3338]: มุ้งกันแมลงกรอบอะลูมิเนียม ติดคู่กับบานเดิมหรือติดแยกก็ได้
+                - generic [ref=f1e3339]:
+                  - generic [ref=f1e3340]: 5 สีโปรไฟล์
+                  - generic [ref=f1e3342]: ปรับขนาดได้ 40–200 cm
+                - generic [ref=f1e3345]:
+                  - paragraph [ref=f1e3346]: เริ่มต้น
+                  - paragraph [ref=f1e3347]:
+                    - text: ฿1,050
+                    - generic [ref=f1e3348]: / ตร.ม.
+                  - paragraph [ref=f1e3349]: ผลิต 7–10 วัน
+    - contentinfo [ref=f1e3352]:
+      - generic [ref=f1e3353]:
+        - generic [ref=f1e3354]:
+          - paragraph [ref=f1e3355]: WEWIN180
+          - paragraph [ref=f1e3356]: บริษัท วีวิน180 จำกัด
+          - paragraph [ref=f1e3357]:
+            - generic [ref=f1e3361]: 291/4 หมู่ที่ 1 ต.บ้านกร่าง อ.เมืองพิษณุโลก จ.พิษณุโลก 65000
+        - region [ref=f1e3433]:
+          - heading "ติดต่อเรา" [level=2] [ref=f1e3434]
+          - list [ref=f1e3364]:
+            - listitem [ref=f1e3365]:
+              - 'link "โทรศัพท์: +66 91 879 6563" [ref=f1e3435] [cursor=pointer]':
+                - /url: tel:+66918796563
+                - generic [ref=f1e3369]: "โทรศัพท์:"
+                - generic [ref=f1e3370]: +66 91 879 6563
+            - listitem [ref=f1e3371]:
+              - 'link "โทรศัพท์: +66 65 751 9662" [ref=f1e3436] [cursor=pointer]':
+                - /url: tel:+66657519662
+                - generic [ref=f1e3375]: "โทรศัพท์:"
+                - generic [ref=f1e3376]: +66 65 751 9662
+            - listitem [ref=f1e3377]:
+              - 'link "โทรศัพท์: +66 81 118 5017" [ref=f1e3437] [cursor=pointer]':
+                - /url: tel:+66811185017
+                - generic [ref=f1e3381]: "โทรศัพท์:"
+                - generic [ref=f1e3382]: +66 81 118 5017
+            - listitem [ref=f1e3383]:
+              - 'link "LINE: @wewin180" [ref=f1e3384] [cursor=pointer]':
+                - /url: https://lin.ee/qxGxHezy
+                - generic [ref=f1e3387]: "LINE:"
+                - generic [ref=f1e3388]: "@wewin180"
+            - listitem [ref=f1e3389]:
+              - 'link "อีเมล: info@wewin180.com" [ref=f1e3438] [cursor=pointer]':
+                - /url: mailto:info@wewin180.com
+                - generic [ref=f1e3394]: "อีเมล:"
+                - generic [ref=f1e3395]: info@wewin180.com
+        - region [ref=f1e3439]:
+          - heading "เวลาทำการ" [level=2] [ref=f1e3440]
+          - paragraph [ref=f1e3398]:
+            - generic [ref=f1e3402]: วันจันทร์–วันเสาร์ 09:00–17:00 น. (เวลา ICT)
+          - heading "พื้นที่ให้บริการ" [level=3] [ref=f1e3441]
+          - paragraph [ref=f1e3404]: จัดส่งและติดตั้งทั้งภายในประเทศและต่างประเทศ
+        - navigation [ref=f1e3442]:
+          - heading "เมนู" [level=2] [ref=f1e3443]
+          - list [ref=f1e3407]:
+            - listitem [ref=f1e3408]:
+              - link "สินค้า" [ref=f1e3444] [cursor=pointer]:
+                - /url: /products
+            - listitem [ref=f1e3410]:
+              - link "เกี่ยวกับเรา" [ref=f1e3445] [cursor=pointer]:
+                - /url: /about
+            - listitem [ref=f1e3412]:
+              - link "ตะกร้า" [ref=f1e3446] [cursor=pointer]:
+                - /url: /quote
+      - generic [ref=f1e3415]:
+        - paragraph [ref=f1e3416]: © พ.ศ. 2569 บริษัท วีวิน180 จำกัด
+        - paragraph [ref=f1e3417]: ราคายังไม่รวม VAT 7%
+      - paragraph [ref=f1e3447]: ข้อความบางส่วนยังไม่มีคำแปล จึงแสดงเป็นภาษาไทย
+  - status

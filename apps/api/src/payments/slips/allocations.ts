@@ -2,6 +2,7 @@ import { toBigInt } from '@wewin/contract/exact';
 import { encodeThb } from '@wewin/contract/order';
 
 import { AppError } from '../../common/errors/app-error';
+import { count, message, thb } from '../../i18n';
 import type { MoneyWire } from '@wewin/contract/money';
 
 import type { AllocationRequestWire } from './slips.contract';
@@ -126,10 +127,9 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
       roomOnSchedule === 0n && input.acknowledgeOverpaymentThbMinor === input.slipAmountThbMinor;
 
     if (!wholeSlipAcknowledged) {
-      throw AppError.validationFailed(
-        'ต้องระบุว่าสลิปนี้ตัดชำระงวดใดบ้าง — การรับสลิปโดยไม่ระบุงวดคือการกดยืนยันเฉยๆ',
-        { reason: 'no_allocations' },
-      );
+      throw AppError.validationFailed(message('error.slip.no_allocations'), {
+        reason: 'no_allocations',
+      });
     }
 
     return { allocations: [], unallocatedThbMinor: input.slipAmountThbMinor };
@@ -142,7 +142,7 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
 
   for (const allocation of input.allocations) {
     if (seen.has(allocation.instalmentId)) {
-      throw AppError.validationFailed('ระบุงวดเดียวกันซ้ำสองบรรทัด — ให้รวมเป็นบรรทัดเดียว', {
+      throw AppError.validationFailed(message('error.slip.duplicate_instalment_line'), {
         reason: 'duplicate_instalment',
         instalmentId: allocation.instalmentId,
       });
@@ -157,10 +157,10 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
        * oracle for probing ids, and 422 is honest — the request named something that is not
        * part of this slip's order.
        */
-      throw AppError.validationFailed(
-        'งวดที่ระบุไม่ได้อยู่ในตารางงวดของออร์เดอร์นี้ — เงินไม่ย้ายข้ามออร์เดอร์ผ่านหน้าตรวจสลิป',
-        { reason: 'instalment_not_on_this_order', instalmentId: allocation.instalmentId },
-      );
+      throw AppError.validationFailed(message('error.slip.instalment_not_on_this_order'), {
+        reason: 'instalment_not_on_this_order',
+        instalmentId: allocation.instalmentId,
+      });
     }
 
     const amount = thbMinor(allocation.amountThbMinor);
@@ -168,8 +168,11 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
 
     if (amount > remaining) {
       throw AppError.validationFailed(
-        `งวดที่ ${String(instalment.seq)} ค้างอยู่ ${satang(remaining)} แต่ระบุตัดชำระ ${satang(amount)} — ` +
-          'ส่วนเกินเป็นของงวดถัดไป ไม่ใช่ของงวดนี้',
+        message('error.slip.over_allocated', {
+          seq: count(instalment.seq),
+          remaining: thb(remaining),
+          requested: thb(amount),
+        }),
         {
           reason: 'over_allocated',
           instalmentId: instalment.id,
@@ -219,8 +222,11 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
     const roomLeft = roomOnSchedule - total;
     if (roomLeft > 0n) {
       throw AppError.validationFailed(
-        `ยอดที่ตัดชำระรวม ${satang(total)} แต่สลิปใบนี้เป็นเงิน ${satang(input.slipAmountThbMinor)} ` +
-          `และตารางงวดยังรับได้อีก ${satang(roomLeft)} — เงินที่ยังมีงวดรองรับต้องตัดเข้างวด ไม่ใช่ค้างเป็นเงินรับล่วงหน้า`,
+        message('error.slip.foot_with_room_left', {
+          allocated: thb(total),
+          slip: thb(input.slipAmountThbMinor),
+          roomLeft: thb(roomLeft),
+        }),
         {
           reason: 'allocations_do_not_foot',
           allocatedThbMinor: total.toString(),
@@ -233,8 +239,7 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
 
     if (input.acknowledgeOverpaymentThbMinor === undefined) {
       throw AppError.validationFailed(
-        `สลิปใบนี้เกินยอดที่ตารางงวดรองรับอยู่ ${satang(unallocatedThbMinor)} — ` +
-          'ถ้ายืนยันว่าเงินเข้าจริง ให้ระบุยอดส่วนเกินเพื่อรับไว้เป็นเงินรับล่วงหน้าที่ยังไม่ตัดงวดใด',
+        message('error.slip.overpayment_not_acknowledged', { excess: thb(unallocatedThbMinor) }),
         {
           reason: 'overpayment_not_acknowledged',
           unallocatedThbMinor: unallocatedThbMinor.toString(),
@@ -246,8 +251,10 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
 
     if (input.acknowledgeOverpaymentThbMinor !== unallocatedThbMinor) {
       throw AppError.validationFailed(
-        `ยอดส่วนเกินที่ยืนยันคือ ${satang(input.acknowledgeOverpaymentThbMinor)} แต่ส่วนเกินจริงคือ ` +
-          `${satang(unallocatedThbMinor)} — ตัวเลขต้องตรงกัน`,
+        message('error.slip.overpayment_mismatch', {
+          acknowledged: thb(input.acknowledgeOverpaymentThbMinor),
+          excess: thb(unallocatedThbMinor),
+        }),
         {
           reason: 'overpayment_mismatch',
           acknowledgedThbMinor: input.acknowledgeOverpaymentThbMinor.toString(),
@@ -270,8 +277,26 @@ export function planAllocations(input: CheckAllocationsInput): AllocationOutcome
      */
     const difference = total - input.slipAmountThbMinor;
     throw AppError.validationFailed(
-      `ยอดที่ตัดชำระรวม ${satang(total)} แต่สลิปใบนี้เป็นเงิน ${satang(input.slipAmountThbMinor)} — ` +
-        `ต่างกัน ${satang(difference < 0n ? -difference : difference)} · สลิปที่รับแล้วต้องตัดชำระเท่ากับเงินที่เป็นหลักฐานพอดี`,
+      message('error.slip.foot_mismatch', {
+        allocated: thb(total),
+        slip: thb(input.slipAmountThbMinor),
+        /*
+         * A magnitude, and here it needs no `abs` to be one.
+         *
+         * The old code wrote `difference < 0n ? -difference : difference`, and the negative
+         * arm of that ternary is unreachable: every path with `unallocatedThbMinor > 0n`
+         * — that is, every path where the allocations fall *short* — returns or throws in
+         * the block above, so reaching this line means `total >= slipAmount` and
+         * `difference >= 0`. A mutation that dropped the `abs` therefore could not be
+         * killed by any test, which is the definition of a guard with no evidence, so it is
+         * gone rather than left to look like protection.
+         *
+         * The sentence still says the two figures *differ by* this much, and the signed
+         * value is still on `details.differenceThbMinor` for a client that needs to know
+         * which way.
+         */
+        difference: thb(difference),
+      }),
       {
         reason: 'allocations_do_not_foot',
         allocatedThbMinor: total.toString(),
@@ -336,6 +361,16 @@ export function suggestAllocations(
      */
     return {
       allocations,
+      /*
+       * ⚠️ NOT CONVERTED, AND THIS IS THE ONLY ONE LEFT IN THIS FILE.
+       *
+       * `unallocatableReasonTh` is a field on a *success* body, not an error, so carrying a
+       * `ServerMessage` here means deciding how a structured message crosses the wire in a
+       * 200 — which is `packages/contract`'s shape to define and not this app's to invent.
+       * Converting it unilaterally would produce a second encoding of the same thing and
+       * the two would drift. Named in the handoff; the `Th` suffix stays until then, so the
+       * one untranslated string in this file says so in its own name.
+       */
       unallocatableReasonTh:
         `สลิปใบนี้เกินยอดที่ตารางงวดรองรับอยู่ ${satang(left)} — ` +
         'ถ้ายืนยันว่าเงินเข้าจริง ให้ระบุยอดส่วนเกินนี้เพื่อรับไว้เป็นเงินรับล่วงหน้า แล้วเข้ากระบวนการคืนเงินต่อไป',
@@ -347,10 +382,18 @@ export function suggestAllocations(
 }
 
 /**
- * Satang as baht, for a message a person reads. Never for arithmetic and never for storage.
+ * Satang as baht, for the one caller left that needs a string here.
  *
- * Integer division and a remainder rather than `Number(minor) / 100`: the division is the
- * one operation in this file that could lose a satang, and it does not happen.
+ * ── Why this is down to one caller ───────────────────────────────────────────────
+ *
+ * Six refusals in this file used to call it. All six now carry `thb(minor)` as a param and
+ * are rendered by `src/i18n/format.ts`, whose `baht()` is this function moved rather than
+ * rewritten — the integer division and remainder are character for character the same, so
+ * the arithmetic did not change while the plumbing around it did. That mattered: this is the
+ * division that could lose a satang, and a rewrite is how it would have.
+ *
+ * What is left is `unallocatableReasonTh`, a field on a 200 rather than a refusal. See the
+ * note at its call site.
  */
 function satang(minor: bigint): string {
   const negative = minor < 0n;
