@@ -231,6 +231,7 @@ describe('boot-time route audit', () => {
       'DELETE /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
       'DELETE /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
       'DELETE /admin/media/:mediaId [permissions]',
+      'DELETE /payments/slips/:slipId/image [permissions]',
       'GET /admin/catalog/option-groups [permissions]',
       'GET /admin/catalog/products [permissions]',
       'GET /admin/catalog/products/:productId [permissions]',
@@ -256,6 +257,17 @@ describe('boot-time route audit', () => {
       'GET /orders/:orderId [principal]',
       'GET /orders/:orderId/document [principal]',
       'GET /orders/:orderId/events [principal]',
+      'GET /orders/:orderId/payment-slips [principal]',
+      'GET /payments/refunds [permissions]',
+      'GET /payments/refunds/:refundId [permissions]',
+      /*
+       * ⚠️ `[anonymous]` and it has to be: a browser attaches no Authorization header to an
+       * `<img>` request, so the signed grant IS the credential, exactly as an S3 presigned URL
+       * is. What the audit can say is that somebody decided that on purpose.
+       */
+      'GET /payments/slip-images/:grant [anonymous]',
+      'GET /payments/slips [permissions]',
+      'GET /payments/slips/:slipId [permissions]',
       'PATCH /admin/catalog/option-groups/:groupCode [permissions]',
       'PATCH /admin/catalog/option-groups/:groupCode/values/:valueCode [permissions]',
       'PATCH /admin/catalog/products/:productId/draft [permissions]',
@@ -273,7 +285,15 @@ describe('boot-time route audit', () => {
       'POST /orders [anonymous]',
       'POST /orders/:orderId/change-requests [principal]',
       'POST /orders/:orderId/change-requests/:changeRequestId/resolution [principal]',
+      'POST /orders/:orderId/payment-slips [principal]',
+      'POST /orders/:orderId/payment-slips/image [principal]',
       'POST /orders/:orderId/transitions/:toStatus [principal]',
+      'POST /payments/refunds [permissions]',
+      'POST /payments/refunds/:refundId/decision [permissions]',
+      'POST /payments/refunds/:refundId/disbursement [permissions]',
+      'POST /payments/slips/:slipId/acceptance [permissions]',
+      'POST /payments/slips/:slipId/image-grant [principal]',
+      'POST /payments/slips/:slipId/rejection [permissions]',
       'PUT /admin/catalog/option-groups/:groupCode/values/:valueCode/availability [permissions]',
       'PUT /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
       'PUT /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',

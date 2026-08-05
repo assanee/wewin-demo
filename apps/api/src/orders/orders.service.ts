@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { divRoundHalfUp } from '@wewin/core/money';
 import type { OrderStatus } from '@wewin/db/schema';
 import {
   type ChangeRequestWire,
@@ -16,13 +15,12 @@ import { AppError } from '../common/errors/app-error';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { CatalogRepository } from '../catalog/catalog.repository';
+import { PaymentLifecycleService } from '../payments/lifecycle';
 import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
 import {
-  BP_DENOMINATOR,
   DEFAULT_LOCALE,
   DEFAULT_VAT_RULE,
   MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT,
-  SCHEDULED_DEPOSIT_BP_DEFAULT,
 } from './defaults';
 import {
   encodeChangeRequest,
@@ -121,6 +119,21 @@ export class OrdersService {
     private readonly scoped: ScopedOrderRepository,
     private readonly catalog: CatalogRepository,
     @Inject(ENV) private readonly env: Env,
+    /**
+     * What happens to money when this order moves — 5b's closing seam.
+     *
+     * Four call sites and no others: the submit pins the schedule and the forfeit policy and
+     * carries anything a superseded ancestor was holding; a cancellation closes the schedule
+     * and posts the forfeit; a supersede closes the schedule; a delivery recognises the
+     * revenue. Every one of them runs in *this* transaction, on the row this service has
+     * already locked, which is the property that makes them safe to add here and would make
+     * them unsafe anywhere else.
+     *
+     * This service never assembles a ledger posting and never names an account. Plan 7.13's
+     * third seam is two modules deciding accounting independently; the direction of this
+     * dependency is what stops that being possible.
+     */
+    private readonly payments: PaymentLifecycleService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -328,18 +341,58 @@ export class OrdersService {
           hasBounceOnSpine: await this.orders.hasUnresolvedBounce(tx, order.id),
         });
 
-        return this.record(tx, {
+        const eventId = await this.record(tx, {
           order,
           row,
           actor,
           payload: { reason: parsed.body.reason, fault },
         });
+
+        /*
+         * The money, in the same transaction as the cancellation and never in another one.
+         *
+         * `assert_order_schedule()` is deferred and runs both ways, so a cancelled order whose
+         * schedule is still open fails at COMMIT and there is no ordering of separate requests
+         * that fixes it — closing first fails too. Plan 7.5(ก) said the exemption had to be a
+         * stamp; this is where the stamp is written. The forfeit rides along because keeping
+         * part of a deposit is a consequence of *this* event, not of somebody later asking for
+         * the rest back.
+         */
+        await this.payments.onCancelled(tx, {
+          orderId: order.id,
+          fromStatus: order.status,
+          fault,
+          eventId,
+        });
+
+        return eventId;
       }
 
       case 'cancel_pre_freeze':
       case 'bounce':
       case 'supersede': {
         const payload = { reason: parsed.body.reason };
+
+        if (parsed.payloadKind === 'cancel_pre_freeze') {
+          const eventId = await this.record(tx, { order, row, actor, payload });
+
+          /*
+           * The same close, from the other cancellation door. A pre-freeze cancellation
+           * carries no `fault` key at all — `order_status_transitions` marks it
+           * `required_payload_keys = {reason}` — and the absence is not ambiguity: only a
+           * post-freeze cancellation by staff on an order with a recorded bounce may be the
+           * company's fault, so this one is the customer's by construction. The forfeit table
+           * has a cell for it, and `production_confirmed` is held at 0 bp by CHECK.
+           */
+          await this.payments.onCancelled(tx, {
+            orderId: order.id,
+            fromStatus: order.status,
+            fault: 'customer',
+            eventId,
+          });
+
+          return eventId;
+        }
 
         if (parsed.payloadKind !== 'supersede') {
           return this.record(tx, { order, row, actor, payload });
@@ -379,12 +432,23 @@ export class OrdersService {
          * go and look at, which is a message that generates a telephone call rather than
          * preventing one.
          */
-        return this.record(tx, {
+        const eventId = await this.record(tx, {
           order,
           row,
           actor,
           payload: { ...payload, successor_order_id: successorId },
         });
+
+        /*
+         * Close the schedule and leave the money exactly where it is. Nothing is forfeited on
+         * a supersede and nothing is refunded — the deposit belongs to the customer's new
+         * contract and moves when that contract is submitted, as an allocation that keeps
+         * pointing at the slip it came from (plan 7.8). Until then the ancestor reports
+         * `terminal_holding_money`, which is the bucket that has to be visible.
+         */
+        await this.payments.onSuperseded(tx, order.id);
+
+        return eventId;
       }
 
       case 'approve_redesign': {
@@ -447,8 +511,29 @@ export class OrdersService {
           payload: parsed.body.noteTh === undefined ? {} : { note_th: parsed.body.noteTh },
         });
 
-      case 'none':
-        return this.record(tx, { order, row, actor, payload: {} });
+      case 'none': {
+        const eventId = await this.record(tx, { order, row, actor, payload: {} });
+
+        /*
+         * Delivery is when the money stops being the customer's.
+         *
+         * Nothing recognised revenue before this round, and the shape of the omission is worth
+         * keeping written down: a delivered, installed, fully paid job's entire ledger was
+         * `bank_thb` +฿19,722.24 against `deposit_held` −฿19,722.24. Every account balanced,
+         * `assert_ledger_entry_balances` passed, and the trial balance said the company owed
+         * every customer it had ever delivered to. An empty account is not a visible bug.
+         *
+         * Keyed on the destination and not on the event name, for the same reason the whole
+         * transition machinery is: the event type is a column of a row in
+         * `order_status_transitions` that a migration may change, and the status is what the
+         * accounting means.
+         */
+        if (row.toStatus === 'delivered') {
+          await this.payments.onDelivered(tx, { orderId: order.id, eventId });
+        }
+
+        return eventId;
+      }
     }
   }
 
@@ -541,6 +626,25 @@ export class OrdersService {
       productVersionIds: priced.productVersionIds,
     });
 
+    /*
+     * ⚠️ THE DEPOSIT OBLIGATION COMES FROM THE SCHEDULE, AND FROM NOWHERE ELSE — plan 7.13.
+     *
+     * This line used to be `divRoundHalfUp(grandTotal × SCHEDULED_DEPOSIT_BP_DEFAULT, 10000)`,
+     * a second implementation of `scheduledDepositMinor` that agreed with the schedule's *only*
+     * while plan 13's gate default was payment in full. The red team wrote a 30/70 with the
+     * fixture the slips suite already ships and measured the disagreement live: the schedule
+     * said the obligation was ฿5,916.67 and this line pinned ฿19,722.24, so a customer who paid
+     * in full and cancelled from `in_production` was forfeited the entire order — ฿13,805.57
+     * over plan 7.8's answer — and then the refund refused itself because nothing was left,
+     * leaving the money in neither party's column. Plan 7.13's ฿12,902, VAT-inclusive.
+     *
+     * The schedule is planned before the order is written because the pin must be in the same
+     * statement that stamps `submitted_at` (`orders_submitted_shape`), and the instalment rows
+     * must be written after it because `assert_order_schedule()` foots them against the total
+     * on the row. One evaluation, used twice, and no arithmetic in this file.
+     */
+    const pins = await this.payments.pinsForSubmit(tx, priced.grandTotalThbMinor);
+
     await this.orders.applySubmission(tx, {
       orderId: order.id,
       statusEventId: eventId,
@@ -552,7 +656,23 @@ export class OrdersService {
       netThbMinor: priced.netThbMinor,
       vatThbMinor: priced.vatThbMinor,
       grandTotalThbMinor: priced.grandTotalThbMinor,
-      scheduledDepositThbMinor: scheduledDeposit(priced.grandTotalThbMinor),
+      scheduledDepositThbMinor: pins.scheduledDepositThbMinor,
+    });
+
+    /*
+     * And now the schedule exists, which is what makes every gate in this system mean
+     * something. Without it `order_settled_through()` is NULL, so `order_gate_is_open()` is
+     * true with ฿0.00 received and the freeze point is vacuous — the red team submitted an
+     * order through the assembled application and found exactly that, along with zero
+     * instalments for a slip to be allocated against, so no payment could ever be accepted.
+     */
+    await this.payments.onSubmitted(tx, {
+      orderId: order.id,
+      status: 'awaiting_payment',
+      grandTotalThbMinor: priced.grandTotalThbMinor,
+      instalments: pins.instalments,
+      forfeitPolicyId: pins.forfeitPolicyId,
+      supersedesOrderId: order.supersedesOrderId,
     });
 
     return eventId;
@@ -824,14 +944,3 @@ function requireActor(scope: Scope): OrderActor {
   return actor;
 }
 
-/**
- * ⚠️ A PLAN 13 DEFAULT — the deposit obligation is the whole amount until somebody answers.
- *
- * Rounded half-up for the reason plan 4.6 gives about the 87 configurations that were a
- * half-satang out: `Math.round` is not half-up on negatives and integer division truncates.
- * At the current default of 10,000 bp the multiplication is exact and the rounding is a
- * no-op — which is precisely why it must be written correctly *now*, while nothing depends
- * on it, rather than the day somebody sets 3,000 bp.
- */
-const scheduledDeposit = (grandTotalMinor: bigint): bigint =>
-  divRoundHalfUp(grandTotalMinor * BigInt(SCHEDULED_DEPOSIT_BP_DEFAULT), BP_DENOMINATOR);

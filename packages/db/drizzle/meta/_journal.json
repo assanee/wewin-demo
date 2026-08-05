@@ -71,6 +71,41 @@
       "when": 1785876099796,
       "tag": "0009_user_erasure",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785889940445,
+      "tag": "0010_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785889940794,
+      "tag": "0011_payment_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785896815287,
+      "tag": "0012_payment_closure",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785896815288,
+      "tag": "0013_payment_closure_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785896815289,
+      "tag": "0014_refund_separation",
+      "breakpoints": true
     }
   ]
 }

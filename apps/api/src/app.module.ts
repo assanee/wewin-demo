@@ -16,6 +16,8 @@ import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
 import { NotificationsModule } from './notifications';
 import { OrdersModule } from './orders';
+import { RefundsModule } from './payments/refunds';
+import { SlipsModule } from './payments/slips';
 import { RbacModule } from './rbac/rbac.module';
 
 /*
@@ -89,6 +91,30 @@ export class AppModule implements NestModule {
          */
         OrdersModule,
         NotificationsModule.forRoot(),
+        /*
+         * Money that has actually moved (phase 5b), and it is listed here because *not* listing
+         * it was the single largest finding of the round.
+         *
+         * Three modules shipped complete, tested and unreachable. Against the assembled
+         * application `GET /payments/slips` and `GET /payments/refunds` were 404, and an order
+         * submitted through the real funnel had no instalments at all — so
+         * `order_settled_through()` was NULL, `order_gate_is_open()` was true with ฿0.00
+         * received, and the freeze gate that decides when aluminium is cut opened for nothing.
+         * Every attack the red team reported had to hand-write the instalment row a fixture,
+         * because the shipped application could not take a payment at all.
+         *
+         * `SlipsModule.forRoot()` reads its own bucket configuration from the environment, the
+         * same arrangement `MediaModule` uses and for the same reason: a slip's bucket is not a
+         * field of `Env`, and it must never be the product-image bucket, which is served
+         * anonymously (`slip-storage.config.ts` refuses the two being equal).
+         *
+         * `PaymentLifecycleModule` is deliberately absent from this list: `OrdersModule` imports
+         * it, which is the only edge from the lifecycle to the ledger and the only direction it
+         * runs. Nest deduplicates by class reference either way; what matters is that there is
+         * one importer.
+         */
+        SlipsModule.forRoot(),
+        RefundsModule,
       ],
     };
   }

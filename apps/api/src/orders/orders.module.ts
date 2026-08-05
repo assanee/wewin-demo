@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { CatalogModule } from '../catalog/catalog.module';
+import { PaymentLifecycleModule } from '../payments/lifecycle';
 import { FunnelThrottleMiddleware } from './funnel-throttle.middleware';
 import { OrderRepository } from './order.repository';
 import { OrdersController } from './orders.controller';
@@ -47,7 +48,13 @@ import { OrderScopeModule } from './scope';
  * fails by design when its sweep finds no order routes, which is the intended way to notice.
  */
 @Module({
-  imports: [CatalogModule, OrderScopeModule],
+  /*
+   * `PaymentLifecycleModule` and not `SlipsModule`/`RefundsModule`: the edge from the order
+   * lifecycle to money runs in exactly one direction, and it runs through one service with four
+   * methods. Slips and refunds import *from* here, so importing either of them back would be a
+   * cycle — and `forwardRef` is a way of writing a cycle down rather than not having one.
+   */
+  imports: [CatalogModule, OrderScopeModule, PaymentLifecycleModule],
   controllers: [OrdersController],
   providers: [OrdersService, OrderRepository, FunnelThrottleMiddleware],
 })

@@ -258,6 +258,51 @@ export const ERASURE_TREATMENTS = {
   'orders.customer_user_id': 'escalated',
   'order_events.actor_user_id': 'escalated',
   'media_objects.uploaded_by_user_id': 'escalated',
+
+  /*
+   * ── Phase 5b, the money tables (packages/db/src/schema/payment.ts) ──────────────
+   *
+   * Added because the coverage test refused the phase without them, which is the whole
+   * point of this constant: a table that references `users` forces a decision instead of
+   * inheriting one. Seven new keys, six of them `keep` and one `escalated`, and the split
+   * is between *staff acting in a role* and *a person who is the customer*.
+   *
+   * The six `keep`s are the record of WHO EXERCISED A CONTROL. `payment_slips` review is
+   * the single control this design has (plan 7.7); `refunds` carries the two-person rule
+   * that decides whether money leaves the company. A uuid on those rows names no person
+   * once `display_name` is null — the same argument `user_groups.user_id` makes above —
+   * and deleting it answers a staff member's PDPA request by destroying the company's
+   * evidence that a refund was ever authorised. That is the question a dispute asks.
+   */
+  'payment_slips.reviewed_by_user_id': 'keep',
+  /*
+   * Who read the payer's name and account off the slip image and attested they match.
+   * `keep`, for the same reason as the reviewer beside it: manual review is the only
+   * control in a model with no payment gateway, and an attestation whose attester has
+   * been scrubbed is no longer evidence that anybody checked.
+   */
+  'payment_slips.payer_verified_by_user_id': 'keep',
+  'refunds.requested_by_user_id': 'keep',
+  'refunds.approved_by_user_id': 'keep',
+  'refunds.disbursed_by_user_id': 'keep',
+  'approvals.requested_by_user_id': 'keep',
+  'approvals.decided_by_user_id': 'keep',
+  /*
+   * ⚠️ ESCALATED, NOT DONE — and it is a *customer* column, unlike the six above.
+   *
+   * A slip is usually uploaded by the person who paid. The row cannot be deleted
+   * (`payment_slips_guard_write` refuses it: a slip is evidence of a payment) and the
+   * column cannot be nulled without losing which of two people transferred the money. It
+   * sits with `orders.customer_user_id` under the accounting exemption and inherits every
+   * caveat plan 7.16 puts on that word.
+   *
+   * The image is a separate question and IS answerable: `storage_key` is nullable and
+   * `storage_key_erased_at` records the erasure, so a retention sweep can remove the
+   * photograph while the bank reference that reconciles the statement survives — plan
+   * 7.6's "delete the image, keep the account row". Nothing schedules that sweep yet;
+   * plan 13's retention clock is still unanswered.
+   */
+  'payment_slips.submitted_by_user_id': 'escalated',
 } as const satisfies Record<string, 'delete' | 'scrub' | 'keep' | 'escalated'>;
 
 export const authTokenPurpose = pgEnum('auth_token_purpose', [

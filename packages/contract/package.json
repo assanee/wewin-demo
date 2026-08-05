@@ -15,6 +15,7 @@
     "./catalog": "./dist/catalog.js",
     "./admin": "./dist/admin.js",
     "./order": "./dist/order.js",
+    "./schedule": "./dist/schedule.js",
     "./pricing": "./dist/pricing.js",
     "./errors": "./dist/errors.js",
     "./version": "./dist/version.js"

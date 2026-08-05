@@ -127,7 +127,29 @@ const tagsFor = <C extends Currency>(
 export const moneyWireSchema = <C extends Currency = Currency>(
   currency?: C,
 ): z.ZodType<MoneyWire<C>> =>
-  exactSchema(tagsFor(currency, '')) as z.ZodType<MoneyWire<C>>;
+  (exactSchema(tagsFor(currency, '')) as z.ZodType<MoneyWire<C>>).refine(
+    (value) => withinInt8(toBigInt(value)),
+    'จำนวนเงินเกินขอบเขตที่ระบบเก็บได้',
+  ) as z.ZodType<MoneyWire<C>>;
+
+/**
+ * ⚠️ WHY A MONEY AMOUNT IS BOUNDED AND A LENGTH IS NOT — 5b red team, B6.
+ *
+ * `exact.ts` already caps the *string* at 40 digits, which contains `BigInt()`'s superlinear
+ * parse. It does not contain what happens next: every amount in this system lands in a
+ * Postgres `bigint`, which holds 19 digits, so a 40-digit figure reached the driver and came
+ * back as SQLSTATE 22003 — neither an `AppError` nor an `HttpException`, so it fell through the
+ * exception filter as **500 INTERNAL with a logged stack**, on `POST /orders`, reachable by any
+ * visitor with a cart. A customer whose number is too big is not a server that is broken.
+ *
+ * The bound is `int8`'s own range and not a business ceiling: a business ceiling is a number
+ * nobody has agreed (plan 13), and this one is a fact about the column. It is applied to
+ * `moneyWireSchema` only — the rate and scaled schemas carry different units into different
+ * columns, and giving them the same limit would be asserting something about columns this file
+ * has not checked.
+ */
+const INT8_MAX = 9_223_372_036_854_775_807n;
+const withinInt8 = (value: bigint): boolean => value >= -INT8_MAX - 1n && value <= INT8_MAX;
 
 export const moneyRateWireSchema = <C extends Currency = Currency>(
   currency?: C,

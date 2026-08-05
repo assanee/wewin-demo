@@ -91,6 +91,16 @@ export type {
 } from './order.js';
 
 export type {
+  AuthorScheduleRequestWire,
+  InstalmentBasisWire,
+  InstalmentSource,
+  InstalmentWire,
+  PaymentScheduleWire,
+  ScheduleCloseReasonWire,
+  ScheduleTermWire,
+} from './schedule.js';
+
+export type {
   AdminOptionGroupListWire,
   AdminOptionGroupWire,
   AdminOptionValueWire,

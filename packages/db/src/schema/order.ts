@@ -474,6 +474,29 @@ export const orders = pgTable(
      */
     scheduledDepositThbMinor: bigint('scheduled_deposit_thb_minor', { mode: 'bigint' }),
 
+    /**
+     * The forfeit policy in force **when this contract was made** — plan 7.13's seventh pin.
+     *
+     * Plan 7.13 lists `forfeit_policy` among the seven things `submit_for_payment` pins and
+     * there was no column for it, so the rate applied at cancellation was *whatever is
+     * effective now*: publishing a policy between the contract and the cancellation silently
+     * changed what that customer got back, on a table nobody looks at while cancelling. The
+     * forfeit is a term of the contract for the same reason `scheduled_deposit_thb_minor`
+     * above is.
+     *
+     * Nullable and `ON DELETE restrict`: nullable because every order submitted before this
+     * column existed genuinely has no pinned policy and inventing one would be inventing a
+     * contract term, restrict because deleting a policy an order was priced under would
+     * destroy the only record of the rate that will be applied to it.
+     * `RefundsService.request` fails closed and loudly on an order with no pin rather than
+     * quietly falling back to today's policy, which is the behaviour the pin exists to stop.
+     *
+     * The foreign key is declared in `0012_payment_closure.sql` rather than here:
+     * `forfeit_policies` lives in `payment.ts`, which imports this file, and naming it here
+     * would close the import cycle. It is a real FK in the database either way.
+     */
+    forfeitPolicyId: uuid('forfeit_policy_id'),
+
     ...timestamps,
   },
   (table) => [
