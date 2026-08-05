@@ -16,6 +16,8 @@ import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { CatalogRepository } from '../catalog/catalog.repository';
 import { PaymentLifecycleService } from '../payments/lifecycle';
+import { AuthorityService } from '../quotes/authority';
+import { QuotesService } from '../quotes/quotes.service';
 import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
 import {
   DEFAULT_LOCALE,
@@ -134,6 +136,26 @@ export class OrdersService {
      * dependency is what stops that being possible.
      */
     private readonly payments: PaymentLifecycleService,
+    /**
+     * ⭐ The sales-editable quote — 5c's closing seam, and the reason `submit` prices at all.
+     *
+     * Two methods and no others: `adoptCart` turns a browser cart into the quote on the way in,
+     * and `assertSubmittable` re-verifies every promise and hands back what to freeze. Both run
+     * in *this* transaction on the row this service has already locked, which is the property
+     * that makes them safe here and would make them unsafe anywhere else.
+     *
+     * This service never writes `quote_overrides` and never measures a concession. It asks the
+     * two modules that own those questions and refuses when either says no.
+     */
+    private readonly quotes: QuotesService,
+    /**
+     * …and who was allowed to concede it — plan 7.13's single approvals surface.
+     *
+     * One call site: the last statement of `submit`. `gate` takes no amount and reads every
+     * figure from the rows itself, so there is no parameter on this dependency that could make
+     * a concession smaller than the document grants.
+     */
+    private readonly authority: AuthorityService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -283,7 +305,7 @@ export class OrdersService {
       /* ④ …and only now is there enough known to say what the body should look like. */
       const parsed = parseTransitionBody(row.payloadKind, actor, rawBody);
 
-      await this.applyTransition(tx, { order, row, parsed, actor });
+      await this.applyTransition(tx, { order, row, parsed, actor, scope });
 
       /*
        * Read back inside the same transaction, so the response describes the row as this
@@ -314,13 +336,20 @@ export class OrdersService {
       readonly row: TransitionRow;
       readonly parsed: TransitionBody;
       readonly actor: OrderActor;
+      /*
+       * The principal, carried to `submit` and nowhere else. `AuthorityService.gate` compares
+       * the concession against *this person's* ceiling, so the answer depends on who is
+       * pressing send — which is the whole of plan 7.9's replacement question, and the reason
+       * the scope has to travel rather than being re-derived from the order.
+       */
+      readonly scope: Scope;
     },
   ): Promise<string> {
-    const { order, row, parsed, actor } = input;
+    const { order, row, parsed, actor, scope } = input;
 
     switch (parsed.payloadKind) {
       case 'submit':
-        return this.submit(tx, { order, row, actor, body: parsed.body });
+        return this.submit(tx, { order, row, actor, body: parsed.body, scope });
 
       case 'cancel_post_freeze': {
         /*
@@ -575,6 +604,36 @@ export class OrdersService {
    * only go event → document → order. An immediate fan-out trigger would resolve the
    * recipient from the order as it was *before* the submit, which is how "who did we tell?"
    * comes to depend on the order of statements inside a service.
+   *
+   * ── ⭐ WHAT THIS PRICES, AND WHAT IT USED TO PRICE ────────────────────────────────
+   *
+   * It prices **`quote_lines`**. For one whole round it priced `body.lines` — the cart the
+   * browser was holding — and never read `quote_lines` at all, so the quote a salesperson had
+   * edited, discounted and re-described was not the quote that got pinned. A red team measured
+   * the gap on one order: ฿1.07 on the quote screen, ฿14,791.68 in
+   * `orders.grand_total_thb_minor`, and the two kept diverging afterwards because
+   * `awaiting_payment` is an editable status with a payment schedule built off one of them and
+   * a customer screen built off the other.
+   *
+   * `body.lines` is now how a client that has never seen the quote editor hands its cart *in*:
+   * it is adopted into `quote_lines` and priced from there, once, and refused outright if a
+   * quote already exists.
+   *
+   * ── The three gates, in this order, and none of them is optional ─────────────────
+   *
+   *   1. `assertSubmittable`  plan 7.9(จ). Every promise re-verified against today's catalogue;
+   *                           409 with each affected line when a publish landed underneath one,
+   *                           and an integrity alarm — not a 409 — when `calcPrice` disagrees
+   *                           with a frozen document that did not move.
+   *   2. the pin              document, order row, schedule.
+   *   3. `AuthorityService.gate`  plan 7.13. What the document concedes, measured from the rows
+   *                           **after** the pin because the VAT rule it grosses up with is the
+   *                           pinned one, and refused when nobody with the authority has said
+   *                           yes. Its refusal rolls the pin back with it.
+   *
+   * Two calls and not one: a stale baseline must stop the pin, and an unapproved concession can
+   * only be measured once the revision exists. They fail at different moments and mean different
+   * things.
    */
   private async submit(
     tx: Tx,
@@ -583,12 +642,20 @@ export class OrdersService {
       readonly row: TransitionRow;
       readonly actor: OrderActor;
       readonly body: Extract<TransitionBody, { payloadKind: 'submit' }>['body'];
+      readonly scope: Scope;
     },
   ): Promise<string> {
     const { order, row, actor, body } = input;
 
+    if (body.lines !== undefined) await this.quotes.adoptCart(tx, order, body.lines);
+
+    const { document } = await this.quotes.assertSubmittable(tx, order);
+
     const priced = priceOrderDocument({
-      lines: body.lines,
+      lines: document.lines,
+      charges: document.charges,
+      overrides: document.overrides,
+      leadTimeDays: document.leadTimeDays,
       catalog: await this.catalogIndex(),
       vat: DEFAULT_VAT_RULE,
       locale: body.contact.locale ?? order.contactLocale,
@@ -674,6 +741,23 @@ export class OrdersService {
       forfeitPolicyId: pins.forfeitPolicyId,
       supersedesOrderId: order.supersedesOrderId,
     });
+
+    /*
+     * ⭐ Last, and after the pin — plan 7.13's document-level evaluation.
+     *
+     * After, because the concession is grossed up with the *pinned* VAT rule and measured
+     * against a schedule that does not exist until `onSubmitted` has written it: a cashflow
+     * concession is the gap between the gated prefix and the floor, and before this line there
+     * is no prefix. It throws rather than returning a flag, and the throw rolls back everything
+     * above it — the document, the order row, the schedule and the event — which is why the
+     * approval it demands is keyed to the quote revision and not to the document that has just
+     * ceased to exist.
+     *
+     * With `authority_limits` empty, which is how this ships and what plan 13 documents, a quote
+     * that concedes nothing passes here and one that concedes anything at all does not. That is
+     * fail-closed, and plan 13's smoke path is the first half of it.
+     */
+    await this.authority.gate(tx, { orderId: order.id, scope: input.scope });
 
     return eventId;
   }

@@ -225,6 +225,23 @@ describe('boot-time route audit', () => {
      * says ownership has to live, and is therefore a limit of the audit rather than a defect
      * to fix in it. `describeAccess` says so in words on every principal route; the sweep in
      * `tests/orders/scope/cross-tenant-routes.pg.test.ts` is what actually walks them.
+     *
+     * ── The seventeen 5c routes, and the reason this list moved at all ──────────
+     *
+     * Eight `/orders/:orderId/quote/*` writes, one `/orders/:orderId/quote` read, six under
+     * `/quotes/*` for approvals and ceilings, and two more for the ceiling table. **This audit
+     * is what noticed they existed.** For a whole round both modules were built, tested and
+     * absent from `AppModule.forRoot`, so every one of these was a 404 in the assembled
+     * application while their own suites passed against a graph they booted by hand — the same
+     * failure 5b had with `SlipsModule` and `RefundsModule`, and the same alarm caught it.
+     *
+     * Three permission splits are worth reading off, because they are the whole of who may do
+     * what: the eight writes are `quotes.write`, the ceilings are `groups.write` (authority
+     * attaches to a group, so a salesperson who could write that table could raise their own
+     * ceiling), and `POST /quotes/approvals/:approvalId/decision` is **`quotes.approve`** — its
+     * own code, held by nobody at boot. It was `quotes.write` for one round, which every
+     * salesperson holds, so the permission system did not separate the approver from the
+     * requester at all.
      */
     expect(records.map((record) => `${record.key} [${record.access.kind}]`)).toStrictEqual([
       'DELETE /admin/catalog/products/:productId/draft [permissions]',
@@ -232,6 +249,7 @@ describe('boot-time route audit', () => {
       'DELETE /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
       'DELETE /admin/media/:mediaId [permissions]',
       'DELETE /payments/slips/:slipId/image [permissions]',
+      'DELETE /quotes/authority/limits/:groupId/:dimension [permissions]',
       'GET /admin/catalog/option-groups [permissions]',
       'GET /admin/catalog/products [permissions]',
       'GET /admin/catalog/products/:productId [permissions]',
@@ -258,6 +276,12 @@ describe('boot-time route audit', () => {
       'GET /orders/:orderId/document [principal]',
       'GET /orders/:orderId/events [principal]',
       'GET /orders/:orderId/payment-slips [principal]',
+      /*
+       * `[principal]` and not `[permissions]`, alone among the quote routes: a customer reads
+       * their own quotation, and `encodeQuote` decides from the caller's `quotes.read` whether
+       * the response carries any provenance at all. Every *write* below states a permission.
+       */
+      'GET /orders/:orderId/quote [principal]',
       'GET /payments/refunds [permissions]',
       'GET /payments/refunds/:refundId [permissions]',
       /*
@@ -268,6 +292,10 @@ describe('boot-time route audit', () => {
       'GET /payments/slip-images/:grant [anonymous]',
       'GET /payments/slips [permissions]',
       'GET /payments/slips/:slipId [permissions]',
+      'GET /quotes/approvals [permissions]',
+      'GET /quotes/approvals/:approvalId [permissions]',
+      'GET /quotes/authority/limits [permissions]',
+      'GET /quotes/authority/orders/:orderId [permissions]',
       'PATCH /admin/catalog/option-groups/:groupCode [permissions]',
       'PATCH /admin/catalog/option-groups/:groupCode/values/:valueCode [permissions]',
       'PATCH /admin/catalog/products/:productId/draft [permissions]',
@@ -287,6 +315,14 @@ describe('boot-time route audit', () => {
       'POST /orders/:orderId/change-requests/:changeRequestId/resolution [principal]',
       'POST /orders/:orderId/payment-slips [principal]',
       'POST /orders/:orderId/payment-slips/image [principal]',
+      'POST /orders/:orderId/quote/charges [permissions]',
+      'POST /orders/:orderId/quote/lines [permissions]',
+      'POST /orders/:orderId/quote/lines/:lineId/presentation [permissions]',
+      'POST /orders/:orderId/quote/lines/:lineId/removal [permissions]',
+      'POST /orders/:orderId/quote/lines/:lineId/revision [permissions]',
+      'POST /orders/:orderId/quote/overrides [permissions]',
+      'POST /orders/:orderId/quote/overrides/:overrideId/revocation [permissions]',
+      'POST /orders/:orderId/quote/verification [permissions]',
       'POST /orders/:orderId/transitions/:toStatus [principal]',
       'POST /payments/refunds [permissions]',
       'POST /payments/refunds/:refundId/decision [permissions]',
@@ -294,9 +330,12 @@ describe('boot-time route audit', () => {
       'POST /payments/slips/:slipId/acceptance [permissions]',
       'POST /payments/slips/:slipId/image-grant [principal]',
       'POST /payments/slips/:slipId/rejection [permissions]',
+      'POST /quotes/approvals [permissions]',
+      'POST /quotes/approvals/:approvalId/decision [permissions]',
       'PUT /admin/catalog/option-groups/:groupCode/values/:valueCode/availability [permissions]',
       'PUT /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
       'PUT /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
+      'PUT /quotes/authority/limits [permissions]',
     ]);
   });
 });

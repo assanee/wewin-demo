@@ -22,6 +22,13 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    /*
+     * Two roots, and the second one is not cosmetic. Phase 5c landed 66 tests beside the modules
+     * they cover in `src/components/quotes/**`, and with `tests/**` alone `pnpm test` reported
+     * 38 — the new ones were never run by anything, in a repository whose house rule is that a
+     * suite which cannot fail is not evidence. Tests live beside the module or under `tests/`;
+     * both are collected.
+     */
+    include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
   },
 });

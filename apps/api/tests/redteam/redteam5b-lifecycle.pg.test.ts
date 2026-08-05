@@ -331,9 +331,22 @@ describeWithPg('RED TEAM 5a round two', () => {
 
   it('B6 the boot audit shows no permission on any order route, so `orders.write` is invisible to it', async () => {
     const registry = app.app.get(RouteRegistryService);
+    /*
+     * The *lifecycle* routes, which is what this finding is about — `OrdersController`'s own.
+     *
+     * 5c put eight more routes under the same prefix (`/orders/:orderId/quote/…`) and every one
+     * of them **does** state a permission, plus `/quotes/authority/orders/:orderId` which is a
+     * different controller entirely. Widening the filter to catch those would turn this
+     * assertion green for the wrong reason, so it is narrowed rather than relaxed: what the
+     * finding says is that the routes which move an order's *status* carry no permission, and
+     * that is still true of all nine.
+     */
     const orderRoutes = registry
       .records()
-      .filter((record: RouteRecord) => /\/orders\b/.test(record.key));
+      .filter(
+        (record: RouteRecord) =>
+          /\s\/orders\b/.test(record.key) && !record.key.includes('/quote/'),
+      );
 
     expect(
       orderRoutes.length,

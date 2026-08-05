@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 
 import { CatalogModule } from '../catalog/catalog.module';
+import { AuthorityModule } from '../quotes/authority';
+import { QuotesModule } from '../quotes/quotes.module';
 import { PaymentLifecycleModule } from '../payments/lifecycle';
 import { FunnelThrottleMiddleware } from './funnel-throttle.middleware';
 import { OrderRepository } from './order.repository';
@@ -54,7 +56,20 @@ import { OrderScopeModule } from './scope';
    * methods. Slips and refunds import *from* here, so importing either of them back would be a
    * cycle — and `forwardRef` is a way of writing a cycle down rather than not having one.
    */
-  imports: [CatalogModule, OrderScopeModule, PaymentLifecycleModule],
+  /*
+   * `QuotesModule` and `AuthorityModule` are what make a submit price the quote rather than the
+   * request body, and what make an unapproved concession stop it. The edge runs this way and
+   * only this way: neither of them imports `OrdersModule`, because a module that could reach
+   * `OrdersService` is a module that will eventually move an order's status from an approval
+   * handler, and a concession is a fact about authority rather than a transition.
+   */
+  imports: [
+    CatalogModule,
+    OrderScopeModule,
+    PaymentLifecycleModule,
+    QuotesModule,
+    AuthorityModule,
+  ],
   controllers: [OrdersController],
   providers: [OrdersService, OrderRepository, FunnelThrottleMiddleware],
 })

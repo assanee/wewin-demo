@@ -160,9 +160,61 @@ export interface OrderDocumentLineWire extends CatalogRef {
   readonly selections: Readonly<Record<string, string>>;
   readonly measures: Readonly<Record<string, LengthWire>>;
   readonly qty: number;
-  /** VAT-exclusive line total. `calcPrice(...).totalMinor` — the contract number (plan 4.3(ข)). */
+  /**
+   * VAT-exclusive line total — **what the customer is charged for this line**.
+   *
+   * Equal to `computedNetMinor` unless a human overrode it, in which case this is the human's
+   * figure and that one is the machine's. Plan 4.3(ข): the number on the contract is the line
+   * total, and there is one of it.
+   */
   readonly netMinor: MoneyWire<'THB'>;
+  /** ⓵ `calcPrice(...).totalMinor`, always, whether or not it is what was charged. */
+  readonly computedNetMinor: MoneyWire<'THB'>;
+  /**
+   * ⓶ The promise, frozen with the document — plan 7.9(ก)'s three layers, all three present.
+   *
+   * `null` when the price is the machine's. It carries what the human typed and why, so a quote
+   * disputed months later reconstructs the conversation and not merely the arithmetic.
+   */
+  readonly override: OrderDocumentOverrideWire | null;
+  /** Plan 7.9(ค): a line may be taxed or not, and the frozen document has to say which. */
+  readonly isVatApplicable: boolean;
+  /** 📣 FOR THE CUSTOMER ONLY. ⚠️ Never rendered onto a production sheet — plan 7.9(ค). */
+  readonly customerDescriptionTh: string | null;
   readonly price: PriceBreakdownWire;
+}
+
+/**
+ * A human-set figure, frozen into the contract beside the machine's.
+ *
+ * Plan 7.9(ก) keeps `computed` and `override` as separate layers and this is where the second
+ * one lands at pin time. `enteredValueText` is verbatim — `'8500'` or `'-15%'` — because sales
+ * told the customer one of those sentences and which one is what the conversation was.
+ */
+export interface OrderDocumentOverrideWire {
+  readonly overrideId: string;
+  readonly enteredAs: string;
+  readonly enteredValueText: string;
+  readonly reasonCode: string;
+  readonly setByUserId: string;
+  readonly setByUserName: string | null;
+}
+
+/**
+ * A free-form line: delivery, installation, a survey, a goodwill credit.
+ *
+ * A separate array from `lines` and not a nullable product id on one, so that the production
+ * sheet — which renders from `lines[].skuCode` and the resolved options — **cannot** be handed a
+ * charge to manufacture, and `order_document_product_versions` stays a table of real versions.
+ * The amount may be negative: plan 7.13 counts a credit line among the things the `margin`
+ * dimension has to catch.
+ */
+export interface OrderDocumentChargeWire {
+  readonly lineNo: number;
+  readonly customerDescriptionTh: string;
+  readonly netMinor: MoneyWire<'THB'>;
+  readonly isVatApplicable: boolean;
+  readonly override: OrderDocumentOverrideWire | null;
 }
 
 export interface OrderDocumentWire {
@@ -173,7 +225,7 @@ export interface OrderDocumentWire {
    * silence. This one is checked on the way in: a document written under a later recipe is
    * refused rather than read with the fields this build happens to recognise.
    */
-  readonly documentSchemaVersion: 1;
+  readonly documentSchemaVersion: 2;
   readonly revision: number;
   readonly documentHash: string;
   readonly currency: 'THB';
@@ -182,13 +234,43 @@ export interface OrderDocumentWire {
   readonly pinnedCoreVersion: string;
   readonly vat: { readonly rateBp: number; readonly treatment: VatTreatmentWire };
   readonly lines: readonly OrderDocumentLineWire[];
+  /** Charges and credits. Empty on a cart that was never edited by sales. */
+  readonly charges: readonly OrderDocumentChargeWire[];
+  /**
+   * The document-level promise, if there is one — plan 7.9(ข)'s single anchor for "a discount",
+   * "a document total" and "a percentage off", which are one fact three ways.
+   */
+  readonly documentOverride: OrderDocumentOverrideWire | null;
   readonly netThbMinor: MoneyWire<'THB'>;
   readonly vatThbMinor: MoneyWire<'THB'>;
   /** Always VAT-inclusive. Plan 4.4: the one thing in this area that is not configurable. */
   readonly grandTotalThbMinor: MoneyWire<'THB'>;
+  /** How many days the customer was promised. Plan 7.9(ค) makes it an anchor; this pins it. */
+  readonly leadTimeDays: number;
 }
 
-export const ORDER_DOCUMENT_SCHEMA_VERSION = 1 as const;
+/**
+ * ⚠️ **2, and the bump is plan 4.5's rule kept rather than plan 4.5's failure repeated.**
+ *
+ * Version 1 documents were priced from the cart in the submit request body and could hold no
+ * charge, no override and no document discount, because there was no way to write one. 5c made
+ * every one of those writable and `OrdersService.submit` still priced `body.lines` — so the
+ * quote a salesperson edited was **not** the quote that got pinned, measured at ฿1.07 on the
+ * screen against ฿14,791.68 in `orders.grand_total_thb_minor` on the same order.
+ *
+ * The reader refuses a version it does not recognise (`orderDocumentWireSchema` is a literal),
+ * which is what stops a v1 row being read with v2's fields absent and silently footing.
+ */
+export const ORDER_DOCUMENT_SCHEMA_VERSION = 2 as const;
+
+const orderDocumentOverrideWireSchema: z.ZodType<OrderDocumentOverrideWire> = z.object({
+  overrideId: z.uuid(),
+  enteredAs: z.string().min(1),
+  enteredValueText: z.string().min(1),
+  reasonCode: z.string().min(1),
+  setByUserId: z.uuid(),
+  setByUserName: z.string().nullable(),
+});
 
 const orderDocumentLineWireSchema: z.ZodType<OrderDocumentLineWire> = z.object({
   ...catalogRefShape,
@@ -201,7 +283,19 @@ const orderDocumentLineWireSchema: z.ZodType<OrderDocumentLineWire> = z.object({
   measures: z.record(z.string(), lengthWireSchema),
   qty: z.int().min(1),
   netMinor: thb,
+  computedNetMinor: thb,
+  override: orderDocumentOverrideWireSchema.nullable(),
+  isVatApplicable: z.boolean(),
+  customerDescriptionTh: z.string().nullable(),
   price: priceBreakdownWireSchema,
+});
+
+const orderDocumentChargeWireSchema: z.ZodType<OrderDocumentChargeWire> = z.object({
+  lineNo: z.int().min(1),
+  customerDescriptionTh: z.string().min(1),
+  netMinor: thb,
+  isVatApplicable: z.boolean(),
+  override: orderDocumentOverrideWireSchema.nullable(),
 });
 
 export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
@@ -216,9 +310,12 @@ export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
     treatment: z.literal(VAT_TREATMENTS_WIRE),
   }),
   lines: z.array(orderDocumentLineWireSchema),
+  charges: z.array(orderDocumentChargeWireSchema),
+  documentOverride: orderDocumentOverrideWireSchema.nullable(),
   netThbMinor: thb,
   vatThbMinor: thb,
   grandTotalThbMinor: thb,
+  leadTimeDays: z.int().min(0),
 });
 
 /* ------------------------------------------------------------------ *
@@ -358,9 +455,26 @@ export interface CreateOrderRequestWire {
  * catalogue documents, and a client that sends a total is sending a field that does not
  * exist in this type.
  */
+/**
+ * Submit — and ⚠️ `lines` is now **optional**, which is the seam phase 5c left open.
+ *
+ * The cart the browser holds and the quote sales edits were two different things, and submit
+ * priced the first. So a quote whose lines had been rewritten, discounted and re-described was
+ * not the quote that got pinned — one order measured ฿1.07 on the quote screen and ฿14,791.68
+ * in `orders.grand_total_thb_minor`, and both kept diverging afterwards because
+ * `awaiting_payment` is an editable status.
+ *
+ * The server prices `quote_lines`, always. `lines` is how a client that has never used the quote
+ * editor — the storefront configurator, which keeps its cart in the browser — hands its cart over
+ * on the way in; it is materialised into `quote_lines` and priced from there. Sending it for an
+ * order that **already has** a quote is refused rather than merged, because a stale browser cart
+ * silently overwriting a negotiated quote is the failure this whole change exists to end, and
+ * because two sources for one document is plan 7.9(ข)'s "which one wins" at the one endpoint
+ * where the answer is a contract.
+ */
 export interface SubmitOrderRequestWire {
   readonly contact: OrderContactRequestWire;
-  readonly lines: readonly OrderLineRequestWire[];
+  readonly lines?: readonly OrderLineRequestWire[] | undefined;
 }
 
 /** `reason` is prose for the audit trail. `fault` is deliberately not here — plan 7.8 🔒. */
@@ -473,7 +587,7 @@ export const createOrderRequestSchema: z.ZodType<CreateOrderRequestWire> = z.str
  */
 export const submitOrderRequestSchema: z.ZodType<SubmitOrderRequestWire> = z.strictObject({
   contact: orderContactRequestSchema,
-  lines: z.array(priceRequestWireSchema).min(1).max(100),
+  lines: z.array(priceRequestWireSchema).min(1).max(100).optional(),
 });
 
 export const cancelOrderRequestSchema: z.ZodType<CancelOrderRequestWire> = z.strictObject({

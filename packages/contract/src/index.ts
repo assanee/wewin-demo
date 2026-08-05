@@ -71,7 +71,9 @@ export type {
   OrderActorKindWire,
   OrderContactRequestWire,
   OrderContactWire,
+  OrderDocumentChargeWire,
   OrderDocumentLineWire,
+  OrderDocumentOverrideWire,
   OrderDocumentWire,
   OrderEventListWire,
   OrderEventTypeWire,
@@ -89,6 +91,27 @@ export type {
   SupersedeOrderRequestWire,
   VatTreatmentWire,
 } from './order.js';
+
+export type {
+  AddCatalogLineRequestWire,
+  AddFreeformLineRequestWire,
+  OverrideAnchorWire,
+  OverrideEntryModeWire,
+  OverrideReasonWire,
+  PresentLineRequestWire,
+  QuoteLineKindWire,
+  QuoteLineWire,
+  QuoteMoneyWire,
+  QuoteOverrideWire,
+  QuotePreconditionWire,
+  QuoteSalesViewWire,
+  QuoteWire,
+  RemoveLineRequestWire,
+  RevokeOverrideRequestWire,
+  ReviseLineRequestWire,
+  SetOverrideRequestWire,
+  StaleBaselineWire,
+} from './quote.js';
 
 export type {
   AuthorScheduleRequestWire,

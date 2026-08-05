@@ -18,6 +18,8 @@ import { NotificationsModule } from './notifications';
 import { OrdersModule } from './orders';
 import { RefundsModule } from './payments/refunds';
 import { SlipsModule } from './payments/slips';
+import { AuthorityModule } from './quotes/authority';
+import { QuotesModule } from './quotes';
 import { RbacModule } from './rbac/rbac.module';
 
 /*
@@ -115,6 +117,21 @@ export class AppModule implements NestModule {
          */
         SlipsModule.forRoot(),
         RefundsModule,
+        /*
+         * The sales-editable quote and the authority that bounds it (phase 5c) — and they are
+         * listed here because *not* listing them was, again, the largest finding of the round.
+         *
+         * Two complete modules, 1,100 tests between them, and against the assembled application
+         * every route in both was a 404 while `AuthorityService.gate` had zero callers anywhere
+         * in `src/`. That is 5b's finding repeated one phase later with different nouns, which
+         * is why the note now sits in three files instead of one.
+         *
+         * `OrdersModule` imports both as well, which is not redundancy: Nest deduplicates by
+         * class reference, and the import there is what makes `submit` able to price the quote
+         * and call the gate. These two lines are what make the routes *exist*.
+         */
+        QuotesModule,
+        AuthorityModule,
       ],
     };
   }

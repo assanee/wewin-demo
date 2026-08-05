@@ -1,5 +1,12 @@
 import type { Route } from 'next';
-import { Boxes, Images, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react';
+import {
+  Boxes,
+  FileText,
+  Images,
+  LayoutDashboard,
+  SlidersHorizontal,
+  type LucideIcon,
+} from 'lucide-react';
 
 import type { PermissionCode } from '@/lib/auth/permissions';
 import { holdsAll } from '@/lib/auth/permissions';
@@ -27,10 +34,15 @@ import { holdsAll } from '@/lib/auth/permissions';
  * Sections nest one level and no more. A dashboard that needs a third level of menu has
  * usually grown a page that should have been a tab.
  *
- * **Scope.** Phase 4 is products, options and images. Orders, quotes, payments, users and
- * groups all have permission codes already (they are in apps/api's catalogue) and no routes,
- * so they are deliberately absent: an entry here without a page will not compile, which is
- * the property that keeps this table honest as later phases land.
+ * **Scope.** Phase 4 is products, options and images; phase 5c adds quotations. Orders,
+ * payments, users and groups all have permission codes already (they are in apps/api's
+ * catalogue) and no routes, so they are deliberately absent: an entry here without a page will
+ * not compile, which is the property that keeps this table honest as later phases land.
+ *
+ * ⚠️ `/quotes` shipped for one round with no entry here, so the whole quote editor was
+ * reachable by typing a URL and by nothing else. A screen that is in the build and not in the
+ * menu is a screen nobody uses, which is the softer version of the wiring failure that left two
+ * API modules out of `AppModule` in the same round.
  */
 
 export interface NavItem {
@@ -90,6 +102,23 @@ export const NAVIGATION: readonly NavSection[] = [
         labelTh: 'คลังรูปภาพ',
         icon: Images,
         requires: ['catalog.read'],
+      },
+    ],
+  },
+  {
+    labelTh: 'การขาย',
+    items: [
+      {
+        /*
+         * `quotes.read` and not `quotes.write`: the list and the customer-facing document are
+         * readable by anyone who may see a quotation at all, and every editing control on the
+         * screen is decided per action beside the thing it would have done — the same rule the
+         * product screens follow.
+         */
+        href: '/quotes',
+        labelTh: 'ใบเสนอราคา',
+        icon: FileText,
+        requires: ['quotes.read'],
       },
     ],
   },

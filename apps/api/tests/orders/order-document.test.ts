@@ -76,15 +76,37 @@ function lineFor(product: Product, overrides: { qty?: number; scale?: bigint } =
   };
 }
 
-function priceOne(lines: readonly OrderLineRequestWire[], revision = 1): ReturnType<typeof priceOrderDocument> {
+/**
+ * Price a cart the way the pin now receives it: as quote lines with no money on them.
+ *
+ * `priceOrderDocument` takes `QuoteDocumentLine`s rather than bare `PriceRequestWire`s since 5c,
+ * because the pin freezes what the *quote* says — which is the configurations, the charges, the
+ * promises and their provenance. Every figure is still recomputed here by `calcPrice`; the only
+ * thing that changed is that the caller is `quote_lines` rather than a request body.
+ */
+function priceOne(
+  lines: readonly OrderLineRequestWire[],
+  revision = 1,
+  extra: Partial<Parameters<typeof priceOrderDocument>[0]> = {},
+): ReturnType<typeof priceOrderDocument> {
   const product = fixtureProduct();
   return priceOrderDocument({
-    lines,
+    lines: lines.map((request, index) => ({
+      quoteLineId: `line-${String(index + 1)}`,
+      seq: index + 1,
+      request,
+      isVatApplicable: true,
+      customerDescriptionTh: null,
+    })),
+    charges: [],
+    overrides: [],
+    leadTimeDays: 30,
     catalog: new Map([[product.id, entryFor(product)]]),
     vat: DEFAULT_VAT_RULE,
     locale: 'th',
     coreVersion: 'test',
     revision,
+    ...extra,
   });
 }
 

@@ -303,6 +303,28 @@ export const ERASURE_TREATMENTS = {
    * plan 13's retention clock is still unanswered.
    */
   'payment_slips.submitted_by_user_id': 'escalated',
+
+  /*
+   * ── Phase 5c, the sales-editable quote (packages/db/src/schema/quote.ts) ────────
+   *
+   * Four more, and the coverage test refused the phase without them — which is this
+   * constant working exactly as intended for the second time in two phases.
+   *
+   * All four are `keep`, and all four are the same argument as the six above, sharpened:
+   * plan 7.9 gives up the ability to ask *"is this total correct?"* and replaces it with
+   * *"where did this number come from, and was that person allowed?"*. These columns are
+   * the entire answer to the second question. Scrubbing one turns a priced quote into a
+   * figure with no author — which is not erasure of personal data, it is destruction of
+   * the only control the feature has.
+   *
+   * A uuid on these rows names nobody once `display_name` is null, exactly as
+   * `user_groups.user_id` argues, and none of them is a customer column: a customer cannot
+   * set a price, remove a line, or grant authority.
+   */
+  'quote_overrides.set_by_user_id': 'keep',
+  'quote_overrides.superseded_by_user_id': 'keep',
+  'quote_lines.removed_by_user_id': 'keep',
+  'authority_limits.granted_by_user_id': 'keep',
 } as const satisfies Record<string, 'delete' | 'scrub' | 'keep' | 'escalated'>;
 
 export const authTokenPurpose = pgEnum('auth_token_purpose', [

@@ -33,6 +33,7 @@ export const PERMISSION_CODES = [
   'orders.refund',
   'quotes.read',
   'quotes.write',
+  'quotes.approve',
   'payments.read',
   'payments.verify',
   'users.read',

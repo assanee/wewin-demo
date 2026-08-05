@@ -4,7 +4,7 @@ import { calcPrice } from '@wewin/core/pricing';
 import { buildSkuCode } from '@wewin/core/sku';
 import { configHash } from '@wewin/core/hash';
 import { hasBlockingError, validate } from '@wewin/core/validation';
-import { fromNet, type TaxRule } from '@wewin/core/vat';
+import type { TaxRule } from '@wewin/core/vat';
 import type { Product } from '@wewin/core';
 import { canonicalJson } from '@wewin/db/hash';
 import { encodeUm } from '@wewin/contract/measure';
@@ -14,12 +14,24 @@ import {
   ORDER_DOCUMENT_SCHEMA_VERSION,
   encodeThb,
   type OrderDocumentLineWire,
+  type OrderDocumentOverrideWire,
   type OrderDocumentWire,
   type OrderLineRequestWire,
 } from '@wewin/contract/order';
 import { catalogStaleBody } from '@wewin/contract/errors';
 
 import { AppError, type JsonValue } from '../common/errors/app-error';
+/*
+ * The pure engine, imported from its own file rather than through `../quotes` — that barrel
+ * re-exports `QuotesModule`, and pulling a Nest module into the pricing path would make an
+ * import cycle out of what is only a function over numbers.
+ */
+import {
+  applyOverrides,
+  type ChargeLine,
+  type ComputedLine,
+  type LiveOverride,
+} from '../quotes/overrides';
 import { CATALOG_STALE_MESSAGE_TH } from './pg-errors';
 
 /**
@@ -67,8 +79,47 @@ export interface PricedDocument {
   readonly productVersionIds: readonly string[];
 }
 
+/**
+ * One configured line of the quote, as the pin sees it.
+ *
+ * `request` is what the line *is* — the catalogue handle, the selections, the measures, the
+ * quantity — and there is no money on it. Every figure is recomputed here by `calcPrice`, at
+ * pin time, from a document verified to be the published one, which is the whole of plan
+ * 7.9(ก)'s machine layer: **the pin never inherits a stored price**. A `quote_lines` row whose
+ * `computed_total_thb_minor` disagrees with what comes out is `assertSubmittable`'s integrity
+ * alarm and never reaches this function.
+ */
+export interface QuoteDocumentLine {
+  readonly quoteLineId: string;
+  readonly seq: number;
+  readonly request: OrderLineRequestWire;
+  readonly isVatApplicable: boolean;
+  readonly customerDescriptionTh: string | null;
+}
+
+/** A free-form line: delivery, installation, a survey, a credit. May be negative. */
+export interface QuoteDocumentCharge {
+  readonly quoteLineId: string;
+  readonly seq: number;
+  readonly netMinor: bigint;
+  readonly isVatApplicable: boolean;
+  readonly customerDescriptionTh: string;
+}
+
+/** A live promise, with both the arithmetic half `applyOverrides` needs and the provenance half. */
+export interface QuoteDocumentOverride extends LiveOverride {
+  readonly enteredAs: string;
+  readonly enteredValueText: string;
+  readonly reasonCode: string;
+  readonly setByUserId: string;
+  readonly setByUserName: string | null;
+}
+
 export interface PriceOrderParams {
-  readonly lines: readonly OrderLineRequestWire[];
+  readonly lines: readonly QuoteDocumentLine[];
+  readonly charges: readonly QuoteDocumentCharge[];
+  readonly overrides: readonly QuoteDocumentOverride[];
+  readonly leadTimeDays: number;
   /** `productId` → what is published right now. */
   readonly catalog: ReadonlyMap<string, CatalogEntry>;
   readonly vat: TaxRule;
@@ -97,10 +148,11 @@ export interface PriceOrderParams {
 export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
   const lines: OrderDocumentLineWire[] = [];
   const productVersionIds = new Set<string>();
-  let netMinor = 0n;
+  const computed: ComputedLine[] = [];
 
-  params.lines.forEach((wire, index) => {
-    const lineNo = index + 1;
+  params.lines.forEach((line) => {
+    const wire = line.request;
+    const lineNo = line.seq;
     const entry = params.catalog.get(wire.productId);
 
     if (!entry) {
@@ -151,8 +203,15 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
     const price = calcPrice(entry.product, request.selections, request.measures, request.qty);
     const skuCode = buildSkuCode(entry.product, request.selections);
 
-    netMinor += price.totalMinor;
     productVersionIds.add(entry.productVersionId);
+
+    computed.push({
+      lineId: line.quoteLineId,
+      seq: lineNo,
+      qty: request.qty,
+      computedTotalThbMinor: price.totalMinor,
+      isVatApplicable: line.isVatApplicable,
+    });
 
     lines.push({
       lineNo,
@@ -167,18 +226,91 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
         Object.entries(request.measures).map(([code, um]) => [code, encodeUm(um)]),
       ),
       qty: request.qty,
+      /* Replaced below with the effective figure. Both halves are on the frozen line. */
       netMinor: encodeThb(price.totalMinor),
+      computedNetMinor: encodeThb(price.totalMinor),
+      override: null,
+      isVatApplicable: line.isVatApplicable,
+      customerDescriptionTh: line.customerDescriptionTh,
       price: encodePriceBreakdown(price),
     });
   });
 
   /*
-   * VAT is computed once, over the sum of the line totals, and not per line. Plan 4.3(ข)'s
-   * rule is one rounding point per layer: rounding the tax on each line and adding those up
-   * gives a different figure from taxing the sum, and the invoice has to foot against the
-   * single `grand_total` every instalment, forfeit and refund references.
+   * ⭐ The effective money — `applyOverrides`, and not a second cascade written here.
+   *
+   * VAT is still computed once over the taxable subtotal and not per line (plan 4.3(ข)): that
+   * rule lives inside `applyOverrides`, which is the *only* implementation of it, and this
+   * function reaching for `fromNet` itself is how the invoice and the quote screen would come
+   * to foot to two different figures. The inputs are the prices `calcPrice` produced a few
+   * lines above — never the ones stored on `quote_lines` — so a pinned document is always
+   * today's machine layer plus the promises made against it.
    */
-  const taxed = fromNet(netMinor, params.vat);
+  const charges: ChargeLine[] = params.charges.map((charge) => ({
+    lineId: charge.quoteLineId,
+    seq: charge.seq,
+    chargeTotalThbMinor: charge.netMinor,
+    isVatApplicable: charge.isVatApplicable,
+  }));
+
+  const effective = applyOverrides({
+    computed,
+    charges,
+    overrides: params.overrides,
+    vat: params.vat,
+    computedLeadTimeDays: params.leadTimeDays,
+  });
+
+  /*
+   * Reachable only if the write path let it through, and it must not become a contract:
+   * `assertCoherent` refuses it on every quote write, so arriving here means somebody wrote
+   * the rows another way.
+   */
+  if (effective.grandOverrideBelowExemptCharges) {
+    throw AppError.validationFailed(
+      'ยอดรวมที่กำหนดไว้ต่ำกว่าค่าบริการที่ไม่คิดภาษีรวมกัน — ต้องแก้ยอดรวมหรือค่าบริการก่อน',
+      { reason: 'grand_total_below_exempt_charges' },
+    );
+  }
+
+  const effectiveByLineId = new Map(effective.lines.map((line) => [line.lineId, line]));
+  const provenanceByOverrideId = new Map(
+    params.overrides.map((override) => [override.id, documentOverrideWire(override)]),
+  );
+
+  const frozenLines = lines.map((line, index) => {
+    const source = params.lines[index];
+    if (source === undefined) throw new Error('orders: priced line has no quote line behind it');
+    const applied = effectiveByLineId.get(source.quoteLineId);
+    if (applied === undefined) throw new Error('orders: priced line was not priced');
+
+    return {
+      ...line,
+      netMinor: encodeThb(applied.effectiveTotalThbMinor),
+      override:
+        applied.overrideId === null
+          ? null
+          : provenanceByOverrideId.get(applied.overrideId) ?? null,
+    };
+  });
+
+  const frozenCharges = params.charges.map((charge) => {
+    const applied = effectiveByLineId.get(charge.quoteLineId);
+    if (applied === undefined) throw new Error('orders: charge line was not priced');
+
+    return {
+      lineNo: charge.seq,
+      customerDescriptionTh: charge.customerDescriptionTh,
+      netMinor: encodeThb(applied.effectiveTotalThbMinor),
+      isVatApplicable: charge.isVatApplicable,
+      override:
+        applied.overrideId === null
+          ? null
+          : provenanceByOverrideId.get(applied.overrideId) ?? null,
+    };
+  });
+
+  const documentPromise = params.overrides.find((override) => override.anchor === 'grand_total');
 
   const document = withHash({
     documentSchemaVersion: ORDER_DOCUMENT_SCHEMA_VERSION,
@@ -188,11 +320,21 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
     pinnedLocale: params.locale,
     pinnedCoreVersion: params.coreVersion,
     vat: { rateBp: params.vat.rateBp, treatment: params.vat.treatment },
-    lines,
-    netThbMinor: encodeThb(taxed.netMinor),
-    vatThbMinor: encodeThb(taxed.vatMinor),
-    grandTotalThbMinor: encodeThb(taxed.grandMinor),
+    lines: frozenLines,
+    charges: frozenCharges,
+    documentOverride:
+      documentPromise === undefined ? null : documentOverrideWire(documentPromise),
+    netThbMinor: encodeThb(effective.money.netThbMinor),
+    vatThbMinor: encodeThb(effective.money.vatThbMinor),
+    grandTotalThbMinor: encodeThb(effective.money.grandTotalThbMinor),
+    leadTimeDays: effective.effectiveLeadTimeDays,
   });
+
+  const taxed = {
+    netMinor: effective.money.netThbMinor,
+    vatMinor: effective.money.vatThbMinor,
+    grandMinor: effective.money.grandTotalThbMinor,
+  };
 
   return {
     document,
@@ -221,6 +363,16 @@ export function withHash(document: OrderDocumentWire): OrderDocumentWire {
 
 export const orderDocumentHash = (document: OrderDocumentWire): string =>
   withHash(document).documentHash;
+
+/** The provenance half of a promise, frozen. `applyOverrides` reads the arithmetic half. */
+const documentOverrideWire = (override: QuoteDocumentOverride): OrderDocumentOverrideWire => ({
+  overrideId: override.id,
+  enteredAs: override.enteredAs,
+  enteredValueText: override.enteredValueText,
+  reasonCode: override.reasonCode,
+  setByUserId: override.setByUserId,
+  setByUserName: override.setByUserName,
+});
 
 /* ------------------------------------------------------------------ *
  * The re-approval guard — plan 7.2

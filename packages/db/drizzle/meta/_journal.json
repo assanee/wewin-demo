@@ -106,6 +106,34 @@
       "when": 1785896815289,
       "tag": "0014_refund_separation",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785931391269,
+      "tag": "0015_quote_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785931391624,
+      "tag": "0016_quote_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785937943720,
+      "tag": "0017_quote_promise_freeze",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785937943721,
+      "tag": "0018_quote_document_freeze",
+      "breakpoints": true
     }
   ]
 }

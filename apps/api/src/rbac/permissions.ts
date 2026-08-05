@@ -32,6 +32,22 @@ export const PERMISSIONS = {
 
   'quotes.read': 'Read quotations belonging to anyone.',
   'quotes.write': 'Create and edit quotations, including overridden prices.',
+  /*
+   * ⭐ Its own code, and for the reason `users.erase` has its own: `quotes.write` is a list of
+   * verbs a salesperson performs on their own quote, and *answering an approval request* is
+   * none of them. Behind `quotes.write`, the decision route was held by everybody who could
+   * ask, so what separated an approver from a requester was the two-person CHECK plus the
+   * decider's ceiling — and on a database with no `authority_limits` rows the CHECK was the
+   * only thing left, which two colleagues defeat by taking turns.
+   *
+   * ⚠️ Granted to no group at boot, exactly as `users.erase` is. `permission-sync.service.ts`
+   * inserts the code so a grant has something to reference; who holds it is plan 13's
+   * unanswered *"บริษัทมีคนตรวจสลิป/อนุมัติกี่คนจริงๆ"*, and inventing a grant would be
+   * inventing the answer. Until the owner grants it, approvals are refused for want of a
+   * permission as well as for want of a ceiling — which is the fail-closed direction, and is
+   * what "no authority row means no discount" already means one layer down.
+   */
+  'quotes.approve': 'Approve or reject a concession somebody else asked for.',
 
   'payments.read': 'Read payments and payment slips.',
   'payments.verify': 'Accept or reject a payment slip.',

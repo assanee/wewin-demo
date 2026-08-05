@@ -5,3 +5,4 @@ export * from './auth.js';
 export * from './media.js';
 export * from './order.js';
 export * from './payment.js';
+export * from './quote.js';

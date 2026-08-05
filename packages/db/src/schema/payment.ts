@@ -1129,11 +1129,35 @@ export type ApprovalDimension = (typeof APPROVAL_DIMENSIONS)[number];
 export const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
 
 /**
- * One decision about one document, in one dimension.
+ * One decision about one **quote revision**, in one dimension.
  *
  * Assessed **at the document level at submit**, not per line: plan 7.13 found per-row
  * evaluation losing to the obvious attack of splitting one concession across five lines.
- * So the subject is `order_document_id` and the key is `(document, dimension)`.
+ *
+ * ── ⭐ WHY THE SUBJECT IS `quote_revision` AND NOT `order_document_id` ─────────────
+ *
+ * It was `order_document_id`, keyed `(document, dimension)`, and the 5c red team walked
+ * straight through it:
+ *
+ *   an approver approves ฿9,630 against a ฿138,240 line — 6.97%, entirely defensible;
+ *   sales then revokes that override, removes the line, adds a ฿6,912 line and sets it
+ *   to ฿0.00. The new concession is ฿7,395.84, which is ≤ ฿9,630, so it is "covered"
+ *   and the order leaves the building at a 100% discount nobody looked at.
+ *
+ * An absolute figure attached to an *order* is a standing line of credit. It never expires,
+ * is never consumed, and does not name the thing it was measured against — so it licenses
+ * any later concession that happens to be smaller.
+ *
+ * There is a second reason, and it is structural rather than adversarial: `order_documents`
+ * only exists after a submit pins one, and the gate that refuses the submit **rolls that pin
+ * back**. Keying on the document therefore made the request that answers a refusal impossible
+ * to record — the row it needed to point at had ceased to exist. Both problems have one fix:
+ * the subject is the quote revision, which exists before submit, is a digest of the live
+ * lines and overrides, and changes if and only if the quote is different.
+ *
+ * `order_document_id` stays, nullable, as *evidence*: when the request is raised against a
+ * quote that has already been pinned once, it records which revision the approver was looking
+ * at. It is no longer what the decision is keyed to.
  *
  * ⚠️ Nothing requires a row here. Plan 13's authority table is empty on day one and the
  * documented default is fail-closed — *sales cannot discount until the owner fills it in*
@@ -1148,7 +1172,17 @@ export const approvals = pgTable(
     orderId: uuid('order_id')
       .notNull()
       .references(() => orders.id, { onUpdate: 'cascade', onDelete: 'restrict' }),
-    orderDocumentId: uuid('order_document_id').notNull(),
+    /** Evidence, not the key. NULL when the quote has never been pinned — see the note above. */
+    orderDocumentId: uuid('order_document_id'),
+    /**
+     * ⭐ The subject: `quoteRevision(lines, overrides)`, 16 lowercase hex.
+     *
+     * A digest of the live quote, so an approval covers **that quote** and nothing else. Edit
+     * one line afterwards and the digest moves, the approval stops covering, and the request
+     * has to be made again — which is what "the approver approved this document" means when it
+     * is enforced rather than assumed.
+     */
+    quoteRevision: char('quote_revision', { length: 16 }).notNull(),
     dimension: text('dimension', { enum: APPROVAL_DIMENSIONS }).notNull(),
     status: text('status', { enum: APPROVAL_STATUSES }).notNull().default('pending'),
 
@@ -1172,6 +1206,18 @@ export const approvals = pgTable(
     }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     decisionNoteTh: text('decision_note_th'),
+    /**
+     * The decider's own ceiling **at the moment they approved**, in THB minor.
+     *
+     * Without it, an owner who raises a limit next month makes last month's approvals look
+     * unnecessary, and one who lowers it makes them look like abuses. Both readings are wrong
+     * and neither is recoverable from `authority_limits`, which holds only today's number.
+     * Two agents recommended this column in 5c and neither owned the file; this is it.
+     *
+     * NULL on `pending` and on `rejected`: saying no is not an exercise of authority, and
+     * `AuthorityService.decide` deliberately needs no ceiling to reject.
+     */
+    decidedCeilingThbMinor: bigint('decided_ceiling_thb_minor', { mode: 'bigint' }),
     ...timestamps,
   },
   (table) => [
@@ -1182,10 +1228,32 @@ export const approvals = pgTable(
     })
       .onUpdate('cascade')
       .onDelete('restrict'),
-    /* One decision per dimension per revision. A second is a second answer to one question. */
-    unique('approvals_document_dimension_key').on(table.orderDocumentId, table.dimension),
+    /*
+     * At most one OPEN request per order per dimension. Not `(revision, dimension)` unique:
+     * a quote that is edited, refused, edited again and refused again accumulates a decided
+     * row per revision, which is the history an auditor needs — what must not accumulate is
+     * two questions waiting for one answer.
+     */
+    uniqueIndex('approvals_one_open_per_order_dimension')
+      .on(table.orderId, table.dimension)
+      .where(sql`status = 'pending'`),
 
     check('approvals_dimension_known', sql`${table.dimension} in ${inList(APPROVAL_DIMENSIONS)}`),
+    check(
+      'approvals_quote_revision_is_hex',
+      sql`${table.quoteRevision} ~ '^[0-9a-f]{16}$'`,
+    ),
+    /* A pinned ceiling exists exactly when there is an approval it belonged to. */
+    check(
+      'approvals_ceiling_shape',
+      sql`(${table.status} = 'approved') = (${table.decidedCeilingThbMinor} is not null)`,
+    ),
+    /* 🔒 And it covered the figure. The service refuses first, for the sentence; this is the rule. */
+    check(
+      'approvals_ceiling_covers_concession',
+      sql`${table.decidedCeilingThbMinor} is null
+          or ${table.decidedCeilingThbMinor} >= ${table.concessionThbMinor}`,
+    ),
     check('approvals_status_known', sql`${table.status} in ${inList(APPROVAL_STATUSES)}`),
     check('approvals_concession_positive', sql`${table.concessionThbMinor} > 0`),
     check(
