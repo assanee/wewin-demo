@@ -288,6 +288,96 @@ export const th: UiCatalogue = {
   'spec.standards': 'มาตรฐานที่ผ่าน',
   'spec.warranty': 'การรับประกัน',
 
+  /* ---- Reviews — plan section 9 --------------------------------------------- */
+  'review.heading': 'รีวิวจากลูกค้าที่ติดตั้งจริง',
+  /*
+   * ⭐ The average and its count, in one sentence, from one pair of integers. Plan 9.5 —
+   * "5.0 ★" on its own reads as an advertisement; "5.0 จาก 5 · 1 รีวิว" reads as a fact.
+   */
+  'review.summary': (p, f) =>
+    `${f.rating(p.ratingSum, p.ratingCount)} จาก 5 · ${f.integer(p.ratingCount)} รีวิว`,
+  'review.hiddenNote': (p, f) =>
+    `มีรีวิว ${f.integer(p.hidden)} รายการถูกซ่อนเพราะผิดนโยบายการรีวิว — คะแนนของรีวิวเหล่านั้นยังนับรวมในค่าเฉลี่ยข้างต้น`,
+  'review.publishedOn': (p, f) => `เขียนเมื่อ ${f.date(p.at)}`,
+  'review.author.anonymous': 'ลูกค้า',
+  'review.size': (p, f) => `ขนาดที่สั่ง ${f.dimensions(p.widthUm, p.heightUm, p.unit)}`,
+  'review.erased': 'ข้อความและชื่อของรีวิวนี้ถูกลบตามคำขอของเจ้าของข้อมูล คะแนนยังนับรวมอยู่',
+  'review.reply.heading': 'คำตอบจากทางร้าน',
+  'review.reply.on': (p, f) => `ตอบเมื่อ ${f.date(p.at)}`,
+  'review.photo.alt': (p, f) => `รูปจากลูกค้า รูปที่ ${f.integer(p.index)}`,
+  'review.more': (p, f) => `และอีก ${f.integer(p.remaining)} รีวิว`,
+
+  'review.form.heading': 'เขียนรีวิว',
+  'review.form.for': (p) => `รีวิวสำหรับ ${p.name}`,
+  'review.form.intro':
+    'งานอะลูมิเนียมตัดสินกันหลังผ่านฝนไปรอบหนึ่ง ไม่ใช่หลังติดตั้งสามวัน — เขียนได้ทุกเมื่อ ไม่มีวันหมดอายุ',
+  'review.form.rating.legend': 'ให้กี่ดาว',
+  'review.form.rating.option': (p, f) => `${f.integer(p.stars)} ดาว`,
+  'review.form.rating.required': 'เลือกจำนวนดาวก่อนส่ง',
+  'review.form.body.label': 'เล่าให้ฟังหน่อย (ไม่บังคับ)',
+  /* The one instruction that is not politeness: a public page is a public page. */
+  'review.form.body.help': 'อย่าใส่ที่อยู่ เบอร์โทร หรือข้อมูลของคนอื่น รีวิวนี้เป็นข้อความสาธารณะ',
+  'review.form.name.label': 'ชื่อที่จะแสดง (ไม่บังคับ)',
+  'review.form.name.help': 'จะแสดงคู่กับรีวิว ใส่ชื่อย่อหรือเว้นว่างก็ได้',
+  'review.form.submit': 'ส่งรีวิว',
+  'review.form.submitting': 'กำลังส่ง…',
+  'review.form.moderation': 'รีวิวจะขึ้นหน้าสินค้าหลังทีมงานตรวจ หรือขึ้นเองเมื่อครบกำหนดโดยไม่ต้องรอใคร',
+  'review.form.loading': 'กำลังเปิดคำเชิญ…',
+  'review.form.invalid.title': 'ลิงก์นี้ใช้ไม่ได้',
+  'review.form.invalid.body': 'ลิงก์อาจถูกใช้ไปแล้ว หรือคัดลอกมาไม่ครบ ลองเปิดจากอีเมลคำเชิญอีกครั้ง',
+  'review.form.failed.title': 'ส่งรีวิวไม่สำเร็จ',
+  'review.form.failed.body': 'ลองอีกครั้ง ถ้ายังไม่ได้ ให้ตอบกลับอีเมลคำเชิญมาได้เลย',
+  'review.form.done.title': 'ได้รับรีวิวแล้ว ขอบคุณครับ',
+  'review.form.done.body': 'รีวิวจะปรากฏบนหน้าสินค้าเมื่อผ่านการตรวจหรือครบกำหนด',
+  'review.meta.title': 'เขียนรีวิว',
+
+  /* ---- Display settings ------------------------------------------------------ */
+  'settings.nav': 'การแสดงผล',
+  'settings.heading': 'ตั้งค่าการแสดงผล',
+  'settings.intro':
+    'ตั้งค่าว่าจะให้เว็บไซต์แสดงภาษา หน่วยวัด และสกุลเงินอย่างไร ทั้งหมดนี้เป็นเรื่องการแสดงผลเท่านั้น ขนาดที่คุณกรอกและราคาที่ระบบคิดไว้ไม่เปลี่ยนตาม',
+  'settings.meta.title': 'ตั้งค่าการแสดงผล',
+
+  'settings.language.legend': 'ภาษาที่ใช้แสดงหน้าเว็บ',
+  'settings.language.accountDiffers': (p) => `บัญชีของคุณตั้งภาษาไว้เป็น ${p.language}`,
+  'settings.language.applyAccount': 'ใช้ภาษาของบัญชีบนเครื่องนี้',
+  'settings.unit.legend': 'หน่วยที่ใช้แสดงขนาด',
+  'settings.currency.legend': 'สกุลเงินที่ใช้แสดงราคา',
+  'settings.currency.fixed': (p) => `แสดงเป็น ${p.currency} ทุกภาษา`,
+  'settings.currency.why':
+    'ราคาทั้งหมดคิดและเก็บเป็นเงินบาท หน้าสินค้าถูกสร้างไว้ล่วงหน้าและใช้ร่วมกันทุกคน จึงเลือกสกุลเงินรายบุคคลไม่ได้ ใบเสนอราคาสำหรับลูกค้าต่างประเทศเป็นคนละเรื่องและยังไม่เปิดใช้',
+
+  'settings.storage.local': 'ตอนนี้เก็บไว้ในเบราว์เซอร์นี้เครื่องเดียว',
+  'settings.storage.account': (p, f) => `บันทึกไว้กับบัญชีแล้วเมื่อ ${f.date(p.at)}`,
+  'settings.storage.signIn': 'เข้าสู่ระบบเพื่อให้ค่าที่ตั้งไว้ตามไปกับเครื่องอื่นด้วย',
+  'settings.storage.saving': 'กำลังบันทึก',
+  'settings.storage.failed': 'บันทึกลงบัญชีไม่สำเร็จ ค่าที่เลือกยังใช้ได้ในเบราว์เซอร์นี้',
+  'settings.storage.forget': 'ลบค่าที่บันทึกไว้กับบัญชี',
+
+  'settings.messages.heading': 'ภาษาของข้อความที่เราส่งถึงคุณ',
+  'settings.messages.degraded': (p) =>
+    `ยังไม่มีคำแปล${p.chosen} ข้อความจากระบบจะส่งเป็น${p.rendered}`,
+  'settings.messages.coverage': (p, f) =>
+    `แปลแล้ว ${f.plain(p.translated)} จาก ${f.plain(p.total)} ข้อความ`,
+
+  'settings.effects.heading': 'ค่าที่ตั้งไว้มีผลกับอะไรบ้าง',
+  'settings.effects.intro':
+    'รายการนี้มาจากระบบหลังบ้านโดยตรง ไม่ใช่หน้านี้เดาเอง — ค่าที่ยังไม่มีผลจะบอกไว้ตรงนี้แทนที่จะปล่อยให้เข้าใจผิด',
+  'settings.effect.locale.notification': 'ภาษาในอีเมลแจ้งเตือน',
+  'settings.effect.locale.document': 'ภาษาในใบเสนอราคาและใบแจ้งหนี้ที่ออกไปแล้ว',
+  'settings.effect.locale.storefront': 'ภาษาของหน้าเว็บ',
+  'settings.effect.locale.dashboard': 'ภาษาในระบบจัดการภายใน',
+  'settings.effect.currency.notification': 'สกุลเงินในอีเมลแจ้งเตือน',
+  'settings.effect.currency.document': 'สกุลเงินในเอกสารที่ออกไปแล้ว',
+  'settings.effect.currency.storefront': 'สกุลเงินของราคาบนหน้าเว็บ',
+  'settings.effect.currency.dashboard': 'สกุลเงินในระบบจัดการภายใน',
+  'settings.effect.lengthUnit.notification': 'หน่วยวัดในอีเมลแจ้งเตือน',
+  'settings.effect.lengthUnit.document': 'หน่วยวัดในเอกสารที่ออกไปแล้ว',
+  'settings.effect.lengthUnit.storefront': 'หน่วยวัดของขนาดบนหน้าเว็บ',
+  'settings.effect.lengthUnit.dashboard': 'หน่วยวัดในระบบจัดการภายใน',
+  'settings.effect.yes': 'มีผล',
+  'settings.effect.no': 'ยังไม่มีผล',
+
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'ไม่พบหน้าที่ต้องการ',
   'notFound.body': 'ลิงก์อาจเปลี่ยนไปแล้ว ลองเริ่มจากรายการสินค้า',

@@ -430,7 +430,17 @@ export class OrderRepository {
       .set({
         status: 'awaiting_payment',
         statusEventId: input.statusEventId,
-        submittedAt: new Date(),
+        /*
+         * The database's clock, not this process's.
+         *
+         * `orders_frozen_after_submitted` checks this column against `frozen_at`, which a
+         * trigger stamps with Postgres's `now()`. Two containers, two clocks: whenever this
+         * one runs ahead, an order confirmed for production before the database catches up
+         * violates the CHECK and the transition is refused outright. `now()` here is the
+         * transaction's own start time, so it cannot be later than a freeze in any
+         * transaction that begins afterwards, whatever either clock says.
+         */
+        submittedAt: sql`now()`,
         orderNo: sql`'WW-' || nextval('order_no_seq')`,
         documentId: input.documentId,
         contactEmail: input.contactEmail,

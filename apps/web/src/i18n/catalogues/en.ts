@@ -310,6 +310,106 @@ export const en: PartialUiCatalogue = {
   'spec.standards': 'Standards met',
   'spec.warranty': 'Warranty',
 
+  /* ---- Reviews — plan section 9 --------------------------------------------- */
+  'review.heading': 'Reviews from customers who had these installed',
+  // The count is a counted noun here and one word in Thai — the asymmetry this catalogue
+  // exists to prove. What neither language may do is drop it: plan 9.5.
+  'review.summary': (p, f) =>
+    `${f.rating(p.ratingSum, p.ratingCount)} out of 5 · ${f.integer(p.ratingCount)} ${count(Number(p.ratingCount), 'review', 'reviews')}`,
+  'review.hiddenNote': (p, f) =>
+    `${f.integer(p.hidden)} ${count(Number(p.hidden), 'review is', 'reviews are')} hidden for breaking the review policy — those ratings still count towards the average above`,
+  'review.publishedOn': (p, f) => `Written ${f.date(p.at)}`,
+  'review.author.anonymous': 'Customer',
+  'review.size': (p, f) => `Ordered at ${f.dimensions(p.widthUm, p.heightUm, p.unit)}`,
+  'review.erased':
+    'The text and name on this review were removed at the author’s request. The rating still counts.',
+  'review.reply.heading': 'Reply from WEWIN180',
+  'review.reply.on': (p, f) => `Replied ${f.date(p.at)}`,
+  'review.photo.alt': (p, f) => `Customer photo ${f.integer(p.index)}`,
+  'review.more': (p, f) =>
+    `and ${f.integer(p.remaining)} more ${count(Number(p.remaining), 'review', 'reviews')}`,
+
+  'review.form.heading': 'Write a review',
+  'review.form.for': (p) => `Reviewing ${p.name}`,
+  'review.form.intro':
+    'Aluminium is judged after a rainy season, not three days after installation — write whenever you are ready. This never closes.',
+  'review.form.rating.legend': 'How many stars',
+  'review.form.rating.option': (p, f) =>
+    `${f.integer(p.stars)} ${count(p.stars, 'star', 'stars')}`,
+  'review.form.rating.required': 'Choose a star rating before sending',
+  'review.form.body.label': 'Tell us about it (optional)',
+  'review.form.body.help':
+    'Please leave out addresses, phone numbers and other people’s details — this is a public page.',
+  'review.form.name.label': 'Name to show (optional)',
+  'review.form.name.help': 'Shown beside your review. Initials are fine, so is leaving it blank.',
+  'review.form.submit': 'Send review',
+  'review.form.submitting': 'Sending…',
+  'review.form.moderation':
+    'Your review appears on the product page once we have read it, or on its own when the review window elapses.',
+  'review.form.loading': 'Opening your invitation…',
+  'review.form.invalid.title': 'This link does not work',
+  'review.form.invalid.body':
+    'It may already have been used, or copied incompletely. Try opening it from the invitation email again.',
+  'review.form.failed.title': 'The review was not sent',
+  'review.form.failed.body': 'Try again. If it still fails, reply to the invitation email.',
+  'review.form.done.title': 'Thank you — we have your review',
+  'review.form.done.body':
+    'It will appear on the product page once it has been read, or when the review window elapses.',
+  'review.meta.title': 'Write a review',
+
+  /* ---- Display settings ------------------------------------------------------
+   *
+   * Translated here as well as in Thai because this is the one screen whose whole subject is
+   * the reader's own language: a settings page that is only legible to somebody who already
+   * reads Thai cannot be used by the person most likely to need it. The other six catalogues
+   * stay empty, which is plan 13's state and not a placeholder.
+   */
+  'settings.nav': 'Display',
+  'settings.heading': 'Display settings',
+  'settings.intro':
+    'Choose how this site is written for you: language, measurement unit and currency. All three are presentation only — the sizes you enter and the prices we calculate do not change with them.',
+  'settings.meta.title': 'Display settings',
+
+  'settings.language.legend': 'Language this site is written in',
+  'settings.language.accountDiffers': (p) => `Your account is set to ${p.language}.`,
+  'settings.language.applyAccount': 'Use my account language on this device',
+  'settings.unit.legend': 'Unit sizes are shown in',
+  'settings.currency.legend': 'Currency prices are shown in',
+  'settings.currency.fixed': (p) => `Always ${p.currency}, in every language`,
+  'settings.currency.why':
+    'Every price is calculated and stored in Thai baht, and product pages are built once and shared by every visitor, so a per-person currency cannot be applied to them. Quoting an overseas customer in their own currency is a separate matter and is not switched on yet.',
+
+  'settings.storage.local': 'Kept in this browser only',
+  'settings.storage.account': (p, f) => `Saved to your account on ${f.date(p.at)}`,
+  'settings.storage.signIn': 'Sign in to carry these settings to your other devices.',
+  'settings.storage.saving': 'Saving',
+  'settings.storage.failed': 'Could not save to your account. The choice still applies in this browser.',
+  'settings.storage.forget': 'Delete the settings saved to my account',
+
+  'settings.messages.heading': 'The language we write to you in',
+  'settings.messages.degraded': (p) =>
+    `${p.chosen} has not been translated yet, so messages from us will arrive in ${p.rendered}.`,
+  'settings.messages.coverage': (p, f) =>
+    `${f.plain(p.translated)} of ${f.plain(p.total)} messages translated`,
+
+  'settings.effects.heading': 'What these settings change',
+  'settings.effects.intro':
+    'This list comes from the server rather than from this page, and it names the settings that do nothing yet instead of leaving you to find out.',
+  'settings.effect.locale.notification': 'The language of emails we send you',
+  'settings.effect.locale.document': 'The language of quotations and invoices already issued',
+  'settings.effect.locale.storefront': 'The language of this website',
+  'settings.effect.locale.dashboard': 'The language of the internal dashboard',
+  'settings.effect.currency.notification': 'The currency in emails we send you',
+  'settings.effect.currency.document': 'The currency on documents already issued',
+  'settings.effect.currency.storefront': 'The currency of prices on this website',
+  'settings.effect.currency.dashboard': 'The currency in the internal dashboard',
+  'settings.effect.lengthUnit.notification': 'The unit in emails we send you',
+  'settings.effect.lengthUnit.document': 'The unit on documents already issued',
+  'settings.effect.lengthUnit.storefront': 'The unit sizes are shown in on this website',
+  'settings.effect.lengthUnit.dashboard': 'The unit in the internal dashboard',
+  'settings.effect.yes': 'Applies',
+  'settings.effect.no': 'Does not apply yet',
+
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'Page not found',
   'notFound.body': 'The link may have changed. Try starting from the product list.',

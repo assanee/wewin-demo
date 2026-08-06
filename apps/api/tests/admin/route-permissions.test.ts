@@ -75,6 +75,22 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['GET /admin/notifications/summary', ['orders.read']],
   ['GET /admin/notifications/:notificationId/attempts', ['orders.read']],
   ['POST /admin/notifications/:notificationId/retry', ['orders.write']],
+  /*
+   * Moderation, phase 7 — and `reviews.moderate` is its own permission rather than
+   * `orders.write` for the reason plan 9.3 gives: hiding a review is the one staff action
+   * that changes what a customer *reads about the company*, and everything else on this
+   * table changes what the company knows. Whoever ships orders should not thereby be able
+   * to take down the review of one.
+   *
+   * All five demand the same code, including `unhide`. Asymmetric authority here would be
+   * worse than none — a moderator who can hide but not restore has to escalate to undo their
+   * own mistake, and the mistake that goes unreported is the one that stays hidden.
+   */
+  ['GET /admin/reviews/queue', ['reviews.moderate']],
+  ['POST /admin/reviews/:reviewId/hide', ['reviews.moderate']],
+  ['POST /admin/reviews/:reviewId/unhide', ['reviews.moderate']],
+  ['POST /admin/reviews/:reviewId/publish', ['reviews.moderate']],
+  ['POST /admin/reviews/:reviewId/reply', ['reviews.moderate']],
 ]);
 
 const codesOf = (record: RouteRecord): readonly string[] =>

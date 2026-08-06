@@ -91,6 +91,52 @@ const SAMPLE_PARAMS = {
   width: '320',
   height: '160',
   invalid: false,
+  /*
+   * Reviews — plan section 9.
+   *
+   * `ratingSum`/`ratingCount` and not `sum`/`count`: `count` is already in this bag as a
+   * `number` (pieces, items, designs) and a rating tally is a pair of `bigint`s straight
+   * out of `product_review_stats`. Two params with one name and two types is how a shared
+   * sample bag turns into a lie — and the names now match the view's columns, which is
+   * where a reader goes to check them.
+   *
+   * They are a *pair* for the reason plan 9.5 gives: there is no key that renders an
+   * average on its own, so there is no sample that could produce one.
+   */
+  ratingSum: 51n,
+  ratingCount: 12n,
+  hidden: 2n,
+  remaining: 4n,
+  stars: 4,
+  index: 1,
+  widthUm: 1_200_000n,
+  heightUm: 2_100_000n,
+  /*
+   * Settings — plan section 10.
+   *
+   * `language`, `chosen` and `rendered` are endonyms, and they are the one class of
+   * param that is legitimately an already-rendered string. The rule everywhere else is
+   * that a param is a *value* so the locale's own formatter can present it; an endonym
+   * is the exception because it is written in its own script *by definition* — ไทย is
+   * ไทย on the German page too. Passing the locale code instead would put a copy of the
+   * endonym table in all eight catalogues, and the eighth copy is where a typo lives.
+   * The single table is `LOCALE_ENDONYMS`, which `SettingsScreen.tsx` reads.
+   *
+   * `translated`/`total` stay `number` and go through `f.plain`, so the Burmese page
+   * gets Burmese digits. They are the coverage line's own pair, and — the same argument
+   * `ratingSum`/`ratingCount` makes above — there is no key that renders a percentage
+   * on its own, so a reader cannot be shown "83%" without being shown what of.
+   */
+  language: 'ไทย',
+  currency: 'THB',
+  chosen: 'မြန်မာ',
+  rendered: 'ไทย',
+  translated: 412,
+  total: 496,
+  // A fixed instant, not `new Date()`: a sample that moves is a test that can only fail
+  // on a Tuesday.
+  at: new Date('2026-03-14T04:00:00Z'),
+  name: 'บานเกล็ดปรับระดับได้ 4 ใบ',
 } as const;
 
 describe('a lookup always returns a sentence', () => {

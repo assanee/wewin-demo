@@ -17,6 +17,7 @@
     "./admin": "./dist/admin.js",
     "./order": "./dist/order.js",
     "./quote": "./dist/quote.js",
+    "./review": "./dist/review.js",
     "./schedule": "./dist/schedule.js",
     "./pricing": "./dist/pricing.js",
     "./errors": "./dist/errors.js",

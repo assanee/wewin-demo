@@ -1,0 +1,240 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - link "ข้ามไปเนื้อหาหลัก" [ref=f3e3] [cursor=pointer]:
+      - /url: "#main"
+    - banner [ref=f3e4]:
+      - generic [ref=f3e5]:
+        - link "WEWIN180 หน้าหลัก" [ref=f3e6] [cursor=pointer]:
+          - /url: /de
+          - generic [ref=f3e7]: WEWIN180
+        - navigation "เมนูหลัก" [ref=f3e8]:
+          - link "สินค้า" [ref=f3e9] [cursor=pointer]:
+            - /url: /de/products
+          - link "เกี่ยวกับเรา" [ref=f3e10] [cursor=pointer]:
+            - /url: /de/about
+        - generic [ref=f3e11]:
+          - generic [ref=f3e12]:
+            - generic [ref=f3e13]: ภาษา
+            - combobox "ภาษา" [ref=f3e14] [cursor=pointer]:
+              - option "Deutsch" [selected]
+              - option "English"
+              - option "हिन्दी"
+              - option "ລາວ"
+              - option "မြန်မာ"
+              - option "ไทย"
+              - option "Tiếng Việt"
+              - option "中文"
+            - generic [ref=f3e15]:
+              - generic [ref=f3e16]: Deutsch 0/273 · ไทย 273/273
+              - text: ข้อความบางส่วนยังไม่มีคำแปล จึงแสดงเป็นภาษาไทย
+          - link "ตะกร้า ตะกร้าว่าง" [ref=f3e17] [cursor=pointer]:
+            - /url: /de/quote
+            - generic [ref=f3e21]: ตะกร้า
+            - generic [ref=f3e22]: ตะกร้าว่าง
+    - main [ref=f3e24]:
+      - generic [ref=f3e25]:
+        - generic [ref=f3e26]:
+          - img "ภาพแบบ 320,5 × 160 cm" [ref=f3e29]:
+            - img [ref=f3e30]:
+              - generic [ref=f3e55]: 320,5
+              - generic [ref=f3e59]: "160"
+              - generic [ref=f3e60]: "หน่วย: cm"
+          - list [ref=f3e61]:
+            - listitem [ref=f3e62]:
+              - img "ภาพร่างสัดส่วน 320,5 × 160 cm" [ref=f3e64]
+              - paragraph [ref=f3e86]: ด้านหน้า
+            - listitem [ref=f3e87]:
+              - img "ภาพร่างสัดส่วน 160,25 × 160 cm" [ref=f3e89]
+              - paragraph [ref=f3e111]: ครึ่งบาน
+            - listitem [ref=f3e112]:
+              - img "ภาพร่างสัดส่วน 320,5 × 53,3333 cm" [ref=f3e114]
+              - paragraph [ref=f3e136]: ช่องแสงบน
+          - generic [ref=f3e138]:
+            - generic [ref=f3e140]:
+              - term [ref=f3e141]: วัสดุ
+              - definition [ref=f3e142]: อะลูมิเนียมอัดรีด
+            - paragraph [ref=f3e143]: สเปกละเอียด มาตรฐาน และเงื่อนไขรับประกัน สอบถามทีมงานได้ที่ช่องทางติดต่อด้านล่าง
+        - generic [ref=f3e144]:
+          - generic [ref=f3e145]:
+            - paragraph [ref=f3e146]: หน้าต่างบานกระทุ้ง 4
+            - generic [ref=f3e147]:
+              - heading "หน้าต่างบานกระทุ้ง 4" [level=1] [ref=f3e148]
+              - button "ตั้งชื่อรายการนี้เอง" [ref=f3e149] [cursor=pointer]
+            - paragraph [ref=f3e153]: บานกระทุ้งเปิดออกด้านนอก ระบายอากาศได้แม้ฝนตก พร้อมช่องแสงบน 4 ช่อง เหมาะกับห้องนอนและห้องน้ำ
+            - group "จัดการการตั้งค่า" [ref=f3e155]:
+              - button "ย้อนกลับ" [disabled] [ref=f3e156]
+              - button "ทำซ้ำ" [disabled] [ref=f3e160]
+              - button "กลับค่าเริ่มต้น" [ref=f3e164] [cursor=pointer]
+              - button "แชร์ลิงก์การตั้งค่านี้" [ref=f3e169] [cursor=pointer]
+              - button "สร้าง QR ของลิงก์นี้" [ref=f3e176] [cursor=pointer]
+          - region "ขนาด" [ref=f3e183]:
+            - generic [ref=f3e184]:
+              - heading "ขนาด" [level=2] [ref=f3e185]
+              - generic [ref=f3e186]:
+                - generic [ref=f3e187]: หน่วย
+                - radiogroup "หน่วยที่ใช้แสดงขนาด" [ref=f3e188]:
+                  - generic [ref=f3e189] [cursor=pointer]:
+                    - radio "มิลลิเมตร" [ref=f3e190]
+                    - generic [ref=f3e191]: mm
+                  - generic [ref=f3e192] [cursor=pointer]:
+                    - radio "เซนติเมตร" [checked] [ref=f3e193]
+                    - generic [ref=f3e194]: cm
+                  - generic [ref=f3e195] [cursor=pointer]:
+                    - radio "เมตร" [ref=f3e196]
+                    - generic [ref=f3e197]: m
+                  - generic [ref=f3e198] [cursor=pointer]:
+                    - radio "นิ้ว" [ref=f3e199]
+                    - generic [ref=f3e200]: in
+                  - generic [ref=f3e201] [cursor=pointer]:
+                    - radio "ฟุต" [ref=f3e202]
+                    - generic [ref=f3e203]: ft
+            - generic [ref=f3e204]:
+              - generic [ref=f3e205]:
+                - generic [ref=f3e206]:
+                  - generic [ref=f3e207]: ความกว้าง
+                  - generic [ref=f3e208]: cm
+                - generic [ref=f3e209]:
+                  - button "ลดความกว้าง 0.5 cm" [ref=f3e210] [cursor=pointer]
+                  - textbox "ความกว้าง cm" [ref=f3e212]: "320.5"
+                  - button "เพิ่มความกว้าง 0.5 cm" [ref=f3e213] [cursor=pointer]
+                - paragraph [ref=f3e215]:
+                  - text: 60–400 cm · ทีละ 0.5 cm
+                  - generic [ref=f3e216]: · วัดจากขอบวงกบด้านนอกถึงขอบวงกบอีกด้าน
+              - generic [ref=f3e217]:
+                - generic [ref=f3e218]:
+                  - generic [ref=f3e219]: ความสูง
+                  - generic [ref=f3e220]: cm
+                - generic [ref=f3e221]:
+                  - button "ลดความสูง 0.5 cm" [ref=f3e222] [cursor=pointer]
+                  - textbox "ความสูง cm" [ref=f3e224]: "160"
+                  - button "เพิ่มความสูง 0.5 cm" [ref=f3e225] [cursor=pointer]
+                - paragraph [ref=f3e227]: 60–250 cm · ทีละ 0.5 cm
+            - paragraph [ref=f3e228]: พื้นที่ 5,13 ตร.ม. · คิดขั้นต่ำ 1,50 ตร.ม.
+          - generic [ref=f3e229]:
+            - generic [ref=f3e230]:
+              - heading "สีโปรไฟล์อะลูมิเนียม" [level=2] [ref=f3e231]
+              - generic [ref=f3e232]: มีผลกับรหัสสินค้า
+            - radiogroup "สีโปรไฟล์อะลูมิเนียม" [ref=f3e233]:
+              - radio "ลายไม้เข้ม" [ref=f3e234] [cursor=pointer]
+              - radio "ลายไม้อ่อน" [ref=f3e238] [cursor=pointer]
+              - radio "เทาซาฮาร่า" [checked] [ref=f3e242] [cursor=pointer]
+              - radio "ดำ" [ref=f3e248] [cursor=pointer]
+              - radio "อบขาว" [ref=f3e252] [cursor=pointer]
+          - generic [ref=f3e256]:
+            - generic [ref=f3e257]:
+              - heading "สีกระจก" [level=2] [ref=f3e258]
+              - generic [ref=f3e259]: มีผลกับรหัสสินค้า
+            - radiogroup "สีกระจก" [ref=f3e260]:
+              - radio "โปร่งใส" [checked] [ref=f3e261] [cursor=pointer]
+              - radio "สีเขียว" [ref=f3e267] [cursor=pointer]
+              - radio "สีฟ้า" [ref=f3e271] [cursor=pointer]
+              - radio "สีชาดำ" [ref=f3e275] [cursor=pointer]
+              - radio "ฝ้า" [ref=f3e279] [cursor=pointer]
+              - radio "เงา" [ref=f3e283] [cursor=pointer]
+          - generic [ref=f3e287]:
+            - generic [ref=f3e288]:
+              - heading "ความหนากระจก" [level=2] [ref=f3e289]
+              - generic [ref=f3e290]: มีผลกับรหัสสินค้า
+            - radiogroup "ความหนากระจก" [ref=f3e291]:
+              - radio "5 mm (เทมเปอร์)" [checked] [ref=f3e292] [cursor=pointer]
+              - radio "6 mm (เทมเปอร์)" [ref=f3e295] [cursor=pointer]
+              - radio "8 mm (เทมเปอร์)" [ref=f3e298] [cursor=pointer]
+              - radio "กระจกสองชั้น" [disabled] [ref=f3e301]
+            - paragraph [ref=f3e307]: กระจกสองชั้น — กระจกสองชั้นรองรับความกว้างไม่เกิน 200 cm
+          - generic [ref=f3e308]:
+            - generic [ref=f3e309]:
+              - heading "มุ้งลวด" [level=2] [ref=f3e310]
+              - generic [ref=f3e311]: มีผลกับรหัสสินค้า
+            - radiogroup "มุ้งลวด" [ref=f3e312]:
+              - radio "ไม่มีมุ้งลวด" [checked] [ref=f3e313] [cursor=pointer]
+              - radio "มีมุ้งลวด" [ref=f3e316] [cursor=pointer]
+          - region "สรุปราคา" [ref=f3e320]:
+            - generic [ref=f3e321]:
+              - paragraph [ref=f3e322]: รหัสสินค้า
+              - generic [ref=f3e323]:
+                - code [ref=f3e324]: AWN4T-SG-CLR-T5-NS0
+                - button "คัดลอกรหัสสินค้า AWN4T-SG-CLR-T5-NS0" [ref=f3e325] [cursor=pointer]
+            - generic [ref=f3e330]:
+              - generic [ref=f3e331]:
+                - paragraph [ref=f3e332]: ราคาต่อชิ้น
+                - paragraph [ref=f3e333]: 7.692 ฿
+              - generic [ref=f3e334]:
+                - generic [ref=f3e335]: จำนวน
+                - generic [ref=f3e336]:
+                  - button "ลดจำนวน 1 ชิ้น" [disabled] [ref=f3e337]
+                  - status [ref=f3e339]: "1"
+                  - button "เพิ่มจำนวน 1 ชิ้น" [ref=f3e340] [cursor=pointer]
+            - generic [ref=f3e342]:
+              - paragraph [ref=f3e343]: ราคารวม
+              - paragraph [ref=f3e344]: 7.692 ฿
+              - paragraph [ref=f3e345]: 5,13 ตร.ม. · ราคายังไม่รวม VAT 7%
+              - paragraph [ref=f3e346]: ผลิต 10–14 วัน
+            - button "เพิ่มลงรายการ" [ref=f3e347] [cursor=pointer]
+            - button "ดูรายละเอียดราคา" [ref=f3e349] [cursor=pointer]
+          - paragraph [ref=f3e353]: ขั้นตอนขอใบเสนอราคาจะเพิ่มในเวอร์ชันถัดไป
+          - link "กลับไปดูสินค้าทั้งหมด" [ref=f3e355] [cursor=pointer]:
+            - /url: /de/products
+    - contentinfo [ref=f3e356]:
+      - generic [ref=f3e357]:
+        - generic [ref=f3e358]:
+          - paragraph [ref=f3e359]: WEWIN180
+          - paragraph [ref=f3e360]: บริษัท วีวิน180 จำกัด
+          - paragraph [ref=f3e361]:
+            - generic [ref=f3e365]: 291/4 หมู่ที่ 1 ต.บ้านกร่าง อ.เมืองพิษณุโลก จ.พิษณุโลก 65000
+        - region [ref=f3e366]:
+          - heading "ติดต่อเรา" [level=2] [ref=f3e367]
+          - list [ref=f3e368]:
+            - listitem [ref=f3e369]:
+              - 'link "โทรศัพท์: +66 91 879 6563" [ref=f3e370] [cursor=pointer]':
+                - /url: tel:+66918796563
+                - generic [ref=f3e373]: "โทรศัพท์:"
+                - generic [ref=f3e374]: +66 91 879 6563
+            - listitem [ref=f3e375]:
+              - 'link "โทรศัพท์: +66 65 751 9662" [ref=f3e376] [cursor=pointer]':
+                - /url: tel:+66657519662
+                - generic [ref=f3e379]: "โทรศัพท์:"
+                - generic [ref=f3e380]: +66 65 751 9662
+            - listitem [ref=f3e381]:
+              - 'link "โทรศัพท์: +66 81 118 5017" [ref=f3e382] [cursor=pointer]':
+                - /url: tel:+66811185017
+                - generic [ref=f3e385]: "โทรศัพท์:"
+                - generic [ref=f3e386]: +66 81 118 5017
+            - listitem [ref=f3e387]:
+              - 'link "LINE: @wewin180" [ref=f3e388] [cursor=pointer]':
+                - /url: https://lin.ee/qxGxHezy
+                - generic [ref=f3e391]: "LINE:"
+                - generic [ref=f3e392]: "@wewin180"
+            - listitem [ref=f3e393]:
+              - 'link "อีเมล: info@wewin180.com" [ref=f3e394] [cursor=pointer]':
+                - /url: mailto:info@wewin180.com
+                - generic [ref=f3e398]: "อีเมล:"
+                - generic [ref=f3e399]: info@wewin180.com
+        - region [ref=f3e400]:
+          - heading "เวลาทำการ" [level=2] [ref=f3e401]
+          - paragraph [ref=f3e402]:
+            - generic [ref=f3e406]: วันจันทร์–วันเสาร์ 09:00–17:00 น. (เวลา ICT)
+          - heading "พื้นที่ให้บริการ" [level=3] [ref=f3e407]
+          - paragraph [ref=f3e408]: จัดส่งและติดตั้งทั้งภายในประเทศและต่างประเทศ
+        - navigation [ref=f3e409]:
+          - heading "เมนู" [level=2] [ref=f3e410]
+          - list [ref=f3e411]:
+            - listitem [ref=f3e412]:
+              - link "สินค้า" [ref=f3e413] [cursor=pointer]:
+                - /url: /de/products
+            - listitem [ref=f3e414]:
+              - link "เกี่ยวกับเรา" [ref=f3e415] [cursor=pointer]:
+                - /url: /de/about
+            - listitem [ref=f3e416]:
+              - link "ตะกร้า" [ref=f3e417] [cursor=pointer]:
+                - /url: /de/quote
+            - listitem [ref=f3e418]:
+              - link "การแสดงผล" [ref=f3e419] [cursor=pointer]:
+                - /url: /de/settings
+      - generic [ref=f3e421]:
+        - paragraph [ref=f3e422]: © พ.ศ. 2026 บริษัท วีวิน180 จำกัด
+        - paragraph [ref=f3e423]: ราคายังไม่รวม VAT 7%
+      - paragraph [ref=f3e426]:
+        - generic [ref=f3e427]: Deutsch 0/273 · ไทย 273/273
+        - text: ข้อความบางส่วนยังไม่มีคำแปล จึงแสดงเป็นภาษาไทย
+  - status
+  - alert [ref=f3e428]

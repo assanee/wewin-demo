@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getProductBySlug, products } from '@wewin/core/fixtures';
 
 import { ConfiguratorIsland } from '@/components/configurator/ConfiguratorIsland';
+import { ReviewBlock } from '@/components/reviews/ReviewBlock';
 import { localeBundle } from '@/i18n/server';
 import {
   type LocaleRouteParams,
@@ -105,11 +106,29 @@ export default async function ProductConfiguratorPage({
   // fixtures rather than being handed it: only strings cross the boundary, because a
   // `Product` holds `bigint` micrometres and `bigint` satang and a serialiser is not a
   // thing to trust with either.
-  if (!getProductBySlug(slug)) notFound();
+  const product = getProductBySlug(slug);
+  if (!product) notFound();
 
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
       <ConfiguratorIsland locale={locale} slug={slug} />
+      {/*
+        The reviews — plan section 9, and the first thing on this storefront that comes
+        from a fetch rather than from `@wewin/core/fixtures`.
+
+        It renders **nothing at all** unless this product has a visible review, which today
+        and for months means nothing at all on all 648 pages (plan 9.5: do not print "no
+        reviews yet" 81 times). The fetch inside it is `force-cache` + tagged, so the page
+        stays prerendered and a published review reaches it through
+        `revalidateTag` — `src/app/api/revalidate/route.ts` is the other half, and it
+        landed in this same commit because an invalidation endpoint nothing calls is worse
+        than none.
+
+        `product.id` and not `slug`: the tag, the API path and `product_review_stats` are
+        all keyed by the catalogue's product id, and a page that invalidated one spelling
+        while the writer poked the other would never update and never say why.
+      */}
+      <ReviewBlock productId={product.id} locale={locale} />
     </main>
   );
 }

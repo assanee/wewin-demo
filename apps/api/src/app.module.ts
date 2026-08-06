@@ -20,6 +20,8 @@ import { RefundsModule } from './payments/refunds';
 import { SlipsModule } from './payments/slips';
 import { AuthorityModule } from './quotes/authority';
 import { QuotesModule } from './quotes';
+import { ReviewsModule } from './reviews';
+import { ProfileModule } from './profile';
 import { RbacModule } from './rbac/rbac.module';
 
 /*
@@ -132,6 +134,17 @@ export class AppModule implements NestModule {
          */
         QuotesModule,
         AuthorityModule,
+        /*
+         * Reviews and per-user preferences (phase 7). Listed for the same reason as the two
+         * above — and this was the *third* consecutive round in which a finished, tested
+         * module reached the end of the phase unimported, so the note above is no longer
+         * only a note: `tests/rbac/controller-reachability.test.ts` now fails when a
+         * controller exists under `src/` that the assembled application does not serve.
+         *
+         * A comment cannot catch this. It said so twice and the thing happened again.
+         */
+        ReviewsModule.forRoot(),
+        ProfileModule,
       ],
     };
   }

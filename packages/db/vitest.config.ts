@@ -28,10 +28,19 @@ export default defineConfig({
      * And one fork, not just one file at a time. `fileParallelism: false` serialises the
      * files; it does not stop the pool holding several processes, and these suites share a
      * server, a set of catalogue rows, and triggers they disable and re-enable around their
-     * own cleanup. Two of the freeze-point tests went red once under a full `turbo run test`
-     * and passed alone — which is the shape of a collision, not of a bug, and a suite whose
-     * colour depends on machine load says less than one that does not. apps/api settled this
-     * the same way in phase 4.
+     * own cleanup. apps/api settled this the same way in phase 4.
+     *
+     * ⚠️ This setting was *also* credited with fixing two freeze-point tests that went red
+     * under a full `turbo run test` and passed alone. That diagnosis was wrong, and the
+     * tests came back red in phase 7 as soon as another file ran before them. The cause was
+     * never concurrency: `submit` stamped `submitted_at` from Node's clock while the freeze
+     * trigger used Postgres's, and `orders_frozen_after_submitted` compares the two. Passing
+     * alone was the cold pool leaving a gap wider than the 25 ms skew. Both helpers now use
+     * `now()`, `order.repository.ts` had the identical bug in production, and
+     * `lifecycle.pg.test.ts` pins it by winding Node's clock a minute forward.
+     *
+     * Kept here as a warning: "serialising made it green" is what a timing bug looks like
+     * when you slow it down, and it will come back the moment something else gets faster.
      */
     pool: 'forks',
     // Vitest 4 lifted the old `poolOptions.forks.*` to the top level; one worker is the

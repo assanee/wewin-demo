@@ -325,6 +325,88 @@ export const ERASURE_TREATMENTS = {
   'quote_overrides.superseded_by_user_id': 'keep',
   'quote_lines.removed_by_user_id': 'keep',
   'authority_limits.granted_by_user_id': 'keep',
+
+  /*
+   * ── Phase 7, reviews and the profile (schema/review.ts, schema/profile.ts) ──────
+   *
+   * ⚠️ THE FIRST CASE WHERE `keep` IS ARGUABLE IN BOTH DIRECTIONS, so the argument is
+   * written out rather than a word being chosen.
+   *
+   * Every earlier `keep` on this list is a *staff* column — who reviewed the slip, who
+   * approved the refund, who set the price — and the argument was always the same: a uuid
+   * naming a tombstone identifies nobody, and deleting it answers one person's PDPA request
+   * by destroying the company's evidence that a control was exercised.
+   *
+   * `reviews.author_user_id` is not that. It is a **customer** column, and what hangs off it
+   * is not a control but a paragraph the customer wrote and a photograph of their house,
+   * published on a page anybody can read. So the two directions genuinely pull:
+   *
+   *   FOR keeping   A review is attached to an order line, which is an accounting record;
+   *                 the rating is part of an average other customers have already read; and
+   *                 plan 9.3 spends three mechanisms making sure a review cannot be removed
+   *                 to dress the score. An erasure that deleted reviews would be exactly
+   *                 that removal, with a legal costume on.
+   *   FOR deleting  The accounting exemption plan 7.16 claims over `orders.contact_email` is
+   *                 a claim about *contact details on an invoice*. It does not obviously
+   *                 stretch to public prose and a photograph, and a company relying on it
+   *                 for those is relying on it for something no bookkeeper asked for.
+   *
+   * **Neither, whole.** The row splits along a seam that already exists elsewhere in this
+   * schema: plan 7.6 keeps the bank reference and deletes the slip image; plan 9.4 requires
+   * that a photo can go while the rating survives. Applied here:
+   *
+   *   deleted   every `review_photos` row of this author — the picture of their house, and
+   *             the storage key that would let it be served again;
+   *   scrubbed  `reviews.body_th` and `reviews.author_display_name`, stamped with
+   *             `content_erased_at` so a DSAR can tell an erased review from a wordless one;
+   *   kept      `rating`, and this `author_user_id` itself.
+   *
+   * The rating is kept because it is a number between one and five with no person in it once
+   * the prose and the name are gone, and because dropping it would let erasure do what plan
+   * 9.3 forbids hiding from doing. The uuid is kept for the reason `user_groups.user_id`
+   * gives — it names nobody once `display_name` is NULL — and for one more: it is the only
+   * handle a *better* erasure could use to find these rows again. Deleting it would make the
+   * review permanently unfindable while leaving its content exactly where it was, which is
+   * the worst of both answers.
+   *
+   * ⚠️ WHAT A LAWYER STILL HAS TO SETTLE, and none of it is a missing line of code:
+   *
+   *   1. **Is the scrub above sufficient, or must the review row go?** Keeping the rating is
+   *      a judgement that an anonymous integer attached to an order line is not personal
+   *      data. That is a lawyer's call, not an engineer's.
+   *   2. **It is pseudonymisation, not anonymisation — again.** The scrubbed review still
+   *      points at a line, which points at an order, which still carries `contact_email`,
+   *      `contact_name` and `contact_phone` under the accounting exemption. One join
+   *      re-identifies the author. This is the same sentence plan 7.16 already writes about
+   *      `erased` users, arriving at a second address; the honest description is *"the
+   *      review's own content is gone and the order it hangs off is not"*.
+   *   3. **A guest's review is unreachable.** `reviews.author_guest_id` has no `users` row to
+   *      erase by, and the anonymous funnel is the main funnel. Same blindness as guest
+   *      orders, restated in review.ts so it cannot be missed.
+   *   4. **Retention still has no clock.** Plan 7.16's ม.37 gap covers review photographs
+   *      too: `storage_key` is nullable and clearable, and nothing schedules the sweep.
+   */
+  'reviews.author_user_id': 'scrub',
+  /*
+   * Who published early, who hid it and why, and who replied. All three are the company
+   * acting, and all three are the same `keep` as the six payment columns above: hiding a
+   * review is the one moderation power that can move a public average, plan 9.3 makes it
+   * cost a reason and a name, and an erasure that removed the name would leave the hiding
+   * with nobody attached to it.
+   */
+  'reviews.published_by_user_id': 'keep',
+  'reviews.hidden_by_user_id': 'keep',
+  'reviews.replied_by_user_id': 'keep',
+  /*
+   * `delete`, and the only new one on this list that is uncomplicated.
+   *
+   * A display preference is not an accounting record, is not evidence of a control, and is
+   * not attached to a document anybody may reprint. A tombstone that still remembers
+   * somebody reads Burmese and thinks in inches is personal data retained for no stated
+   * purpose. `erase_user()` deletes it; `users_erasure_is_earned()` refuses the `erased`
+   * status while a row survives, exactly as it does for a credential.
+   */
+  'user_preferences.user_id': 'delete',
 } as const satisfies Record<string, 'delete' | 'scrub' | 'keep' | 'escalated'>;
 
 export const authTokenPurpose = pgEnum('auth_token_purpose', [

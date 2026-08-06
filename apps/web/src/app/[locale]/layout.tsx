@@ -56,24 +56,30 @@ export const generateStaticParams = localeStaticParams;
  * bounds the header to ten minutes with a day of `stale-while-revalidate`, and
  * `tests/cache-policy.test.ts` fails if that number ever reaches an hour.
  *
- * 🔴 **What is not built, and must be before a price is rendered on a cached page.** The
- * plan requires two things and this is one of them. The other two are somebody else's and
- * are still open:
+ * ✅ **`revalidateTag` exists now, and it was built in the commit that calls it.** This note
+ * used to say there was deliberately no route handler for it, because an invalidation
+ * endpoint nothing calls is the failure plan 7.18(ข) names as the most expensive of its
+ * round — finished, tested, wired to nothing. Phase 7 is the round with a caller: the
+ * review block on a product page reads `product_review_stats` through a `force-cache`
+ * fetch tagged `product:<id>` and `reviews:<id>` (`lib/reviews/api.ts`), and
+ * `app/api/revalidate/route.ts` pokes exactly those tags for the dashboard's moderation
+ * actions. Both halves, one commit, tags named by one function so they cannot drift.
  *
- *   - `revalidateTag('product:' + id)` called from the dashboard's publish action. There
- *     is deliberately no route handler for it here: an invalidation endpoint that nothing
- *     calls is the exact failure plan 7.18(ข) names as the most expensive of its round —
- *     finished, tested, and wired to nothing — and it would read as coverage while leaving
- *     the window wide open. It gets written in the commit that also calls it.
+ * 🔴 **What is still not built, and must be before a price is rendered on a cached page:**
+ *
  *   - `priceVersion` travelling with the payload, and the API refusing an order line whose
  *     version does not match. That is the half that makes a stale page *fail* rather than
  *     quietly bill a different number, and no amount of correct caching substitutes for it.
+ *   - A caller for the one invalidation nobody makes: a review **publishes itself** when
+ *     its moderation window elapses (plan 9.3), so that change has no request behind it.
+ *     `product_review_schedule` says when the next one is due, per product; something has
+ *     to read it and poke the route above. Named in `lib/reviews/api.ts` and in the route.
  *
- * Until both exist, a page under this layout may render a product's name and its shape.
- * It may not render a price **that came from a fetch**. The prices it does render come
- * from `@wewin/core/fixtures`, compiled in by `tsc` — see the long note in `ProductCard`,
- * which was corrected in the commit that closed 6b: the fixture and the database are bound
- * by `apps/api/tests/catalog-fidelity.pg.test.ts` in CI and by nothing at run time, and
+ * So a page under this layout may render a product's name, its shape, and what customers
+ * said about it. It may not render a price **that came from a fetch**. The prices it does
+ * render come from `@wewin/core/fixtures`, compiled in by `tsc` — see the long note in
+ * `ProductCard`: the fixture and the database are bound by
+ * `apps/api/tests/catalog-fidelity.pg.test.ts` in CI and by nothing at run time, and
  * `revalidateTag` cannot be the remedy for a module read rather than a cached fetch.
  */
 export const revalidate = false;

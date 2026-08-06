@@ -99,6 +99,26 @@ export type {
 } from './order.js';
 
 export type {
+  HideReviewRequestWire,
+  ModeratedReviewWire,
+  ModerationQueueItemWire,
+  ModerationQueueWire,
+  OwnReviewWire,
+  ProductReviewScheduleEntryWire,
+  ProductReviewScheduleWire,
+  ProductReviewStatsWire,
+  ProductReviewsWire,
+  PublishedReviewWire,
+  ReplyToReviewRequestWire,
+  ReviewHiddenReasonWire,
+  ReviewPhotoUploadResultWire,
+  ReviewPhotoWire,
+  ReviewableLineListWire,
+  ReviewableLineWire,
+  WriteReviewRequestWire,
+} from './review.js';
+
+export type {
   AddCatalogLineRequestWire,
   AddFreeformLineRequestWire,
   OverrideAnchorWire,

@@ -140,7 +140,10 @@ const submittedOrder = async (grand: bigint = GRAND): Promise<Order> => {
       .set({
         status: 'awaiting_payment',
         statusEventId: submitEventId,
-        submittedAt: new Date(),
+        // The database clock, not this process one: the freeze trigger stamps frozen_at
+        // with now(), orders_frozen_after_submitted compares the two, and a Node timestamp
+        // makes that a race against container clock skew. See order.repository.ts.
+        submittedAt: sql`now()`,
         orderNo: sql`'WW-' || nextval('order_no_seq')`,
         documentId: document.id,
         netThbMinor: net,

@@ -318,9 +318,35 @@ describe('what is still a Thai string, as a number', () => {
 });
 
 /**
- * The count of un-migrated `AppError` call sites at the end of phase 6a.
+ * The count of un-migrated `AppError` call sites.
  *
  * Pinned as a literal the way pricing-parity pins `correctedUp === 87`: a test that read the
  * number from the code it is checking would pass at any value.
+ *
+ * ── 146 → 179, and it went the wrong way ─────────────────────────────────────────
+ *
+ * 146 was the figure at the end of 6a, which spent the phase *lowering* it. Phase 7 raised it
+ * by 33, every one of them in `src/reviews` and `src/profile`:
+ *
+ *     reviews/pg-errors.ts          14
+ *     reviews/reviews.service.ts     9
+ *     reviews/reviews.controller.ts  2
+ *     reviews-admin.controller.ts    1
+ *     …and the remainder across profile
+ *
+ * This is recorded as a regression and not as a new baseline. The counter's purpose is that
+ * nobody can say "roughly a hundred and something" — raising it is allowed, raising it
+ * quietly is what the test exists to stop, so the breakdown lives here rather than in a
+ * commit message.
+ *
+ * Roughly half are customer-facing — a rating outside 1–5, an empty review, one review per
+ * line, the photograph limit — and those are read by whoever bought the window, in Thai,
+ * whatever language they asked the site for. The rest are moderator-facing (already hidden,
+ * already published, a hiding with no reason), where the audience is Thai staff and the cost
+ * is close to nothing.
+ *
+ * The follow-up is the customer-facing half, and it is a bounded job: `ServerMessage` keys
+ * exist, `src/i18n/catalog/th.ts` is the only catalogue to author, and the strings are already
+ * written — they are sitting in the call sites. See plan 12.
  */
-const RAW_LITERAL_CALL_SITES = 146;
+const RAW_LITERAL_CALL_SITES = 179;

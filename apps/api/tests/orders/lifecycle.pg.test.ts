@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq } from '@wewin/db/sql';
@@ -286,6 +286,41 @@ describeWithPg('the order lifecycle end to end', () => {
   /* ---------------------------------------------------------------- *
    * The freeze point, and the moves after it
    * ---------------------------------------------------------------- */
+
+  /**
+   * ⚠️ TWO CLOCKS. `orders_frozen_after_submitted` compares `submitted_at` against
+   * `frozen_at`, and the freeze is stamped by a trigger with Postgres's `now()`. So
+   * `submitted_at` may not come from the API process's clock: the API and the database are
+   * separate containers, their clocks drift apart by tens of milliseconds as a matter of
+   * course, and nothing keeps them in step.
+   *
+   * The consequence is not a wrong timestamp — it is a **refusal**. An order submitted while
+   * the API is ahead of the database, and confirmed for production before the database's
+   * clock catches up, violates the CHECK and the transition fails. The customer has paid; the
+   * order will not move. It is worst exactly when it is least excusable, because the window
+   * is "confirmed quickly".
+   *
+   * Found in phase 7 as a red `packages/db` suite that passed alone and failed after another
+   * file — the measured skew on this machine was 25 ms, and warming the pool was enough to
+   * bring the two writes inside it. The suite's own config blamed process collision and set
+   * `maxWorkers: 1`, which is why it came back.
+   *
+   * Winding Node's clock a minute forward is the whole test: it is what container drift does,
+   * only large enough to be certain rather than lucky. `sql`now()`` passes; `new Date()` — the
+   * code this replaced — fails on the transition below.
+   */
+  it('submits with the database clock, so a fast confirmation is not refused', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 60_000));
+      const order = await submittedOrder('skew');
+
+      const confirmed = await move(order.id, 'production_confirmed', { token: staff.token });
+      expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('walks the happy path to delivered, freezing exactly once', async () => {
     const order = await submittedOrder('happy');

@@ -162,6 +162,18 @@ export type QuoteRoute = `/${Locale}/quote`;
 export type AboutRoute = `/${Locale}/about`;
 
 /**
+ * Display settings — language, unit and currency.
+ *
+ * `settings` and not `profile`, on all three surfaces (the API answers at `/me/preferences`
+ * for the same reason). A "profile" is an account page, and this one holds no identity at
+ * all: no name, no address, no contact channel, and it works perfectly well for a visitor
+ * who has never signed in. The naming is the first line of defence against somebody putting
+ * an email address on it — which is exactly the argument `packages/db/src/schema/profile.ts`
+ * makes for keeping `user_preferences` off the `users` row.
+ */
+export type SettingsRoute = `/${Locale}/settings`;
+
+/**
  * The catalogue with a facet preselected, as the object form `next/link` accepts.
  *
  * A `UrlObject` rather than a string, and the compiler is what decided it: `typedRoutes`
@@ -180,6 +192,8 @@ export const catalogHref = (locale: Locale): CatalogRoute => `/${locale}/product
 export const aboutHref = (locale: Locale): AboutRoute => `/${locale}/about`;
 
 export const quoteHref = (locale: Locale): QuoteRoute => `/${locale}/quote`;
+
+export const settingsHref = (locale: Locale): SettingsRoute => `/${locale}/settings`;
 
 /**
  * One product's page.

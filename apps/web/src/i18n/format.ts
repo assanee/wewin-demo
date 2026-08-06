@@ -1,6 +1,7 @@
 import {
   formatArea,
   formatCount,
+  formatDate,
   formatDimensions,
   formatLength,
   formatMeasure,
@@ -9,9 +10,11 @@ import {
   formatPlain,
   formatRange,
 } from '@wewin/i18n/format';
+import { localiseNumerals } from '@wewin/i18n/numerals';
 import { formatMeasure as coreMeasure, formatRange as coreRange } from '@wewin/core/format';
 import type { LengthUnit } from '@wewin/core/units';
 import type { Locale } from './locales';
+import { averageText } from '../lib/reviews/average';
 
 /**
  * Every number on the screen, in one locale.
@@ -112,6 +115,38 @@ export interface Formatters {
    * correct year in their own language rather than a Buddhist one.
    */
   year(gregorianYear: number): string;
+
+  /**
+   * A calendar date — the day a review became public, and nothing finer.
+   *
+   * Medium style, in the business's own zone and the locale's own era, so a Thai reader
+   * sees พ.ศ. and the other seven see the common era from the identical call. No time of
+   * day: plan 9.2's whole point about reviews is the *season* they were written in
+   * ("aluminium is judged after a rainy season"), and a timestamp to the minute on a
+   * customer's opinion is precision nobody asked for and one more datum beside their words.
+   */
+  date(value: Date): string;
+
+  /**
+   * A star rating — **and the only way to render one is to hand over the count as well.**
+   *
+   * Plan 9.5: *"never show an average without its count."* `product_review_stats` makes
+   * that structural by having no average column; this signature is the same decision at the
+   * top of the stack, and it is the reason there is no `average: number` anywhere in this
+   * app. A caller holding only a mean cannot call this function.
+   *
+   * Returns an em dash when `count` is zero. An average of nothing is not `0.0`, and a
+   * formatter that rendered one would put a one-star-looking product on 81 pages that have
+   * no reviews at all.
+   *
+   * ⚠️ **The decimal separator is the numerals path, not the number-spec one.** This routes
+   * through `localiseNumerals`, exactly as `formatArea` does, because `writeDecimal` — the
+   * function that knows German writes `4,2` — has no subpath export from `@wewin/i18n`.
+   * German therefore reads `4.2` here and `21.26` for an area, which is at least the same
+   * answer twice. Fixing it is one export in that package plus this line; it is written down
+   * in the phase report rather than left as a surprise.
+   */
+  rating(sum: bigint, count: bigint): string;
 }
 
 const formattersCache = new Map<Locale, Formatters>();
@@ -147,6 +182,15 @@ export function formattersFor(locale: Locale): Formatters {
     entry: (um, unit) => coreMeasure(um, unit),
 
     entryRange: (minUm, maxUm, unit) => coreRange(minUm, maxUm, unit),
+
+    date: (value) => formatDate(locale, value, { style: 'medium' }),
+
+    rating: (sum, count) => {
+      const text = averageText({ sum, count });
+      // `value.unknown`'s glyph, deliberately the same one, so a screen with no average on
+      // it looks like every other screen with no value on it.
+      return text === null ? '—' : localiseNumerals(locale, text);
+    },
 
     year: (gregorianYear) => {
       // Mid-year in the business's own zone, so no time-zone offset can push the instant

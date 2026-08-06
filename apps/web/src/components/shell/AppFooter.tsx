@@ -8,9 +8,11 @@ import {
   aboutHref,
   catalogHref,
   quoteHref,
+  settingsHref,
   type AboutRoute,
   type CatalogRoute,
   type QuoteRoute,
+  type SettingsRoute,
 } from '../../lib/routing';
 import { useLocale } from '../../state/localeContext';
 import { IncompleteLocaleNotice } from './LanguagePicker';
@@ -22,12 +24,25 @@ import { IncompleteLocaleNotice } from './LanguagePicker';
  * unchecked. Written out as a union so that adding a fourth entry pointing at a page
  * nobody has written yet is a compile error in this file.
  */
-type FooterRoute = CatalogRoute | AboutRoute | QuoteRoute;
+type FooterRoute = CatalogRoute | AboutRoute | QuoteRoute | SettingsRoute;
 
 const NAV_LINKS: { href: (locale: Locale) => FooterRoute; labelKey: PlainKey }[] = [
   { href: catalogHref, labelKey: 'nav.products' },
   { href: aboutHref, labelKey: 'nav.about' },
   { href: quoteHref, labelKey: 'nav.quote' },
+  /*
+   * The display settings live in the footer and not in the header, and that is a decision about
+   * what the header is for. `AppHeader` already carries the language picker at 360px — the one
+   * preference a visitor changes mid-task — and the unit picker sits with the three fields it
+   * governs. This page is where those choices are *explained*, including the four that do
+   * nothing yet, and an explanation belongs where somebody goes looking rather than in front of
+   * somebody pricing a window.
+   *
+   * It is in the menu at all because a screen reachable only by typing a URL is a screen nobody
+   * uses — `apps/dashboard/src/lib/nav/navigation.ts` records that exact failure for `/quotes`,
+   * which shipped for a round with no entry.
+   */
+  { href: settingsHref, labelKey: 'settings.nav' },
 ];
 
 /*

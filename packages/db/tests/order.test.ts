@@ -151,7 +151,16 @@ const submit = async (draft: Draft, revision = 1): Promise<string> => {
       .set({
         status: 'awaiting_payment',
         statusEventId: eventId,
-        submittedAt: new Date(),
+        /*
+         * Postgres's clock, matching `order.repository.ts`.
+         *
+         * `new Date()` is *this process's* clock, and `frozen_at` is stamped by a trigger
+         * with `now()`. A helper that mixes the two makes `orders_frozen_after_submitted` a
+         * race against the skew between them — 25 ms on this machine — which two of the
+         * freeze-point tests lost whenever a warm pool brought submit and confirm close
+         * enough together. Under `now()` the ordering is transactional and cannot lose.
+         */
+        submittedAt: sql`now()`,
         orderNo: sql`'WW-' || nextval('order_no_seq')`,
         documentId: document.id,
         netThbMinor: NET,
@@ -1347,7 +1356,8 @@ describeDb('the outbox is written by the event, in the event’s own transaction
         .set({
           status: 'awaiting_payment',
           statusEventId: eventId,
-          submittedAt: new Date(),
+          // The database's clock, for the reason given on the `submit` helper above.
+          submittedAt: sql`now()`,
           orderNo: sql`'WW-' || nextval('order_no_seq')`,
           documentId: document.id,
           contactEmail: address,

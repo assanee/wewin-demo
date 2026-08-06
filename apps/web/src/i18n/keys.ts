@@ -272,6 +272,128 @@ export interface UiParamsByKey {
   'spec.standards': Plain;
   'spec.warranty': Plain;
 
+  /* ---- Reviews — plan section 9 ---------------------------------------------
+   *
+   * Two screens' worth of prose: the block on a product page, and the form a customer
+   * reaches from their invitation.
+   *
+   * ⭐ **`review.summary` is one key on purpose, and it is the load-bearing one.** Plan 9.5
+   * forbids showing an average without its count, and the enforcement is not a code review
+   * — it is that the average and the count live in the *same catalogue entry*, rendered
+   * from the same pair of integers by `f.rating(sum, count)` and `f.integer(count)`. A
+   * translator cannot write one without the other because there is no second key to put
+   * the other one in, and a component cannot render "5.0 ★" alone because no key produces
+   * it. The database made the same move by having no average column; this is that decision
+   * arriving at the last layer.
+   */
+  'review.heading': Plain;
+  'review.summary': { ratingSum: bigint; ratingCount: bigint };
+  /** Shown only when some ratings are hidden — plan 9.3: they still count, and we say so. */
+  'review.hiddenNote': { hidden: bigint };
+  'review.publishedOn': { at: Date };
+  'review.author.anonymous': Plain;
+  'review.size': { widthUm: bigint; heightUm: bigint; unit: LengthUnit };
+  'review.erased': Plain;
+  'review.reply.heading': Plain;
+  'review.reply.on': { at: Date };
+  'review.photo.alt': { index: number };
+  'review.more': { remaining: bigint };
+
+  'review.form.heading': Plain;
+  'review.form.for': { name: string };
+  'review.form.intro': Plain;
+  'review.form.rating.legend': Plain;
+  'review.form.rating.option': { stars: number };
+  'review.form.rating.required': Plain;
+  'review.form.body.label': Plain;
+  'review.form.body.help': Plain;
+  'review.form.name.label': Plain;
+  'review.form.name.help': Plain;
+  'review.form.submit': Plain;
+  'review.form.submitting': Plain;
+  'review.form.moderation': Plain;
+  'review.form.loading': Plain;
+  'review.form.invalid.title': Plain;
+  'review.form.invalid.body': Plain;
+  'review.form.failed.title': Plain;
+  'review.form.failed.body': Plain;
+  'review.form.done.title': Plain;
+  'review.form.done.body': Plain;
+  'review.meta.title': Plain;
+
+  /* ---- Display settings — plan 4.1/4.2, 8.2 trap 3 and 10.6 -------------------
+   *
+   * The screen where a reader states how they want the site written, and — the half that
+   * matters more — where the site states what each choice actually changes.
+   *
+   * ⭐ **`settings.effect.*` is one key per statement the API sends, and that is the whole
+   * mechanism.** `GET /me/preferences` answers with twelve `{preference, surface, honoured}`
+   * rows, eight of which are `false` today for four separate and individually correct reasons
+   * (a document is pinned at submit, the storefront is prerendered, the ledger is in baht, and
+   * plan 13 keeps the foreign-currency line closed). A screen that decided locally which
+   * settings "work" would be a second opinion that goes stale the day one of them changes; a
+   * screen with no such sentences at all would be a form that saves a currency nobody will
+   * ever render and says "saved".
+   *
+   * So the component renders the API's list and looks each row's sentence up here. There is no
+   * key that says a preference is honoured in general, because no such fact exists.
+   */
+  'settings.nav': Plain;
+  'settings.heading': Plain;
+  'settings.intro': Plain;
+  'settings.meta.title': Plain;
+
+  'settings.language.legend': Plain;
+  /**
+   * Shown when the account says one language and this device is on another.
+   *
+   * ⚠️ The divergence is **surfaced, never resolved silently**, and that is a decision. The
+   * storefront does not check for a session on any other page — doing so would put a
+   * `POST /auth/refresh` in front of every first paint on a site whose whole pitch is that you
+   * can price a window without signing in — so the account preference reaches a device only by
+   * being copied into the cookie and the storage key the anonymous mechanisms already read.
+   * Copying the *language* half automatically would navigate a reader away from the page they
+   * just opened, and would keep doing it every time they used the header's language picker,
+   * which does not write to the account. So it is a line of text and a button.
+   */
+  'settings.language.accountDiffers': { language: string };
+  'settings.language.applyAccount': Plain;
+  'settings.unit.legend': Plain;
+  'settings.currency.legend': Plain;
+  /** ⚠️ Currency is a fact on this screen, not a control. See `settings.currency.fixed`. */
+  'settings.currency.fixed': { currency: string };
+  'settings.currency.why': Plain;
+
+  /* Where the choice is kept, which is the entire product difference between the two states. */
+  'settings.storage.local': Plain;
+  'settings.storage.account': { at: Date };
+  'settings.storage.signIn': Plain;
+  'settings.storage.saving': Plain;
+  'settings.storage.failed': Plain;
+  'settings.storage.forget': Plain;
+
+  /* Plan 10.6, live half: the language a message would actually arrive in. */
+  'settings.messages.heading': Plain;
+  'settings.messages.degraded': { chosen: string; rendered: string };
+  'settings.messages.coverage': { translated: number; total: number };
+
+  'settings.effects.heading': Plain;
+  'settings.effects.intro': Plain;
+  'settings.effect.locale.notification': Plain;
+  'settings.effect.locale.document': Plain;
+  'settings.effect.locale.storefront': Plain;
+  'settings.effect.locale.dashboard': Plain;
+  'settings.effect.currency.notification': Plain;
+  'settings.effect.currency.document': Plain;
+  'settings.effect.currency.storefront': Plain;
+  'settings.effect.currency.dashboard': Plain;
+  'settings.effect.lengthUnit.notification': Plain;
+  'settings.effect.lengthUnit.document': Plain;
+  'settings.effect.lengthUnit.storefront': Plain;
+  'settings.effect.lengthUnit.dashboard': Plain;
+  'settings.effect.yes': Plain;
+  'settings.effect.no': Plain;
+
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': Plain;
   'notFound.body': Plain;
