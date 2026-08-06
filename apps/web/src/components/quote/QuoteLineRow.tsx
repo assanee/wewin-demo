@@ -1,8 +1,11 @@
+'use client';
+
 import type { QuoteLine } from '@wewin/core/quote';
 import { useDisplayUnit } from '../../state/displayUnitContext';
 import { useLocale } from '../../state/localeContext';
 import { QuoteActions, QuoteQtyStepper } from './QuoteActions';
 import { QuoteLineWarning } from './QuoteLineWarning';
+import { configureHref } from './configureHref';
 
 interface QuoteLineRowProps {
   line: QuoteLine;
@@ -14,7 +17,7 @@ interface QuoteLineRowProps {
 /** Desktop only (lg). The mobile equivalent is QuoteLineCard — never both at once. */
 export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: QuoteLineRowProps) {
   const { unit: displayUnit } = useDisplayUnit();
-  const { f } = useLocale();
+  const { f, locale } = useLocale();
   const widthUm = line.measures['width'] ?? 0n;
   const heightUm = line.measures['height'] ?? 0n;
   // Per line, in the unit it was typed in — not all lines in the current display unit.
@@ -59,7 +62,7 @@ export function QuoteLineRow({ line, onQtyChange, onDuplicate, onRemove }: Quote
 
       <td className="py-3">
         <QuoteActions
-          editHref={`/products/${line.productId}?line=${line.lineId}`}
+          editHref={configureHref(locale, line)}
           nickname={line.nickname}
           onDuplicate={onDuplicate}
           onRemove={onRemove}

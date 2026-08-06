@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "vite",
+  "framework": "nextjs",
   "buildCommand": "pnpm turbo run build --filter=@wewin/web",
-  "outputDirectory": "apps/web/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "outputDirectory": "apps/web/.next",
+  "$comment": "Phase 6b. This pointed at the Vite app and a `rewrites` rule that served index.html for every path — the SPA shape, where the server has one document and the router runs in the browser. There is no index.html now: /[locale], /[locale]/products, /[locale]/products/[slug], /[locale]/quote and /[locale]/about are 683 prerendered documents, and `src/proxy.ts` is what answers `/` by negotiating a language. A catch-all rewrite here would take every one of those URLs and hand back the same page, which is precisely the crawlability this phase was spent buying."
 }

@@ -1,0 +1,4 @@
+# Next's build output and its own incremental cache. The root .gitignore covers `dist`,
+# which is what every other package in this workspace emits; this is the one that does not.
+.next/
+next-env.d.ts

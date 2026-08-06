@@ -1,4 +1,5 @@
-import { INTL_TAG, type Locale } from './locales.js';
+import { type Locale } from './locales.js';
+import { NUMBER_SPEC } from './numberSpec.js';
 
 /**
  * Digits, and the mark between the whole part and the fraction.
@@ -33,25 +34,24 @@ export interface Numerals {
 const cache = new Map<Locale, Numerals>();
 
 /**
- * The locale's numerals, asked of `Intl` once per locale and then remembered.
+ * The locale's numerals, **read from `numberSpec.ts` rather than asked of the runtime**.
  *
- * Derived rather than tabulated. A table of eight numbering systems is a table that is
- * wrong the day a ninth locale is added, and its wrongness looks like a rendering that
- * is merely ugly rather than one that is incorrect.
+ * This used to call `Intl` and derive the glyphs, on the argument that a table is wrong
+ * the day a ninth locale is added. The argument was right about tables and wrong about
+ * which failure was worse: derived-from-the-runtime means *the reader's engine decides
+ * how a price is spelt*, and Chromium — which has no CLDR data for `my-MM` or `lo-LA` —
+ * respelt both after hydration on every product page. `numberSpec.ts` carries the
+ * measurement and the reasoning; `tests/format.test.ts` re-derives every field from
+ * `Intl` on the test machine, so a ninth locale still fails the suite rather than
+ * rendering badly.
+ *
+ * The cache stays because the shape is still built per call.
  */
 export function numeralsFor(locale: Locale): Numerals {
   const cached = cache.get(locale);
   if (cached) return cached;
 
-  const tag = INTL_TAG[locale];
-  const plain = new Intl.NumberFormat(tag, { useGrouping: false, maximumFractionDigits: 0 });
-  const digits = Array.from({ length: 10 }, (_unused, digit) => plain.format(digit));
-
-  const decimal =
-    new Intl.NumberFormat(tag, { useGrouping: false, minimumFractionDigits: 1 })
-      .formatToParts(1.5)
-      .find((part) => part.type === 'decimal')?.value ?? '.';
-
+  const { digits, decimal } = NUMBER_SPEC[locale];
   const ascii = decimal === '.' && digits.every((glyph, index) => glyph === String(index));
   const numerals: Numerals = { digits, decimal, ascii };
 

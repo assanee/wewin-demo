@@ -58,7 +58,7 @@ pnpm db:up            # docker compose up -d --wait  (รอจน healthcheck �
 pnpm db:migrate       # สร้าง schema
 pnpm db:seed          # ยัดตาราง 81 สินค้าจาก @wewin/core เข้า Postgres
 
-pnpm dev              # ทุก app พร้อมกัน — web อยู่ที่ http://localhost:5173
+pnpm dev              # ทุก app พร้อมกัน — web อยู่ที่ http://localhost:3002
 pnpm test             # vitest
 pnpm typecheck
 pnpm lint
@@ -184,7 +184,7 @@ packages/db/              @wewin/db — Drizzle schema + migration + seed
 
 apps/api/                 @wewin/api — NestJS (CommonJS) · Drizzle · Postgres
 
-apps/web/                 @wewin/web — Vite + React (จะเป็น Next.js ที่เฟส 6)
+apps/web/                 @wewin/web — Next.js App Router (เฟส 6b · แอป Vite ถูกลบแล้ว)
   src/
     state/         QuoteContext.tsx (React shell) · useQuote · useConfigurator
                    useMediaQuery · useElementSize

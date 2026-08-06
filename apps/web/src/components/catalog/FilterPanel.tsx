@@ -1,3 +1,5 @@
+'use client';
+
 import { Check } from 'lucide-react';
 import type { Category } from '@wewin/core';
 import type { CatalogFilters, ProfileColorFacet } from '@wewin/core/filters';
@@ -32,6 +34,25 @@ function Section({ title, children }: { title: string; children: React.ReactNode
  * One panel, two homes: the lg sidebar and the mobile bottom sheet both render this.
  * Keeping it a single controlled component means the two modes cannot drift apart —
  * a facet added here appears in both without a second edit.
+ *
+ * ## Carried across unchanged, and it stays a client component on purpose
+ *
+ * Nine controlled form controls, a range input that reformats a price on every drag, and
+ * a `useLocale()` read — this is interaction, not content, and it is the part of the
+ * catalogue page that genuinely belongs in the browser. `'use client'` is the only line
+ * that changed.
+ *
+ * It is also **never in the prerendered HTML**, and that is worth knowing rather than
+ * discovering. `CatalogBrowser` renders the desktop sidebar behind `useIsDesktop()`, whose
+ * server snapshot is `false`, and the mobile copy behind a closed `BottomSheet`. So on the
+ * server neither exists, the prerender is the product grid alone — which is exactly what a
+ * crawler wants — and the panel appears on the commit after hydration.
+ *
+ * That has a second effect the round has to be careful about: `f.baht(...)` below runs in
+ * the browser, and the scaffold's README records that Node and Chromium disagree about
+ * `my-MM` numerals. Because nothing here is server-rendered, the two never meet, so there
+ * is no hydration mismatch to have. The one number that *is* in the prerendered HTML — the
+ * result count — is handled at its own call site in `CatalogBrowser`.
  */
 export function FilterPanel({ filters, onChange, categories, colorFacets, bounds }: FilterPanelProps) {
   const { t, f, locale } = useLocale();

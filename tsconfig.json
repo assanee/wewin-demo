@@ -16,6 +16,19 @@
     { "path": "./packages/i18n" },
     { "path": "./packages/db" },
     { "path": "./apps/api" },
+    /*
+     * apps/web is the storefront, and since the end of phase 6b there is exactly one of it:
+     * the App Router app that spent the port living at ./apps/web-next moved here and the
+     * Vite app was deleted. Two entries stood here while both ran; a single entry is the
+     * evidence that the port is finished, so leaving a dangling ./apps/web-next behind
+     * would be the phase-0 bug (a reference to a tsconfig that had moved) a second time.
+     *
+     * It carries the same `.next/types` caveat as apps/dashboard below, and one more of
+     * its own: `next build` is where `next/font` downloads the font binaries, so a clean
+     * `tsc -b` from here checks the types without ever having touched the network. That is
+     * the intended division — `tsc -b` answers a question about types, `pnpm build`
+     * answers whether the thing runs.
+     */
     { "path": "./apps/web" },
     /*
      * apps/dashboard is here for completeness, per the rule above, with one caveat worth

@@ -12,8 +12,14 @@ import type { PlainKey } from '../../i18n/keys';
  */
 export interface ToastPayload {
   messageKey: PlainKey;
-  /** Optional follow-up, e.g. `toast.viewQuote`. */
-  action?: { labelKey: PlainKey; to: string };
+  /**
+   * Optional follow-up, e.g. `toast.viewQuote`.
+   *
+   * `href` and not `to`: this is a locale-prefixed absolute path built by
+   * `localeHref`, because in this app a destination without its locale segment is a
+   * different language's page (see `lib/routing.ts`).
+   */
+  action?: { labelKey: PlainKey; href: string };
 }
 
 export interface ToastContextValue {

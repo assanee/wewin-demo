@@ -1,7 +1,64 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
+  "compilerOptions": {
+    "target": "es2023",
+    /*
+     * DOM is on here and off in packages/* on purpose, exactly as in apps/dashboard. The
+     * domain layer's `types: ["node"]` is what makes "core never touches a browser API" a
+     * fact the compiler checks (plan section 1); this app *is* the browser, so the same
+     * rule applied here would be noise. `node` rides along because next.config.ts, the
+     * middleware and the App Router's server half are Node.
+     *
+     * Note what is *not* here: `"types": ["vite/client"]`, which apps/web carries. That
+     * entry is what lets a Vite app write `import.meta.env`; nothing in this app may, and
+     * dropping the type makes that a compile error rather than a convention.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolvePackageJsonExports": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "incremental": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    /* Strictness — spec section 1: no `any`, no `@ts-ignore`, no `!` to silence a type. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  /*
+   * `.next/types` and `.next/dev/types` hold what `typedRoutes` generates — the union of
+   * every route that actually exists. `next build` writes the first, `next dev` the second.
+   *
+   * `exclude` therefore names `node_modules` and nothing else, and the dashboard's tsconfig
+   * explains why at length: `exclude` filters `include`, so excluding `.next` for tidiness
+   * silently removes the generated types again and `Route` quietly degrades to `string`.
+   * The same caveat applies to `tsc -b` from the root — on a clean checkout there is no
+   * `.next/types` yet, so the root solution build is a weaker check than
+   * `pnpm --filter @wewin/web build`, not a substitute for it.
+   */
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mjs",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
 }

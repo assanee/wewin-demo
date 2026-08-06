@@ -1,0 +1,65 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+
+  // Same shape as apps/dashboard/turbo.json, for the same reason it exists there: a `.next`
+  // output directory and build-time-substituted `NEXT_PUBLIC_*` are true of Next.js and of
+  // nothing else in this workspace, so they belong beside the app rather than at the root.
+  "extends": ["//"],
+
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      // `.next/cache` is Next's own incremental cache — and on this app it also holds the
+      // font binaries `next/font/google` downloads at build time. Including it would put a
+      // copy inside Turbo's cache entry, which grows without bound and restores stale
+      // artefacts.
+      "outputs": [".next/**", "!.next/cache/**"],
+      // `NEXT_PUBLIC_*` is not read at runtime — it is substituted into the JavaScript the
+      // browser downloads, and `NEXT_PUBLIC_SITE_URL` additionally lands in every canonical
+      // and hreflang tag this app emits. A build that ran against one origin produced
+      // markup that can only be correct for that origin, so pointing it at another must
+      // miss the cache.
+      "env": ["NEXT_PUBLIC_*"],
+      // Next reads `.env` from the app directory, which Turbo's default input set does not
+      // know is an input. The root `.env` is already covered by `globalDependencies`.
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
+    },
+
+    // 🔴 `["^build", "build"]`, and the second entry is a **race fix**, not a preference.
+    //
+    // This said `["^build"]` with a comment arguing that `build` is the strict check and
+    // `typecheck` the fast one, so making the second wait for the first would slow down a
+    // question about types. The argument is good and the arrangement does not survive the
+    // repository's own gate command, `turbo run build typecheck test lint`: Turbo runs both
+    // tasks for this package concurrently, `next build` deletes and rewrites `.next/types`
+    // while it works, and `tsconfig.json` includes `.next/types/**/*.ts` — so `tsc` reads a
+    // directory another process is halfway through replacing and fails with
+    //
+    //     error TS6053: File '.next/types/link.d.ts' not found.
+    //       The file is in the program because:
+    //         Matched by include pattern '.next/types/**/*.ts' in 'tsconfig.json'
+    //
+    // which is a true statement about a directory that existed a moment earlier and will
+    // exist a moment later. Nothing is wrong with the code; the two tasks disagree about
+    // who owns the directory.
+    //
+    // Excluding `.next/types` instead does not work: Next rewrites `tsconfig.json` and puts
+    // the include back on every build. So the edge is the honest fix, and it buys something
+    // real on the way — `typecheck` now runs with the route union present, so a `Link` to a
+    // page that does not exist fails here too and not only inside `next build`.
+    //
+    // The cost, stated: a bare `pnpm typecheck` now builds this app first, which wants
+    // network access the first time (`next/font` downloads the faces) and is slower. That
+    // is the price of the gate command being reliable, which matters more.
+    "typecheck": {
+      "dependsOn": ["^build", "build"]
+    },
+
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true,
+      "env": ["NEXT_PUBLIC_*"]
+    }
+  }
+}

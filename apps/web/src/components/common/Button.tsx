@@ -1,5 +1,4 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'md' | 'lg';
@@ -55,13 +54,27 @@ export function Button({
 }
 
 interface ButtonLinkProps extends CommonProps {
-  to: string;
+  href: string;
   'aria-label'?: string;
 }
 
-/** Same skin as Button, but a real link — so middle-click and copy-address work. */
+/**
+ * Same skin as `Button`, but a real link — so middle-click and copy-address work.
+ *
+ * **A plain `<a>`, and not `next/link`, and that is a deliberate temporary.**
+ * `typedRoutes` is on (`next.config.ts`), so `Link`'s `href` is the union of routes
+ * that *exist*, and the two destinations this app links to from the configurator —
+ * `/[locale]/products` and `/[locale]/quote` — are being ported by other agents in
+ * parallel. A `Link` to either would be a compile error in whichever order the three
+ * land, and the way to make it compile is a cast, which is the one thing the house
+ * rules forbid. So the href stays a string and the navigation is a document load.
+ *
+ * The cost is real and is one link per screen: no client-side transition, no prefetch.
+ * The moment both routes exist this becomes `next/link` with `href: Route` and the
+ * string type goes away — see the porting notes at the end of the README.
+ */
 export function ButtonLink({
-  to,
+  href,
   variant = 'secondary',
   size = 'md',
   className = '',
@@ -69,12 +82,12 @@ export function ButtonLink({
   ...rest
 }: ButtonLinkProps) {
   return (
-    <Link
-      to={to}
+    <a
+      href={href}
       className={`${BASE} ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]} ${className}`}
       {...rest}
     >
       {children}
-    </Link>
+    </a>
   );
 }

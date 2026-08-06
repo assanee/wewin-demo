@@ -8,6 +8,7 @@ import { useDisplayUnit } from '../../state/displayUnitContext';
 import { useLocale } from '../../state/localeContext';
 import { CatalogText } from '../common/CatalogText';
 import { useCatalogText } from '../../i18n/useCatalogText';
+import { shouldCommitOnBlur } from './measureCommit';
 
 interface MeasureInputProps {
   /** For the group's ref: a catalogue label is addressed per product version. */
@@ -172,7 +173,7 @@ export function MeasureInput({
     // window. The string compare is the cheaper of the two guards but the flag is the
     // one that matters: only a keystroke sets it, so a field that merely got looked at
     // in another unit cannot reach the snap below.
-    if (!dirtyRef.current || text === rendered) {
+    if (!shouldCommitOnBlur(dirtyRef.current, text, rendered)) {
       dirtyRef.current = false;
       return;
     }

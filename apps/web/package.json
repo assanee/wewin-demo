@@ -3,32 +3,35 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "//name": "This directory was `apps/web-next` for the length of the 6b port, so that both storefronts could run side by side and 'does the Next.js page render what the Vite page rendered' could be answered by opening two URLs. The port is finished: the Vite app is deleted, this one took its name, its directory and its place in vercel.json. There is one storefront again. The 114 tests apps/web carried were the four i18n suites (numerals 54 · content 14 · messages 21 · catalogue 25) and every one of them was a byte-identical copy of a file that is still here and still runs — verified with `diff` in the commit that removed them, which is why the workspace total moves by -114 without a single assertion being retired.",
+  "//port": "3002, kept from the port rather than moved to Vite's 5173. apps/api owns 3000 and apps/dashboard 3001; a reader with an old tab open on 5173 gets a connection refused, which is a better answer than a stale storefront.",
+  "//deps": "@wewin/core for the domain, @wewin/i18n for the eight locales and every formatter. No react-router — the App Router is the router now. `lucide-react` and `qrcode-generator` arrived with the configurator port, which is what the scaffold said would happen: they are the two the components actually use, at the same versions apps/web pins, and `qrcode-generator` is still loaded by dynamic import inside the share sheet rather than sitting in the bundle every visitor downloads.",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit",
-    "lint": "oxlint",
-    "test": "vitest run"
+    "dev": "next dev --port 3002",
+    "build": "next build && node scripts/check-tokens.mjs",
+    "start": "next start --port 3002",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@wewin/core": "workspace:*",
     "@wewin/i18n": "workspace:*",
     "lucide-react": "^1.28.0",
+    "next": "^16.3.0",
     "qrcode-generator": "^2.0.4",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.5",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
-    "vite": "^8.2.0",
     "vitest": "^4.1.10"
   }
 }

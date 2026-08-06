@@ -29,12 +29,19 @@
     // `.next/types` yet and `Route` degrades to `string`, which type-checks everything else
     // exactly as well and cannot catch a link to a page that does not exist.
     //
-    // Deliberately *not* `"dependsOn": ["build"]`, tempting as that is. It would make the
-    // repository-wide `pnpm typecheck` require NEXT_PUBLIC_API_BASE_URL and a full Next
-    // build to answer a question about types, and the strict check already runs where it
-    // matters — in `pnpm build`, and continuously under `next dev`.
+    // 🔴 This said `["^build"]`, on the argument that requiring a full Next build to answer
+    // a question about types is a bad trade. The trade is not the problem; concurrency is.
+    // `turbo run build typecheck` runs both for this package at once, `next build` deletes
+    // and rewrites `.next/types` while `tsconfig.json` still includes it, and `tsc` fails
+    // with `TS6053: File '.next/types/link.d.ts' not found` about a directory that is
+    // simply mid-write. apps/web hit it during phase 6b and carries the long version of
+    // this note; the same shape is here, so the same edge is here.
+    //
+    // It also makes this the check it was always described as: with `.next/types` present
+    // rather than absent, `Route` is the real union and a navigation entry pointing at a
+    // missing page fails `typecheck` instead of degrading to `string`.
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "build"]
     },
 
     "dev": {

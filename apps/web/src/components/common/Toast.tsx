@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Check, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { ToastCtx, type ToastContextValue, type ToastPayload } from './useToast';
 import { useLocale } from '../../state/localeContext';
 
@@ -52,14 +51,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <Check size={16} aria-hidden className="shrink-0 text-sel-line" />
             <p className="min-w-0 flex-1 text-small text-chalk">{t(toast.messageKey)}</p>
 
+            {/* A plain `<a>` for the same reason `ButtonLink` is one: the destination
+                (`/[locale]/quote`) is another agent's route and `typedRoutes` will not
+                accept a `Link` to a route that does not exist yet. */}
             {toast.action ? (
-              <Link
-                to={toast.action.to}
+              <a
+                href={toast.action.href}
                 onClick={() => setToast(null)}
                 className="shrink-0 text-small text-chalk underline underline-offset-4"
               >
                 {t(toast.action.labelKey)}
-              </Link>
+              </a>
             ) : null}
 
             <button

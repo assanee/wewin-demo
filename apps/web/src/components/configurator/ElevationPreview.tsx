@@ -40,6 +40,16 @@ const ARROW = 5;
 const TICK = 4;
 
 /**
+ * What the drawing is laid out against before anything has been measured.
+ *
+ * Not arbitrary: it is the preview panel's own design size at the desktop breakpoint, so
+ * on the layout this page is prerendered for the fallback and the measurement agree and
+ * nothing moves. Everywhere else the `viewBox` scales it, which costs a little line weight
+ * for one frame and buys the drawing being in the HTML at all.
+ */
+const FALLBACK_BOX = { width: 520, height: 380 } as const;
+
+/**
  * The signature element (spec section 2): a live shop-drawing elevation with real
  * dimension lines — extension lines, dimension lines, arrowheads and mono numerals.
  *
@@ -63,9 +73,31 @@ export function ElevationPreview({
   const [ref, size] = useElementSize<HTMLDivElement>();
   const { t } = useLocale();
 
-  const boxW = size.width;
-  const boxH = size.height;
-  const ready = boxW > 0 && boxH > 0;
+  /*
+   * 🔴 **The drawing is drawn before it has been measured, and that is the fix.**
+   *
+   * This used to be `ready = boxW > 0 && boxH > 0` with the whole `<svg>` behind it, and a
+   * `ResizeObserver` is the only thing that can make that true. There is no
+   * `ResizeObserver` on the server, so the signature element of the entire storefront —
+   * the shop-drawing elevation with its dimension lines — was **absent from all 648
+   * prerendered product pages**. The three small thumbnails were there; the main panel was
+   * an empty box until JavaScript ran. On the one page type this phase exists to make
+   * crawlable and fast, the thing a customer came to look at needed a bundle first.
+   *
+   * So the fallback is a size rather than a blank. `FALLBACK_BOX` is the panel's own
+   * design size, the geometry runs against it, and the `<svg>` is emitted at `100%` of its
+   * container with the same numbers in its `viewBox` — so the fallback frame *scales* to
+   * whatever the container actually is for the one frame before the observer answers, and
+   * lands on exactly the old rendering the moment it does (at measured size the viewBox
+   * and the box are the same numbers, so the scale factor is 1 and hairlines are hairlines
+   * again).
+   *
+   * Hydration is safe because the fallback is a constant: the server's first render and
+   * the browser's first render use the same numbers, and the measurement arrives in an
+   * effect afterwards, which is a commit and not a mismatch.
+   */
+  const boxW = size.width > 0 ? size.width : FALLBACK_BOX.width;
+  const boxH = size.height > 0 ? size.height : FALLBACK_BOX.height;
 
   // Space left over for the drawing once the dimension gutters are reserved.
   const availableW = Math.max(boxW - GUTTER_LEFT - GUTTER_RIGHT, 1);
@@ -104,71 +136,69 @@ export function ElevationPreview({
         invalid,
       })}
     >
-      {ready ? (
-        <svg width={boxW} height={boxH} viewBox={`0 0 ${boxW} ${boxH}`} aria-hidden>
-          {/* The elevation itself is the same component the catalog thumbnails use,
-              so the drawing a customer picked from and the one they configure can
-              never disagree. This adds only the dimensioning around it. */}
-          <ElevationDrawing
-            frame={{ x: x0, y: y0, width: drawW, height: drawH }}
-            elevation={elevation}
-            profileHex={profileHex}
-            glassHex={glassHex}
-            frameWeight={frame}
-            lineWeight={1}
-            bladePitch={12}
-          />
+      <svg width="100%" height="100%" viewBox={`0 0 ${boxW} ${boxH}`} aria-hidden>
+        {/* The elevation itself is the same component the catalog thumbnails use,
+          so the drawing a customer picked from and the one they configure can
+          never disagree. This adds only the dimensioning around it. */}
+        <ElevationDrawing
+          frame={{ x: x0, y: y0, width: drawW, height: drawH }}
+          elevation={elevation}
+          profileHex={profileHex}
+          glassHex={glassHex}
+          frameWeight={frame}
+          lineWeight={1}
+          bladePitch={12}
+        />
 
-          {/* ---- Width dimension, below the drawing ---- */}
-          <g stroke={dimColor} strokeWidth={1} className="transition-[stroke] duration-180 ease-out">
-            {/* Extension lines stop short of the object, as they do on a real drawing. */}
-            <line x1={x0} y1={y1 + 4} x2={x0} y2={dimY + TICK} />
-            <line x1={x1} y1={y1 + 4} x2={x1} y2={dimY + TICK} />
-            <line x1={x0} y1={dimY} x2={x1} y2={dimY} />
-          </g>
-          <polygon points={`${x0},${dimY} ${x0 + ARROW * 2},${dimY - ARROW} ${x0 + ARROW * 2},${dimY + ARROW}`} fill={dimColor} />
-          <polygon points={`${x1},${dimY} ${x1 - ARROW * 2},${dimY - ARROW} ${x1 - ARROW * 2},${dimY + ARROW}`} fill={dimColor} />
-          <text
-            x={(x0 + x1) / 2}
-            y={dimY - 6}
-            textAnchor="middle"
-            fill={dimColor}
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
-          >
-            {widthLabel}
-          </text>
+        {/* ---- Width dimension, below the drawing ---- */}
+        <g stroke={dimColor} strokeWidth={1} className="transition-[stroke] duration-180 ease-out">
+          {/* Extension lines stop short of the object, as they do on a real drawing. */}
+          <line x1={x0} y1={y1 + 4} x2={x0} y2={dimY + TICK} />
+          <line x1={x1} y1={y1 + 4} x2={x1} y2={dimY + TICK} />
+          <line x1={x0} y1={dimY} x2={x1} y2={dimY} />
+        </g>
+        <polygon points={`${x0},${dimY} ${x0 + ARROW * 2},${dimY - ARROW} ${x0 + ARROW * 2},${dimY + ARROW}`} fill={dimColor} />
+        <polygon points={`${x1},${dimY} ${x1 - ARROW * 2},${dimY - ARROW} ${x1 - ARROW * 2},${dimY + ARROW}`} fill={dimColor} />
+        <text
+          x={(x0 + x1) / 2}
+          y={dimY - 6}
+          textAnchor="middle"
+          fill={dimColor}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+        >
+          {widthLabel}
+        </text>
 
-          {/* ---- Height dimension, right of the drawing ---- */}
-          <g stroke={dimColor} strokeWidth={1} className="transition-[stroke] duration-180 ease-out">
-            <line x1={x1 + 4} y1={y0} x2={dimX + TICK} y2={y0} />
-            <line x1={x1 + 4} y1={y1} x2={dimX + TICK} y2={y1} />
-            <line x1={dimX} y1={y0} x2={dimX} y2={y1} />
-          </g>
-          <polygon points={`${dimX},${y0} ${dimX - ARROW},${y0 + ARROW * 2} ${dimX + ARROW},${y0 + ARROW * 2}`} fill={dimColor} />
-          <polygon points={`${dimX},${y1} ${dimX - ARROW},${y1 - ARROW * 2} ${dimX + ARROW},${y1 - ARROW * 2}`} fill={dimColor} />
-          <text
-            x={dimX + 8}
-            y={(y0 + y1) / 2}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fill={dimColor}
-            transform={`rotate(-90 ${dimX + 8} ${(y0 + y1) / 2})`}
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
-          >
-            {heightLabel}
-          </text>
+        {/* ---- Height dimension, right of the drawing ---- */}
+        <g stroke={dimColor} strokeWidth={1} className="transition-[stroke] duration-180 ease-out">
+          <line x1={x1 + 4} y1={y0} x2={dimX + TICK} y2={y0} />
+          <line x1={x1 + 4} y1={y1} x2={dimX + TICK} y2={y1} />
+          <line x1={dimX} y1={y0} x2={dimX} y2={y1} />
+        </g>
+        <polygon points={`${dimX},${y0} ${dimX - ARROW},${y0 + ARROW * 2} ${dimX + ARROW},${y0 + ARROW * 2}`} fill={dimColor} />
+        <polygon points={`${dimX},${y1} ${dimX - ARROW},${y1 - ARROW * 2} ${dimX + ARROW},${y1 - ARROW * 2}`} fill={dimColor} />
+        <text
+          x={dimX + 8}
+          y={(y0 + y1) / 2}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill={dimColor}
+          transform={`rotate(-90 ${dimX + 8} ${(y0 + y1) / 2})`}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+        >
+          {heightLabel}
+        </text>
 
-          {/* Unit note, bottom left — a drawing always states its units. */}
-          <text
-            x={GUTTER_LEFT}
-            y={boxH - 6}
-            fill="var(--color-chalk-3)"
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}
-          >
-            {t('drawing.unitNote', { unit })}
-          </text>
-        </svg>
-      ) : null}
+        {/* Unit note, bottom left — a drawing always states its units. */}
+        <text
+          x={GUTTER_LEFT}
+          y={boxH - 6}
+          fill="var(--color-chalk-3)"
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}
+        >
+          {t('drawing.unitNote', { unit })}
+        </text>
+      </svg>
     </div>
   );
 }

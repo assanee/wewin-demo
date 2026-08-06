@@ -1,3 +1,5 @@
+'use client';
+
 import { AlertTriangle } from 'lucide-react';
 import type { QuoteLine } from '@wewin/core/quote';
 import { useLocale } from '../../state/localeContext';
