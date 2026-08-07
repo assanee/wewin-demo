@@ -37,3 +37,6 @@ pgdata
 
 # Reset emails written by the file transport in development (NOTIFICATIONS_EMAIL_DIR).
 tmp/
+
+# Snapshots the Playwright MCP writes while a browser is being driven. Test debris.
+.playwright-mcp/
