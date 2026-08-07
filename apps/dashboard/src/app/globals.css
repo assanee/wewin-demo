@@ -135,6 +135,41 @@
   html {
     @apply font-sans;
     }
+
+  /*
+   * Tailwind v4 follows the browser and leaves `<button>` at `cursor: default`. v3 did not,
+   * so this is a regression that arrives with an upgrade rather than a thing anybody chose,
+   * and it is invisible in a screenshot — the only way to notice is to move a mouse.
+   *
+   * `apps/web` fixed it in its own base layer and this is the same rule, kept deliberately
+   * identical so the two apps do not drift into disagreeing about what looks pressable. The
+   * dashboard has *more* need of it, not less: a table row of ghost-variant buttons has no
+   * fill and no border, so the pointer is the whole affordance until you hover one.
+   *
+   * ⚠️ **`:not(:disabled)` and `:not([aria-disabled='true'])` are the point of the selector.**
+   * A disabled button that still shows a pointer says "press me" about a control that will
+   * do nothing, which is worse than no cursor at all — and both spellings are needed because
+   * a control that must stay focusable (a radix trigger, a blocked option) uses the ARIA one.
+   *
+   * In `@layer base`, so any component can still override it with a utility: cascade layers
+   * make utilities win over base regardless of specificity.
+   */
+  button:not(:disabled):not([aria-disabled='true']),
+  [role='button']:not([aria-disabled='true']),
+  a[href],
+  label:has(input:not(:disabled)),
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
 }
 
 /*
