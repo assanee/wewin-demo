@@ -49,11 +49,21 @@ export interface MfaStateWire {
 }
 
 export interface MfaEnrolmentWire {
-  /** For the QR code. */
+  /** What the QR encodes. The dashboard draws it; nothing here renders an image. */
   readonly otpauthUri: string;
-  /** For a phone whose camera will not cooperate. */
+  /** Beside the QR, for a phone whose camera will not cooperate. */
   readonly secretBase32: string;
-  /** ⚠️ Shown once. Nothing returns these again. */
+}
+
+export interface MfaConfirmedWire {
+  /**
+   * ⚠️ Shown once, and this is the only response that ever carries them.
+   *
+   * Only fingerprints are stored, so "again" is not a feature left out — it is a thing the
+   * storage makes impossible. They arrive *here* rather than at enrolment so that a person
+   * who starts and walks away receives none, and so that they land at the moment of success
+   * rather than as an obstacle in front of it.
+   */
   readonly recoveryCodes: readonly string[];
 }
 
@@ -81,9 +91,11 @@ export class MfaAccountController {
   }
 
   /**
-   * ⚠️ No password. Enrolling weakens nothing — the gate stays down until `confirm` — and
-   * friction in front of turning a second factor *on* costs more than it buys. See
-   * `reproof.ts`.
+   * ⚠️ No password, and **no recovery codes**. Enrolling weakens nothing — the gate stays
+   * down until `confirm` — and friction in front of turning a second factor *on* costs more
+   * than it buys. See `reproof.ts`.
+   *
+   * The codes come back from `confirm`, which is the response that carries them.
    */
   @Post('enrolment')
   @HttpCode(200)
@@ -108,7 +120,7 @@ export class MfaAccountController {
   async confirm(
     @CurrentScope() scope: Scope,
     @Body(new ZodBodyPipe(confirmSchema)) body: ConfirmBody,
-  ): Promise<{ readonly recoveryCodesRemaining: number }> {
+  ): Promise<MfaConfirmedWire> {
     return this.enrolment.confirm(signedIn(scope).userId, body.code);
   }
 

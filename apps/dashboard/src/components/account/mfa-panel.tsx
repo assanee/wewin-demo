@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import qrcode from 'qrcode-generator';
+
 import { failureMessage } from '@/lib/api/errors';
 import {
   beginEnrolment,
@@ -28,13 +30,21 @@ import {
  *
  * This card replaces the one that said MFA did not exist yet.
  *
- * ── ⭐ The codes are shown once, and the screen says so before showing them ──
+ * ── ⭐ Scan, prove, then the codes — in that order ───────────────────────────
+ *
+ * The first version showed the recovery codes first, before anything had been proved. They
+ * were an obstacle between somebody and the thing they came to do, which is the position
+ * nothing gets read in. They arrive at the moment of success now — and only to a person who
+ * has just demonstrated they hold the authenticator, so somebody who starts an enrolment and
+ * walks away receives none at all.
  *
  * Only fingerprints are stored, so nothing on the server can produce them again — "show me
  * again" is not a feature left out, it is a thing the storage makes impossible. The panel
- * therefore refuses to move past them until the person has ticked that they are saved. That
- * checkbox is not ceremony: the failure it prevents is somebody closing a tab at the exact
- * moment their recovery path becomes unrecoverable.
+ * refuses to move past them until the person has ticked that they are saved.
+ *
+ * ⚠️ Closing the tab there is survivable and was worth checking: the gate is up, but the
+ * person holds a working authenticator, so they sign in and regenerate. It is a bad
+ * afternoon, not a lockout.
  *
  * ── ⚠️ Two actions ask for the password, and one of them looks like it should not ──
  *
@@ -44,9 +54,16 @@ import {
  * the form asks for it because the API will.
  */
 
+/**
+ * ⭐ Scan, prove, *then* the codes.
+ *
+ * The first version showed the recovery codes before anything had been proved — an obstacle
+ * between somebody and the thing they came to do, read by nobody. They arrive at the moment
+ * of success now, which is when attention exists, and only to a person who has just
+ * demonstrated they hold the authenticator.
+ */
 type Step =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'showing'; readonly enrolment: Enrolment; readonly saved: boolean }
   | { readonly kind: 'confirming'; readonly enrolment: Enrolment }
   | { readonly kind: 'disabling' }
   | { readonly kind: 'regenerating' }
@@ -142,20 +159,13 @@ export function MfaPanel() {
           </Alert>
         )}
 
-        {/* ── The codes, shown once ─────────────────────────────────────── */}
-        {(step.kind === 'showing' || step.kind === 'fresh-codes') && (
+        {/* ── The codes, shown once — after the gate is up ───────────────── */}
+        {step.kind === 'fresh-codes' && (
           <RecoveryCodes
-            codes={step.kind === 'showing' ? step.enrolment.recoveryCodes : step.codes}
-            acknowledged={step.kind === 'showing' ? step.saved : true}
-            onAcknowledge={() => {
-              if (step.kind === 'showing') setStep({ ...step, saved: true });
-            }}
+            codes={step.codes}
             onDone={() => {
-              if (step.kind === 'showing') setStep({ kind: 'confirming', enrolment: step.enrolment });
-              else {
-                setStep({ kind: 'idle' });
-                void reload();
-              }
+              setStep({ kind: 'idle' });
+              void reload();
             }}
           />
         )}
@@ -168,12 +178,19 @@ export function MfaPanel() {
             </p>
 
             {/*
-             * The URI as text rather than a rendered QR code. Drawing one needs a library,
-             * and this app inlines everything under a strict CSP — so the honest thing today
-             * is the secret in a form somebody can type, plus the link an authenticator on
-             * the same device can open. A QR renderer is worth adding and is not worth
-             * pretending to have.
+             * ⭐ A real QR, drawn here.
+             *
+             * ⚠️ An earlier version of this comment said a QR "needs a library, and this app
+             * inlines everything under a strict CSP". Both halves were wrong: the dashboard
+             * sets no CSP at all, and a bundled encoder would satisfy one anyway since it
+             * fetches nothing. It was a constraint invented to justify not doing the work,
+             * while the text above the box went on promising a QR that was not there.
+             *
+             * `qrcode-generator` is 2.0.4, zero dependencies, and emits an inline SVG — no
+             * canvas, no image request, no data the browser has to go and get.
              */}
+            <QrCode uri={step.enrolment.otpauthUri} />
+
             <div className="flex flex-col gap-1.5">
               <Label>รหัสลับ</Label>
               <div className="flex gap-2">
@@ -214,11 +231,11 @@ export function MfaPanel() {
                 disabled={busy || code.trim() === ''}
                 onClick={() =>
                   run(async () => {
-                    await confirmEnrolment(code);
+                    const codes = await confirmEnrolment(code);
                     toast.success('เปิดการยืนยันสองขั้นแล้ว');
                     setCode('');
-                    setStep({ kind: 'idle' });
-                    await reload();
+                    /* Straight to the codes — the gate is up and this is their only showing. */
+                    setStep({ kind: 'fresh-codes', codes });
                   })
                 }
               >
@@ -293,7 +310,7 @@ export function MfaPanel() {
                 disabled={busy}
                 onClick={() =>
                   run(async () => {
-                    setStep({ kind: 'showing', enrolment: await beginEnrolment(), saved: false });
+                    setStep({ kind: 'confirming', enrolment: await beginEnrolment() });
                   })
                 }
               >
@@ -328,6 +345,44 @@ export function MfaPanel() {
 }
 
 /**
+ * The `otpauth://` URI, as something a camera can read.
+ *
+ * ⚠️ Rendered as an **inline SVG string**, not a canvas and not an image URL. A canvas would
+ * need a ref and an effect to draw into, and would come out blank in any screenshot taken
+ * before it painted; an image URL would be a request. This is markup the browser already
+ * has, which also means it survives the print stylesheet and a dark theme without asking.
+ *
+ * `typeNumber: 0` lets the encoder pick the smallest version that fits — an `otpauth` URI
+ * with a 32-character secret is comfortably inside a small one, and pinning a version would
+ * either waste space or break the day the issuer string grows.
+ *
+ * Error correction `M`: the middle setting, and the right one for something displayed on a
+ * screen rather than printed on a box that gets scuffed.
+ */
+function QrCode({ uri }: { readonly uri: string }) {
+  const code = qrcode(0, 'M');
+  code.addData(uri);
+  code.make();
+
+  return (
+    <div
+      className="w-fit rounded-lg bg-white p-3"
+      aria-label="QR สำหรับตั้งค่าแอปยืนยันตัวตน"
+      /*
+       * The SVG comes from an encoder in this bundle, over a URI this application built from
+       * a secret it generated a moment ago. No part of it is user input, which is what makes
+       * `dangerouslySetInnerHTML` the right tool rather than a shortcut here.
+       *
+       * `bg-white` and not the theme's surface: a QR inverted by dark mode does not scan.
+       */
+      dangerouslySetInnerHTML={{
+        __html: code.createSvgTag({ cellSize: 5, margin: 0, scalable: false }),
+      }}
+    />
+  );
+}
+
+/**
  * ⭐ The one screen these ever appear on.
  *
  * The acknowledgement is not ceremony. Only fingerprints are stored, so the moment this
@@ -336,15 +391,13 @@ export function MfaPanel() {
  */
 function RecoveryCodes({
   codes,
-  acknowledged,
-  onAcknowledge,
   onDone,
 }: {
   readonly codes: readonly string[];
-  readonly acknowledged: boolean;
-  readonly onAcknowledge: () => void;
   readonly onDone: () => void;
 }) {
+  const [acknowledged, setAcknowledged] = useState(false);
+
   return (
     <div className="flex flex-col gap-3">
       <Alert>
@@ -375,7 +428,7 @@ function RecoveryCodes({
         </Button>
 
         {!acknowledged && (
-          <Button type="button" variant="outline" onClick={onAcknowledge}>
+          <Button type="button" variant="outline" onClick={() => setAcknowledged(true)}>
             <Check /> เก็บไว้เรียบร้อยแล้ว
           </Button>
         )}

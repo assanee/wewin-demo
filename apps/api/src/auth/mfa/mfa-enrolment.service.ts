@@ -19,17 +19,28 @@ import { base32Encode, generateTotpSecret, otpauthUri, verifyTotp } from './totp
  *
  * ── ⭐ The recovery codes are shown once ─────────────────────────────────────
  *
- * They come back from `begin` and from `regenerate`, and there is no endpoint that returns
+ * They come back from `confirm` and from `regenerate`, and there is no endpoint that returns
  * them again. Only their SHA-256 fingerprints are stored, so "again" is not a feature that
  * was left out — it is a thing the storage makes impossible, which is the point. A screen
  * that could re-display them would be a screen an attacker on an unlocked machine could open.
  *
- * ── ⚠️ Codes before the gate, always ─────────────────────────────────────────
+ * ── ⭐ The codes come **after** the code is proved ────────────────────────────
  *
- * `begin` writes the recovery codes *and* the unconfirmed secret. It would be tidier to
- * issue codes at confirmation time, and it would put a window between "the gate went up" and
- * "there is a way through it" — `mfa_credentials_guard_confirm` refuses that ordering
- * outright, and this service arranges never to attempt it.
+ * `begin` mints a secret and nothing else. `confirm` verifies a TOTP code and, in the same
+ * transaction that raises the gate, writes and returns the recovery codes.
+ *
+ * The first version issued them at enrolment and showed them before anything was proved.
+ * Moving them buys two things:
+ *
+ *   ⓵ they arrive at the moment of success rather than as an obstacle in front of it, which
+ *     is when somebody is actually reading;
+ *   ⓶ **they are only ever revealed to a person who has demonstrably set up an
+ *     authenticator** — somebody who starts an enrolment and walks away now gets no recovery
+ *     codes at all, where before they left holding ten live ones.
+ *
+ * ⚠️ It does *not* weaken the gate. `mfa_credentials_guard_confirm` still refuses a
+ * confirmation without two unused codes; the insert simply happens first inside the same
+ * transaction, where the trigger can see it.
  */
 @Injectable()
 export class MfaEnrolmentService {
@@ -40,7 +51,7 @@ export class MfaEnrolmentService {
   ) {}
 
   /**
-   * Mint a secret and a set of recovery codes. The gate stays down until `confirm`.
+   * Mint a secret. The gate stays down, and no recovery code exists yet, until `confirm`.
    *
    * Calling it twice replaces the first attempt — somebody who scanned a code, closed the
    * tab and came back should get a fresh one rather than the one they failed to save.
@@ -48,28 +59,17 @@ export class MfaEnrolmentService {
   async begin(input: {
     readonly userId: string;
     readonly account: string;
-  }): Promise<{
-    readonly otpauthUri: string;
-    readonly secretBase32: string;
-    readonly recoveryCodes: readonly string[];
-  }> {
+  }): Promise<{ readonly otpauthUri: string; readonly secretBase32: string }> {
     await this.refuseIfAlreadyEnabled(input.userId);
 
     const secret = generateTotpSecret();
-    const codes = generateRecoveryCodes();
-
-    /*
-     * ⚠️ Codes first. The trigger refuses a confirmation without two unused ones, and
-     * writing them after the secret would leave an ordering that only works by accident.
-     */
-    await this.repository.replaceRecoveryCodes(input.userId, codes.map(fingerprint));
     await this.repository.putUnconfirmedSecret(input.userId, this.box.seal(secret));
 
+    /* No recovery codes here. See the class comment — they come with the confirmation. */
     return {
       otpauthUri: otpauthUri({ issuer: 'WEWIN', account: input.account, secret }),
-      /* Shown beside the QR code, for a phone whose camera will not cooperate. */
+      /* Shown beside the QR, for a phone whose camera will not cooperate. */
       secretBase32: base32Encode(secret),
-      recoveryCodes: codes.map(formatRecoveryCode),
     };
   }
 
@@ -79,7 +79,7 @@ export class MfaEnrolmentService {
    * ⚠️ No password. The code is the proof — see `reproof.ts`. Demanding both asks for two
    * proofs to raise a gate that one proof passes every day afterwards.
    */
-  async confirm(userId: string, code: string): Promise<{ readonly recoveryCodesRemaining: number }> {
+  async confirm(userId: string, code: string): Promise<{ readonly recoveryCodes: readonly string[] }> {
     const credential = await this.repository.findCredential(userId);
 
     if (credential === undefined) {
@@ -87,15 +87,6 @@ export class MfaEnrolmentService {
     }
     if (credential.confirmedAt !== null) {
       throw AppError.conflict(message('error.mfa.already_enabled'));
-    }
-
-    const unused = await this.repository.countUnusedRecoveryCodes(userId);
-    if (enableProblem({ unusedRecoveryCodes: unused }) !== null) {
-      /*
-       * Reachable only if the codes were written and then removed between the two calls. The
-       * trigger would refuse the UPDATE anyway; this turns that 500 into a sentence.
-       */
-      throw AppError.conflict(message('error.mfa.no_recovery_path'));
     }
 
     const verified = verifyTotp({
@@ -107,9 +98,23 @@ export class MfaEnrolmentService {
 
     if (!verified.ok) throw AppError.unauthenticated(message('error.auth.second_factor_rejected'));
 
-    await this.repository.confirm(userId, verified.step);
+    const codes = generateRecoveryCodes();
 
-    return { recoveryCodesRemaining: unused };
+    /*
+     * ⚠️ Checked here as well as by the trigger, and the numbers must agree.
+     *
+     * `enableProblem` is the same rule `mfa_credentials_guard_confirm` enforces — two unused
+     * codes minimum. Asking it against the set about to be written means a generator that
+     * ever produced fewer gives a sentence rather than a 500 from the database.
+     */
+    if (enableProblem({ unusedRecoveryCodes: codes.length }) !== null) {
+      throw AppError.conflict(message('error.mfa.no_recovery_path'));
+    }
+
+    await this.repository.confirm(userId, verified.step, codes.map(fingerprint));
+
+    /* ⭐ The one and only time these are readable. Nothing stores them but their hashes. */
+    return { recoveryCodes: codes.map(formatRecoveryCode) };
   }
 
   /**

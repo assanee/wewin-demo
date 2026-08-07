@@ -11,8 +11,12 @@ import { apiErrorFromResponse } from '@/lib/api/errors';
  *
  * ⭐ **There is no `getRecoveryCodes`, and there cannot be.** The API stores SHA-256
  * fingerprints, so nothing on the server can produce the codes a second time. They arrive
- * once from `beginEnrolment` and once from `regenerateRecoveryCodes`, and a screen that
+ * once from `confirmEnrolment` and once from `regenerateRecoveryCodes`, and a screen that
  * offered to show them again would be a screen somebody on an unlocked laptop could open.
+ *
+ * ⚠️ From **confirm**, not from enrolment. A person who starts an enrolment and walks away
+ * now receives no codes at all, and the ones who do get them have just proved they hold the
+ * authenticator.
  */
 
 export interface MfaState {
@@ -25,12 +29,10 @@ export interface MfaState {
 }
 
 export interface Enrolment {
-  /** For the QR code. */
+  /** What the QR encodes. The panel draws it locally — nothing fetches an image. */
   readonly otpauthUri: string;
-  /** For a phone whose camera will not cooperate. */
+  /** Beside the QR, for a phone whose camera will not cooperate. */
   readonly secretBase32: string;
-  /** ⚠️ Shown once. Nothing returns these again. */
-  readonly recoveryCodes: readonly string[];
 }
 
 const asRecord = (value: unknown, what: string): Record<string, unknown> => {
@@ -59,39 +61,43 @@ export const getMfaState = (): Promise<MfaState> =>
     };
   });
 
-const decodeEnrolment = (body: unknown): Enrolment => {
-  const raw = asRecord(body, 'การตั้งค่า');
-  const codes = raw['recoveryCodes'];
-
-  if (!Array.isArray(codes) || codes.length === 0) {
-    /*
-     * ⚠️ Loud rather than lenient. An enrolment that arrived without codes would put somebody
-     * behind a gate with no way through it — and the API's own trigger refuses to raise the
-     * gate in that state, so a response like this means something is wrong upstream and the
-     * right move is to stop, not to carry on and show an empty list.
-     */
-    throw new TypeError('การตั้งค่า: ไม่มีรหัสสำรองกลับมา');
-  }
-
-  return {
-    otpauthUri: asText(raw['otpauthUri'], 'otpauthUri'),
-    secretBase32: asText(raw['secretBase32'], 'secretBase32'),
-    recoveryCodes: codes.map((code, index) => asText(code, `recoveryCodes[${String(index)}]`)),
-  };
-};
-
 export const beginEnrolment = (): Promise<Enrolment> =>
-  apiJson('/me/account/mfa/enrolment', decodeEnrolment, { method: 'POST' });
+  apiJson(
+    '/me/account/mfa/enrolment',
+    (body) => {
+      const raw = asRecord(body, 'การตั้งค่า');
+      return {
+        otpauthUri: asText(raw['otpauthUri'], 'otpauthUri'),
+        secretBase32: asText(raw['secretBase32'], 'secretBase32'),
+      };
+    },
+    { method: 'POST' },
+  );
 
-export const confirmEnrolment = async (code: string): Promise<void> => {
-  const response = await apiFetch('/me/account/mfa', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ code: code.trim() }),
-  });
-
-  if (!response.ok) throw await apiErrorFromResponse(response);
-};
+/**
+ * ⭐ Returns the recovery codes — the one response that ever does.
+ *
+ * ⚠️ An empty list is refused loudly rather than rendered as an empty box. The gate is up by
+ * the time this resolves, so a person shown "no codes" would be behind a factor with no way
+ * through it and no way to find out. The API's own trigger makes that state impossible, so a
+ * response like it means something is wrong upstream and stopping is the right answer.
+ */
+export const confirmEnrolment = (code: string): Promise<readonly string[]> =>
+  apiJson(
+    '/me/account/mfa',
+    (body) => {
+      const codes = asRecord(body, 'ยืนยัน')['recoveryCodes'];
+      if (!Array.isArray(codes) || codes.length === 0) {
+        throw new TypeError('ยืนยัน: ไม่มีรหัสสำรองกลับมา');
+      }
+      return codes.map((code, index) => asText(code, `recoveryCodes[${String(index)}]`));
+    },
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: code.trim() }),
+    },
+  );
 
 /** ⚠️ Costs the password — see the API's `reproof.ts`. */
 export const disableMfa = async (password: string): Promise<void> => {

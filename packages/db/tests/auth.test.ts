@@ -7,6 +7,8 @@ import {
   groupPermissions,
   groups,
   guests,
+  mfaCredentials,
+  mfaRecoveryCodes,
   oauthStates,
   passwordCredentials,
   permissions,
@@ -1031,5 +1033,126 @@ describeDb('nothing in a dump of this database can be replayed', () => {
       .from(refreshTokens)
       .where(eq(refreshTokens.sessionId, sessionId));
     expect(leftovers).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⓔ A gate that is up must have a way through it
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeDb('ⓔ a second factor cannot be enabled without a way past it', () => {
+  let db: Database;
+
+  beforeAll(async () => {
+    db = await connect();
+  });
+
+  /**
+   * ⭐ This became load-bearing the day the recovery codes moved to **confirm**.
+   *
+   * While the codes were issued at `begin`, they were already in the table long before
+   * anything set `confirmed_at`, and this trigger could only ever pass. Now one method
+   * writes both, in one transaction, in one order — and the failure it is guarding
+   * against is no longer hypothetical: a reordering, an early `return`, or a caught
+   * exception between the two statements leaves a person behind a factor they cannot
+   * satisfy and cannot turn off, on an account nobody can reach to fix it.
+   *
+   * Which is why the check lives in the database and not in `MfaEnrolmentService`. The
+   * service is one caller. A migration, a support script, or the next service to be
+   * written is another, and none of them can get past this.
+   */
+  it('⭐ refuses to confirm a credential that has no recovery codes', async () => {
+    const user = await createUser(db, 'enrolling with no way back');
+
+    await expectViolation(
+      db.insert(mfaCredentials).values({
+        userId: user,
+        secretSealed: `v1.${randomBytes(48).toString('base64url')}`,
+        confirmedAt: new Date(),
+      }),
+      PG.restrictViolation,
+    );
+  });
+
+  it('⚠️ refuses on one code as firmly as on none', async () => {
+    /*
+     * The off-by-one worth spending a test on. A single code is a way through that is
+     * spent the first time it is used — after which the account is in exactly the state
+     * the rule above exists to prevent, only a day later and with nothing to point at.
+     */
+    const user = await createUser(db, 'enrolling with one code');
+    await db.insert(mfaRecoveryCodes).values({ userId: user, codeHash: freshDigest() });
+
+    await expectViolation(
+      db.insert(mfaCredentials).values({
+        userId: user,
+        secretSealed: `v1.${randomBytes(48).toString('base64url')}`,
+        confirmedAt: new Date(),
+      }),
+      PG.restrictViolation,
+    );
+  });
+
+  it('⚠️ does not count a code that has already been spent', async () => {
+    /*
+     * `used_at IS NULL` in the trigger, not `count(*)`. Ten redeemed codes are ten rows
+     * and zero ways in, and a regeneration that failed halfway would otherwise look
+     * exactly like a healthy account.
+     */
+    const user = await createUser(db, 'enrolling on spent codes');
+    await db.insert(mfaRecoveryCodes).values([
+      { userId: user, codeHash: freshDigest(), usedAt: new Date() },
+      { userId: user, codeHash: freshDigest(), usedAt: new Date() },
+    ]);
+
+    await expectViolation(
+      db.insert(mfaCredentials).values({
+        userId: user,
+        secretSealed: `v1.${randomBytes(48).toString('base64url')}`,
+        confirmedAt: new Date(),
+      }),
+      PG.restrictViolation,
+    );
+  });
+
+  it('lets an enrolment begin with no codes at all — the gate is not up yet', async () => {
+    /*
+     * The other half, and the reason the trigger tests `confirmed_at` rather than simply
+     * existing. `begin` writes a sealed secret and nothing else; refusing that would make
+     * the new order impossible to implement.
+     */
+    const user = await createUser(db, 'merely enrolling');
+
+    await db.insert(mfaCredentials).values({
+      userId: user,
+      secretSealed: `v1.${randomBytes(48).toString('base64url')}`,
+    });
+
+    const [row] = await db
+      .select({ confirmedAt: mfaCredentials.confirmedAt })
+      .from(mfaCredentials)
+      .where(eq(mfaCredentials.userId, user));
+
+    expect(row?.confirmedAt).toBeNull();
+  });
+
+  it('confirms once the codes are there', async () => {
+    const user = await createUser(db, 'enrolling properly');
+    await db.insert(mfaRecoveryCodes).values(
+      Array.from({ length: 10 }, () => ({ userId: user, codeHash: freshDigest() })),
+    );
+
+    await db.insert(mfaCredentials).values({
+      userId: user,
+      secretSealed: `v1.${randomBytes(48).toString('base64url')}`,
+      confirmedAt: new Date(),
+    });
+
+    const [row] = await db
+      .select({ confirmedAt: mfaCredentials.confirmedAt })
+      .from(mfaCredentials)
+      .where(eq(mfaCredentials.userId, user));
+
+    expect(row?.confirmedAt).not.toBeNull();
   });
 });

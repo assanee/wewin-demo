@@ -101,11 +101,38 @@ export class MfaRepository {
    * person gets a sentence rather than a 500; the trigger is what makes it true regardless of
    * which code path arrives here.
    */
-  async confirm(userId: string, step: number): Promise<void> {
-    await this.db
-      .update(mfaCredentials)
-      .set({ confirmedAt: new Date(), lastAcceptedStep: step, updatedAt: new Date() })
-      .where(eq(mfaCredentials.userId, userId));
+  async confirm(userId: string, step: number, codeHashes: readonly string[]): Promise<void> {
+    /*
+     * ⭐ The codes are written **here**, in the same transaction that raises the gate.
+     *
+     * They used to be issued at enrolment and shown before the person had proved anything.
+     * Two things are better this way, and the second is not a matter of taste:
+     *
+     *   ⓵ The codes appear at the moment of success rather than as an obstacle between
+     *     somebody and the thing they came to do — which is when attention exists.
+     *   ⓶ **They are only ever revealed to somebody who has demonstrably set up their
+     *     authenticator.** A person who starts an enrolment and walks away now receives no
+     *     recovery codes at all, where before they left holding ten.
+     *
+     * ⚠️ The order inside the transaction is load-bearing. `mfa_credentials_guard_confirm`
+     * counts unused codes on the UPDATE, so the insert has to come first — within one
+     * transaction it does see them, and the rule that a raised gate must have a way through
+     * is exactly as strong as it was.
+     */
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(mfaRecoveryCodes)
+        .where(and(eq(mfaRecoveryCodes.userId, userId), sql`${mfaRecoveryCodes.usedAt} is null`));
+
+      await tx
+        .insert(mfaRecoveryCodes)
+        .values(codeHashes.map((codeHash) => ({ userId, codeHash })));
+
+      await tx
+        .update(mfaCredentials)
+        .set({ confirmedAt: new Date(), lastAcceptedStep: step, updatedAt: new Date() })
+        .where(eq(mfaCredentials.userId, userId));
+    });
   }
 
   /**
