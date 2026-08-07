@@ -7,6 +7,7 @@ import {
   formattersOf,
   message,
   normaliseLocale,
+  paramShapeOf,
   parseAcceptLanguage,
   pinnedLocaleOf,
   preferredLocaleOf,
@@ -16,6 +17,8 @@ import {
   SOURCE_LOCALE,
   SUPPORTED_LOCALES,
   thb,
+  type ServerParam,
+  type ServerParamKind,
   type SupportedLocale,
 } from '../../src/i18n';
 
@@ -278,21 +281,35 @@ describe('a locale change moves no money and no digits', () => {
 });
 
 /** A plausible `ServerMessage` for any key, so the completeness sweep can render them all. */
+/**
+ * A plausible `ServerMessage` for any key, derived from its declared shape.
+ *
+ * ⚠️ **This was a hand-written `switch` with a `case` per parametric key and a `default` of
+ * `message(key)`.** Adding `error.auth.too_many_attempts` broke it — not at compile time,
+ * because the `default` widens the key type enough for TypeScript to accept a call with no
+ * params, but at runtime, inside the formatter, with `Cannot read properties of undefined`.
+ * A guard that needs a human to remember it is a guard with a hole the size of the next key.
+ *
+ * `paramShapeOf` reads the same `PARAM_SHAPES` table the union is derived from, so a new key
+ * is covered the moment it exists and a new *kind* of param is a compile error here — which
+ * is the failure worth having, because it is the one that means this file has to think.
+ */
 function paramsFor(key: (typeof SERVER_MESSAGE_KEYS)[number]) {
-  switch (key) {
-    case 'error.catalog.product_not_found':
-      return message(key, { productId: { kind: 'code', value: 'awn-4t' } });
-    case 'error.slip.over_allocated':
-      return message(key, { seq: { kind: 'count', value: 2 }, remaining: thb(1n), requested: thb(2n) });
-    case 'error.slip.foot_with_room_left':
-      return message(key, { allocated: thb(1n), slip: thb(2n), roomLeft: thb(1n) });
-    case 'error.slip.overpayment_not_acknowledged':
-      return message(key, { excess: thb(1n) });
-    case 'error.slip.overpayment_mismatch':
-      return message(key, { acknowledged: thb(1n), excess: thb(2n) });
-    case 'error.slip.foot_mismatch':
-      return message(key, { allocated: thb(1n), slip: thb(2n), difference: thb(1n) });
-    default:
-      return message(key);
-  }
+  /*
+   * A record and not a `switch`, so that a new `ServerParamKind` is a *compile* error here
+   * rather than a fall-through returning `undefined`. `Record<ServerParamKind, …>` is what
+   * makes the exhaustiveness structural instead of a habit.
+   */
+  const samples: Readonly<Record<ServerParamKind, ServerParam>> = {
+    money: thb(123_45n),
+    count: { kind: 'count', value: 3 },
+    code: { kind: 'code', value: 'awn-4t' },
+  };
+
+  const shape = paramShapeOf(key);
+  const params = Object.fromEntries(
+    Object.entries(shape).map(([name, kind]) => [name, samples[kind]]),
+  );
+
+  return message(key as 'error.slip.overpayment_not_acknowledged', params as never);
 }

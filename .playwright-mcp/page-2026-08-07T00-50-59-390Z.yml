@@ -1,0 +1,12 @@
+- generic [active] [ref=f1e1]:
+  - main [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e4]:
+        - generic [ref=f1e5]: เข้าสู่ระบบ
+        - generic [ref=f1e6]: ระบบจัดการภายในของ WEWIN สำหรับพนักงานเท่านั้น
+      - alert [ref=f1e8]:
+        - generic [ref=f1e9]: ยังไม่ได้ตั้งค่าช่องทางเข้าสู่ระบบ
+        - generic [ref=f1e10]: API นี้ยังไม่มี OAuth provider ใดถูกตั้งค่าไว้ ผู้ดูแลระบบต้องกำหนดค่า OAUTH_* ในสภาพแวดล้อมของ API ก่อน
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f1e16] [cursor=pointer]
+  - alert [ref=f1e20]

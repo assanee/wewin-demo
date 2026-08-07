@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiJson } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { useSession } from '@/lib/auth/session';
+import { PasswordSignInForm } from '@/components/password-sign-in-form';
 import { oauthStartUrl, safeReturnTo } from '@/lib/auth/sign-in-url';
 
 /**
@@ -136,16 +137,25 @@ export function SignInPanel() {
           </Alert>
         )}
 
+        {/*
+          The password form is first and is always shown. It does not depend on
+          `GET /auth/oauth/providers`, which is the whole reason it exists: before it, an API
+          with no provider configured had no way in at all, and a fresh checkout meant
+          registering a real OAuth application with Google to look at the dashboard.
+          Rendering it above the buttons also matches what staff will use daily.
+        */}
+        <PasswordSignInForm />
+
+        {providers.status === 'ready' && providers.providers.length > 0 && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            หรือ
+            <span className="h-px flex-1 bg-border" />
+          </div>
+        )}
+
         {providers.status === 'ready' &&
-          (providers.providers.length === 0 ? (
-            <Alert>
-              <AlertTitle>ยังไม่ได้ตั้งค่าช่องทางเข้าสู่ระบบ</AlertTitle>
-              <AlertDescription>
-                API นี้ยังไม่มี OAuth provider ใดถูกตั้งค่าไว้ ผู้ดูแลระบบต้องกำหนดค่า
-                OAUTH_* ในสภาพแวดล้อมของ API ก่อน
-              </AlertDescription>
-            </Alert>
-          ) : (
+          (providers.providers.length === 0 ? null : (
             <div className="flex flex-col gap-2">
               {providers.providers.map((provider) => (
                 <Button key={provider} asChild variant="outline" className="w-full">

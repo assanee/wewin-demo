@@ -53,6 +53,7 @@ export {
   type ServerMessageKey,
   type NullaryMessageKey,
   type ServerParam,
+  type ServerParamKind,
   type WireMessage,
 } from './message';
 

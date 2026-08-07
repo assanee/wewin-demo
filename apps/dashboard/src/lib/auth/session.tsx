@@ -49,6 +49,18 @@ export interface SessionContextValue {
   /** `true` only for a signed-in principal holding every code listed. */
   readonly can: (...required: readonly PermissionCode[]) => boolean;
   readonly signOut: () => Promise<void>;
+  /**
+   * Re-read the session from the refresh cookie, and settle to `signed-in` or `signed-out`.
+   *
+   * Exposed for the password form, which leaves the browser holding a fresh cookie and no
+   * way to say so. The alternative — letting the form set `signed-in` itself from the token
+   * it just received — would be a *second* place that decides what being signed in means,
+   * and the two would drift the first time `/me` gained a field this one did not read.
+   *
+   * It is the same function the provider runs on mount, so a password sign-in and a page
+   * load reach the identical state by the identical path.
+   */
+  readonly refreshSession: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -84,36 +96,45 @@ export function SessionProvider({ children }: { readonly children: React.ReactNo
     serverAccessTokenSnapshot,
   );
 
+  /**
+   * Spend the refresh cookie, then ask `/me` who that is.
+   *
+   * One function for both callers — the mount effect below and `refreshSession` on the
+   * context — so there is exactly one definition of how this browser decides it is signed
+   * in. `isCancelled` rather than a boolean argument, so the mount effect can abandon a
+   * request whose component has gone while a form-driven call never does.
+   */
+  const bootstrap = useCallback(async (isCancelled: () => boolean = () => false) => {
+    const refreshed = await refreshAccessToken();
+    if (isCancelled()) return;
+    if (refreshed === null) {
+      setState({ status: 'signed-out' });
+      return;
+    }
+
+    try {
+      const principal = await fetchPrincipal();
+      if (isCancelled()) return;
+      setState(isSignedIn(principal) ? { status: 'signed-in', principal } : { status: 'signed-out' });
+    } catch {
+      /*
+       * A refresh that worked followed by a `/me` that did not is the API being unwell, not
+       * this browser being signed out. Reported as signed out anyway, because the
+       * alternative is a shell that renders a menu from a permission set it does not have —
+       * and the sign-in page is at least a place where the person can act.
+       */
+      if (!isCancelled()) setState({ status: 'signed-out' });
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-
-    void (async () => {
-      const refreshed = await refreshAccessToken();
-      if (cancelled) return;
-      if (refreshed === null) {
-        setState({ status: 'signed-out' });
-        return;
-      }
-
-      try {
-        const principal = await fetchPrincipal();
-        if (cancelled) return;
-        setState(isSignedIn(principal) ? { status: 'signed-in', principal } : { status: 'signed-out' });
-      } catch {
-        /*
-         * A refresh that worked followed by a `/me` that did not is the API being unwell,
-         * not this browser being signed out. Reported as signed out anyway, because the
-         * alternative is a shell that renders a menu from a permission set it does not have
-         * — and the sign-in page is at least a place where the person can act.
-         */
-        if (!cancelled) setState({ status: 'signed-out' });
-      }
-    })();
+    void bootstrap(() => cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bootstrap]);
 
   useEffect(() => {
     /*
@@ -166,8 +187,9 @@ export function SessionProvider({ children }: { readonly children: React.ReactNo
       can: (...required: readonly PermissionCode[]) =>
         state.status === 'signed-in' && holdsAll(held, required),
       signOut,
+      refreshSession: () => bootstrap(),
     };
-  }, [state, signOut]);
+  }, [state, signOut, bootstrap]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

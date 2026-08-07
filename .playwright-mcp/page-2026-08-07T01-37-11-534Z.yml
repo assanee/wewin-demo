@@ -1,0 +1,20 @@
+- generic [active] [ref=f4e1]:
+  - main [ref=f4e2]:
+    - generic [ref=f4e3]:
+      - generic [ref=f4e4]:
+        - generic [ref=f4e5]: เข้าสู่ระบบ
+        - generic [ref=f4e6]: ระบบจัดการภายในของ WEWIN สำหรับพนักงานเท่านั้น
+      - generic [ref=f4e11]:
+        - alert [ref=f4e29]:
+          - generic [ref=f4e30]: เข้าสู่ระบบไม่สำเร็จ
+          - generic [ref=f4e31]: อีเมลหรือรหัสผ่านไม่ถูกต้อง
+        - generic [ref=f4e12]:
+          - generic [ref=f4e13]: อีเมล
+          - textbox "อีเมล" [ref=f4e14]: somchai@wewin.co.th
+        - generic [ref=f4e15]:
+          - generic [ref=f4e16]: รหัสผ่าน
+          - textbox "รหัสผ่าน" [ref=f4e17]: this is not the password
+        - button "เข้าสู่ระบบ" [ref=f4e18]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f4e24] [cursor=pointer]
+  - alert [ref=f4e28]

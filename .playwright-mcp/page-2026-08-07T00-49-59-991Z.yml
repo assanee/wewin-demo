@@ -1,0 +1,6 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - status "Loading" [ref=e3]
+    - generic [ref=e5]: กำลังพาไปหน้าเข้าสู่ระบบ…
+  - region "Notifications alt+T"
+  - alert [ref=e6]

@@ -322,6 +322,7 @@ describe('boot-time route audit', () => {
       'POST /admin/reviews/:reviewId/unhide [permissions]',
       'POST /auth/logout [authenticated]',
       'POST /auth/oauth/:provider/callback [anonymous]',
+      'POST /auth/password [anonymous]',
       'POST /auth/refresh [anonymous]',
       'POST /orders [anonymous]',
       'POST /orders/:orderId/change-requests [principal]',

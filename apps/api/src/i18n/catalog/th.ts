@@ -29,6 +29,20 @@ import type { Catalogue } from './types';
  * is built so that a visible fallback is a supported state rather than a bug.
  */
 export const TH: Catalogue = {
+  /* ── Password sign-in ─────────────────────────────────────────────────────────
+   *
+   * "อีเมลหรือรหัสผ่านไม่ถูกต้อง" and not "ไม่พบบัญชีนี้": the sentence has to be true of
+   * five different situations at once, and naming any of them would tell a stranger which
+   * addresses belong to customers.
+   */
+  'error.auth.credentials_rejected': 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
+  'error.auth.too_many_attempts': (p, f) =>
+    `พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารออีก ${f.count(p.minutes)} นาทีแล้วลองใหม่`,
+  'error.auth.password_too_short': (p, f) =>
+    `รหัสผ่านต้องยาวอย่างน้อย ${f.count(p.minimum)} ตัวอักษร`,
+  'error.auth.password_too_long': (p, f) =>
+    `รหัสผ่านต้องไม่เกิน ${f.count(p.maximum)} ตัวอักษร`,
+
   /* ── Catalogue constraints ───────────────────────────────────────────────── */
   'error.catalog.slug_taken': 'มีสินค้าที่ใช้ slug นี้อยู่แล้ว',
   'error.catalog.sku_prefix_taken': 'มีสินค้าที่ใช้รหัสนำหน้า SKU นี้อยู่แล้ว',

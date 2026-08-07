@@ -21,16 +21,18 @@
     "db:down": "docker compose -f ../../docker-compose.yml down",
     "db:reset": "docker compose -f ../../docker-compose.yml down -v && docker compose -f ../../docker-compose.yml up -d --wait",
     "db:logs": "docker compose -f ../../docker-compose.yml logs -f postgres",
-    "db:psql": "docker compose -f ../../docker-compose.yml exec postgres psql -U wewin -d wewin"
+    "db:psql": "docker compose -f ../../docker-compose.yml exec postgres psql -U wewin -d wewin",
+    "create-user": "pnpm build && node dist/bin/create-staff-user.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",
     "@nestjs/platform-express": "^11.1.28",
+    "@node-rs/argon2": "^2.0.2",
     "@wewin/contract": "workspace:*",
     "@wewin/core": "workspace:*",
-    "@wewin/i18n": "workspace:*",
     "@wewin/db": "workspace:*",
+    "@wewin/i18n": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",

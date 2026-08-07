@@ -3,6 +3,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthenticationMiddleware } from './authentication.middleware';
 import { OAuthModule } from './oauth/oauth.module';
+import { PasswordModule } from './password/password.module';
 import { parseOAuthConfig, type OAuthConfig } from './oauth/oauth.config';
 import { SessionModule } from './session/session.module';
 import type { SessionConfig } from './session/session.config';
@@ -43,7 +44,17 @@ export class AuthModule {
 
     return {
       module: AuthModule,
-      imports: [sessions, OAuthModule.forRoot({ config: oauth, imports: [sessions] })],
+      imports: [
+        sessions,
+        OAuthModule.forRoot({ config: oauth, imports: [sessions] }),
+        /*
+         * Password sign-in. Listed *after* `sessions` and inside this module rather than in
+         * `AppModule`, because `PasswordModule` resolves `SessionService` through whichever
+         * graph imports it — and this is the only place that graph contains the one
+         * `SessionModule.forRoot(config)` instance the whole application shares.
+         */
+        PasswordModule.forRoot({ imports: [sessions] }),
+      ],
       controllers: [AuthController],
       /*
        * The middleware is a provider here and is applied in `AppModule.configure`. It has

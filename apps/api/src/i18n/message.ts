@@ -123,6 +123,19 @@ interface ParamByKind {
  * mistranslated by getting a number in the wrong place.
  */
 const PARAM_SHAPES = {
+  /* ── Password sign-in — src/auth/password ─────────────────────────────────────
+   *
+   * ⚠️ There is exactly **one** rejection key, and that is the design rather than an
+   * economy. A missing account, an account with no password, a suspended one, a closed one
+   * and a wrong password all render this sentence, because any wording that told them apart
+   * would answer "is this address a customer here?" to anybody who asked. See
+   * `password-sign-in.service.ts`, where the same idea is enforced on the timing.
+   */
+  'error.auth.credentials_rejected': {},
+  'error.auth.too_many_attempts': { minutes: 'count' },
+  'error.auth.password_too_short': { minimum: 'count' },
+  'error.auth.password_too_long': { maximum: 'count' },
+
   /* ── Catalogue constraints — src/admin/pg-errors.ts ───────────────────────── */
   'error.catalog.slug_taken': {},
   'error.catalog.sku_prefix_taken': {},
