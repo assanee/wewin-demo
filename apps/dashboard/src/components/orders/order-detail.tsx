@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { formatBaht } from '@wewin/core/format';
-import { AlertTriangle, ArrowLeft, Lock } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Lock, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -126,6 +126,15 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
           {order.orderNo ?? `ร่าง ${order.id.slice(0, 8)}`}
         </h1>
         <Badge variant={TONE[statusTone(order.status)]}>{statusLabel(order.status)}</Badge>
+        {/* The quotation lives with the order, so the way to it does too. */}
+        {order.documentRevision !== null && (
+          <Link
+            href={`/quotes/${order.id}/print` as Route}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
+          >
+            <Printer className="size-3.5" /> ใบเสนอราคา
+          </Link>
+        )}
         {order.isFrozen && (
           <span className="text-muted-foreground inline-flex items-center gap-1.5 text-sm">
             <Lock className="size-3.5" />

@@ -194,3 +194,50 @@
  * every default button lime and break the rule on the first screen. Reach for an accent
  * per-element, on purpose.
  */
+/* ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ Printing a quotation.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The application shell is chrome: a sidebar, a toggle, a toast region. None of it belongs
+ * on a document somebody hands to a customer, and none of it is worth a second route to
+ * exclude — `print:hidden` on the controls plus this block on the shell is the whole of it.
+ *
+ * ⚠️ `color-adjust` off, deliberately. The dashboard has a dark theme; a quotation printed
+ * from it must not come out as white text on a black page, and must not depend on whoever
+ * is printing having remembered to turn background graphics off.
+ */
+@media print {
+  [data-slot='sidebar-wrapper'] > [data-slot='sidebar'],
+  [data-slot='sidebar-trigger'],
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  html,
+  body,
+  main {
+    background: #fff !important;
+    color: #000 !important;
+    print-color-adjust: economy;
+    -webkit-print-color-adjust: economy;
+  }
+
+  /* The shell pads for a sidebar that is no longer there. */
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  @page {
+    /* A4 with the margin a Thai office letterhead expects. */
+    size: A4;
+    margin: 18mm 16mm;
+  }
+
+  /* A quotation that splits a line item across two pages is one somebody reads twice. */
+  tr,
+  article > header,
+  tfoot {
+    break-inside: avoid;
+  }
+}

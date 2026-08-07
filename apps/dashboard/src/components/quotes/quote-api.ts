@@ -348,3 +348,23 @@ export function failureMessage(error: unknown): string {
   if (error instanceof Error && error.message !== '') return error.message;
   return 'เกิดข้อผิดพลาดที่ไม่รู้จัก';
 }
+
+/* ------------------------------------------------------------------ *
+ * The pinned document — what a quotation actually is
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ `GET /orders/:id/document` — the frozen contract terms.
+ *
+ * Not the editable quote. Eight things are pinned at `submit_for_payment` and the locale is
+ * one of them, which is what makes a reprint citable (plan 10.6). The editor above reads the
+ * *live* quote; this reads the document the customer was actually shown.
+ *
+ * ⚠️ 404 when the order has never been submitted, and that is the honest answer rather than
+ * an empty document: before submit there is no quotation, there is a cart.
+ */
+export const getPinnedDocument = (orderId: string): Promise<Record<string, unknown>> =>
+  apiJson(`/orders/${orderId}/document`, (body) => {
+    if (typeof body !== 'object' || body === null) throw new TypeError('เอกสาร: ไม่ใช่วัตถุ');
+    return body as Record<string, unknown>;
+  });

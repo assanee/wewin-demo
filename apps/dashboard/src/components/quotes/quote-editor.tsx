@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import type { Route } from 'next';
 import { useState } from 'react';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Printer, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -101,6 +102,19 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
           </Link>
         </Button>
         <h1 className="text-xl font-semibold">ใบเสนอราคา</h1>
+        {/*
+          * ⚠️ Prints the **pinned** document, not what is on this screen.
+          *
+          * The two differ the moment somebody edits, and that is the point:
+          * `printable-quotation.ts` refuses an order with no pinned document, because before
+          * submit there is no quotation — there is a cart, and on paper they look the same.
+          */}
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/quotes/${orderId}/print` as Route}>
+            <Printer data-icon="inline-start" />
+            พิมพ์ / PDF
+          </Link>
+        </Button>
         <Badge variant="outline" className="font-mono text-xs" title="โทเคนของฉบับที่กำลังแก้อยู่">
           {view.wire.quoteRevision}
         </Badge>
