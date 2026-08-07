@@ -30,9 +30,30 @@ import { Label } from '@/components/ui/label';
  * back the distinction the API spent that design avoiding.
  */
 
-interface SignInResponse {
-  readonly accessTokenExpiresAt: string;
-}
+/**
+ * ⭐ Two shapes, and the discriminator is the presence of `mfaRequired`.
+ *
+ * A `kind` field would be tidier and the API does not send one, because the session shape
+ * predates the second factor and adding a discriminator to it would break every existing
+ * client for the benefit of a client that is being written now.
+ */
+type SignInResponse =
+  | { readonly kind: 'session'; readonly accessTokenExpiresAt: string }
+  | {
+      readonly kind: 'challenge';
+      /**
+       * ⚠️ **This one *is* held**, unlike the access token.
+       *
+       * The comment above says the access token is deliberately untouched because the refresh
+       * cookie is the durable half and `refreshSession()` spends it. A challenge has no
+       * cookie — it exists for one round trip and has to be posted back by hand — so it lives
+       * in this component's state for the length of one step and nowhere else. Not in
+       * `sessionStorage`, not in a URL: a challenge in either would outlive the tab it was
+       * meant for.
+       */
+      readonly challengeToken: string;
+      readonly challengeExpiresAt: string;
+    };
 
 /**
  * Enough of the body to know the endpoint answered, and nothing more.
@@ -41,21 +62,48 @@ interface SignInResponse {
  * somebody later "uses", and the whole point above is that this component does not hold it.
  */
 function decodeSignIn(body: unknown): SignInResponse {
-  if (typeof body !== 'object' || body === null || !('accessTokenExpiresAt' in body)) {
-    throw new Error('auth/password: expected { accessTokenExpiresAt }');
+  if (typeof body !== 'object' || body === null) {
+    throw new Error('auth/password: expected an object');
   }
-  return { accessTokenExpiresAt: String((body as { accessTokenExpiresAt: unknown }).accessTokenExpiresAt) };
+
+  const shape = body as Record<string, unknown>;
+
+  if (shape['mfaRequired'] === true) {
+    if (typeof shape['challengeToken'] !== 'string') {
+      throw new Error('auth/password: a challenge with no token');
+    }
+    return {
+      kind: 'challenge',
+      challengeToken: shape['challengeToken'],
+      challengeExpiresAt: String(shape['challengeExpiresAt']),
+    };
+  }
+
+  if (!('accessTokenExpiresAt' in shape)) {
+    throw new Error('auth/password: expected { accessTokenExpiresAt } or { mfaRequired }');
+  }
+
+  return { kind: 'session', accessTokenExpiresAt: String(shape['accessTokenExpiresAt']) };
 }
 
 export function PasswordSignInForm() {
   const { refreshSession } = useSession();
   const emailId = useId();
   const passwordId = useId();
+  const codeId = useId();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  /*
+   * The second step, when there is one. Held here and nowhere else — see the note on
+   * `challengeToken` above: a challenge in `sessionStorage` or a URL outlives the tab it was
+   * meant for.
+   */
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -63,7 +111,7 @@ export function PasswordSignInForm() {
     setProblem(null);
 
     try {
-      await apiJson('/auth/password', decodeSignIn, {
+      const outcome = await apiJson('/auth/password', decodeSignIn, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -75,6 +123,16 @@ export function PasswordSignInForm() {
          */
         anonymous: true,
       });
+
+      /*
+       * ⭐ A challenge is not a failure and not a session. The password was right; the
+       * account has a second factor, and the form has a second step.
+       */
+      if (outcome.kind === 'challenge') {
+        setChallenge(outcome.challengeToken);
+        setBusy(false);
+        return;
+      }
 
       /*
        * Not `router.push`. `SignInPanel` already watches for `signed-in` and navigates to
@@ -93,6 +151,99 @@ export function PasswordSignInForm() {
       // person who mistyped one character by making them type the whole passphrase again.
       setBusy(false);
     }
+  }
+
+  /**
+   * Step two.
+   *
+   * ⚠️ On refusal the form goes **back to the password step**, and that is deliberate rather
+   * than tidy. The API answers one sentence for every way this can fail — expired challenge,
+   * wrong code, spent code, MFA turned off in between — so the client cannot tell "try
+   * another code" from "your challenge died". Offering another attempt against a challenge
+   * that may already be dead is a loop somebody spends three codes in. Starting over costs
+   * one password and always works.
+   */
+  async function onCode(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (challenge === null) return;
+
+    setBusy(true);
+    setProblem(null);
+
+    try {
+      await apiJson('/auth/mfa', () => null, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ challengeToken: challenge, code }),
+        anonymous: true,
+      });
+
+      await refreshSession();
+    } catch (cause) {
+      setProblem(
+        cause instanceof ApiError
+          ? cause.message
+          : 'ติดต่อระบบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่',
+      );
+      setChallenge(null);
+      setCode('');
+      setPassword('');
+      setBusy(false);
+    }
+  }
+
+  if (challenge !== null) {
+    return (
+      <form onSubmit={(event) => void onCode(event)} className="flex flex-col gap-3">
+        {problem !== null && (
+          <Alert variant="destructive">
+            <AlertTitle>ยืนยันไม่สำเร็จ</AlertTitle>
+            <AlertDescription>{problem}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={codeId}>รหัสยืนยันหกหลัก</Label>
+          <Input
+            id={codeId}
+            name="one-time-code"
+            /*
+             * `one-time-code` is what a phone's keyboard reads to offer the code from an SMS
+             * or an authenticator — and `inputMode` is separate from it, because a recovery
+             * code has letters in it and forcing a numeric keypad would make the fallback
+             * untypeable on the device somebody falls back to.
+             */
+            autoComplete="one-time-code"
+            autoFocus
+            required
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            disabled={busy}
+          />
+          <span className="text-muted-foreground text-xs">
+            เปิดแอปยืนยันตัวตนแล้วกรอกตัวเลขหกหลัก — หรือกรอกรหัสสำรองหนึ่งชุดถ้าเข้าแอปไม่ได้
+          </span>
+        </div>
+
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? 'กำลังยืนยัน…' : 'ยืนยัน'}
+        </Button>
+
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            setChallenge(null);
+            setCode('');
+            setPassword('');
+            setProblem(null);
+          }}
+        >
+          กลับไปกรอกรหัสผ่านใหม่
+        </Button>
+      </form>
+    );
   }
 
   return (

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, Monitor, ShieldAlert, Unlink } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { MfaPanel } from './mfa-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,13 +37,12 @@ import {
  * disagree the day somebody has a password and no verified address, which is precisely the
  * case the rule exists for.
  *
- * ── MFA is not here, and the page says so ────────────────────────────────────────
+ * ── MFA is here now, and the card that said it was not is gone ───────────────────
  *
- * Nothing in the schema stores a TOTP secret, a recovery code or a second-factor state —
- * `grep` returns zero rows. Rather than leave a gap the reader has to notice, the security
- * section names it as not built, because a settings page silently missing a security control
- * reads as "this system has no MFA" *and* as "I must have missed it", and only one of those
- * is true.
+ * That card existed for a round and earned its place: a security section silent about MFA
+ * reads as "this system has none" *and* as "I must have missed the setting", and only one
+ * of those was true. `MfaPanel` replaces it — see plan 6.4 for the design it implements.
+ *
  */
 
 type State =
@@ -385,25 +385,7 @@ export function AccountSettings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>การยืนยันตัวตนสองขั้น (MFA)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {/*
-            Named as not built rather than left out. A security section with no mention of
-            MFA reads two ways at once — "this system has no MFA" and "I must have missed
-            the setting" — and only one of them is true.
-          */}
-          <Alert>
-            <AlertTitle>ยังไม่ได้พัฒนา</AlertTitle>
-            <AlertDescription>
-              ระบบยังไม่รองรับการยืนยันสองขั้น — ยังไม่มีที่เก็บ secret และยังไม่มีขั้นที่สองในการเข้าสู่ระบบ
-              · แผนที่ตกลงไว้คือ TOTP พร้อมรหัสสำรอง และให้ผู้ดูแลปิดให้ได้เมื่อทำอุปกรณ์หาย (ดูแผนข้อ 6.4)
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
+      <MfaPanel />
     </div>
   );
 }

@@ -132,6 +132,18 @@ export const setUserGroups = (userId: string, groupIds: readonly string[]): Prom
   send(`${userPath(userId)}/groups`, 'PUT', { groupIds });
 
 /** The lost-laptop action: ends every session and leaves the account able to work. */
+/**
+ * ⭐ Turn off a colleague's second factor — the other half of plan 6.4's recovery.
+ *
+ * No password: an administrator does not have somebody else's. ⚠️ The API refuses this
+ * pointed at the caller's own account, because self-service disabling *does* cost a
+ * password and aiming the admin route at yourself would be a door around that rule. The
+ * button below is disabled for your own row for the same reason, so the refusal is visible
+ * before it is a 409.
+ */
+export const disableUserMfa = (userId: string): Promise<unknown> =>
+  send(`${userPath(userId)}/mfa`, 'DELETE');
+
 export const revokeSessions = (userId: string): Promise<{ readonly revoked: number }> =>
   apiJson(`${userPath(userId)}/sessions/revocation`, (body) => body as { revoked: number }, {
     method: 'POST',

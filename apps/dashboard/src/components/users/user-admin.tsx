@@ -24,6 +24,7 @@ import {
   listGroups,
   listUsers,
   reinstateUser,
+  disableUserMfa,
   revokeSessions,
   sendPasswordLink,
   type Group,
@@ -284,6 +285,36 @@ export function UserAdmin() {
                                 >
                                   <LogOut className="size-4" />
                                   ออกจากระบบ
+                                </Button>
+
+                                {/*
+                                  * ⭐ Disabled for your own row, and the title says why.
+                                  *
+                                  * Self-service disabling costs the account's password;
+                                  * this route asks for none, because an administrator does
+                                  * not have somebody else's. Pointed at yourself the two
+                                  * combine into a way round the password rule, so the API
+                                  * refuses it — and the button says so before the 409 does.
+                                  */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={busy || isMe}
+                                  title={
+                                    isMe
+                                      ? 'ปิด MFA ของตัวเองที่นี่ไม่ได้ — ไปที่หน้าบัญชีของฉัน ซึ่งจะถามรหัสผ่าน'
+                                      : 'ใช้เมื่อเจ้าตัวทำอุปกรณ์ยืนยันตัวตนหายและรหัสสำรองหมด'
+                                  }
+                                  onClick={() =>
+                                    void act(
+                                      user.id,
+                                      () => disableUserMfa(user.id),
+                                      'ปิดการยืนยันสองขั้นให้แล้ว',
+                                    )
+                                  }
+                                >
+                                  <ShieldOff className="size-4" />
+                                  ปิด MFA
                                 </Button>
 
                                 {user.status === 'suspended' ? (
