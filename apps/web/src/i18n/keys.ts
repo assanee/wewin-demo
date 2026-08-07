@@ -321,6 +321,25 @@ export interface UiParamsByKey {
   'review.form.done.body': Plain;
   'review.meta.title': Plain;
 
+  'submit.heading': Plain;
+  'submit.intro': Plain;
+  'submit.name': Plain;
+  'submit.namePlaceholder': Plain;
+  'submit.email': Plain;
+  'submit.phone': Plain;
+  'submit.channelHint': Plain;
+  'submit.action': Plain;
+  'submit.sending': Plain;
+  'submit.problem.nameMissing': Plain;
+  'submit.problem.noChannel': Plain;
+  'submit.problem.badPhone': Plain;
+  'submit.problem.badEmail': Plain;
+  'submit.problem.unreachable': Plain;
+  'submit.problem.unconfigured': Plain;
+  'submit.problem.unavailable': Plain;
+  'submit.done': Plain;
+  'submit.viewQuotation': Plain;
+
   'quotation.meta.title': Plain;
   'quotation.loading': Plain;
   'quotation.heading': Plain;

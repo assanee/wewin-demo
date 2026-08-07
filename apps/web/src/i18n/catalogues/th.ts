@@ -331,6 +331,27 @@ export const th: UiCatalogue = {
   'review.form.done.body': 'รีวิวจะปรากฏบนหน้าสินค้าเมื่อผ่านการตรวจหรือครบกำหนด',
   'review.meta.title': 'เขียนรีวิว',
 
+  'submit.heading': 'ขอใบเสนอราคา',
+  'submit.intro':
+    'กรอกชื่อและช่องทางติดต่อ แล้วเราจะออกใบเสนอราคาให้ทันที — ราคาและรายละเอียดจะถูกตรึงไว้ตามที่เห็นในตะกร้านี้',
+  'submit.name': 'ชื่อผู้ติดต่อ',
+  'submit.namePlaceholder': 'ชื่อ-นามสกุล',
+  'submit.email': 'อีเมล',
+  'submit.phone': 'เบอร์โทรศัพท์',
+  'submit.channelHint': 'กรอกอย่างน้อยหนึ่งช่องทาง — มีเบอร์โทรอย่างเดียวก็ได้',
+  'submit.action': 'ขอใบเสนอราคา',
+  'submit.sending': 'กำลังออกใบเสนอราคา…',
+  'submit.problem.nameMissing': 'กรุณากรอกชื่อผู้ติดต่อ',
+  'submit.problem.noChannel': 'กรุณากรอกอีเมลหรือเบอร์โทรอย่างน้อยหนึ่งอย่าง',
+  'submit.problem.badPhone': 'เบอร์โทรไม่ถูกต้อง เช่น 081-234-5678',
+  'submit.problem.badEmail': 'อีเมลไม่ถูกต้อง',
+  'submit.problem.unreachable': 'เชื่อมต่อไม่ได้ โปรดลองอีกครั้ง',
+  'submit.problem.unconfigured': 'ระบบยังไม่พร้อมรับคำขอ โปรดติดต่อทีมขาย',
+  'submit.problem.unavailable':
+    'มีสินค้าในตะกร้าที่ไม่มีจำหน่ายแล้ว โปรดลบรายการนั้นออกก่อน แล้วลองอีกครั้ง',
+  'submit.done': 'ออกใบเสนอราคาแล้ว',
+  'submit.viewQuotation': 'เปิดใบเสนอราคา',
+
   'quotation.meta.title': 'ใบเสนอราคาของคุณ',
   'quotation.loading': 'กำลังเปิดใบเสนอราคา…',
   'quotation.heading': 'ใบเสนอราคา',

@@ -11,6 +11,7 @@ import { ButtonLink } from '../common/Button';
 import { StickyBar } from '../common/StickyBar';
 import { QuoteLineRow } from './QuoteLineRow';
 import { QuoteLineCard } from './QuoteLineCard';
+import { RequestQuotationForm } from './RequestQuotationForm';
 
 const TH_HEAD_CLASS = 'py-2 pe-3 text-caption font-normal tracking-[0.08em] text-chalk-3 uppercase';
 
@@ -121,9 +122,11 @@ export function QuoteScreen() {
         <span className="numeric text-display text-lime">{f.baht(total)}</span>
       </div>
       <p className="numeric text-caption text-chalk-3">{t('price.vatExcluded')}</p>
-      <p className="mt-2 border-t border-line pt-3 text-caption text-chalk-3">
-        {t('configure.futureQuote')}
-      </p>
+      {/*
+        ⭐ `configure.futureQuote` used to be here, and it was telling the truth: everything
+        downstream of a submit existed and there was no way to reach it. The form below is the
+        step that was missing, so the apology is gone.
+      */}
     </>
   );
 
@@ -178,12 +181,15 @@ export function QuoteScreen() {
       )}
 
       {isDesktop ? (
-        <section
-          aria-label={t('quote.summary.label')}
-          className="mt-8 ms-auto flex max-w-105 flex-col gap-2 border border-line bg-panel p-5"
-        >
-          {summaryRows}
-        </section>
+        <div className="mt-8 ms-auto flex max-w-105 flex-col gap-4">
+          <section
+            aria-label={t('quote.summary.label')}
+            className="flex flex-col gap-2 border border-line bg-panel p-5"
+          >
+            {summaryRows}
+          </section>
+          <RequestQuotationForm lines={lines} />
+        </div>
       ) : (
         <>
           <section
@@ -192,6 +198,14 @@ export function QuoteScreen() {
           >
             {summaryRows}
           </section>
+
+          {/*
+            ⚠️ Above the sticky bar, not inside it. The bar is a summary a thumb reaches; a form
+            with three fields inside it would cover the cart it is about.
+          */}
+          <div className="mt-4">
+            <RequestQuotationForm lines={lines} />
+          </div>
 
           <StickyBar>
             <div className="min-w-0">

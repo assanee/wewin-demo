@@ -357,6 +357,27 @@ export const en: PartialUiCatalogue = {
     'It will appear on the product page once it has been read, or when the review window elapses.',
   'review.meta.title': 'Write a review',
 
+  'submit.heading': 'Request a quotation',
+  'submit.intro':
+    'Give us a name and one way to reach you, and we will issue the quotation immediately — the prices and details are frozen exactly as they appear in this cart.',
+  'submit.name': 'Contact name',
+  'submit.namePlaceholder': 'Full name',
+  'submit.email': 'Email',
+  'submit.phone': 'Telephone',
+  'submit.channelHint': 'At least one of the two — a telephone number on its own is fine.',
+  'submit.action': 'Request a quotation',
+  'submit.sending': 'Issuing the quotation…',
+  'submit.problem.nameMissing': 'Please give a contact name.',
+  'submit.problem.noChannel': 'Please give an email address or a telephone number.',
+  'submit.problem.badPhone': 'That telephone number cannot be read — e.g. 081-234-5678.',
+  'submit.problem.badEmail': 'That email address cannot be read.',
+  'submit.problem.unreachable': 'Cannot connect. Please try again.',
+  'submit.problem.unconfigured': 'Requests cannot be taken right now. Please contact the sales team.',
+  'submit.problem.unavailable':
+    'Something in your cart is no longer available. Remove that line and try again.',
+  'submit.done': 'Your quotation is ready',
+  'submit.viewQuotation': 'Open the quotation',
+
   'quotation.meta.title': 'Your quotation',
   'quotation.loading': 'Opening your quotation…',
   'quotation.heading': 'Quotation',
