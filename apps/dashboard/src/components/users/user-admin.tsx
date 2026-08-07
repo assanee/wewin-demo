@@ -32,6 +32,7 @@ import {
 } from './user-api';
 import { CreateUserDialog } from './create-user-dialog';
 import { GroupsPanel } from './groups-panel';
+import { AuditTrail } from './audit-trail';
 import { SuspendDialog } from './suspend-dialog';
 import { UserGroupsDialog } from './user-groups-dialog';
 
@@ -391,6 +392,15 @@ export function UserAdmin() {
           }}
         />
       )}
+
+      {/*
+        * ⭐ Last on the page, and present rather than hidden behind a tab.
+        *
+        * Every action above it writes a row here, in the same transaction. Putting the
+        * record where the actions are is what makes it get read — an audit behind a
+        * navigation step is one nobody opens until there is already an incident.
+        */}
+      {state.status === 'ready' && <AuditTrail />}
 
       {editingGroups !== null && state.status === 'ready' && (
         <UserGroupsDialog

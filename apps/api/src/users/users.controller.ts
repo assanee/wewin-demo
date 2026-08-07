@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 
 import { CONTRACT_VERSION, CONTRACT_VERSION_HEADER } from '@wewin/contract/version';
 
@@ -22,6 +22,7 @@ import {
   type SuspendUserRequest,
   type UserListWire,
 } from './users.contract';
+import type { AdminEventRow } from './audit.repository';
 import { UsersService } from './users.service';
 
 const contractVersion = (): MethodDecorator =>
@@ -161,23 +162,63 @@ export class UsersController {
     return { groupId: await this.users.createGroup(callerOf(scope), body) };
   }
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * ⭐ The audit trail — because one nobody can read is decoration.
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   *     GET /admin/users/audit          everything, newest first
+   *     GET /admin/users/audit?userId=  one person's history
+   *
+   * ── ⚠️ `users.write` and not `users.read`, and not a new code ────────────
+   *
+   * `users.read` is the support lead answering "does Somchai still have access?". That is a
+   * different question from "who changed whose permissions last month", and the second is
+   * not part of the first.
+   *
+   * A separate `audit.read` would be more correct in a company with somebody whose job is
+   * oversight rather than administration — and WEWIN does not have one. Adding a code that
+   * `permission-sync` inserts and no group holds would make the trail unreadable on the day
+   * it shipped, which is the same failure as a dead-letter queue nobody sees: the record
+   * exists, nothing surfaces it, and the company believes it is covered.
+   *
+   * So: the people who may change these things may see what was changed. When there is an
+   * auditor, `audit.read` is the split, and this comment is where to start.
+   */
+  @Get('audit')
+  @contractVersion()
+  @RequirePermissions('users.write')
+  async audit(
+    @Query('userId') userId: string | undefined,
+  ): Promise<{ readonly events: readonly AdminEventRow[] }> {
+    return {
+      events: await this.users.auditTrail({
+        subjectUserId: userId === undefined || userId === '' ? undefined : userId,
+      }),
+    };
+  }
+
   @Patch('groups/:groupId')
   @HttpCode(204)
   @contractVersion()
   @RequirePermissions('users.write')
   async renameGroup(
+    @CurrentScope() scope: Scope,
     @Param('groupId') groupId: string,
     @Body(new ZodBodyPipe(renameGroupSchema)) body: RenameGroupRequest,
   ): Promise<void> {
-    await this.users.renameGroup(groupId, body.nameTh);
+    await this.users.renameGroup(callerOf(scope), groupId, body.nameTh);
   }
 
   @Delete('groups/:groupId')
   @HttpCode(204)
   @contractVersion()
   @RequirePermissions('users.write')
-  async deleteGroup(@Param('groupId') groupId: string): Promise<void> {
-    await this.users.deleteGroup(groupId);
+  async deleteGroup(
+    @CurrentScope() scope: Scope,
+    @Param('groupId') groupId: string,
+  ): Promise<void> {
+    await this.users.deleteGroup(callerOf(scope), groupId);
   }
 
   @Put('groups/:groupId/permissions')

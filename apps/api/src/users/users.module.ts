@@ -1,6 +1,7 @@
 import { Module, type DynamicModule, type ModuleMetadata } from '@nestjs/common';
 
 import { UsersController } from './users.controller';
+import { AuditRepository } from './audit.repository';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
 
@@ -30,7 +31,7 @@ export class UsersModule {
       module: UsersModule,
       imports: options.imports ?? [],
       controllers: [UsersController],
-      providers: [UsersService, UsersRepository],
+      providers: [UsersService, UsersRepository, AuditRepository],
     };
   }
 }

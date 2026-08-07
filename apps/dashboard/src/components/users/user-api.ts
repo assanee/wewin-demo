@@ -141,6 +141,60 @@ export const setUserGroups = (userId: string, groupIds: readonly string[]): Prom
  * button below is disabled for your own row for the same reason, so the refusal is visible
  * before it is a 409.
  */
+export type AdminEventAction =
+  | 'user.created'
+  | 'user.suspended'
+  | 'user.reinstated'
+  | 'user.groups_changed'
+  | 'user.sessions_revoked'
+  | 'user.password_link_sent'
+  | 'user.mfa_disabled'
+  | 'group.created'
+  | 'group.renamed'
+  | 'group.deleted'
+  | 'group.permissions_changed';
+
+export interface AdminEvent {
+  readonly seq: number;
+  readonly action: AdminEventAction;
+  readonly occurredAt: string;
+  readonly actorUserId: string;
+  readonly actorName: string | null;
+  readonly subjectUserId: string | null;
+  readonly subjectName: string | null;
+  readonly subjectGroupId: string | null;
+  readonly subjectGroupCode: string | null;
+  /** ⚠️ Ids and codes only — the API refuses anything that looks like an address. */
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * ⭐ The administrative history.
+ *
+ * `users.write`, not `users.read` — "does Somchai still have access?" is a different
+ * question from "who changed whose permissions last month", and the API draws the line
+ * there. See the controller for why it is not a separate `audit.read` yet.
+ */
+export const listAuditTrail = (userId?: string): Promise<readonly AdminEvent[]> =>
+  apiJson(
+    `/admin/audit${userId === undefined ? '' : `?userId=${encodeURIComponent(userId)}`}`,
+    (body) => {
+      const events = (body as { readonly events?: unknown }).events;
+      if (!Array.isArray(events)) throw new TypeError('สันประวัติ: ไม่ใช่รายการ');
+
+      return events.map((raw) => {
+        const event = raw as Record<string, unknown>;
+        /*
+         * `seq` must be a number. The API casts `bigserial` to `::int` in the query
+         * precisely because `db.execute` returns `int8` as a string; checking rather than
+         * coercing is what keeps a regression there visible instead of repaired here.
+         */
+        if (typeof event['seq'] !== 'number') throw new TypeError('สันประวัติ: seq ไม่ใช่ตัวเลข');
+        return event as unknown as AdminEvent;
+      });
+    },
+  );
+
 export const disableUserMfa = (userId: string): Promise<unknown> =>
   send(`${userPath(userId)}/mfa`, 'DELETE');
 

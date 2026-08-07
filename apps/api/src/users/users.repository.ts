@@ -5,13 +5,17 @@ import { groupPermissions, groups, userEmails, userGroups, users } from '@wewin/
 import type { UserStatus } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../database/database.tokens';
+import { AuditRepository } from './audit.repository';
 import type { PermissionCode } from '../rbac/permissions';
 import { USER_ADMIN_PERMISSION } from './lockout';
 import type { GroupWire, UserSummaryWire } from './users.contract';
 
 @Injectable()
 export class UsersRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly audit: AuditRepository,
+  ) {}
 
   /**
    * Every account, with the groups it belongs to and the permissions those grant.
@@ -129,18 +133,41 @@ export class UsersRepository {
    * revokes sessions — `users_status_revoke_sessions` does that inside this same statement's
    * transaction, which is the only place it cannot be forgotten.
    */
-  async setSuspended(userId: string, suspended: boolean): Promise<void> {
-    await this.db.execute(
-      suspended
-        ? sql`update users set status = 'suspended', suspended_at = now()
-               where id = ${userId}::uuid and status = 'active'`
-        : sql`update users set status = 'active', suspended_at = null
-               where id = ${userId}::uuid and status = 'suspended'`,
-    );
+  async setSuspended(userId: string, suspended: boolean, actorUserId: string): Promise<void> {
+    /*
+     * ⭐ A transaction for one UPDATE, and the transaction is the point.
+     *
+     * This was a bare `db.execute`. The audit row now goes in beside it, so the status change
+     * and the record of who made it either both land or neither does — a row written after
+     * the commit is missing whenever the process dies in between, and the gap is invisible
+     * because the only thing that would have reported it is the row that was never written.
+     *
+     * `users_status_revoke_sessions` already fires inside this same transaction. It is now
+     * three facts committing together rather than two.
+     */
+    await this.db.transaction(async (tx) => {
+      await tx.execute(
+        suspended
+          ? sql`update users set status = 'suspended', suspended_at = now()
+                 where id = ${userId}::uuid and status = 'active'`
+          : sql`update users set status = 'active', suspended_at = null
+                 where id = ${userId}::uuid and status = 'suspended'`,
+      );
+
+      await this.audit.record(tx, {
+        action: suspended ? 'user.suspended' : 'user.reinstated',
+        actorUserId,
+        subjectUserId: userId,
+      });
+    });
   }
 
   /** Replace a user's group membership wholesale. */
-  async setUserGroups(userId: string, groupIds: readonly string[]): Promise<void> {
+  async setUserGroups(
+    userId: string,
+    groupIds: readonly string[],
+    actorUserId: string,
+  ): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.delete(userGroups).where(eq(userGroups.userId, userId));
       if (groupIds.length > 0) {
@@ -149,12 +176,24 @@ export class UsersRepository {
           .values(groupIds.map((groupId) => ({ userId, groupId })))
           .onConflictDoNothing();
       }
+
+      /*
+       * The group *ids*, not their names. Names change; the audit is about which grants were
+       * held, and a renamed group must read the same in a row written a year ago.
+       */
+      await this.audit.record(tx, {
+        action: 'user.groups_changed',
+        actorUserId,
+        subjectUserId: userId,
+        payload: { groupIds: [...groupIds] },
+      });
     });
   }
 
   async setGroupPermissions(
     groupId: string,
     permissions: readonly PermissionCode[],
+    actorUserId: string,
   ): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.delete(groupPermissions).where(eq(groupPermissions.groupId, groupId));
@@ -164,6 +203,31 @@ export class UsersRepository {
           .values(permissions.map((permissionCode) => ({ groupId, permissionCode })))
           .onConflictDoNothing();
       }
+
+      /*
+       * ⚠️ The group's `code` as well as the permissions, because
+       * `admin_events_group_actions_carry_a_code` demands it of every `group.*` row — the
+       * foreign key is `ON DELETE SET NULL`, so the code is what keeps this readable after
+       * the group is gone.
+       *
+       * This is the call site that found the CHECK: it wrote `{ permissions }` alone and
+       * every permission change 500'd until the code went in beside them.
+       *
+       * Permission codes are the RBAC vocabulary itself — no person is described by them, so
+       * they are safe in a row that outlives an erasure.
+       */
+      const [named] = await tx
+        .select({ code: groups.code })
+        .from(groups)
+        .where(eq(groups.id, groupId))
+        .limit(1);
+
+      await this.audit.record(tx, {
+        action: 'group.permissions_changed',
+        actorUserId,
+        subjectGroupId: groupId,
+        payload: { code: named?.code ?? 'unknown', permissions: [...permissions] },
+      });
     });
   }
 
@@ -238,6 +302,7 @@ export class UsersRepository {
     readonly email: string;
     readonly displayName: string;
     readonly groupIds: readonly string[];
+    readonly actorUserId: string;
   }): Promise<string> {
     return this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -259,6 +324,20 @@ export class UsersRepository {
           .values(input.groupIds.map((groupId) => ({ userId: created.id, groupId })))
           .onConflictDoNothing();
       }
+
+      /*
+       * ⚠️ The id and the groups. **Not the address** — `users.service.ts` logs
+       * `created ${userId} (${email})` and an audit row written to match would put an
+       * address in the one table an erasure cannot reach.
+       * `admin_events_payload_is_impersonal` refuses it, which is the guard rather than the
+       * intention. The address lives, and dies, in `user_emails`.
+       */
+      await this.audit.record(tx, {
+        action: 'user.created',
+        actorUserId: input.actorUserId,
+        subjectUserId: created.id,
+        payload: { groupIds: [...input.groupIds] },
+      });
 
       return created.id;
     });
@@ -284,13 +363,28 @@ export class UsersRepository {
    * `revoked_by_admin` is one of the six words `sessions_revoked_reason_known` allows, and it
    * is the accurate one — a revocation with no reason is an incident nobody can describe.
    */
-  async revokeSessions(userId: string): Promise<number> {
-    const result = await this.db.execute<{ id: string }>(sql`
-      update sessions set revoked_at = now(), revoked_reason = 'revoked_by_admin'
-       where user_id = ${userId}::uuid and revoked_at is null
-      returning id
-    `);
-    return result.rows.length;
+  async revokeSessions(userId: string, actorUserId: string): Promise<number> {
+    return this.db.transaction(async (tx) => {
+      const result = await tx.execute<{ id: string }>(sql`
+        update sessions set revoked_at = now(), revoked_reason = 'revoked_by_admin'
+         where user_id = ${userId}::uuid and revoked_at is null
+        returning id
+      `);
+
+      /*
+       * The count, not the session ids. A session id is a bearer-adjacent identifier and the
+       * audit answers "how many devices were signed out", which is the question somebody
+       * actually asks afterwards.
+       */
+      await this.audit.record(tx, {
+        action: 'user.sessions_revoked',
+        actorUserId,
+        subjectUserId: userId,
+        payload: { revoked: result.rows.length },
+      });
+
+      return result.rows.length;
+    });
   }
 
   /** The primary verified address, for sending a set-password link to. */
@@ -309,6 +403,7 @@ export class UsersRepository {
     readonly code: string;
     readonly nameTh: string;
     readonly permissions: readonly PermissionCode[];
+    readonly actorUserId: string;
   }): Promise<string> {
     return this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -323,16 +418,72 @@ export class UsersRepository {
           .values(input.permissions.map((permissionCode) => ({ groupId: created.id, permissionCode })));
       }
 
+      await this.audit.record(tx, {
+        action: 'group.created',
+        actorUserId: input.actorUserId,
+        subjectGroupId: created.id,
+        payload: { code: input.code, permissions: [...input.permissions] },
+      });
+
       return created.id;
     });
   }
 
-  async renameGroup(groupId: string, nameTh: string): Promise<void> {
-    await this.db.update(groups).set({ nameTh }).where(eq(groups.id, groupId));
+  async renameGroup(groupId: string, nameTh: string, actorUserId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      /*
+       * ⚠️ `returning code`, because every `group.*` payload must carry it —
+       * `admin_events_group_actions_carry_a_code`. The foreign key is `ON DELETE SET NULL`,
+       * so the code is what keeps the row readable after the group is gone.
+       */
+      const [updated] = await tx
+        .update(groups)
+        .set({ nameTh })
+        .where(eq(groups.id, groupId))
+        .returning({ code: groups.code });
+
+      if (updated === undefined) return;
+
+      await this.audit.record(tx, {
+        action: 'group.renamed',
+        actorUserId,
+        subjectGroupId: groupId,
+        payload: { code: updated.code, nameTh },
+      });
+    });
   }
 
-  async deleteGroup(groupId: string): Promise<void> {
-    await this.db.delete(groups).where(eq(groups.id, groupId));
+  /**
+   * ⚠️ The row is written first, and then the delete nulls its own pointer.
+   *
+   * `subject_group_id` is `ON DELETE SET NULL` — it was `RESTRICT` for one commit, which
+   * made deleting an audited group impossible and turned the audit into a constraint on the
+   * thing it was supposed to observe. The 500 that produced was the feature breaking, not
+   * the guard working.
+   *
+   * So the row survives the group and reads as "somebody deleted the group `sales`", which
+   * is only true because `code` is in the payload. `admin_events_group_actions_carry_a_code`
+   * is what makes that a rule rather than a habit.
+   */
+  async deleteGroup(groupId: string, actorUserId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [doomed] = await tx
+        .select({ code: groups.code })
+        .from(groups)
+        .where(eq(groups.id, groupId))
+        .limit(1);
+
+      if (doomed === undefined) return;
+
+      await this.audit.record(tx, {
+        action: 'group.deleted',
+        actorUserId,
+        subjectGroupId: groupId,
+        payload: { code: doomed.code },
+      });
+
+      await tx.delete(groups).where(eq(groups.id, groupId));
+    });
   }
 
   async groupById(groupId: string): Promise<GroupWire | undefined> {

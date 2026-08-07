@@ -78,12 +78,13 @@ export class MfaAdminController {
       );
     }
 
-    await this.repository.disable(target);
+    await this.repository.disable(target, { actorUserId: caller });
 
     /*
-     * Both ids, and `warn` rather than `log`. Suspending somebody is routine administration;
-     * removing their second factor is the one action here that makes an account easier to
-     * get into, and it should be the line that stands out when somebody reads back a day.
+     * The log line stays, and it is no longer the record — `admin_events` is, written inside
+     * the same transaction as the delete. This is for whoever is watching a process in real
+     * time, and `warn` rather than `log` because removing somebody's second factor is the
+     * one action on this surface that makes an account *easier* to get into.
      */
     this.logger.warn(`second factor of ${target} disabled by ${caller}`);
   }

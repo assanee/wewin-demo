@@ -4,6 +4,7 @@ import { and, eq, sql } from '@wewin/db/sql';
 import { mfaCredentials, mfaRecoveryCodes } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../../database/database.tokens';
+import { AuditRepository } from '../../users/audit.repository';
 
 /**
  * Everything the second factor reads and writes.
@@ -31,7 +32,10 @@ export interface MfaState {
 
 @Injectable()
 export class MfaRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly auditRepository: AuditRepository,
+  ) {}
 
   async findCredential(userId: string): Promise<MfaCredentialRow | undefined> {
     const [row] = await this.db
@@ -169,12 +173,32 @@ export class MfaRepository {
    * that refusal is correct: a spent code is the record that somebody recovered an account,
    * and disabling MFA is not a reason to lose it.
    */
-  async disable(userId: string): Promise<void> {
+  async disable(userId: string, audit?: { readonly actorUserId: string }): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.delete(mfaCredentials).where(eq(mfaCredentials.userId, userId));
       await tx
         .delete(mfaRecoveryCodes)
         .where(and(eq(mfaRecoveryCodes.userId, userId), sql`${mfaRecoveryCodes.usedAt} is null`));
+
+      /*
+       * ⚠️ Recorded only when an **administrator** did it, and `audit` is optional for that
+       * reason rather than out of convenience.
+       *
+       * `admin_events` is the record of what staff did to *somebody else's* account. A
+       * person turning off their own second factor — having re-proved their password — is
+       * not an administrative act on another person, and a row saying "X disabled X's MFA"
+       * would fill the trail with noise that hides the entries that matter.
+       *
+       * The self-service path is not unrecorded: `sessions` and the credential's own absence
+       * are the evidence, and the person did it themselves.
+       */
+      if (audit !== undefined) {
+        await this.auditRepository.record(tx, {
+          action: 'user.mfa_disabled',
+          actorUserId: audit.actorUserId,
+          subjectUserId: userId,
+        });
+      }
     });
   }
 }

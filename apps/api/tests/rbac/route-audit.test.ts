@@ -271,6 +271,15 @@ describe('boot-time route audit', () => {
       'DELETE /payments/slips/:slipId/image [permissions]',
       'DELETE /quotes/authority/limits/:groupId/:dimension [permissions]',
       'DELETE /reviews/photos/:photoId [principal]',
+      /*
+       * ⭐ The audit trail. `users.write` and not `users.read` — see the controller.
+       *
+       * A separate `audit.read` would be more correct in a company with somebody whose job
+       * is oversight rather than administration. WEWIN has none, and a code that
+       * `permission-sync` inserts and no group holds would make the trail unreadable on the
+       * day it shipped: the same failure as a dead-letter queue nobody sees.
+       */
+      'GET /admin/audit [permissions]',
       'GET /admin/catalog/option-groups [permissions]',
       'GET /admin/catalog/products [permissions]',
       'GET /admin/catalog/products/:productId [permissions]',

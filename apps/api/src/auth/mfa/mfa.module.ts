@@ -9,6 +9,7 @@ import { MfaAccountController } from './mfa-account.controller';
 import { MfaAdminController } from './mfa-admin.controller';
 import { MfaController } from './mfa.controller';
 import { MfaRepository } from './mfa.repository';
+import { AuditRepository } from '../../users/audit.repository';
 import { MfaEnrolmentService } from './mfa-enrolment.service';
 import { MfaSignInService } from './mfa-sign-in.service';
 import { MFA_THROTTLE, makeMfaThrottle } from './mfa-throttle';
@@ -76,6 +77,7 @@ export class MfaModule {
       controllers: [MfaController, MfaAccountController, MfaAdminController],
       providers: [
         MfaRepository,
+        AuditRepository,
         MfaChallengeService,
         MfaSignInService,
         MfaEnrolmentService,

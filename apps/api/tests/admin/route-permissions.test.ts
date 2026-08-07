@@ -116,6 +116,7 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
    * expressible in this table, which is about permissions; it lives in `users/lockout.ts`
    * beside self-suspension, because it is a rule about *who* rather than about *may*.
    */
+  ['GET /admin/audit', ['users.write']],
   ['DELETE /admin/users/:userId/mfa', ['users.write']],
   ['DELETE /admin/users/:userId/suspension', ['users.write']],
   ['PUT /admin/users/:userId/groups', ['users.write']],

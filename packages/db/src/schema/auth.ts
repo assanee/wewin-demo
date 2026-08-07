@@ -1,5 +1,6 @@
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
+  bigserial,
   boolean,
   char,
   check,
@@ -7,6 +8,7 @@ import {
   index,
   inet,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -241,6 +243,23 @@ export const ERASURE_TREATMENTS = {
    */
   'mfa_credentials.user_id': 'delete',
   'mfa_recovery_codes.user_id': 'delete',
+
+  /*
+   * ⭐ The audit trail — phase 8, and both columns are `keep`.
+   *
+   * This is the argument `user_erasure_requests` already makes for itself, applied to the
+   * wider record: an audit row is the company's account of **what it did**, not a record
+   * about the person it was done to. Deleting it answers a PDPA request by destroying the
+   * evidence that requests get answered — and the same row is what tells a suspended
+   * colleague who suspended them and when.
+   *
+   * ⚠️ `keep` is only defensible because the row holds nothing personal. `actor_user_id` and
+   * `subject_user_id` point at tombstones that `erase_user` has already scrubbed, and
+   * `admin_events_payload_is_impersonal` refuses a payload with an address in it. Take that
+   * CHECK away and this treatment becomes wrong.
+   */
+  'admin_events.actor_user_id': 'keep',
+  'admin_events.subject_user_id': 'keep',
   'sessions.user_id': 'delete',
   /*
    * KEPT, against all three design angles, which each listed `user_groups` under "delete
@@ -1232,5 +1251,174 @@ export const mfaRecoveryCodes = pgTable(
     index('mfa_recovery_codes_unused_idx')
       .on(table.userId)
       .where(sql`used_at is null`),
+  ],
+);
+
+/** `('a', 'b')` for a CHECK. Local, matching `order.ts` — the same three lines, no shared home. */
+const inList = (values: readonly string[]) =>
+  sql.raw(`(${values.map((value) => `'${value}'`).join(', ')})`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The administrative spine — what staff did to accounts
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every administrative act this table records.
+ *
+ * `text` + CHECK rather than an enum, so adding one is a reversible migration — the same
+ * choice `LEDGER_ENTRY_KINDS` makes and for the same reason.
+ *
+ * ⚠️ Deliberately **not** a general "audit everything" vocabulary. Orders have
+ * `order_events`, money has `ledger_entries`, delivery has `notification_attempts`, reviews
+ * and quotes carry their own decider columns. Those are spines already, and a second copy of
+ * them here would be two records of one fact that can disagree. What had no evidence at all
+ * was the account-and-permission surface, and that is exactly this list.
+ */
+export const ADMIN_EVENT_ACTIONS = [
+  'user.created',
+  'user.suspended',
+  'user.reinstated',
+  'user.groups_changed',
+  'user.sessions_revoked',
+  'user.password_link_sent',
+  'user.mfa_disabled',
+  'group.created',
+  'group.renamed',
+  'group.deleted',
+  'group.permissions_changed',
+] as const;
+
+export type AdminEventAction = (typeof ADMIN_EVENT_ACTIONS)[number];
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ WHAT A MEMBER OF STAFF DID TO SOMEBODY'S ACCOUNT.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Until this table, every one of these actions left a `logger.log` line and nothing else. A
+ * log rotates, is not queryable from the application, cannot be shown to the person it was
+ * about, and is absent entirely from a machine that was replaced. "Who removed her second
+ * factor, and when?" had no answer that survived a week.
+ *
+ * ── ⚠️ THE ROW IS WRITTEN IN THE CHANGE'S OWN TRANSACTION ────────────────────
+ *
+ * Not afterwards. A row written after the UPDATE commits is missing whenever the process
+ * dies in between — the change happened and nothing recorded it, which is the one failure an
+ * audit trail exists to make impossible. `AuditRepository` only takes a transaction handle,
+ * so there is no method that *can* be called outside one.
+ *
+ * ── ⚠️ THE PAYLOAD IS IDS AND ENUMS, NEVER PROSE AND NEVER AN ADDRESS ────────
+ *
+ * These rows are kept through erasure — see `ERASURE_TREATMENTS` — because they are the
+ * record that the company acted, not a record about the person. That is only defensible
+ * while the row holds nothing personal: a uuid pointing at a scrubbed tombstone, a group
+ * code, a list of permission codes. An email address in here would be a copy of personal
+ * data in the one table PDPA deliberately cannot reach.
+ *
+ * `users.service.ts` logs `created ${userId} (${email})`; the audit row carries the id only,
+ * and the address lives — and dies — in `user_emails`.
+ *
+ * ── Append-only, by trigger ──────────────────────────────────────────────────
+ *
+ * No UPDATE, no DELETE, ever. `0023_audit.sql` enforces it the way `order_events` and
+ * `ledger_entries` are enforced: an audit log that can be edited is not an audit log, it is
+ * a table somebody will eventually tidy.
+ */
+export const adminEvents = pgTable(
+  'admin_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * A total order across every administrative act.
+     *
+     * `order_events.seq` is per-order because an order is the unit a person reads. There is
+     * no equivalent unit here — the question is "what happened, in what order" across the
+     * whole company — so the sequence is global, and it is what makes a page of history
+     * stable while rows are being appended underneath it.
+     */
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
+    action: text('action', { enum: ADMIN_EVENT_ACTIONS }).notNull(),
+
+    /**
+     * ⚠️ Who did it, and never NULL.
+     *
+     * `order_events` allows a `system` actor because a worker genuinely moves orders. Nothing
+     * administers an account except a person: every route that writes one of these is
+     * `@RequirePermissions`, so a NULL here would mean the actor was lost rather than absent.
+     */
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id, { onUpdate: 'cascade', onDelete: 'restrict' }),
+
+    /** The person it was done to, when it was a person. */
+    subjectUserId: uuid('subject_user_id').references(() => users.id, {
+      onUpdate: 'cascade',
+      onDelete: 'restrict',
+    }),
+    /**
+     * ...or the group. `group.*` actions name one; `user.*` actions do not.
+     *
+     * ⚠️ **No foreign key, and it took three attempts to see why.**
+     *
+     *   `ON DELETE RESTRICT` made deleting an audited group impossible — the audit became a
+     *   constraint on the thing it was supposed to observe, and a working feature started
+     *   returning 500.
+     *
+     *   `ON DELETE SET NULL` collided with `admin_events_append_only`: setting null *is* an
+     *   UPDATE, and the trigger that makes this table evidence refuses every one of them.
+     *
+     * The two rules are incompatible by construction, and that is the answer rather than a
+     * problem to route around: **a foreign key from an append-only log into a table whose
+     * rows may be deleted is the wrong relationship.** A record of what happened does not
+     * need referential integrity to a present that is allowed to move on.
+     *
+     * So this is a plain uuid, and `admin_events_group_actions_carry_a_code` is what keeps
+     * the row readable — "somebody deleted the group `sales`" survives `sales`.
+     *
+     * `actor_user_id` and `subject_user_id` keep their keys, and the asymmetry is not an
+     * inconsistency: users are never deleted. `erase_user` scrubs in place and
+     * `ERASURE_TREATMENTS` says `keep`, so those references always resolve — to a tombstone,
+     * which is exactly what an erased person should look like from here.
+     */
+    subjectGroupId: uuid('subject_group_id'),
+
+    /** ⚠️ Ids and enums only. See the block comment — this survives erasure. */
+    payload: jsonb('payload').notNull().default({}),
+
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('admin_events_action_known', sql`${table.action} in ${inList(ADMIN_EVENT_ACTIONS)}`),
+    /*
+     * ⚠️ Never both. A row naming a person *and* a group is an act nobody can describe.
+     *
+     * It used to also demand exactly one, and that stopped being expressible when
+     * `subject_group_id` became `SET NULL`: a `group.deleted` row is a row with neither
+     * column filled, and it is still a complete record because the code is in the payload.
+     */
+    check(
+      'admin_events_not_both_subjects',
+      sql`${table.subjectUserId} is null or ${table.subjectGroupId} is null`,
+    ),
+    check(
+      'admin_events_user_actions_name_a_user',
+      sql`${table.action} not like 'user.%' or ${table.subjectUserId} is not null`,
+    ),
+    /*
+     * ⭐ What replaces the foreign key once the group is gone.
+     *
+     * A `group.*` row must carry `code` in its payload, so it reads as "somebody deleted the
+     * group `sales`" a year after `sales` stopped existing. Without this the SET NULL above
+     * would turn a deletion into a row that says an unnameable group was deleted.
+     */
+    check(
+      'admin_events_group_actions_carry_a_code',
+      sql`${table.action} not like 'group.%' or ${table.payload} ? 'code'`,
+    ),
+
+    /* The two reads this table has: the whole history, and one person's. */
+    index('admin_events_seq_idx').on(table.seq),
+    index('admin_events_subject_user_idx').on(table.subjectUserId, table.seq),
+    index('admin_events_actor_idx').on(table.actorUserId, table.seq),
   ],
 );

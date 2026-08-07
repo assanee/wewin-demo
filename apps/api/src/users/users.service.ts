@@ -10,6 +10,7 @@ import {
 } from './lockout';
 import type { CreatedUserWire, GroupListWire, UserListWire } from './users.contract';
 import { PasswordResetService } from '../auth/password/password-reset.service';
+import { AuditRepository, type AdminEventRow } from './audit.repository';
 import { UsersRepository } from './users.repository';
 import { PERMISSION_CODES } from '../rbac/permissions';
 
@@ -24,11 +25,20 @@ import { PERMISSION_CODES } from '../rbac/permissions';
  */
 @Injectable()
 export class UsersService {
+  /*
+   * ⚠️ The `logger.log` lines below stay, and they are no longer the record.
+   *
+   * `admin_events` is the record — queryable, append-only, survives the machine. A log line
+   * is still worth having for somebody watching a process in real time, which is a different
+   * job from answering "who removed her second factor, and when" six weeks later. Deleting
+   * them would trade a useful thing for tidiness.
+   */
   private readonly logger = new Logger(UsersService.name);
 
   constructor(
     private readonly repository: UsersRepository,
     private readonly resets: PasswordResetService,
+    private readonly audit: AuditRepository,
   ) {}
 
   async list(): Promise<UserListWire> {
@@ -76,7 +86,7 @@ export class UsersService {
       });
     }
 
-    await this.repository.setSuspended(userId, suspended);
+    await this.repository.setSuspended(userId, suspended, callerUserId);
     this.logger.log(
       `${suspended ? 'suspended' : 'reinstated'} ${userId} by ${callerUserId}`,
     );
@@ -109,7 +119,7 @@ export class UsersService {
     });
     if (problem !== null) throw UsersService.lastAdministrator();
 
-    await this.repository.setUserGroups(userId, groupIds);
+    await this.repository.setUserGroups(userId, groupIds, callerUserId);
     this.logger.log(`groups of ${userId} set to [${groupIds.join(', ')}] by ${callerUserId}`);
   }
 
@@ -135,7 +145,7 @@ export class UsersService {
      * last-administrator guard above is what covers the dangerous case, and it covers it
      * whether or not the caller is a member.
      */
-    await this.repository.setGroupPermissions(groupId, permissions);
+    await this.repository.setGroupPermissions(groupId, permissions, callerUserId);
     this.logger.log(
       `permissions of group ${groupId} set to [${permissions.join(', ')}] by ${callerUserId}`,
     );
@@ -170,7 +180,8 @@ export class UsersService {
       }
     }
 
-    const userId = await this.repository.createUser({ ...input, email });
+    const userId = await this.repository.createUser({
+      actorUserId: callerUserId, ...input, email });
     this.logger.log(`created ${userId} (${email}) by ${callerUserId}`);
 
     return { userId, invitationSent: await this.sendSetPasswordLink(email) };
@@ -217,7 +228,7 @@ export class UsersService {
      */
     this.refuseSelf(callerUserId, userId, 'suspend');
 
-    const revoked = await this.repository.revokeSessions(userId);
+    const revoked = await this.repository.revokeSessions(userId, callerUserId);
     this.logger.log(`revoked ${String(revoked)} session(s) of ${userId} by ${callerUserId}`);
     return revoked;
   }
@@ -226,15 +237,15 @@ export class UsersService {
     callerUserId: string,
     input: { readonly code: string; readonly nameTh: string; readonly permissions: readonly PermissionCode[] },
   ): Promise<string> {
-    const groupId = await this.repository.createGroup(input);
+    const groupId = await this.repository.createGroup({ ...input, actorUserId: callerUserId });
     this.logger.log(`created group ${input.code} by ${callerUserId}`);
     return groupId;
   }
 
-  async renameGroup(groupId: string, nameTh: string): Promise<void> {
+  async renameGroup(callerUserId: string, groupId: string, nameTh: string): Promise<void> {
     const group = await this.repository.groupById(groupId);
     if (group === undefined) throw AppError.notFound('ไม่พบกลุ่มนี้');
-    await this.repository.renameGroup(groupId, nameTh);
+    await this.repository.renameGroup(groupId, nameTh, callerUserId);
   }
 
   /**
@@ -248,7 +259,7 @@ export class UsersService {
    * A `is_system` group is refused outright: those exist because something in the
    * application refers to them by code.
    */
-  async deleteGroup(groupId: string): Promise<void> {
+  async deleteGroup(callerUserId: string, groupId: string): Promise<void> {
     const group = await this.repository.groupById(groupId);
     if (group === undefined) throw AppError.notFound('ไม่พบกลุ่มนี้');
 
@@ -268,7 +279,21 @@ export class UsersService {
     });
     if (problem !== null) throw UsersService.lastAdministrator();
 
-    await this.repository.deleteGroup(groupId);
+    await this.repository.deleteGroup(groupId, callerUserId);
+  }
+
+  /**
+   * The administrative history.
+   *
+   * ⚠️ Capped, and the cap is not a page size — there is no paging. A hundred rows is what a
+   * person reads; beyond that the question has stopped being "what happened recently" and
+   * become a query somebody should write against the table. Saying so is better than a
+   * paginator nobody scrolls past page two of.
+   */
+  async auditTrail(filter: { readonly subjectUserId?: string | undefined }): Promise<
+    readonly AdminEventRow[]
+  > {
+    return this.audit.list({ ...filter, limit: 100 });
   }
 
   private async holdsAdmin(userId: string): Promise<boolean> {
