@@ -91,6 +91,31 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['POST /admin/reviews/:reviewId/unhide', ['reviews.moderate']],
   ['POST /admin/reviews/:reviewId/publish', ['reviews.moderate']],
   ['POST /admin/reviews/:reviewId/reply', ['reviews.moderate']],
+  /*
+   * User administration — and the split is the point of the block.
+   *
+   * `users.read` looks: who is in what group, who still has a live session, who was
+   * suspended and when. That is a question a manager or a support lead has an ordinary
+   * reason to ask, and answering it should not require the ability to grant themselves
+   * `orders.refund`.
+   *
+   * ⚠️ `users.erase` appears nowhere. Erasure is `erase_user()` in Postgres, it is
+   * irreversible, and plan 7.16 still holds questions a lawyer owns — a route for it would
+   * answer them by shipping. The permission exists in the catalogue and grants nothing,
+   * which is the honest state rather than an oversight.
+   */
+  ['GET /admin/users', ['users.read']],
+  ['GET /admin/groups', ['users.read']],
+  ['POST /admin/users', ['users.write']],
+  ['POST /admin/users/:userId/suspension', ['users.write']],
+  ['DELETE /admin/users/:userId/suspension', ['users.write']],
+  ['PUT /admin/users/:userId/groups', ['users.write']],
+  ['POST /admin/users/:userId/sessions/revocation', ['users.write']],
+  ['POST /admin/users/:userId/password-link', ['users.write']],
+  ['POST /admin/groups', ['users.write']],
+  ['PATCH /admin/groups/:groupId', ['users.write']],
+  ['DELETE /admin/groups/:groupId', ['users.write']],
+  ['PUT /admin/groups/:groupId/permissions', ['users.write']],
 ]);
 
 const codesOf = (record: RouteRecord): readonly string[] =>

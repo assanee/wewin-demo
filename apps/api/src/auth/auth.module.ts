@@ -41,6 +41,7 @@ export class AuthModule {
   static forRoot(options: AuthModuleOptions): DynamicModule {
     const sessions = SessionModule.forRoot(options.session);
     const oauth = options.oauth ?? parseOAuthConfig(process.env);
+    const passwords = PasswordModule.forRoot({ imports: [sessions] });
 
     return {
       module: AuthModule,
@@ -53,7 +54,7 @@ export class AuthModule {
          * graph imports it — and this is the only place that graph contains the one
          * `SessionModule.forRoot(config)` instance the whole application shares.
          */
-        PasswordModule.forRoot({ imports: [sessions] }),
+        passwords,
       ],
       controllers: [AuthController],
       /*
@@ -63,7 +64,13 @@ export class AuthModule {
        * middleware rather than being split across two files.
        */
       providers: [AuthenticationMiddleware],
-      exports: [AuthenticationMiddleware, sessions],
+      /*
+       * `passwords` is re-exported so `UsersModule` can reach `PasswordResetService` — the
+       * administrator's "send a set-password link" action is the same email a person gets
+       * from the login page, and a second implementation of it would be a second one-shot
+       * token scheme to keep correct.
+       */
+      exports: [AuthenticationMiddleware, sessions, passwords],
     };
   }
 }

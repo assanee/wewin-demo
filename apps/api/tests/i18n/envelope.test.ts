@@ -348,5 +348,17 @@ describe('what is still a Thai string, as a number', () => {
  * The follow-up is the customer-facing half, and it is a bounded job: `ServerMessage` keys
  * exist, `src/i18n/catalog/th.ts` is the only catalogue to author, and the strings are already
  * written — they are sitting in the call sites. See plan 12.
+ *
+ * ── 179 → 197: user administration ───────────────────────────────────────────────
+ *
+ * 18 more, all in `src/users`, and they are a different kind of debt from the reviews half
+ * above rather than more of the same. **Every reader of this screen is Thai staff.** It is
+ * behind `users.read`, it is in the dashboard, and the dashboard has one language. So the
+ * cost of these not being keyed is close to zero today and the reason to key them is
+ * consistency rather than a customer reading Thai they cannot read.
+ *
+ * Worth saying because it is the argument somebody will make about the *next* eighteen, and
+ * it is only true while the audience really is staff-only. The moment any of these sentences
+ * can reach a customer, the calculation changes and this note is wrong.
  */
-const RAW_LITERAL_CALL_SITES = 179;
+const RAW_LITERAL_CALL_SITES = 197;

@@ -123,6 +123,13 @@ export class PasswordModule {
             }),
         },
       ],
+      /*
+       * ⭐ Exported so `UsersModule` can send a set-password link when an administrator
+       * creates an account — and exported *only this*. `PasswordSignInService` stays private:
+       * one route mints sessions from a password, and a second module able to call it would
+       * be a second place where "these credentials are good" is decided.
+       */
+      exports: [PasswordResetService],
     };
   }
 }

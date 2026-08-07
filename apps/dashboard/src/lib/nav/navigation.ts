@@ -1,5 +1,6 @@
 import type { Route } from 'next';
 import {
+  Users,
   Boxes,
   FileText,
   Images,
@@ -119,6 +120,24 @@ export const NAVIGATION: readonly NavSection[] = [
         labelTh: 'ใบเสนอราคา',
         icon: FileText,
         requires: ['quotes.read'],
+      },
+    ],
+  },
+  {
+    labelTh: 'ระบบ',
+    items: [
+      {
+        /*
+         * `users.read` and not `users.write`: most of what this screen is for is *looking* —
+         * who is in what group, who still has a live session, who was suspended and when —
+         * and every control that changes something is decided per action inside the page.
+         * A support lead answering "does Somchai still have access?" should not need the
+         * ability to grant themselves `orders.refund` to find out.
+         */
+        href: '/users',
+        labelTh: 'ผู้ใช้และสิทธิ์',
+        icon: Users,
+        requires: ['users.read'],
       },
     ],
   },

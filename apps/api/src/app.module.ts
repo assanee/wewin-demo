@@ -22,6 +22,7 @@ import { AuthorityModule } from './quotes/authority';
 import { QuotesModule } from './quotes';
 import { ReviewsModule } from './reviews';
 import { ProfileModule } from './profile';
+import { UsersModule } from './users';
 import { RbacModule } from './rbac/rbac.module';
 
 /*
@@ -44,6 +45,17 @@ export interface AppModuleOptions {
 @Module({})
 export class AppModule implements NestModule {
   static forRoot(env: Env, options: AppModuleOptions): DynamicModule {
+    /*
+     * Built once and handed to both places that need it. `UsersModule` resolves
+     * `PasswordResetService` through this graph — a second `AuthModule.forRoot(...)` would
+     * mint a second session-signing key *and* a second reset throttle with its own counters,
+     * neither of which fails loudly.
+     */
+    const auth = AuthModule.forRoot({
+      session: options.session,
+      ...(options.oauth === undefined ? {} : { oauth: options.oauth }),
+    });
+
     return {
       module: AppModule,
       imports: [
@@ -57,10 +69,7 @@ export class AppModule implements NestModule {
          * starting — see src/rbac/route-registry.service.ts.
          */
         RbacModule.forRoot({ cookieSecure: env.COOKIE_SECURE }),
-        AuthModule.forRoot({
-          session: options.session,
-          ...(options.oauth === undefined ? {} : { oauth: options.oauth }),
-        }),
+        auth,
         HealthModule,
         MetaModule,
         CatalogModule,
@@ -144,6 +153,7 @@ export class AppModule implements NestModule {
          * A comment cannot catch this. It said so twice and the thing happened again.
          */
         ReviewsModule.forRoot(),
+        UsersModule.forRoot({ imports: [auth] }),
         ProfileModule,
       ],
     };
