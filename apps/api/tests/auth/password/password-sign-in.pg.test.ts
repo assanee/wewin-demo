@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq, sql } from '@wewin/db/sql';
-import { passwordCredentials, userEmails, users } from '@wewin/db/schema';
+import { passwordCredentials, userEmails, userPhones, users } from '@wewin/db/schema';
 
 import { hashPassword, ARGON2ID_PARAMETERS } from '../../../src/auth/password/password-hash';
 import { REFRESH_COOKIE_NAME } from '../../../src/auth/session/refresh-cookie';
@@ -267,5 +267,92 @@ describeWithPg('signing in with a password', () => {
 
     // ⚠️ And the correct password is refused too, which is the documented cost of the limiter.
     expect((await signIn(address, PASSWORD)).status).toBe(429);
+  });
+
+  /* ================================================================= *
+   * ⭐ A telephone number as a username — against the real query
+   * ================================================================= */
+
+  /**
+   * ⚠️ These are here because the unit suite cannot see them.
+   *
+   * `password-sign-in.test.ts` drives a fake store, so it asserts what the *service* does
+   * with whatever the store returns. Whether the store's query filters on `verified_at` is
+   * invisible to it — a mutation putting that filter back passed all twenty-nine of its
+   * tests, while breaking the property the whole design turns on.
+   *
+   * So the number is claimed in Postgres and the sign-in goes over HTTP.
+   */
+  const makePhoneAccount = async (
+    who: string,
+    options: { verified?: boolean } = {},
+  ): Promise<string> => {
+    const number = `+6681${who}`;
+    const [user] = await db
+      .insert(users)
+      .values({ displayName: `phone probe ${who} ${tag}` })
+      .returning({ id: users.id });
+    if (!user) throw new Error('fixture insert returned nothing');
+
+    await db.insert(userPhones).values({
+      userId: user.id,
+      number,
+      /* `user_phones_primary_is_verified` — an unproved number may not be the one of record. */
+      isPrimary: options.verified === true,
+      verifiedAt: options.verified === true ? new Date() : null,
+    });
+    await db
+      .insert(passwordCredentials)
+      .values({ userId: user.id, passwordHash: await hashPassword(PASSWORD) });
+
+    return number;
+  };
+
+  it('⭐ signs in on a claim nobody has proved', async () => {
+    /*
+     * The property the whole split exists for. Verification means possession of the handset
+     * and costs money to establish, so requiring it would mean somebody who registered with a
+     * number waited for a telephone call before they could get in.
+     *
+     * MUTATION: add `and(… userPhones.verifiedAt is not null)` back to `findByClaimedPhone`
+     * — this goes red and the unit suite stays green, which is why it is written here.
+     */
+    const number = await makePhoneAccount('1230001');
+
+    const answer = await signIn(number, PASSWORD);
+
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    expect((answer.body as { accessToken?: string }).accessToken).toBeTypeOf('string');
+  });
+
+  it('signs in on a proved one too', async () => {
+    const number = await makePhoneAccount('1230002', { verified: true });
+
+    expect((await signIn(number, PASSWORD)).status).toBe(200);
+  });
+
+  it('⭐ reaches the same account however the number is written', async () => {
+    /*
+     * `user_phones_number_e164` stores one spelling; `@wewin/core/phone` produces it from
+     * whatever a person typed. Both halves have to agree or a customer who registered on a
+     * laptop and signs in on a phone keyboard is refused.
+     */
+    const number = await makePhoneAccount('1230003');
+
+    for (const written of ['0811230003', '081-123-0003', '081 123 0003', number]) {
+      expect((await signIn(written, PASSWORD)).status, written).toBe(200);
+    }
+  });
+
+  it('⚠️ refuses a number nobody claimed, exactly like a wrong password', async () => {
+    const claimed = await makePhoneAccount('1230004');
+
+    const wrongPassword = await signIn(claimed, 'entirely the wrong password');
+    const unclaimed = await signIn('+66819990004', PASSWORD);
+
+    expect(unclaimed.status).toBe(wrongPassword.status);
+    expect((unclaimed.body as { error?: { code?: string } }).error?.code).toBe(
+      (wrongPassword.body as { error?: { code?: string } }).error?.code,
+    );
   });
 });

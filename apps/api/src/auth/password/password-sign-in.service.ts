@@ -147,7 +147,7 @@ export class PasswordSignInService {
      */
     const found =
       username.kind === 'phone'
-        ? await this.store.findByVerifiedPhone(username.key)
+        ? await this.store.findByClaimedPhone(username.key)
         : await this.store.findByVerifiedEmail(username.key);
     const usable = await this.check(found, request.password);
 

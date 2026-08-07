@@ -773,16 +773,40 @@ export const userEmails = pgTable(
  * carry, so this table is `user_emails` with a different string in it — deliberately, right
  * down to the constraint names.
  *
- * ── ⚠️ Every constraint is here because the attack is the same one ───────────
+ * ── ⭐ Two questions, and they are not the same question ─────────────────────
  *
- * Plan 6(a) — account pre-hijacking — does not care which field it is. An attacker signs up
- * claiming the victim's number, leaves it unverified, and waits. So the same two mechanisms
- * that close it for addresses close it here, and they are **not redundant**:
+ * The first version of this table was `user_emails` copied field for field, **including its
+ * partial unique index**: unverified duplicates allowed, at most one verified owner. That is
+ * right for an address and wrong for a number, and the reason is what each is used for.
  *
- *   `user_phones_one_verified_owner` makes two *verifications* of one number mutually
- *   exclusive; `user_phones_strip_unverified` makes an unverified claim stop existing the
- *   moment somebody proves the number. Neither alone is enough, and the stripping is a
- *   trigger rather than a service method so that no future caller can forget it.
+ *   *"Which account claimed this?"* — asked at **sign-in**. Needs exactly one answer.
+ *   *"Does this really belong to them?"* — asked when staff **attach an order** to a customer
+ *     they found by number. Needs proof of possession.
+ *
+ * An address answers both at once because proving one is free — a link, and the unverified
+ * state lasts minutes. A number has no free proof, so gating sign-in on it means somebody who
+ * registers with a number waits for a telephone call before they can get in. That is not
+ * self-service, and it is what this table shipped as before the two were separated.
+ *
+ * So: **one claim per number, verified or not** (`user_phones_number_key`), which makes
+ * sign-in unambiguous; and `verified_at`, which still means possession and still gates being
+ * *found* by number.
+ *
+ * ── ⚠️ What that costs, deliberately ─────────────────────────────────────────
+ *
+ * Pre-hijacking (plan 6(a)) stops being a takeover and becomes a **denial of service**.
+ * Somebody can claim a number that is not theirs, and the real owner then cannot register it
+ * — they telephone, and a member of staff resolves it.
+ *
+ * What the squatter does not get is anything of the victim's. Nothing attaches to an
+ * unverified number: `user_phones_primary_is_verified` refuses to make one the number of
+ * record, and every staff lookup filters on `verified_at`. That is what makes the squat
+ * worthless rather than dangerous, and it is the invariant to protect if this is ever
+ * extended.
+ *
+ * ⚠️ **Password reset must never accept a number.** It is email-only today and that is
+ * load-bearing now rather than incidental: a reset sent to an unverified claim would turn the
+ * denial of service straight back into a takeover.
  *
  * ── ⭐ The number is stored in E.164 and nothing else ────────────────────────
  *
@@ -836,11 +860,14 @@ export const userPhones = pgTable(
     ...timestamps,
   },
   (table) => [
-    unique('user_phones_user_number_key').on(table.userId, table.number),
-    /* ⓐ Partial, exactly as for addresses: unverified duplicates may exist — that is the state an attacker creates — they simply never become anybody's identity. */
-    uniqueIndex('user_phones_one_verified_owner')
-      .on(table.number)
-      .where(sql`verified_at is not null`),
+    /*
+     * ⭐ **Full, not partial** — one account per telephone, proved or merely claimed.
+     *
+     * `user_emails` allows unverified duplicates because an unverified address can never sign
+     * anybody in, so the ambiguity is unreachable. An unverified *number* can, so two rows
+     * would leave the sign-in lookup choosing between accounts.
+     */
+    unique('user_phones_number_key').on(table.number),
     uniqueIndex('user_phones_one_primary_per_user').on(table.userId).where(sql`is_primary`),
     index('user_phones_number_idx').on(table.number),
     /*

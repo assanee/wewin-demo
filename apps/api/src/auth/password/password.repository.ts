@@ -27,17 +27,23 @@ export interface PasswordCredentialRow {
 export interface PasswordCredentialStore {
   findByVerifiedEmail(address: string): Promise<PasswordCredentialRow | undefined>;
   /**
-   * ⭐ The same lookup, one field over.
+   * ⭐ The account that **claimed** this number — proved or not.
    *
-   * `user_phones_one_verified_owner` is partial exactly as the address index is, so
-   * `verified_at is not null` carries the same whole-of-the-security weight here: without
-   * it, this returns whichever account claimed the number first, verified or not.
+   * ⚠️ **Deliberately not `verified_at is not null`**, and that is the one place this differs
+   * from the address lookup. Verification means possession of the handset and there is no
+   * free way to establish it, so requiring it meant somebody who registered with a number
+   * could not sign in until a member of staff telephoned them back.
+   *
+   * What makes it safe is not a filter here. It is `user_phones_number_key`: **one account
+   * per telephone**, so this question has exactly one answer. The address table allows
+   * unverified duplicates precisely because an unverified address can never sign anybody in,
+   * and that reasoning does not carry across.
    *
    * ⚠️ The number must already be **canonical** — `@wewin/core/phone`'s E.164. Every stored
    * value obeys `user_phones_number_e164`, so an un-normalised argument silently matches
    * nothing and reads to the caller as "wrong password".
    */
-  findByVerifiedPhone(number: string): Promise<PasswordCredentialRow | undefined>;
+  findByClaimedPhone(number: string): Promise<PasswordCredentialRow | undefined>;
   /**
    * By id, for a caller that already has a session and is re-proving.
    *
@@ -94,19 +100,22 @@ export class PasswordRepository implements PasswordCredentialStore {
   }
 
   /**
-   * ⭐ By verified telephone number — the other username.
+   * ⭐ By claimed telephone number — the other username.
    *
-   * The argument is `findByVerifiedEmail`'s, verbatim, one field over: the unique index is
-   * *partial*, unverified duplicates exist by design because that is the state an attacker
-   * creates, and a lookup on the number alone would hand back whichever account claimed it
-   * first. `verified_at is not null` is what makes the row this returns the one the index
-   * guarantees is unique.
+   * ⚠️ **No `verified_at` term, and its absence is the design.** `user_phones_number_key` is
+   * a full unique constraint, so one number names one account whether or not anybody proved
+   * it — which is what lets this return a single row without asking for a proof that costs
+   * money to obtain.
+   *
+   * The risk that moves is a squat: somebody claims a number that is not theirs and the real
+   * owner cannot register it. They telephone. What the squatter gains is nothing, because
+   * nothing attaches to an unverified number — see the table's own comment, and keep it true.
    *
    * ⚠️ The caller passes E.164 and this does not normalise. Doing it in both places is how
    * the two drift; doing it in the service means one normalisation feeds the lookup *and*
    * the throttle key, which is the property `password-sign-in.service.ts` needs.
    */
-  async findByVerifiedPhone(number: string): Promise<PasswordCredentialRow | undefined> {
+  async findByClaimedPhone(number: string): Promise<PasswordCredentialRow | undefined> {
     const [row] = await this.db
       .select({
         userId: users.id,
@@ -116,7 +125,7 @@ export class PasswordRepository implements PasswordCredentialStore {
       .from(userPhones)
       .innerJoin(users, eq(users.id, userPhones.userId))
       .leftJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
-      .where(and(eq(userPhones.number, number), sql`${userPhones.verifiedAt} is not null`))
+      .where(eq(userPhones.number, number))
       .limit(1);
 
     return row === undefined ? undefined : { ...row, status: row.status as UserStatus };

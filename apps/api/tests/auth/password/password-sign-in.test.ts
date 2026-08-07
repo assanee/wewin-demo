@@ -47,9 +47,9 @@ class FakeStore implements PasswordCredentialStore {
     return this.rows.get(address);
   }
 
-  async findByVerifiedPhone(number: string): Promise<PasswordCredentialRow | undefined> {
+  async findByClaimedPhone(number: string): Promise<PasswordCredentialRow | undefined> {
     this.askedPhones.push(number);
-    return this.phones.get(number);
+    return this.phones.get(number) ?? this.unverifiedPhones.get(number);
   }
 
   /** Not exercised by this suite — sign-in looks up by address. Present so the fake is one. */
@@ -546,11 +546,21 @@ describe('⭐ signing in with a telephone number', () => {
     expect(outcomes).toContain(429);
   });
 
-  it('⭐ refuses a number nobody has proved', async () => {
+  it('⭐ signs in on a claim nobody has proved yet', async () => {
     /*
-     * ⓷. The store's phone lookup requires `verified_at`, so an unverified claim is simply
-     * not there — and the refusal is the ordinary one, because saying "that number exists
-     * but is unverified" would confirm the number.
+     * ⓷, and the reversal of what this file asserted a commit ago.
+     *
+     * Verification means *possession of the handset*, and there is no free way to establish
+     * it — Thai SMS costs money the owner has chosen not to spend, so it is a member of staff
+     * on the telephone. Gating sign-in on that meant somebody who registered with a number
+     * could not get in until they were called back, which is not self-service.
+     *
+     * ⚠️ What makes this safe is not a check here but an invariant elsewhere: **nothing
+     * attaches to an unverified number.** `user_phones_number_key` gives one account per
+     * telephone so this lookup is unambiguous, `user_phones_primary_is_verified` refuses to
+     * make an unproved number the number of record, and staff lookup filters on
+     * `verified_at`. A squatter therefore gets an account containing exactly what they put
+     * in it, which is nothing.
      */
     store.phones.delete(PHONE_CANONICAL);
     store.unverifiedPhones.set(PHONE_CANONICAL, {
@@ -558,6 +568,15 @@ describe('⭐ signing in with a telephone number', () => {
       status: 'active',
       passwordHash: store.rows.get(EMAIL)?.passwordHash ?? null,
     });
+
+    const outcome = await attempt(PHONE_TYPED, PASSWORD);
+
+    expect(outcome.kind).toBe('session');
+    expect(issuer.issued).toStrictEqual(['user-unverified']);
+  });
+
+  it('⚠️ a number nobody claimed is still refused like a wrong password', async () => {
+    store.phones.delete(PHONE_CANONICAL);
 
     const refused = await refusalOf(attempt(PHONE_TYPED, PASSWORD));
     const unknown = await refusalOf(attempt('+66899999999', PASSWORD));
