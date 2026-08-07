@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useId, useState, type FormEvent } from 'react';
 
 import { apiJson } from '@/lib/api/client';
@@ -139,6 +140,22 @@ export function PasswordSignInForm() {
       <Button type="submit" className="w-full" disabled={busy}>
         {busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}
       </Button>
+
+      {/*
+        ⚠️ Always visible, never only after a failure.
+
+        The tempting version reveals this link once somebody has got their password wrong,
+        which reads as helpful and is not: the person who most needs it is the one who
+        already knows they have forgotten, and making them fail first to be offered the way
+        out is a worse form of the same problem as the reset endpoints having had no page at
+        all — the capability exists and nobody can reach it.
+      */}
+      <Link
+        href="/forgot-password"
+        className="text-muted-foreground hover:text-foreground self-center text-sm underline-offset-4 hover:underline"
+      >
+        ลืมรหัสผ่าน?
+      </Link>
     </form>
   );
 }
