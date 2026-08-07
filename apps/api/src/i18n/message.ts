@@ -135,6 +135,7 @@ const PARAM_SHAPES = {
   'error.auth.too_many_attempts': { minutes: 'count' },
   'error.auth.password_too_short': { minimum: 'count' },
   'error.auth.password_too_long': { maximum: 'count' },
+  'error.auth.reset_token_rejected': {},
 
   /* ── Catalogue constraints — src/admin/pg-errors.ts ───────────────────────── */
   'error.catalog.slug_taken': {},

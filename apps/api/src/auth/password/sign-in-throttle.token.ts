@@ -9,4 +9,14 @@
  */
 export const SIGN_IN_THROTTLE = Symbol('wewin.auth.signInThrottle');
 
+/**
+ * A *second* counter, for reset requests, and separate on purpose.
+ *
+ * Sharing one would make five wrong passwords also spend the reset allowance — so the
+ * standard recovery from "I have forgotten my password and just proved it five times" would
+ * be blocked by the very attempts that prove it is needed. The two limits also want
+ * different numbers: guessing is per-attempt, mailing is per-message.
+ */
+export const RESET_THROTTLE = Symbol('wewin.auth.resetThrottle');
+
 export type { SignInThrottle } from './sign-in-throttle';

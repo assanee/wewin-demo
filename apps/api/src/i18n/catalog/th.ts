@@ -42,6 +42,9 @@ export const TH: Catalogue = {
     `รหัสผ่านต้องยาวอย่างน้อย ${f.count(p.minimum)} ตัวอักษร`,
   'error.auth.password_too_long': (p, f) =>
     `รหัสผ่านต้องไม่เกิน ${f.count(p.maximum)} ตัวอักษร`,
+  /* One sentence for unknown, spent, expired and refused — the same reason as above. */
+  'error.auth.reset_token_rejected':
+    'ลิงก์ตั้งรหัสผ่านใหม่นี้ใช้ไม่ได้แล้ว อาจถูกใช้ไปแล้วหรือหมดอายุ กรุณาขอลิงก์ใหม่อีกครั้ง',
 
   /* ── Catalogue constraints ───────────────────────────────────────────────── */
   'error.catalog.slug_taken': 'มีสินค้าที่ใช้ slug นี้อยู่แล้ว',

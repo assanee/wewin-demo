@@ -3,8 +3,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import type { NotificationChannelAdapter } from './channels/channel';
 import { EmailChannelAdapter } from './channels/email.channel';
 import { LineChannelAdapter } from './channels/line.channel';
-import { FileEmailTransport } from './channels/transports/file.transport';
-import { SmtpEmailTransport } from './channels/transports/smtp.transport';
+import { createEmailTransport } from './channels/transports/create-transport';
 import type { EmailTransport } from './channels/transports/email-transport';
 import { NotificationWorker } from './notification-worker.service';
 import { parseNotificationsConfig, type NotificationsConfig } from './notifications.config';
@@ -65,10 +64,8 @@ export class NotificationsModule {
         { provide: NOTIFICATIONS_CONFIG, useValue: config },
         {
           provide: EMAIL_TRANSPORT,
-          useFactory: (): EmailTransport =>
-            config.emailTransport === 'smtp'
-              ? new SmtpEmailTransport(config.smtp)
-              : new FileEmailTransport(config.emailDir),
+          // One decision, in `create-transport.ts`, shared with `PasswordModule`.
+          useFactory: (): EmailTransport => createEmailTransport(config),
         },
         EmailChannelAdapter,
         {

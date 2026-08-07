@@ -40,6 +40,7 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 | 5 | order lifecycle · outbox · ชำระเงิน · ใบเสนอราคาที่ฝ่ายขายแก้ได้ | ✅ |
 | 6 | Next.js App Router · i18n 8 ภาษา · ตัวเลขตามภาษา | ✅ |
 | 7 | รีวิวหลังส่งมอบ · การกลั่นกรอง · ค่าตั้งค่าผู้ใช้ | ⚠️ **ไม่ครบ** |
+| — | เข้าสู่ระบบด้วยรหัสผ่าน · ลืมรหัสผ่าน · สคริปต์สร้างผู้ใช้คนแรก | ✅ |
 
 ⚠️ **เฟส 7 ปิดไม่ครบ** — schema, API, และหน้าร้านเสร็จและผ่านเทสต์ แต่ **หน้าจอ moderation ใน dashboard ยังไม่มี**
 และมีหนี้เปิดค้างห้าข้อ · รายละเอียดทั้งหมดอยู่ในแผนข้อ 9.6 และ 12.1 — อ่านก่อนทำต่อ
@@ -57,6 +58,29 @@ Prototype เว็บสำหรับขายงานอะลูมิเ�
 และบล็อกสุดท้ายของไฟล์ **แก้แถวในฐานจริงเพื่อพิสูจน์ว่าเทสต์แดงได้** แล้วคืนค่ากลับ
 
 ---
+
+## เข้า dashboard ครั้งแรก
+
+`users.read`/`users.write` ยังไม่มี route จึงไม่มีหน้าจอสร้างบัญชี — สคริปต์นี้คือทางเข้าแรก
+และเป็นสคริปต์ไม่ใช่ endpoint เพราะ endpoint ที่ออกบัญชีสิทธิ์เต็มคือรูที่ต้องเฝ้าตลอดไป
+
+```bash
+pnpm --filter @wewin/api create-user -- somchai@wewin.co.th
+# หรือจำกัดสิทธิ์
+pnpm --filter @wewin/api create-user -- sales@wewin.co.th --permissions orders.read,quotes.write
+```
+
+รหัสผ่านมาจากการพิมพ์ตอบ หรือจาก `WEWIN_BOOTSTRAP_PASSWORD` สำหรับงานอัตโนมัติ —
+**ไม่เคยรับจาก argv** เพราะ argv อยู่ใน shell history และใน `ps` ของทุกคนบนเครื่อง ·
+รันซ้ำด้วยอีเมลเดิมคือวิธีเปลี่ยนรหัสผ่านที่ลืม
+
+⚠️ dashboard เรียก API ข้าม origin จึงต้องมีใน `.env` ราก ไม่งั้นหน้า login จะขึ้น
+*"ติดต่อ API ไม่ได้"* ทั้งที่ API ทำงานปกติ:
+
+```
+CORS_ORIGINS=http://localhost:3001,http://localhost:3002
+COOKIE_SECURE=false
+```
 
 ## เริ่มใช้งาน
 
@@ -390,8 +414,8 @@ Breakpoint: base 360–767 · `md` 768–1023 · `lg` 1024+ · container `max-wi
 
 ## เทส
 
-ทั้ง workspace **2,573 เคส** จบเฟส 7 · `@wewin/core` 339 · `@wewin/i18n` 199 · `@wewin/contract` 90
-· `@wewin/db` 313 · `@wewin/web` 293 · `@wewin/dashboard` 124 · `@wewin/api` 1,215
+ทั้ง workspace **2,631 เคส** · `@wewin/core` 339 · `@wewin/i18n` 199 · `@wewin/contract` 90
+· `@wewin/db` 313 · `@wewin/web` 293 · `@wewin/dashboard` 124 · `@wewin/api` 1,273
 
 `packages/core` ทดสอบฟังก์ชัน pure ล้วน ไม่มีเคสไหนต้องใช้ DOM จึงไม่ต้องมี Postgres และไม่อ่าน
 `DATABASE_URL` เลย

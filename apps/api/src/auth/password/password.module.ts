@@ -1,6 +1,16 @@
 import { Module, type DynamicModule, type ModuleMetadata } from '@nestjs/common';
 
+import { createEmailTransport } from '../../notifications/channels/transports/create-transport';
+import { EMAIL_TRANSPORT } from '../../notifications/notifications.tokens';
+import { parseNotificationsConfig } from '../../notifications/notifications.config';
 import { SessionService } from '../session/session.service';
+import { PasswordResetController } from './password-reset.controller';
+import {
+  PASSWORD_RESET_CONFIG,
+  PasswordResetService,
+  type PasswordResetConfig,
+} from './password-reset.service';
+import { PASSWORD_RESET_STORE, PasswordResetRepository } from './password-reset.repository';
 import { PasswordController } from './password.controller';
 import { PasswordSignInService } from './password-sign-in.service';
 import { PASSWORD_CREDENTIAL_STORE, PasswordRepository } from './password.repository';
@@ -11,7 +21,7 @@ import {
   SIGN_IN_WINDOW_MS_DEFAULT,
   SignInThrottle,
 } from './sign-in-throttle';
-import { SIGN_IN_THROTTLE } from './sign-in-throttle.token';
+import { RESET_THROTTLE, SIGN_IN_THROTTLE } from './sign-in-throttle.token';
 
 /**
  * Password sign-in.
@@ -43,10 +53,50 @@ export class PasswordModule {
     return {
       module: PasswordModule,
       imports: options.imports ?? [],
-      controllers: [PasswordController],
+      controllers: [PasswordController, PasswordResetController],
       providers: [
         PasswordSignInService,
+        PasswordResetService,
         { provide: PASSWORD_CREDENTIAL_STORE, useClass: PasswordRepository },
+        { provide: PASSWORD_RESET_STORE, useClass: PasswordResetRepository },
+        {
+          provide: EMAIL_TRANSPORT,
+          /*
+           * This module's *own* transport instance. Importing `NotificationsModule` to share
+           * one would bring `NotificationWorker` with it and start a second poller against
+           * the same outbox — see `create-transport.ts`, which is the one place that decides
+           * file-versus-smtp so the two cannot drift.
+           */
+          useFactory: () => createEmailTransport(parseNotificationsConfig(process.env)),
+        },
+        {
+          provide: PASSWORD_RESET_CONFIG,
+          useFactory: (): PasswordResetConfig => ({
+            from: process.env['NOTIFICATIONS_EMAIL_FROM'] ?? 'WEWIN <no-reply@wewin.co.th>',
+            /*
+             * ⚠️ Defaults to the dashboard on a laptop. In production this must be set, and
+             * getting it wrong sends staff a working token pointed at the wrong origin —
+             * which is why it is read here, at boot, rather than built per request from a
+             * `Host` header a caller controls.
+             */
+            resetUrlBase:
+              process.env['PASSWORD_RESET_URL_BASE'] ?? 'http://localhost:3001/reset-password',
+          }),
+        },
+        {
+          provide: RESET_THROTTLE,
+          /*
+           * Separate from the sign-in counter. Sharing one would let five wrong passwords
+           * spend the reset allowance, blocking the standard recovery with the very attempts
+           * that prove it is needed. Three an hour is a person who did not receive the first
+           * message; it is not a mail cannon.
+           */
+          useFactory: () =>
+            new SignInThrottle({
+              perAccount: { limit: 3, windowMs: 60 * 60_000 },
+              perAddress: { limit: 20, windowMs: 60 * 60_000 },
+            }),
+        },
         /*
          * `useExisting` and not `useClass`: the sign-in path must share the instance
          * `AuthController.refresh` and the OAuth callback already use. See the header.

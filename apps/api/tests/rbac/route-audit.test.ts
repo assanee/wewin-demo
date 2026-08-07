@@ -323,6 +323,8 @@ describe('boot-time route audit', () => {
       'POST /auth/logout [authenticated]',
       'POST /auth/oauth/:provider/callback [anonymous]',
       'POST /auth/password [anonymous]',
+      'POST /auth/password/reset [anonymous]',
+      'POST /auth/password/reset-request [anonymous]',
       'POST /auth/refresh [anonymous]',
       'POST /orders [anonymous]',
       'POST /orders/:orderId/change-requests [principal]',
