@@ -67,7 +67,9 @@ describe('⭐ the tag is what makes it safe to store', () => {
     const sealed = box.seal(randomBytes(20));
 
     const bytes = Buffer.from(sealed.slice('v1.'.length), 'base64url');
-    bytes[bytes.length - 1] ^= 0x01;
+    const last = bytes.length - 1;
+    /* `writeUInt8` rather than `bytes[last] ^= 1`: indexed access is `number | undefined`. */
+    bytes.writeUInt8((bytes.readUInt8(last) ^ 0x01) & 0xff, last);
     const tampered = `v1.${bytes.toString('base64url')}`;
 
     expect(() => box.open(tampered)).toThrow();

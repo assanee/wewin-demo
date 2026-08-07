@@ -4,6 +4,8 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from '../src/client.js';
 import {
   ERASURE_TREATMENTS,
+  mfaCredentials,
+  mfaRecoveryCodes,
   authTokens,
   groups,
   guests,
@@ -102,6 +104,38 @@ async function createSubject(db: Database, label: string): Promise<Subject> {
     .values({ userId: user.id, expiresAt: new Date(Date.now() + HOUR), ip: '203.0.113.7' })
     .returning({ id: sessions.id });
   if (!session) throw new Error('inserting a session returned no row');
+
+  /*
+   * ⚠️ The second factor — and the reason it is here rather than in a test of its own.
+   *
+   * "leaves no row in any table it calls delete" counts rows for every column declared
+   * `delete`, so it is only as strong as this fixture: a table the subject has no rows in
+   * counts zero either way, and the loop passes while the DELETE is missing. Declaring
+   * `mfa_credentials.user_id` as `delete` and never seeding one is a treatment nothing
+   * checks — proved by removing the statement from 0022 and watching all twenty tests stay
+   * green.
+   *
+   * Recovery codes first: `mfa_credentials_guard_confirm` refuses a confirmed credential
+   * with fewer than two unused ones, which is the gate's own invariant enforced in Postgres.
+   */
+  await db.insert(mfaRecoveryCodes).values([
+    { userId: user.id, codeHash: freshDigest() },
+    { userId: user.id, codeHash: freshDigest() },
+    /*
+     * One already spent, so erasure has to get past `mfa_recovery_codes_guard_write` — which
+     * refuses to delete a used code, because a used code is the record that somebody
+     * recovered an account. Without this row the trigger bypass in `erase_user` is never
+     * exercised and could be removed with every test still green.
+     */
+    { userId: user.id, codeHash: freshDigest(), usedAt: new Date() },
+  ]);
+
+  await db.insert(mfaCredentials).values({
+    userId: user.id,
+    secretSealed: 'v1.ZmFrZS1zZWFsZWQtc2VjcmV0',
+    confirmedAt: new Date(),
+    lastAcceptedStep: 56_000_000,
+  });
 
   return { userId: user.id, address, sessionId: session.id };
 }

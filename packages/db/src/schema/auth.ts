@@ -226,6 +226,21 @@ export const ERASURE_TREATMENTS = {
   'provider_identities.user_id': 'delete',
   'password_credentials.user_id': 'delete',
   'auth_tokens.user_id': 'delete',
+
+  /*
+   * The second factor — phase 8.
+   *
+   * Both are authentication material for one identified person: no accounting question turns
+   * on them, no audit is lost with them, so they go the way `password_credentials` goes.
+   *
+   * ⚠️ `mfa_recovery_codes` includes **spent** ones, which `mfa_recovery_codes_guard_write`
+   * otherwise refuses to delete — a spent code is the record that somebody recovered an
+   * account, and "how did they get in?" is the question asked afterwards. Erasure is the one
+   * operation entitled to destroy that record, and `erase_user` says so by disabling the
+   * trigger for that single statement rather than by the trigger making a quiet exception.
+   */
+  'mfa_credentials.user_id': 'delete',
+  'mfa_recovery_codes.user_id': 'delete',
   'sessions.user_id': 'delete',
   /*
    * KEPT, against all three design angles, which each listed `user_groups` under "delete
@@ -1131,5 +1146,91 @@ export const userGroups = pgTable(
   (table) => [
     primaryKey({ name: 'user_groups_pkey', columns: [table.userId, table.groupId] }),
     index('user_groups_group_idx').on(table.groupId),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The second factor — plan 6.4
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One TOTP credential per person.
+ *
+ * ⚠️ **`confirmed_at IS NULL` means the gate is not up.** Enrolment is two steps: the secret
+ * is written when the QR code is shown, and confirmed only once somebody has produced a code
+ * from it. Treating the row's existence as "MFA is on" would lock out everybody who scanned a
+ * code, closed the tab, and never saved it — which is the ordinary way enrolment fails.
+ *
+ * `secret_sealed` is AES-256-GCM (`auth/mfa/secret-box.ts`). The CHECK pins the envelope
+ * shape so a plaintext secret written by a future code path is refused by the column rather
+ * than discovered in a backup.
+ */
+export const mfaCredentials = pgTable(
+  'mfa_credentials',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `v1.<base64url>` — nonce ‖ tag ‖ ciphertext. Never the secret itself. */
+    secretSealed: text('secret_sealed').notNull(),
+    /** NULL while enrolling. Non-null is the only thing that means "the gate is up". */
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    /**
+     * The highest TOTP step this credential has accepted — the durable half of the replay
+     * guard, whose rule lives in `verifyTotp`.
+     *
+     * `integer` and not `bigint` deliberately: a step is `epoch / 30`, which is 57 million
+     * today and reaches int4's ceiling in the year 4000. That keeps it a JS `number` through
+     * `db.execute`, which returns `int8` as a **string** — the trap `users.repository.ts`
+     * already paid for once.
+     */
+    lastAcceptedStep: integer('last_accepted_step'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('mfa_credentials_secret_sealed', sql`${table.secretSealed} like 'v1.%'`),
+    /* A step is a positive count of 30-second windows since the epoch; 0 is not a real one. */
+    check(
+      'mfa_credentials_step_positive',
+      sql`${table.lastAcceptedStep} is null or ${table.lastAcceptedStep} > 0`,
+    ),
+  ],
+);
+
+/**
+ * ⭐ The way through the gate — plan 6.4's harder half.
+ *
+ * *"ไม่มีทางกู้ = คนทำมือถือหายล็อกตัวเองออกถาวร · ทางกู้ที่อ่อน = MFA ไม่ได้ป้องกันอะไร"*
+ *
+ * `code_hash` is SHA-256 and not argon2, and `auth/mfa/recovery-codes.ts` argues the case:
+ * the input is 60 bits of `randomInt`, so there is no dictionary to slow down, and the fast
+ * hash makes redemption **one indexed lookup** instead of ten argon2 verifications on an
+ * endpoint anonymous callers reach in a loop.
+ *
+ * Rows are kept after use rather than deleted. A spent code is the evidence that somebody
+ * recovered an account, and "how did they get in" is the question that matters after the
+ * fact — deleting the row answers it with silence.
+ */
+export const mfaRecoveryCodes = pgTable(
+  'mfa_recovery_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** SHA-256 hex of the normalised code. Unsalted — see the module for why that is right here. */
+    codeHash: char('code_hash', { length: 64 }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    /* Two identical codes for one person would let one redemption spend both. */
+    unique('mfa_recovery_codes_user_hash_key').on(table.userId, table.codeHash),
+    check('mfa_recovery_codes_hash_hex', sql`${table.codeHash} ~ '^[0-9a-f]{64}$'`),
+    /* The redemption lookup, and the count the enable guard runs. */
+    index('mfa_recovery_codes_unused_idx')
+      .on(table.userId)
+      .where(sql`used_at is null`),
   ],
 );
