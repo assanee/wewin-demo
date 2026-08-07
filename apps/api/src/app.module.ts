@@ -23,6 +23,7 @@ import { QuotesModule } from './quotes';
 import { ReviewsModule } from './reviews';
 import { ProfileModule } from './profile';
 import { UsersModule } from './users';
+import { AccountModule } from './account';
 import { RbacModule } from './rbac/rbac.module';
 
 /*
@@ -154,6 +155,7 @@ export class AppModule implements NestModule {
          */
         ReviewsModule.forRoot(),
         UsersModule.forRoot({ imports: [auth] }),
+        AccountModule,
         ProfileModule,
       ],
     };

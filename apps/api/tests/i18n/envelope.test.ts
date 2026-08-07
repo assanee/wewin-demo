@@ -360,5 +360,16 @@ describe('what is still a Thai string, as a number', () => {
  * Worth saying because it is the argument somebody will make about the *next* eighteen, and
  * it is only true while the audience really is staff-only. The moment any of these sentences
  * can reach a customer, the calculation changes and this note is wrong.
+ *
+ * ── 197 → 206: account settings ──────────────────────────────────────────────────
+ *
+ * 9 more, in `src/account`, and this is the round where the argument above stops being
+ * comfortable. These are on `/me/account`, which is **not** an admin surface — it is a
+ * person's own password, providers and devices, and the storefront is one route away from
+ * needing the same page for customers in eight languages.
+ *
+ * They are keyed last rather than first only because the screen that consumes them today is
+ * the Thai dashboard. That is a scheduling decision, not a judgement that these sentences
+ * are staff-only, and the two should not be confused when somebody picks this up.
  */
-const RAW_LITERAL_CALL_SITES = 197;
+const RAW_LITERAL_CALL_SITES = 206;

@@ -1,5 +1,6 @@
 import type { Route } from 'next';
 import {
+  UserCog,
   Users,
   Boxes,
   FileText,
@@ -138,6 +139,18 @@ export const NAVIGATION: readonly NavSection[] = [
         labelTh: 'ผู้ใช้และสิทธิ์',
         icon: Users,
         requires: ['users.read'],
+      },
+      {
+        /*
+         * `requires: []` — everybody signed in has an account to manage, and gating a
+         * person's own password behind a permission would be the wrong shape entirely. The
+         * route still sits inside `(app)`, so an unauthenticated browser is redirected to
+         * `/login` before it renders anything.
+         */
+        href: '/account',
+        labelTh: 'บัญชีของฉัน',
+        icon: UserCog,
+        requires: [],
       },
     ],
   },
