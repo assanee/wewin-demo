@@ -58,6 +58,28 @@ export interface PasswordSignInResponse {
 }
 
 /**
+ * ⭐ What step one returns when the account has a second factor.
+ *
+ * A **different shape**, not a session with a flag. A client that has not been taught about
+ * MFA reads no `accessToken` here and fails at the point of use rather than proceeding with
+ * `undefined` — which is the difference between "this build is old" and a blank screen.
+ *
+ * No `Set-Cookie` accompanies it. The refresh half is the durable credential and there is
+ * nothing yet to be durable about.
+ */
+export interface SecondFactorRequiredResponse {
+  readonly mfaRequired: true;
+  /**
+   * Carries "factor one is proven" to `POST /auth/mfa`. Signed with a key derived separately
+   * from the session secret, so it cannot be presented as a bearer token — see `challenge.ts`.
+   */
+  readonly challengeToken: string;
+  readonly challengeExpiresAt: string;
+}
+
+export type PasswordSignInOutcomeResponse = PasswordSignInResponse | SecondFactorRequiredResponse;
+
+/**
  * The rule applied when a password is being *set*, which is a different moment from signing
  * in with one.
  *

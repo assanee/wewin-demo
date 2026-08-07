@@ -132,6 +132,14 @@ const PARAM_SHAPES = {
    * `password-sign-in.service.ts`, where the same idea is enforced on the timing.
    */
   'error.auth.credentials_rejected': {},
+  /*
+   * ⚠️ One refusal for every way step two can fail: an expired challenge, a challenge that
+   * was never ours, a wrong code, a code already spent, an account whose second factor was
+   * turned off between the two steps. Naming which would turn the endpoint into an oracle —
+   * "your challenge expired" confirms a captured token was genuine, and "no second factor is
+   * enabled" says which accounts to attack directly instead.
+   */
+  'error.auth.second_factor_rejected': {},
   'error.auth.too_many_attempts': { minutes: 'count' },
   'error.auth.password_too_short': { minimum: 'count' },
   'error.auth.password_too_long': { maximum: 'count' },

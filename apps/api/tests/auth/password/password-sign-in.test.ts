@@ -6,6 +6,7 @@ import {
   hashPassword,
   verifyPassword,
 } from '../../../src/auth/password/password-hash';
+import type { SecondFactor } from '../../../src/auth/password/second-factor';
 import { PasswordSignInService } from '../../../src/auth/password/password-sign-in.service';
 import { SignInThrottle } from '../../../src/auth/password/sign-in-throttle';
 import type {
@@ -66,6 +67,29 @@ let store: FakeStore;
 let issuer: RecordingStarter;
 let service: PasswordSignInService;
 
+/**
+ * A second factor this suite can switch on.
+ *
+ * `NoSecondFactor` would do for every test that predates MFA, and a controllable one is used
+ * throughout instead so that the *default* in these tests is the same object that the
+ * MFA tests below turn on — rather than two different fakes whose behaviour could drift.
+ */
+class SwitchableSecondFactor implements SecondFactor {
+  required = new Set<string>();
+  readonly challenged: string[] = [];
+
+  isRequired(userId: string): Promise<boolean> {
+    return Promise.resolve(this.required.has(userId));
+  }
+
+  challenge(userId: string): { readonly token: string; readonly expiresAt: Date } {
+    this.challenged.push(userId);
+    return { token: `challenge-for-${userId}`, expiresAt: new Date('2026-04-01T00:05:00Z') };
+  }
+}
+
+let secondFactor: SwitchableSecondFactor;
+
 const build = (): PasswordSignInService =>
   new PasswordSignInService(
     store,
@@ -74,9 +98,11 @@ const build = (): PasswordSignInService =>
       perAccount: { limit: 5, windowMs: 15 * 60_000 },
       perAddress: { limit: 30, windowMs: 15 * 60_000 },
     }),
+    secondFactor,
   );
 
 beforeEach(async () => {
+  secondFactor = new SwitchableSecondFactor();
   store = new FakeStore();
   issuer = new RecordingStarter();
   service = build();
@@ -110,7 +136,7 @@ describe('the happy path', () => {
     // adapter over `SessionService`. Minting a session here instead would be a second
     // place with an opinion about refresh rotation, and fix ⓒ only works if there is one.
     expect(issuer.issued).toEqual(['user-1']);
-    expect(result.accessToken).toBe('access-token');
+    expect(result.kind === 'session' ? result.session.accessToken : null).toBe('access-token');
   });
 
   it('finds the account however the address was typed', async () => {
@@ -305,7 +331,8 @@ describe('the throttle, from the service’s side', () => {
       await refusalOf(attempt(EMAIL, 'wrong'));
     }
     // Eight failures in one window, and still allowed, because of the success in the middle.
-    expect((await attempt(EMAIL, PASSWORD)).accessToken).toBe('access-token');
+    const outcome = await attempt(EMAIL, PASSWORD);
+    expect(outcome.kind === 'session' ? outcome.session.accessToken : null).toBe('access-token');
   });
 });
 
@@ -352,5 +379,52 @@ describe('raising the cost upgrades credentials as people sign in', () => {
     // Obvious stated plainly: the only moment the plaintext exists is a successful verify.
     // A re-hash on the failure path could only be a re-hash of the *attacker's* guess.
     expect(store.rehashed).toEqual([]);
+  });
+});
+
+describe('⭐ an account with a second factor gets a challenge, not a session', () => {
+  it('⚠️ mints no session at all when MFA is confirmed', async () => {
+    /*
+     * The failure this rules out is total and quiet: returning a session *and* a challenge,
+     * or returning a session while merely *suggesting* a challenge. Either way the caller
+     * already holds what it was about to be asked to earn, and MFA is decoration.
+     *
+     * `issuer.issued` is the ledger of every session this service asked for, so an empty one
+     * is the assertion — not the absence of a field on the response.
+     */
+    secondFactor.required.add('user-1');
+
+    const outcome = await attempt(EMAIL, PASSWORD);
+
+    expect(outcome.kind).toBe('challenge');
+    expect(issuer.issued, 'a session was started for an account behind a second factor').toEqual([]);
+    expect(secondFactor.challenged).toEqual(['user-1']);
+  });
+
+  it('⚠️ asks about the second factor only after the password is accepted', async () => {
+    /*
+     * Asking first would answer "does this account have MFA?" to anybody who typed the
+     * address — the same enumeration leak the single refusal exists to close, arriving
+     * through a different door.
+     *
+     * A wrong password against an MFA account must therefore look exactly like a wrong
+     * password against any other: no challenge minted, no session, one refusal.
+     */
+    secondFactor.required.add('user-1');
+
+    await refusalOf(attempt(EMAIL, 'wrong'));
+
+    expect(secondFactor.challenged, 'the second factor was consulted before the password').toEqual(
+      [],
+    );
+    expect(issuer.issued).toEqual([]);
+  });
+
+  it('still issues a session for an account without one', async () => {
+    const outcome = await attempt(EMAIL, PASSWORD);
+
+    expect(outcome.kind).toBe('session');
+    expect(issuer.issued).toEqual(['user-1']);
+    expect(secondFactor.challenged).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 
 import { AppModule } from './app.module';
+import { parseMfaKey } from './auth/mfa/secret-box';
 import { OAuthConfigError } from './auth/oauth/oauth.config';
 import { parseSessionConfig, SessionConfigError, type SessionConfig } from './auth/session/session.config';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
@@ -14,10 +15,11 @@ import { createLogger } from './common/logger';
 import { EnvValidationError, loadEnv, type Env } from './config/env';
 import { RouteAuditError } from './rbac/route-audit.error';
 
-async function bootstrap(env: Env, session: SessionConfig): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(env, { session }), {
-    logger: createLogger(env),
-  });
+async function bootstrap(env: Env, session: SessionConfig, mfaSecretKey: string): Promise<void> {
+  const app = await NestFactory.create<NestExpressApplication>(
+    AppModule.forRoot(env, { session, mfaSecretKey }),
+    { logger: createLogger(env) },
+  );
 
   // `X-Powered-By: Express` names the stack to an attacker on every single response.
   app.disable('x-powered-by');
@@ -69,18 +71,50 @@ function sessionConfigFor(env: Env): SessionConfig {
   });
 }
 
+/**
+ * ⚠️ Parsed at boot, and required in production with no fallback.
+ *
+ * A generated default would be worse than a missing value: every restart would mint a new
+ * key, every enrolled account's sealed TOTP secret would fail to open, and the symptom
+ * would be "MFA randomly stops working" rather than a start-up refusal naming the setting.
+ *
+ * Development gets a random one for the same reason `sessionConfigFor` does — a developer
+ * who has not enrolled anything loses nothing, and a checked-in placeholder key is a key.
+ * `parseMfaKey` runs either way, so a malformed value is caught here rather than inside
+ * `createCipheriv` at somebody's first enrolment.
+ */
+function mfaSecretKeyFor(env: Env): string {
+  const configured = process.env['AUTH_MFA_SECRET_KEY'];
+
+  if (configured === undefined || configured === '') {
+    if (env.NODE_ENV === 'production') {
+      throw new SessionConfigError([
+        'AUTH_MFA_SECRET_KEY is required but not set — 32 bytes of random data, base64url',
+      ]);
+    }
+    return randomBytes(32).toString('base64url');
+  }
+
+  /* Throws a `TypeError` naming the variable; `main` turns that into stderr and exit 1. */
+  parseMfaKey(configured);
+  return configured;
+}
+
 function main(): void {
   let env: Env;
   let session: SessionConfig;
+  let mfaSecretKey: string;
   try {
     env = loadEnv();
     // After loadEnv, because it is what read the .env file into process.env.
     session = sessionConfigFor(env);
+    mfaSecretKey = mfaSecretKeyFor(env);
   } catch (error) {
     if (
       error instanceof EnvValidationError ||
       error instanceof SessionConfigError ||
-      error instanceof OAuthConfigError
+      error instanceof OAuthConfigError ||
+      error instanceof TypeError
     ) {
       /*
        * Written to stderr rather than thrown: a misconfigured deployment should read its
@@ -95,7 +129,7 @@ function main(): void {
     throw error;
   }
 
-  bootstrap(env, session).catch((error: unknown) => {
+  bootstrap(env, session, mfaSecretKey).catch((error: unknown) => {
     if (error instanceof OAuthConfigError) {
       // Parsed inside the module graph, so it surfaces here rather than above.
       process.stderr.write(`${error.message}\n`);

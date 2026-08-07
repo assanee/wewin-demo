@@ -12,7 +12,7 @@ import { parseOAuthConfig } from '../../../src/auth/oauth/oauth.config';
 import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.filter';
 import { parseEnv, type Env } from '../../../src/config/env';
 import { ProfileModule } from '../../../src/profile';
-import { testSessionConfig } from '../../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../../support/app';
 
 /**
  * The real application graph, **plus `ProfileModule`** — and the `plus` is load-bearing here.
@@ -50,6 +50,7 @@ export async function bootProfileApp(env: Env): Promise<ProfileApp> {
   const moduleRef = await Test.createTestingModule({
     imports: [
       AppModule.forRoot(env, {
+        mfaSecretKey: testMfaSecretKey(),
         session: testSessionConfig(),
         oauth: parseOAuthConfig({}),
       }),

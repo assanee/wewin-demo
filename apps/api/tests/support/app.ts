@@ -36,6 +36,17 @@ export function testSessionConfig(overrides: Record<string, string> = {}): Sessi
   });
 }
 
+/**
+ * A key that exists only for the length of this process.
+ *
+ * Same reasoning as `testSessionConfig`: a secret literal in a test file is a secret literal
+ * in the repository. Nothing in a suite survives to a second run, so a fresh key per process
+ * costs nothing — and a shared constant would be the thing somebody copied into a `.env`.
+ */
+export function testMfaSecretKey(): string {
+  return randomBytes(32).toString('base64url');
+}
+
 export interface BootedApp {
   readonly app: INestApplication;
   readonly baseUrl: string;
@@ -51,6 +62,7 @@ export async function bootApp(env: Env = testEnv()): Promise<BootedApp> {
   const moduleRef = await Test.createTestingModule({
     imports: [
       AppModule.forRoot(env, {
+        mfaSecretKey: testMfaSecretKey(),
         session: testSessionConfig(),
         // Explicit and empty. Left out, the OAuth module would parse `process.env`, so a
         // developer with real credentials in their `.env` would run a different graph from

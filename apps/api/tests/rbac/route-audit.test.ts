@@ -345,6 +345,17 @@ describe('boot-time route audit', () => {
       'POST /admin/users/:userId/sessions/revocation [permissions]',
       'POST /admin/users/:userId/suspension [permissions]',
       'POST /auth/logout [authenticated]',
+      /*
+       * ⭐ Step two. `[anonymous]` for the same reason `POST /auth/password` is: the
+       * credential is the challenge token in the body and the guard cannot read it.
+       *
+       * ⚠️ This line is also the guard against `MfaModule` silently leaving `AppModule`.
+       * `second-factor.ts` names the danger — a graph without it answers "no second factor"
+       * for every account, so everybody with MFA confirmed would sign in on a password alone
+       * and nothing anywhere would say so. The module going missing takes this route with
+       * it, and this test fails.
+       */
+      'POST /auth/mfa [anonymous]',
       'POST /auth/oauth/:provider/callback [anonymous]',
       'POST /auth/password [anonymous]',
       'POST /auth/password/reset [anonymous]',

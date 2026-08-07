@@ -9,7 +9,7 @@ import { AllExceptionsFilter } from '../../../../src/common/errors/all-exception
 import { parseEnv, type Env } from '../../../../src/config/env';
 /* The file, not the directory: `src/quotes/authority.ts` shadows `authority/index.ts`. */
 import { AuthorityModule } from '../../../../src/quotes/authority/authority.module';
-import { testSessionConfig } from '../../../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../../../support/app';
 
 /**
  * The real application graph, **plus** `AuthorityModule`, because nothing has wired it yet.
@@ -40,7 +40,11 @@ export function authorityEnv(databaseUrl: string): Env {
 export async function bootAuthorityApp(env: Env): Promise<AuthorityApp> {
   const moduleRef = await Test.createTestingModule({
     imports: [
-      AppModule.forRoot(env, { session: testSessionConfig(), oauth: parseOAuthConfig({}) }),
+      AppModule.forRoot(env, {
+        session: testSessionConfig(),
+        mfaSecretKey: testMfaSecretKey(),
+        oauth: parseOAuthConfig({}),
+      }),
       AuthorityModule,
     ],
   }).compile();

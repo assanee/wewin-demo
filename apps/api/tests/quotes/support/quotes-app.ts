@@ -9,7 +9,7 @@ import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.f
 import { parseEnv, type Env } from '../../../src/config/env';
 import { OrdersModule } from '../../../src/orders/orders.module';
 import { QuotesModule } from '../../../src/quotes/quotes.module';
-import { testSessionConfig } from '../../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../../support/app';
 
 /**
  * The real application graph, plus `QuotesModule`.
@@ -41,7 +41,11 @@ export function quotesEnv(databaseUrl: string): Env {
 export async function bootQuotesApp(env: Env): Promise<QuotesApp> {
   const moduleRef = await Test.createTestingModule({
     imports: [
-      AppModule.forRoot(env, { session: testSessionConfig(), oauth: parseOAuthConfig({}) }),
+      AppModule.forRoot(env, {
+        session: testSessionConfig(),
+        mfaSecretKey: testMfaSecretKey(),
+        oauth: parseOAuthConfig({}),
+      }),
       OrdersModule,
       QuotesModule,
     ],

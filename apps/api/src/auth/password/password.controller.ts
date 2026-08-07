@@ -8,6 +8,7 @@ import {
   passwordSignInSchema,
   type PasswordSignInBody,
   type PasswordSignInResponse,
+  type SecondFactorRequiredResponse,
 } from './password.contract';
 import { PasswordSignInService } from './password-sign-in.service';
 
@@ -52,7 +53,7 @@ export class PasswordController {
     @Res() response: Response,
     @Body(new ZodBodyPipe(passwordSignInSchema)) body: PasswordSignInBody,
   ): Promise<void> {
-    const session = await this.passwords.signIn({
+    const outcome = await this.passwords.signIn({
       email: body.email,
       password: body.password,
       /*
@@ -64,6 +65,25 @@ export class PasswordController {
       address: request.ip ?? request.socket.remoteAddress ?? 'unknown',
       userAgent: request.get('user-agent'),
     });
+
+    /*
+     * ⭐ Two outcomes, and only one of them is a session.
+     *
+     * ⚠️ No `Set-Cookie` on the challenge branch. The refresh token is the durable half of a
+     * session and there is no session yet — writing one here would leave a browser holding a
+     * credential it could rotate into a live session without ever presenting a second
+     * factor, which is the whole feature undone by a convenience.
+     */
+    if (outcome.kind === 'challenge') {
+      response.status(200).json({
+        mfaRequired: true,
+        challengeToken: outcome.token,
+        challengeExpiresAt: outcome.expiresAt.toISOString(),
+      } satisfies SecondFactorRequiredResponse);
+      return;
+    }
+
+    const { session } = outcome;
 
     response.setHeader(
       'Set-Cookie',

@@ -11,6 +11,7 @@ import {
   type PasswordCredentialStore,
 } from './password.repository';
 import { SIGN_IN_THROTTLE, type SignInThrottle } from './sign-in-throttle.token';
+import { SECOND_FACTOR, type SecondFactor } from './second-factor';
 
 export interface PasswordSignInRequest {
   readonly email: string;
@@ -54,6 +55,16 @@ export interface PasswordSignInRequest {
  * a password is a string this database has been holding since before the account closed.
  * Reinstatement stays an OAuth-only exit.
  */
+/**
+ * What step one produces.
+ *
+ * `kind` rather than an optional field, so `switch` is exhaustive and a handler that has not
+ * been taught about the second factor fails to compile instead of failing at runtime.
+ */
+export type SignInOutcome =
+  | { readonly kind: 'session'; readonly session: IssuedSession }
+  | { readonly kind: 'challenge'; readonly token: string; readonly expiresAt: Date };
+
 @Injectable()
 export class PasswordSignInService {
   private readonly logger = new Logger(PasswordSignInService.name);
@@ -72,9 +83,28 @@ export class PasswordSignInService {
     @Inject(PASSWORD_CREDENTIAL_STORE) private readonly store: PasswordCredentialStore,
     @Inject(SESSION_STARTER) private readonly sessions: SessionStarter,
     @Inject(SIGN_IN_THROTTLE) private readonly throttle: SignInThrottle,
+    /*
+     * A seam, not `MfaSignInService`. `PasswordModule` must not depend on `MfaModule` — MFA
+     * needs `SESSION_STARTER`, which this module provides, and the cycle would be immediate.
+     * The port is two methods wide and lives in this module's own file.
+     */
+    @Inject(SECOND_FACTOR) private readonly secondFactor: SecondFactor,
   ) {}
 
-  async signIn(request: PasswordSignInRequest): Promise<IssuedSession> {
+  /**
+   * ⭐ Returns a **session or a challenge**, and the union is the point.
+   *
+   * Before the second factor existed this always ended in `sessions.start(...)`. Now an
+   * account with MFA confirmed gets a challenge instead — factor one proven, factor two
+   * outstanding — and `challenge.ts` explains why that token is signed with a different key
+   * rather than being an access token wearing a flag.
+   *
+   * ⚠️ A **union rather than a nullable session**, so every caller has to say what it does
+   * in both cases. A `session | null` would let a handler that had not been updated hand
+   * back `null` and 500, or worse, treat the absence as an ordinary failure and tell the
+   * person their password was wrong.
+   */
+  async signIn(request: PasswordSignInRequest): Promise<SignInOutcome> {
     // Normalised once, here, and used for the lookup *and* the throttle key. Two different
     // normalisations would mean an attacker gets a fresh bucket per capitalisation.
     const email = request.email.trim().toLowerCase();
@@ -115,11 +145,35 @@ export class PasswordSignInService {
      * process had just written. This module lives inside `AuthModule`, beside
      * `SessionModule`, so there is nothing to decouple from.
      */
-    return this.sessions.start({
-      userId: usable.userId,
-      userAgent: request.userAgent ?? null,
-      ip: request.address,
-    });
+    /*
+     * ⭐ The gate, and it is asked *after* the password is accepted rather than before.
+     *
+     * Asking first would answer "does this account have MFA?" to anybody who typed the
+     * address — which is the same enumeration leak the single refusal above exists to close,
+     * arriving through a different door.
+     */
+    if (await this.secondFactor.isRequired(usable.userId)) {
+      /*
+       * ⚠️ The sign-in throttle is cleared here, deliberately, even though no session has
+       * been issued. The password *was* correct, and holding somebody's earlier typos
+       * against them past that point is what the clear is for.
+       *
+       * What stops this from handing an attacker unlimited guesses at the code is that step
+       * two counts on `MFA_THROTTLE` — a different counter, which this does not touch. See
+       * `mfa-throttle.ts`; sharing one would make the second factor's limit disappear while
+       * looking present.
+       */
+      return { kind: 'challenge', ...this.secondFactor.challenge(usable.userId) };
+    }
+
+    return {
+      kind: 'session',
+      session: await this.sessions.start({
+        userId: usable.userId,
+        userAgent: request.userAgent ?? null,
+        ip: request.address,
+      }),
+    };
   }
 
   /**

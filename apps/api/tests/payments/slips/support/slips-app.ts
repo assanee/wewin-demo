@@ -11,7 +11,7 @@ import { parseOAuthConfig } from '../../../../src/auth/oauth/oauth.config';
 import { AllExceptionsFilter } from '../../../../src/common/errors/all-exceptions.filter';
 import type { Env } from '../../../../src/config/env';
 import { ScheduleService, depositPercentTerms } from '../../../../src/payments/schedule';
-import { testSessionConfig } from '../../../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../../../support/app';
 
 /**
  * The real application graph. Nothing added, and that is the change.
@@ -48,7 +48,11 @@ export interface SlipsApp {
 
 export async function bootSlipsApp(env: Env): Promise<SlipsApp> {
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule.forRoot(env, { session: testSessionConfig(), oauth: parseOAuthConfig({}) })],
+    imports: [AppModule.forRoot(env, {
+        session: testSessionConfig(),
+        mfaSecretKey: testMfaSecretKey(),
+        oauth: parseOAuthConfig({}),
+      })],
   }).compile();
 
   const app = moduleRef.createNestApplication({ logger: false });

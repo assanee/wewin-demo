@@ -12,7 +12,7 @@ import { SessionService } from '../../src/auth/session/session.service';
 import { AllExceptionsFilter } from '../../src/common/errors/all-exceptions.filter';
 import { parseEnv } from '../../src/config/env';
 import { PG_POOL } from '../../src/database/database.tokens';
-import { testSessionConfig } from '../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../support/app';
 
 /**
  * The application, wired, with somebody actually signed in.
@@ -44,7 +44,11 @@ describeWithPg('the authenticated application', () => {
 
     const moduleRef = await Test.createTestingModule({
       imports: [
-        AppModule.forRoot(env, { session: testSessionConfig(), oauth: parseOAuthConfig({}) }),
+        AppModule.forRoot(env, {
+        session: testSessionConfig(),
+        mfaSecretKey: testMfaSecretKey(),
+        oauth: parseOAuthConfig({}),
+      }),
       ],
     }).compile();
 

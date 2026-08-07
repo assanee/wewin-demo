@@ -16,7 +16,7 @@ import { parseOAuthConfig } from '../../../src/auth/oauth/oauth.config';
 import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.filter';
 import { parseEnv, type Env } from '../../../src/config/env';
 import type { PermissionCode } from '../../../src/rbac';
-import { testSessionConfig } from '../../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../../support/app';
 
 /**
  * The real application graph. Nothing added, and that is the change.
@@ -50,7 +50,11 @@ export function paymentsEnv(databaseUrl: string): Env {
 
 export async function bootPaymentsApp(env: Env): Promise<PaymentsApp> {
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule.forRoot(env, { session: testSessionConfig(), oauth: parseOAuthConfig({}) })],
+    imports: [AppModule.forRoot(env, {
+        session: testSessionConfig(),
+        mfaSecretKey: testMfaSecretKey(),
+        oauth: parseOAuthConfig({}),
+      })],
   }).compile();
 
   const app = moduleRef.createNestApplication({ logger: false });

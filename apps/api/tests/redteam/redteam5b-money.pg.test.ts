@@ -14,7 +14,7 @@ import type { OrderLineRequestWire, OrderWire } from '@wewin/contract/order';
 import { AppModule } from '../../src/app.module';
 import { parseOAuthConfig } from '../../src/auth/oauth/oauth.config';
 import { AllExceptionsFilter } from '../../src/common/errors/all-exceptions.filter';
-import { testSessionConfig } from '../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../support/app';
 import { makePng } from '../media/fixtures';
 import {
   client,
@@ -63,7 +63,11 @@ interface Booted {
 async function boot(env: ReturnType<typeof paymentsEnv>): Promise<Booted> {
   const moduleRef = await Test.createTestingModule({
     imports: [
-      AppModule.forRoot(env, { session: testSessionConfig(), oauth: parseOAuthConfig({}) }),
+      AppModule.forRoot(env, {
+        session: testSessionConfig(),
+        mfaSecretKey: testMfaSecretKey(),
+        oauth: parseOAuthConfig({}),
+      }),
     ],
   }).compile();
 
@@ -1485,6 +1489,7 @@ describeWithPg('RED TEAM 5b — moving money you are not allowed to move', () =>
       imports: [
         AppModule.forRoot(paymentsEnv(url ?? ''), {
           session: testSessionConfig(),
+          mfaSecretKey: testMfaSecretKey(),
           oauth: parseOAuthConfig({}),
         }),
       ],

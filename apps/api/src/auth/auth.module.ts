@@ -3,6 +3,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthenticationMiddleware } from './authentication.middleware';
 import { OAuthModule } from './oauth/oauth.module';
+import { MfaModule } from './mfa/mfa.module';
 import { PasswordModule } from './password/password.module';
 import { parseOAuthConfig, type OAuthConfig } from './oauth/oauth.config';
 import { SessionModule } from './session/session.module';
@@ -34,6 +35,14 @@ export interface AuthModuleOptions {
   readonly session: SessionConfig;
   /** Omitted means `parseOAuthConfig(process.env)`. A test passes its own endpoints. */
   readonly oauth?: OAuthConfig;
+  /**
+   * ⚠️ `AUTH_MFA_SECRET_KEY` — 32 bytes, base64url. Required, with no default.
+   *
+   * A generated fallback would be worse than a missing one: every restart would mint a new
+   * key, every enrolled account's sealed secret would fail to open, and the symptom would be
+   * "MFA randomly stops working" rather than a start-up refusal naming the setting.
+   */
+  readonly mfaSecretKey: string;
 }
 
 @Module({})
@@ -41,7 +50,14 @@ export class AuthModule {
   static forRoot(options: AuthModuleOptions): DynamicModule {
     const sessions = SessionModule.forRoot(options.session);
     const oauth = options.oauth ?? parseOAuthConfig(process.env);
-    const passwords = PasswordModule.forRoot({ imports: [sessions] });
+    /*
+     * ⚠️ Built before `PasswordModule` and handed to it, because step one has to ask whether
+     * step two applies. The dependency runs one way only: `MfaModule` reaches `SessionService`
+     * through the same `sessions` instance rather than through `PasswordModule`, so there is
+     * no cycle — see the header of `mfa/mfa.module.ts`.
+     */
+    const mfa = MfaModule.forRoot({ imports: [sessions], secretKey: options.mfaSecretKey });
+    const passwords = PasswordModule.forRoot({ imports: [sessions, mfa] });
 
     return {
       module: AuthModule,

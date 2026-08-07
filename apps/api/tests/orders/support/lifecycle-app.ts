@@ -13,7 +13,7 @@ import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.f
 import { parseEnv, type Env } from '../../../src/config/env';
 import { OrdersModule } from '../../../src/orders/orders.module';
 import type { PermissionCode } from '../../../src/rbac';
-import { testSessionConfig } from '../../support/app';
+import { testSessionConfig , testMfaSecretKey } from '../../support/app';
 
 /**
  * The real application graph, plus `OrdersModule`.
@@ -45,6 +45,7 @@ export async function bootLifecycleApp(env: Env): Promise<LifecycleApp> {
   const moduleRef = await Test.createTestingModule({
     imports: [
       AppModule.forRoot(env, {
+        mfaSecretKey: testMfaSecretKey(),
         session: testSessionConfig(),
         oauth: parseOAuthConfig({}),
       }),

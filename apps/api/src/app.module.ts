@@ -40,6 +40,12 @@ import { RbacModule } from './rbac/rbac.module';
 
 export interface AppModuleOptions {
   readonly session: SessionConfig;
+  /**
+   * ⚠️ `AUTH_MFA_SECRET_KEY` — 32 bytes, base64url — and it is here rather than in `Env` for
+   * the reason stated above about the signing key: `Env` is frozen, logged in parts, and
+   * handed whole to every module in the graph. Key material belongs in none of those places.
+   */
+  readonly mfaSecretKey: string;
   /** Omitted means the OAuth module parses `process.env` itself. Tests pass their own. */
   readonly oauth?: OAuthConfig;
 }
@@ -55,6 +61,7 @@ export class AppModule implements NestModule {
      */
     const auth = AuthModule.forRoot({
       session: options.session,
+      mfaSecretKey: options.mfaSecretKey,
       ...(options.oauth === undefined ? {} : { oauth: options.oauth }),
     });
 
