@@ -1,5 +1,7 @@
 import type { Route } from 'next';
 import {
+  ClipboardList,
+  Receipt,
   UserCog,
   Users,
   Boxes,
@@ -112,6 +114,18 @@ export const NAVIGATION: readonly NavSection[] = [
     items: [
       {
         /*
+         * `orders.read` and not `orders.write`. The list and the spine are readable by
+         * anybody who may see an order at all; every transition button on the detail screen
+         * comes from `availableTransitions`, which the API computes per caller — so a reader
+         * who may not move an order simply gets no buttons, decided server-side.
+         */
+        href: '/orders',
+        labelTh: 'ออเดอร์',
+        icon: ClipboardList,
+        requires: ['orders.read'],
+      },
+      {
+        /*
          * `quotes.read` and not `quotes.write`: the list and the customer-facing document are
          * readable by anyone who may see a quotation at all, and every editing control on the
          * screen is decided per action beside the thing it would have done — the same rule the
@@ -121,6 +135,23 @@ export const NAVIGATION: readonly NavSection[] = [
         labelTh: 'ใบเสนอราคา',
         icon: FileText,
         requires: ['quotes.read'],
+      },
+    ],
+  },
+  {
+    labelTh: 'การเงิน',
+    items: [
+      {
+        /*
+         * ⚠️ Two codes, matching `slip-review.controller.ts` exactly — and matching the
+         * overview's `slips` card, which asks for the same pair for the same reason: a count
+         * of this queue is a summary of this queue, and neither may be readable by somebody
+         * the queue itself would refuse.
+         */
+        href: '/slips',
+        labelTh: 'สลิปรอตรวจ',
+        icon: Receipt,
+        requires: ['payments.read', 'orders.read'],
       },
     ],
   },

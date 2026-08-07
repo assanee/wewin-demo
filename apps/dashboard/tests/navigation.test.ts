@@ -41,19 +41,36 @@ describe('navigation derived from permissions', () => {
   });
 
   it('drops a section whose every item was filtered out, heading included', () => {
-    const withoutCatalogue = visibleNavigation(new Set(['orders.read']));
-
     /*
-     * "ระบบ" survives every permission set, because `/account` inside it requires none —
-     * a person's own password is not a thing to hold a grant for. What is being asserted is
-     * still the filtering: แคตตาล็อก and การขาย are gone, heading and all, because
-     * `orders.read` opens neither.
+     * ⚠️ `groups.read`, and it used to be `orders.read`.
+     *
+     * The premise moved because the product did: `orders.read` opened no menu entry when
+     * this test was written, and now it opens ออเดอร์ and แจ้งเตือน. Rather than weaken the
+     * assertion to `.not.toContain(...)`, it was re-pointed at a permission that still opens
+     * nothing — `groups.read` is real, held by administrators, and grants no menu of its own
+     * because groups are edited inside ผู้ใช้และสิทธิ์.
+     *
+     * That distinction is the thing worth keeping: a permission granting no *section* must
+     * still produce no *heading*, because a heading is itself a disclosure that a section
+     * exists — the same rule the overview's cards follow. If groups ever get their own
+     * screen, this needs re-pointing again rather than deleting.
      */
-    expect(withoutCatalogue.map((section) => section.labelTh)).toEqual(['ทั่วไป', 'ระบบ']);
-    expect(withoutCatalogue.flatMap((section) => section.items.map((item) => item.href))).toEqual([
-      '/',
-      '/account',
-    ]);
+    const withNoSectionOfItsOwn = visibleNavigation(new Set(['groups.read']));
+
+    // "ระบบ" survives every permission set, because `/account` inside it requires none —
+    // a person's own password is not a thing to hold a grant for.
+    expect(withNoSectionOfItsOwn.map((section) => section.labelTh)).toEqual(['ทั่วไป', 'ระบบ']);
+    expect(
+      withNoSectionOfItsOwn.flatMap((section) => section.items.map((item) => item.href)),
+    ).toEqual(['/', '/account']);
+  });
+
+  it('opens ออเดอร์ to orders.read', () => {
+    const hrefs = visibleNavigation(new Set(['orders.read'])).flatMap((section) =>
+      section.items.map((item) => item.href),
+    );
+
+    expect(hrefs).toContain('/orders');
   });
 
   it('ignores permission codes it has never heard of instead of choking on them', () => {
