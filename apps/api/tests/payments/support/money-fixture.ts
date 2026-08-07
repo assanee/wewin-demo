@@ -48,6 +48,16 @@ export interface HeldMoneyOptions {
   readonly payerName: string | null;
   readonly payerAccountLast4: string | null;
   readonly reviewerUserId: string;
+  /**
+   * When the reviewer accepted it. Defaults to `now()`.
+   *
+   * ⚠️ Set **here** or not at all. `payment_slips_guard_write()` freezes `reviewed_at` the
+   * moment a slip leaves `submitted` — "slip % was reviewed at % and is frozen" — so a test
+   * that wants an acceptance in a particular month cannot back-date one afterwards, and
+   * should not be able to: a reviewed slip is evidence, and evidence whose date can be moved
+   * is not evidence. `overview.pg.test.ts` needs one on either side of a month boundary.
+   */
+  readonly reviewedAt?: Date;
   /** `false` puts the money in `remittance_in_transit` — plan 7.11's cross-border wire. */
   readonly landed?: boolean;
   /**
@@ -151,13 +161,17 @@ export async function giveOrderHeldMoney(
      * `RefundsRepository.acceptedPayers` ignores unattested slips, so a fixture that skipped this
      * would produce an order with money and no refundable destination.
      */
+    const reviewedAt =
+      options.reviewedAt === undefined ? sql`now()` : sql`${options.reviewedAt.toISOString()}::timestamptz`;
+
     await tx.execute(sql`
       update payment_slips
          set status = 'accepted', reviewed_by_user_id = ${options.reviewerUserId}::uuid,
-             reviewed_at = now(),
+             reviewed_at = ${reviewedAt},
              payer_verified_by_user_id = case when ${options.payerName}::text is null then null
                                               else ${options.reviewerUserId}::uuid end,
-             payer_verified_at = case when ${options.payerName}::text is null then null else now() end
+             payer_verified_at = case when ${options.payerName}::text is null then null
+                                      else ${reviewedAt} end
        where id = ${slipId}::uuid
     `);
 

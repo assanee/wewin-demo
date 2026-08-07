@@ -1,14 +1,18 @@
-import { PrincipalCard } from '@/components/principal-card';
+import { OverviewScreen } from '@/components/overview/overview-screen';
 
 /**
- * The landing page, and the one screen the shell owns outright.
+ * The landing page.
  *
- * It shows the signed-in principal exactly as `GET /me` returned it — the permission codes,
- * the group ids, the user id. That is not filler. "Permissions are the single source of
- * truth and the menu derives from them" (plan section 6) is a claim about this application,
- * and a screen that prints the input to that derivation is how somebody checks it in ten
- * seconds instead of reading the sidebar's source. When a person says "I cannot see
- * สินค้า", this page answers whether the API thinks they hold `catalog.read`.
+ * It used to print `GET /me` — the caller's user id, group ids and permission codes — which
+ * was a real diagnostic ("why can I not see สินค้า?" answered in ten seconds) and the wrong
+ * thing to open the day with: a page about the *reader*, in the place that should be about
+ * the *company*. That card now lives at `/account`, where a fact about you belongs, and this
+ * page answers what is waiting for somebody and where the work is.
+ *
+ * Every number comes from `GET /overview`, which returns only the cards this account
+ * is entitled to. There is no permission logic here and there must not be: the sidebar
+ * derives from `/me`, this screen derives from what the overview endpoint chose to send, and
+ * in both cases the API is the single source of truth rather than a thing the client copies.
  */
 export default function OverviewPage() {
   return (
@@ -16,10 +20,10 @@ export default function OverviewPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">ภาพรวม</h1>
         <p className="text-muted-foreground text-sm">
-          ระบบจัดการภายในของ WEWIN — เมนูด้านซ้ายแสดงเฉพาะส่วนที่บัญชีนี้มีสิทธิ์เข้าถึง
+          งานที่รอดำเนินการและสถานะปัจจุบันของ WEWIN — แสดงเฉพาะส่วนที่บัญชีนี้มีสิทธิ์เข้าถึง
         </p>
       </div>
-      <PrincipalCard />
+      <OverviewScreen />
     </>
   );
 }

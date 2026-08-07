@@ -266,6 +266,7 @@ describe('boot-time route audit', () => {
       'GET /admin/notifications [permissions]',
       'GET /admin/notifications/:notificationId/attempts [permissions]',
       'GET /admin/notifications/summary [permissions]',
+
       'GET /admin/reviews/queue [permissions]',
       'GET /admin/users [permissions]',
       'GET /auth/oauth/:provider/callback [anonymous]',
@@ -293,6 +294,16 @@ describe('boot-time route audit', () => {
        * the response carries any provenance at all. Every *write* below states a permission.
        */
       'GET /orders/:orderId/quote [principal]',
+      /*
+       * ⚠️ `[authenticated]` and not `[permissions]`, and that is the design rather than an
+       * omission. There is no code that means "may see the overview": the page is a
+       * different page for a catalogue editor and a finance lead. `src/overview/sections.ts`
+       * gates it one card at a time, each card holding the permissions of the queue its
+       * number summarises, and the service never fetches a card the caller may not see.
+       *
+       * Not under `/admin` for exactly that reason — see the controller.
+       */
+      'GET /overview [authenticated]',
       'GET /payments/refunds [permissions]',
       'GET /payments/refunds/:refundId [permissions]',
       /*

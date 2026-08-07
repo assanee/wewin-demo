@@ -235,3 +235,17 @@ export function networkError(cause: unknown): ApiError {
     details: cause,
   });
 }
+
+/**
+ * Anything thrown, as a sentence a person can read.
+ *
+ * ⚠️ There are three older copies of this — `catalog-api.ts`, `quote-api.ts` and
+ * `user-api.ts` each grew their own, identical, before there was an obvious home for it.
+ * This is the home. New callers use this one; folding the other three in is a tidy-up that
+ * touches three working screens and belongs in its own change.
+ */
+export function failureMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error && error.message !== '') return error.message;
+  return 'เกิดข้อผิดพลาดที่ไม่รู้จัก';
+}
