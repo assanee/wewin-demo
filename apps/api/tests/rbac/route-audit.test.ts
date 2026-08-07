@@ -250,6 +250,12 @@ describe('boot-time route audit', () => {
       'DELETE /admin/groups/:groupId [permissions]',
       'DELETE /admin/media/:mediaId [permissions]',
       'DELETE /admin/users/:userId/suspension [permissions]',
+      /*
+       * ⚠️ The one action here that leaves the account *less* protected, and the only one
+       * that costs the password again. `reproof.ts` argues it: an unlocked laptop is
+       * otherwise a way to strip a second factor with nothing but what is on the screen.
+       */
+      'DELETE /me/account/mfa [authenticated]',
       'DELETE /me/account/providers/:provider [authenticated]',
       'DELETE /me/account/sessions/:sessionId [authenticated]',
       'DELETE /me/preferences [authenticated]',
@@ -279,7 +285,8 @@ describe('boot-time route audit', () => {
       'GET /health/live [anonymous]',
       'GET /health/ready [anonymous]',
       'GET /me [anonymous]',
-      'GET /me/account [authenticated]',
+       'GET /me/account [authenticated]',
+      'GET /me/account/mfa [authenticated]',
       'GET /me/preferences [anonymous]',
       'GET /media/:mediaId [anonymous]',
       'GET /meta [anonymous]',
@@ -361,6 +368,10 @@ describe('boot-time route audit', () => {
       'POST /auth/password/reset [anonymous]',
       'POST /auth/password/reset-request [anonymous]',
       'POST /auth/refresh [anonymous]',
+       'POST /me/account/mfa [authenticated]',
+      'POST /me/account/mfa/enrolment [authenticated]',
+      /* ⚠️ Costs the password too — the old set dies and the new one is on screen. */
+      'POST /me/account/mfa/recovery-codes [authenticated]',
       'POST /me/account/password [authenticated]',
       'POST /me/account/sessions/revocation [authenticated]',
       'POST /orders [anonymous]',

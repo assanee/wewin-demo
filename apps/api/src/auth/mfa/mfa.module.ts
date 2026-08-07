@@ -2,10 +2,13 @@ import { Module, type DynamicModule, type ModuleMetadata } from '@nestjs/common'
 
 import { SessionService } from '../session/session.service';
 import { SESSION_STARTER } from '../password/session-starter';
+import { PASSWORD_CREDENTIAL_STORE, PasswordRepository } from '../password/password.repository';
 import { SECOND_FACTOR, type SecondFactor } from '../password/second-factor';
 import { MfaChallengeService } from './challenge';
+import { MfaAccountController } from './mfa-account.controller';
 import { MfaController } from './mfa.controller';
 import { MfaRepository } from './mfa.repository';
+import { MfaEnrolmentService } from './mfa-enrolment.service';
 import { MfaSignInService } from './mfa-sign-in.service';
 import { MFA_THROTTLE, makeMfaThrottle } from './mfa-throttle';
 import { MFA_SECRET_BOX } from './mfa.tokens';
@@ -69,11 +72,14 @@ export class MfaModule {
     return {
       module: MfaModule,
       imports: options.imports ?? [],
-      controllers: [MfaController],
+      controllers: [MfaController, MfaAccountController],
       providers: [
         MfaRepository,
         MfaChallengeService,
         MfaSignInService,
+        MfaEnrolmentService,
+        PasswordRepository,
+        { provide: PASSWORD_CREDENTIAL_STORE, useExisting: PasswordRepository },
         { provide: SESSION_STARTER, useExisting: SessionService },
         {
           provide: MFA_SECRET_BOX,

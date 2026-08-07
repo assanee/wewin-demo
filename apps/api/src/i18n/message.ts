@@ -140,6 +140,15 @@ const PARAM_SHAPES = {
    * enabled" says which accounts to attack directly instead.
    */
   'error.auth.second_factor_rejected': {},
+  'error.mfa.already_enabled': {},
+  'error.mfa.not_enrolling': {},
+  'error.mfa.no_recovery_path': {},
+  /*
+   * A provider-only account cannot re-prove with a password, so it cannot turn its own
+   * second factor off. Not a hole: the route out is an administrator, who is a person who
+   * can be asked why — which is a better answer than a self-service path with no proof.
+   */
+  'error.mfa.needs_a_password': {},
   'error.auth.too_many_attempts': { minutes: 'count' },
   'error.auth.password_too_short': { minimum: 'count' },
   'error.auth.password_too_long': { maximum: 'count' },

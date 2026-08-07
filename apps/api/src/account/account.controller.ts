@@ -3,9 +3,9 @@ import { Body, Controller, Delete, Get, Header, HttpCode, Param, Post } from '@n
 import { CONTRACT_VERSION, CONTRACT_VERSION_HEADER } from '@wewin/contract/version';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
-import { AppError } from '../common/errors/app-error';
-import { CurrentScope, RequireAuthenticated, matchScope, type Scope } from '../rbac';
+import { CurrentScope, RequireAuthenticated, type Scope } from '../rbac';
 import { AccountService } from './account.service';
+import { signedIn } from './signed-in';
 import {
   changePasswordSchema,
   type AccountWire,
@@ -97,24 +97,3 @@ export class AccountController {
   }
 }
 
-/**
- * The caller's user and session, or a refusal.
- *
- * `RequireAuthenticated` has already excluded the guest and the public; `system` is the one
- * that would otherwise reach here, and a background job has no account to manage. Exhaustive,
- * so a fifth scope is a compile error rather than a default.
- */
-function signedIn(scope: Scope): { readonly userId: string; readonly sessionId: string } {
-  return matchScope<{ userId: string; sessionId: string }>(scope, {
-    user: (user) => ({ userId: user.userId, sessionId: user.sessionId }),
-    guest: () => {
-      throw AppError.unauthenticated('ต้องเข้าสู่ระบบก่อน');
-    },
-    public: () => {
-      throw AppError.unauthenticated('ต้องเข้าสู่ระบบก่อน');
-    },
-    system: () => {
-      throw AppError.conflict('งานเบื้องหลังไม่มีบัญชีให้จัดการ', { reason: 'system-scope' });
-    },
-  });
-}

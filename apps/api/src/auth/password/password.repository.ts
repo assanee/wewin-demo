@@ -26,6 +26,15 @@ export interface PasswordCredentialRow {
  */
 export interface PasswordCredentialStore {
   findByVerifiedEmail(address: string): Promise<PasswordCredentialRow | undefined>;
+  /**
+   * By id, for a caller that already has a session and is re-proving.
+   *
+   * ⚠️ Separate from `findByVerifiedEmail` on purpose. That one is the *sign-in* lookup and
+   * requires a verified address, because an unverified one is a claim. Here the identity
+   * came from a token this process signed, so there is nothing left to verify — and reusing
+   * the address path would refuse somebody with a working password and an unconfirmed email.
+   */
+  findByUserId(userId: string): Promise<PasswordCredentialRow | undefined>;
   replaceHash(userId: string, hash: string): Promise<void>;
 }
 
@@ -80,6 +89,21 @@ export class PasswordRepository implements PasswordCredentialStore {
    * was not found. `password_credentials_argon2id` refuses anything that is not a PHC
    * argon2id string, which is the database's half of the same guarantee.
    */
+  async findByUserId(userId: string): Promise<PasswordCredentialRow | undefined> {
+    const [row] = await this.db
+      .select({
+        userId: users.id,
+        status: users.status,
+        passwordHash: passwordCredentials.passwordHash,
+      })
+      .from(users)
+      .leftJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    return row;
+  }
+
   async replaceHash(userId: string, hash: string): Promise<void> {
     await this.db
       .update(passwordCredentials)

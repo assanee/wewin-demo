@@ -41,6 +41,11 @@ class FakeStore implements PasswordCredentialStore {
     return this.rows.get(address);
   }
 
+  /** Not exercised by this suite — sign-in looks up by address. Present so the fake is one. */
+  async findByUserId(userId: string): Promise<PasswordCredentialRow | undefined> {
+    return [...this.rows.values()].find((row) => row.userId === userId);
+  }
+
   async replaceHash(userId: string, hash: string): Promise<void> {
     this.rehashed.push({ userId, hash });
   }
