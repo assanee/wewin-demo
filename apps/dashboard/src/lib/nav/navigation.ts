@@ -1,7 +1,10 @@
 import type { Route } from 'next';
 import {
   ClipboardList,
+  Inbox,
+  MessageSquare,
   Receipt,
+  RotateCcw,
   UserCog,
   Users,
   Boxes,
@@ -153,11 +156,46 @@ export const NAVIGATION: readonly NavSection[] = [
         icon: Receipt,
         requires: ['payments.read', 'orders.read'],
       },
+      {
+        /*
+         * `payments.read` alone, and that asymmetry with สลิปรอตรวจ above is deliberate: the
+         * refunds endpoint asks for one code and the slip queue asks for two, so the menu
+         * asks for exactly what each screen's API asks for. Copying the stricter pair here
+         * would hide a screen from somebody entitled to it.
+         */
+        href: '/refunds',
+        labelTh: 'คืนเงิน',
+        icon: RotateCcw,
+        requires: ['payments.read'],
+      },
+    ],
+  },
+  {
+    labelTh: 'ลูกค้าสัมพันธ์',
+    items: [
+      {
+        href: '/reviews',
+        labelTh: 'รีวิวรอกลั่นกรอง',
+        icon: MessageSquare,
+        requires: ['reviews.moderate'],
+      },
     ],
   },
   {
     labelTh: 'ระบบ',
     items: [
+      {
+        /*
+         * ⚠️ `orders.read`, borrowed — the same borrow `notifications.controller.ts` makes
+         * and documents. There is no `notifications.*` code and there should be; copying the
+         * borrow keeps the menu and the endpoint in step, and inventing a different rule here
+         * would put them out of it.
+         */
+        href: '/outbox',
+        labelTh: 'แจ้งเตือน',
+        icon: Inbox,
+        requires: ['orders.read'],
+      },
       {
         /*
          * `users.read` and not `users.write`: most of what this screen is for is *looking* —

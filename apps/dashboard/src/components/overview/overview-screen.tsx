@@ -51,11 +51,12 @@ import { fetchOverview, type Overview } from './overview-api';
  *   no local copy of who may see what, which is why this screen cannot drift from the API's
  *   answer — see `apps/api/src/overview/sections.ts`.
  *
- *   **A number that leads nowhere says so.** Five of these queues have a complete API and no
- *   screen yet: slips, refunds, reviews, the outbox, and orders themselves. Showing the
- *   count anyway is the point — that is how the company finds out work is piling up in a
- *   place nobody can open — but rendering it as a link to nothing would be worse than not
- *   showing it. So it carries `ยังไม่มีหน้าจัดการ`, which is a true sentence and a to-do list.
+ *   **A number that leads nowhere says so.** For one round every queue here carried
+ *   `ยังไม่มีหน้าจัดการ`: the APIs were complete and the screens were not, and showing the
+ *   count anyway was how the company found out work was piling up somewhere nobody could
+ *   open. All five now have screens, so `QueueCard.href` is populated for all five — but the
+ *   field stays optional, and `QueueTile` still renders the sentence when it is absent. The
+ *   next queue to arrive before its screen should say so too, rather than link to a 404.
  */
 
 interface QueueCard {
@@ -126,6 +127,7 @@ export function OverviewScreen() {
             label: 'สลิปรอตรวจ',
             count: overview.slips.awaitingReview,
             icon: Receipt,
+            href: '/slips' as Route,
             action: 'มีลูกค้าโอนเงินแล้วรอการยืนยัน',
           },
         ]
@@ -147,6 +149,7 @@ export function OverviewScreen() {
             label: 'คำขอคืนเงิน',
             count: overview.refunds.requested,
             icon: RotateCcw,
+            href: '/refunds' as Route,
             action: 'รอการตัดสินใจว่าจะคืนหรือไม่',
           },
         ]
@@ -157,6 +160,7 @@ export function OverviewScreen() {
             label: 'รีวิวรอกลั่นกรอง',
             count: overview.reviews.awaitingModeration,
             icon: MessageSquare,
+            href: '/reviews' as Route,
             action: 'ยังอยู่ในช่วงเวลาที่ซ่อนได้ก่อนเผยแพร่',
           },
         ]
@@ -167,6 +171,7 @@ export function OverviewScreen() {
             label: 'แจ้งเตือนส่งไม่สำเร็จ',
             count: overview.notifications.dead,
             icon: Inbox,
+            href: '/outbox' as Route,
             action: 'ลูกค้าไม่ได้รับข้อความ และระบบเชื่อว่าส่งแล้ว',
           },
         ]
@@ -215,7 +220,12 @@ export function OverviewScreen() {
         <section className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between gap-4">
             <h2 className="text-base font-semibold">ออเดอร์</h2>
-            <span className="text-muted-foreground text-xs">ยังไม่มีหน้าจัดการออเดอร์</span>
+            <Link
+              href="/orders"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
+            >
+              เปิดรายการออเดอร์ <ArrowRight className="size-3" />
+            </Link>
           </div>
 
           <Card>
