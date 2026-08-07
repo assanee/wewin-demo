@@ -4,7 +4,7 @@ import {
   printableQuotation,
   quotationProblem,
   type PinnedDocument,
-} from '../src/components/quotes/printable-quotation';
+} from '../src/quotation.js';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────

@@ -163,3 +163,81 @@ describe('locale resolution — plan 10.6', () => {
     expect(FALLBACK_LOCALE).toBe('th');
   });
 });
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ A MESSAGE ABOUT A QUOTATION HAS TO CONTAIN THE QUOTATION.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Before this, `grep -n 'http' templates.ts` returned nothing. Every customer message
+ * described something that had happened to a document the customer had no way to open — and
+ * `order.quote_revised.customer` went further than that. It told them:
+ *
+ *   *"ท่านมีสิทธิ์ตรวจสอบรายการที่เปลี่ยนแปลงและ **คัดค้าน** ได้ก่อนชำระเงิน"*
+ *
+ * …and then, in brackets, that the screen for doing so did not exist yet. That is a message
+ * promising a right the product does not implement, sent at the exact moment a customer's
+ * agreed price has been changed by somebody else. Plan 10.3 marks it 🔴 for that reason.
+ *
+ * ── What is asserted, and what is deliberately not ───────────────────────────
+ *
+ * `documentUrl` is **optional** on the context, and the tests below cover both shapes. Not
+ * every message is about a document — a delivery notice is not — and more importantly a
+ * misconfigured deployment must still send. A template that interpolated `undefined` into a
+ * sentence would put "โปรดดูที่ undefined" in a customer's inbox, which is worse than a
+ * message with no link in it.
+ */
+
+const WITH_LINK = { ...CONTEXT, documentUrl: 'https://wewin.example/th/orders?t=abc.def.ghi' } as const;
+
+describe('⭐ the quotation messages carry the quotation', () => {
+  it.each(['order.submitted_for_payment.customer', 'order.quote_revised.customer'])(
+    '%s links to the document',
+    (key) => {
+      const rendered = renderTemplate(FALLBACK_LOCALE, key, WITH_LINK);
+
+      expect(rendered?.body).toContain(WITH_LINK.documentUrl);
+    },
+  );
+
+  it('⚠️ says nothing about a link when there is none', () => {
+    /*
+     * The half that keeps a deployment safe. `NOTIFY_WEB_BASE_URL` unset is a configuration
+     * mistake, not a reason to stop telling customers their order was received — and it must
+     * not become a sentence with a hole in it either.
+     */
+    for (const key of ['order.submitted_for_payment.customer', 'order.quote_revised.customer']) {
+      const rendered = renderTemplate(FALLBACK_LOCALE, key, CONTEXT);
+
+      expect(rendered?.body, key).not.toContain('undefined');
+      expect(rendered?.body, key).not.toContain('http');
+      /* Still a message worth sending: the greeting, the substance and the sign-off. */
+      expect(rendered?.body.length, key).toBeGreaterThan(80);
+    }
+  });
+
+  it('⭐ no longer promises a screen that does not exist', () => {
+    /*
+     * The bracketed apology in `order.quote_revised.customer` was load-bearing prose: it was
+     * the honest admission that the right the sentence above it granted had nowhere to be
+     * exercised. Now that the customer can open the revised document, the apology is a lie in
+     * the other direction and this is what stops it being copied forward.
+     */
+    const rendered = renderTemplate(FALLBACK_LOCALE, 'order.quote_revised.customer', WITH_LINK);
+
+    expect(rendered?.body).not.toContain('เมื่อระบบส่วนนั้นเปิดใช้งาน');
+  });
+
+  it('⚠️ a staff message never carries a customer link', () => {
+    /*
+     * The internal queue is read by people who hold `orders.read` and can open the order
+     * properly. A bearer link in an internal inbox is a bearer link one forward away from
+     * being outside the company, for no benefit at all.
+     */
+    for (const key of templateKeys(FALLBACK_LOCALE).filter((k) => k.endsWith('.sales'))) {
+      expect(renderTemplate(FALLBACK_LOCALE, key, WITH_LINK)?.body, key).not.toContain(
+        WITH_LINK.documentUrl,
+      );
+    }
+  });
+});

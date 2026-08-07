@@ -216,3 +216,136 @@ export interface QuotationCheck {
 export function quotationProblem(check: QuotationCheck): 'not-a-quotation-yet' | null {
   return check.hasDocument ? null : 'not-a-quotation-yet';
 }
+
+/* ------------------------------------------------------------------ *
+ * Off the wire
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ THE PINNED DOCUMENT, OUT OF THE JSON THE API SENDS.
+ *
+ * This lives here for the same reason `printableQuotation` does, and the reason is one step
+ * earlier in the pipeline than it looks. Plan 10.6 is about a reprint being the *same*
+ * document — and two apps that each decode the wire their own way have two documents before
+ * either of them renders a character.
+ *
+ * It was written twice before it was written here: the dashboard had it, and the storefront's
+ * first version was written from an *assumption* about the shape rather than from a captured
+ * response. That version's unit tests passed against its own invented fixture and the page
+ * failed on the first real payload — money arrives as `{unit, digits}`, not as digits, and
+ * lines carry no `options` at all.
+ */
+
+/** Satang out of the tagged wire. The unit is **checked**, never assumed. */
+const satang = (value: unknown, what: string): bigint => {
+  if (typeof value !== 'object' || value === null) throw new TypeError(`${what}: ไม่ใช่จำนวนเงิน`);
+  const money = value as { unit?: unknown; digits?: unknown };
+  if (money.unit !== 'THB.satang') throw new TypeError(`${what}: หน่วยไม่ใช่ THB.satang`);
+  return BigInt(String(money.digits));
+};
+
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/**
+ * The option labels a line was priced with, in the order the document holds them.
+ *
+ * `price.lines` is the breakdown: a `price.line.base` entry for the area, then one
+ * `price.line.option` per selection **that changed the price**, each carrying `group` and
+ * `option` as `catalogText`. Anything else — a rule surcharge, a rounding line — has no pair
+ * of labels and is skipped rather than rendered as an empty row.
+ *
+ * ⚠️ **A known gap, and it belongs to the API.** A zero-delta option — clear glass, no insect
+ * screen — produces no price line, so the pinned document carries no Thai for it:
+ * `selections` has `glass_color: CLR` and nothing else. The quotation therefore lists the
+ * options that cost something and omits the ones that did not.
+ *
+ * Falling back to `selections` for those is worse: `CLR` on a document a customer reads is a
+ * warehouse code, not a specification. Incomplete beats unreadable. The real fix is upstream —
+ * `submit_for_payment` should pin a label for **every** selection, not only the priced ones.
+ */
+function pinnedOptions(price: unknown): readonly { groupTh: string; valueTh: string }[] {
+  const lines = (price as { lines?: unknown })?.lines;
+  if (!Array.isArray(lines)) return [];
+
+  return lines.flatMap((raw) => {
+    const params = (raw as { label?: { params?: Record<string, unknown> } }).label?.params ?? {};
+    const group = params['group'] as { th?: unknown } | undefined;
+    const option = params['option'] as { th?: unknown } | undefined;
+
+    return typeof group?.th === 'string' && typeof option?.th === 'string'
+      ? [{ groupTh: group.th, valueTh: option.th }]
+      : [];
+  });
+}
+
+/** What the order row carries and the document does not. */
+export interface DocumentContext {
+  readonly orderNo: string | null;
+  readonly contactName: string | null;
+  readonly submittedAt: string | null;
+}
+
+/**
+ * ⚠️ Throws rather than returning `null` on unreadable money, and the caller catches.
+ *
+ * A decoder that defaulted a missing total to `0n` would render a quotation for ฿0.00 that is
+ * indistinguishable from a real one — in front of somebody who transfers the printed figure.
+ * Presentation fields are lenient by contrast: a missing lead time is a worse page, not a
+ * wrong one.
+ */
+export function pinnedDocumentFrom(
+  document: Record<string, unknown>,
+  context: DocumentContext,
+): PinnedDocument {
+  const vat = (document['vat'] ?? {}) as { rateBp?: unknown };
+  const lines = Array.isArray(document['lines']) ? document['lines'] : [];
+  const charges = Array.isArray(document['charges']) ? document['charges'] : [];
+
+  return {
+    revision: typeof document['revision'] === 'number' ? document['revision'] : 0,
+    documentHash: text(document['documentHash']),
+    /* ⚠️ From the document, never from the browser. This is the whole of plan 10.6. */
+    pinnedLocale: text(document['pinnedLocale']) || 'th',
+    orderNo: context.orderNo,
+    contactName: context.contactName,
+    submittedAt: context.submittedAt,
+    vatRateBp: typeof vat.rateBp === 'number' ? vat.rateBp : 0,
+    leadTimeDays: typeof document['leadTimeDays'] === 'number' ? document['leadTimeDays'] : 0,
+    netThbMinor: satang(document['netThbMinor'], 'ยอดก่อนภาษี'),
+    vatThbMinor: satang(document['vatThbMinor'], 'ภาษี'),
+    grandTotalThbMinor: satang(document['grandTotalThbMinor'], 'ยอดรวม'),
+    lines: lines.map((raw, index) => {
+      const line = raw as Record<string, unknown>;
+      const measures = (line['measures'] ?? {}) as Record<string, { unit?: string; digits?: string }>;
+
+      return {
+        lineNo: typeof line['lineNo'] === 'number' ? line['lineNo'] : index + 1,
+        nameTh: text(line['nameTh']),
+        skuCode: text(line['skuCode']),
+        qty: typeof line['qty'] === 'number' ? line['qty'] : 1,
+        customerDescriptionTh:
+          typeof line['customerDescriptionTh'] === 'string' ? line['customerDescriptionTh'] : null,
+        /* ⭐ The pinned labels, not the `selections` codes — see `pinnedOptions`. */
+        options: pinnedOptions(line['price']),
+        /*
+         * Measures arrive as tagged lengths — micrometres. Rendered as millimetres, which is
+         * what a workshop drawing uses and what the customer was shown.
+         */
+        measures: Object.fromEntries(
+          Object.entries(measures).map(([name, value]) => [
+            name,
+            `${(Number(value.digits ?? 0) / 1000).toLocaleString('th-TH')} mm`,
+          ]),
+        ),
+        netMinor: satang(line['netMinor'], `บรรทัด ${String(index + 1)}`),
+      };
+    }),
+    charges: charges.map((raw) => {
+      const charge = raw as Record<string, unknown>;
+      return {
+        labelTh: text(charge['labelTh']) || text(charge['kind']),
+        amountMinor: satang(charge['amountThbMinor'] ?? charge['amountMinor'], 'ค่าใช้จ่าย'),
+      };
+    }),
+  };
+}

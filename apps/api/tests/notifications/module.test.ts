@@ -1,8 +1,8 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { DRIZZLE } from '../../src/database/database.tokens';
+import { DRIZZLE, PG_POOL } from '../../src/database/database.tokens';
 import type { NotificationChannelAdapter } from '../../src/notifications/channels/channel';
 import { EmailChannelAdapter } from '../../src/notifications/channels/email.channel';
 import { LineChannelAdapter } from '../../src/notifications/channels/line.channel';
@@ -11,7 +11,12 @@ import { SmtpEmailTransport } from '../../src/notifications/channels/transports/
 import { NotificationWorker } from '../../src/notifications/notification-worker.service';
 import { parseNotificationsConfig } from '../../src/notifications/notifications.config';
 import { NotificationsController } from '../../src/notifications/notifications.controller';
-import { NotificationsModule } from '../../src/notifications/notifications.module';
+import {
+  NotificationsModule,
+  type NotificationsModuleOptions,
+} from '../../src/notifications/notifications.module';
+import { SessionModule } from '../../src/auth/session/session.module';
+import { testSessionConfig } from '../support/app';
 import { EMAIL_TRANSPORT, NOTIFICATION_CHANNEL_ADAPTERS } from '../../src/notifications/notifications.tokens';
 
 /**
@@ -28,12 +33,35 @@ import { EMAIL_TRANSPORT, NOTIFICATION_CHANNEL_ADAPTERS } from '../../src/notifi
  * ships rather than a version with an extra import added to make a test work.
  */
 
+/**
+ * ⚠️ `PG_POOL` as well as `DRIZZLE`, since this module now imports the session graph for the
+ * quotation link and `SessionRepository` takes the pool. Neither is ever used — nothing here
+ * issues a statement — but a stub that provided only half would fail at construction with a
+ * message about sessions, in a file about notifications.
+ */
 @Global()
-@Module({ providers: [{ provide: DRIZZLE, useValue: {} }], exports: [DRIZZLE] })
+@Module({
+  providers: [
+    { provide: DRIZZLE, useValue: {} },
+    { provide: PG_POOL, useValue: {} },
+  ],
+  exports: [DRIZZLE, PG_POOL],
+})
 class StubDatabaseModule {}
 
-const build = (config: Parameters<typeof NotificationsModule.forRoot>[0]) =>
-  Test.createTestingModule({ imports: [StubDatabaseModule, NotificationsModule.forRoot(config)] }).compile();
+/**
+ * The real `SessionModule`, on a throwaway key.
+ *
+ * ⚠️ Not a stub. `NotificationsModule` now requires the session graph because the worker mints
+ * the quotation link that goes in a customer message, and a fake provider here would let the
+ * module compile against a shape it does not actually get.
+ */
+const auth = (): DynamicModule => SessionModule.forRoot(testSessionConfig());
+
+const build = (options: Omit<NotificationsModuleOptions, 'auth'>) =>
+  Test.createTestingModule({
+    imports: [StubDatabaseModule, NotificationsModule.forRoot({ ...options, auth: auth() })],
+  }).compile();
 
 let close: (() => Promise<void>) | undefined;
 
@@ -97,7 +125,7 @@ describe('NotificationsModule', () => {
      * An order module causes a notification by appending an `order_events` row and in no
      * other way.
      */
-    const dynamic = NotificationsModule.forRoot({ config: parseNotificationsConfig({ NODE_ENV: 'test' }) });
+    const dynamic = NotificationsModule.forRoot({ config: parseNotificationsConfig({ NODE_ENV: 'test' }), auth: auth() });
     expect(dynamic.exports ?? []).toStrictEqual([]);
   });
 });

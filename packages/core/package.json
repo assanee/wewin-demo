@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
-  "//": "The root export is types only, on purpose. Every runtime value comes from a subpath so that importing one concern never drags another into the bundle — see docs/monorepo-plan.md section 1.",
+  "//": "The root export is types only, on purpose. Every runtime value comes from a subpath so that importing one concern never drags another into the bundle \u2014 see docs/monorepo-plan.md section 1.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts"
@@ -29,7 +29,8 @@
     "./rules": "./dist/data/ruleBuilders.js",
     "./fixtures": "./dist/data/catalog.js",
     "./money": "./dist/money.js",
-    "./vat": "./dist/vat.js"
+    "./vat": "./dist/vat.js",
+    "./quotation": "./dist/quotation.js"
   },
   "files": [
     "dist"

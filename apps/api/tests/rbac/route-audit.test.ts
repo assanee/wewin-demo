@@ -320,6 +320,26 @@ describe('boot-time route audit', () => {
        */
       'GET /orders/:orderId/quote [principal]',
       /*
+       * ⭐ `[anonymous]`, and this line is the one to stop on.
+       *
+       * It is the only route in the application that serves a customer's own data to a caller
+       * with no cookie and no bearer, and it is here because ownership could not reach them:
+       * `orders_submitted_has_a_contact_channel` requires an email address on a submitted
+       * order and requires no account, so the ordinary customer reads our mail on a device
+       * that has never held their guest cookie.
+       *
+       * What makes it safe to publish is not the policy on this line but three properties of
+       * the token, each of which has its own test: the order id is **inside the signature**,
+       * so one link cannot be walked to a second; the key is **domain-separated**, so an
+       * access token pasted here is refused before any claim is read; and
+       * `DocumentLinkModule` cannot reach `OrdersService`, so nothing behind this route can
+       * move, price or cancel anything.
+       *
+       * See `orders/document-link.ts`. If this line ever gains a sibling, that comment is the
+       * one to re-read first.
+       */
+      'GET /orders/documents/:token [anonymous]',
+      /*
        * ⚠️ `[authenticated]` and not `[permissions]`, and that is the design rather than an
        * omission. There is no code that means "may see the overview": the page is a
        * different page for a catalogue editor and a finance lead. `src/overview/sections.ts`

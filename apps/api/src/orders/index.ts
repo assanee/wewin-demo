@@ -15,6 +15,7 @@
  */
 
 export { OrdersModule } from './orders.module';
+export { DocumentLinkModule } from './document-link.module';
 
 export {
   BP_DENOMINATOR,

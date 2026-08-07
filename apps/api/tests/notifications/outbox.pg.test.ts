@@ -13,6 +13,8 @@ import type {
 } from '../../src/notifications/channels/channel';
 import { NotificationWorker } from '../../src/notifications/notification-worker.service';
 import { parseNotificationsConfig, type NotificationsConfig } from '../../src/notifications/notifications.config';
+import { DocumentLinkService } from '../../src/orders/document-link';
+import { testSessionConfig } from '../support/app';
 import { NotificationsRepository } from '../../src/notifications/notifications.repository';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 
@@ -233,8 +235,12 @@ function describeError(error: unknown): string {
   return parts.join(' | ');
 }
 
+/** One config for the whole file, so a token minted here verifies against a link built here. */
+const session = testSessionConfig();
+const links = new DocumentLinkService(session);
+
 const workerWith = (adapter: NotificationChannelAdapter, overrides: Partial<NotificationsConfig> = {}) =>
-  new NotificationWorker(config(overrides), [adapter], repository);
+  new NotificationWorker(config(overrides), [adapter], repository, links);
 
 describeWithPg('the outbox against Postgres', () => {
   beforeAll(async () => {
@@ -377,6 +383,83 @@ describeWithPg('the outbox against Postgres', () => {
       await workerWith(adapter).runOnce();
       expect(adapter.sent.filter((message) => message.orderId === orderId)).toHaveLength(0);
       expect(await attemptCountFor(orderId)).toBe(0);
+    });
+  });
+
+  describe('⭐ the message about a quotation contains the quotation', () => {
+    /*
+     * Until this round every customer message described something that had happened to a
+     * document the customer had no way to open. `order.quote_revised.customer` was the worst
+     * of them: it told somebody their agreed price had been changed and that they had a right
+     * to object, and then admitted in brackets that the screen for doing so did not exist.
+     *
+     * ⚠️ The link is asserted **end to end**, not as a substring. A body containing
+     * `https://…?t=…` proves the template interpolated something; extracting that token and
+     * verifying it names *this* order is what proves a customer clicking it lands on their own
+     * quotation rather than a 404 or, worse, somebody else's.
+     */
+    const WEB = 'https://shop.wewin.test';
+
+    it('⭐ carries a link whose token resolves to this order', async () => {
+      const orderId = await createDraft();
+      await appendEvent(orderId, 'quote_revised');
+      await makeDue(orderId);
+
+      const adapter = new ScriptedAdapter();
+      await workerWith(adapter, { webBaseUrl: WEB }).runOnce();
+
+      const message = adapter.sent.find((sent) => sent.orderId === orderId);
+      expect(message, 'no message was sent for this order').toBeDefined();
+
+      const found = /https:\/\/\S+/u.exec(message?.body ?? '');
+      expect(found, `no link in the body:\n${message?.body ?? ''}`).not.toBeNull();
+
+      const url = new URL(found?.[0] ?? '');
+      expect(url.origin).toBe(WEB);
+      /* The locale the message was rendered in, so the page opens in the same language. */
+      expect(url.pathname).toBe(`/${message?.locale ?? ''}/orders`);
+
+      const token = url.searchParams.get('t') ?? '';
+      expect(links.verify(token)).toStrictEqual({ ok: true, orderId });
+    });
+
+    it('⚠️ sends the message anyway when the storefront is not configured', async () => {
+      /*
+       * `NOTIFICATIONS_WEB_BASE_URL` unset is a deployment mistake and must not become a
+       * customer who is never told their quotation changed. It degrades to a message with no
+       * link — and, in particular, not to a sentence with `undefined` in it.
+       */
+      const orderId = await createDraft();
+      await appendEvent(orderId, 'quote_revised');
+      await makeDue(orderId);
+
+      const adapter = new ScriptedAdapter();
+      await workerWith(adapter).runOnce();
+
+      const message = adapter.sent.find((sent) => sent.orderId === orderId);
+      expect(message?.body).toBeDefined();
+      expect(message?.body).not.toContain('http');
+      expect(message?.body).not.toContain('undefined');
+    });
+
+    it('⭐ never puts a bearer link in a staff message', async () => {
+      /*
+       * `change_requested` fans out to `…​.sales`, which is read by people who hold
+       * `orders.read` and can open the order properly. A bearer link in an internal inbox is
+       * one forward away from being outside the company, for no benefit at all.
+       */
+      const orderId = await createDraft();
+      await appendEvent(orderId, 'change_requested');
+
+      const adapter = new ScriptedAdapter();
+      await workerWith(adapter, { webBaseUrl: WEB }).runOnce();
+
+      const staffMessages = adapter.sent.filter(
+        (sent) => sent.orderId === orderId && sent.recipientKey.startsWith('group:'),
+      );
+
+      expect(staffMessages.length, 'the fixture sent no staff message').toBeGreaterThan(0);
+      for (const message of staffMessages) expect(message.body).not.toContain(WEB);
     });
   });
 

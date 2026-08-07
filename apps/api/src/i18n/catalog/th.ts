@@ -39,6 +39,8 @@ export const TH: Catalogue = {
   'error.auth.second_factor_rejected': 'รหัสยืนยันไม่ถูกต้องหรือหมดอายุแล้ว — เข้าสู่ระบบใหม่อีกครั้ง',
   'error.mfa.already_enabled': 'บัญชีนี้เปิดการยืนยันสองขั้นอยู่แล้ว — ต้องปิดก่อนจึงจะตั้งใหม่ได้',
   'error.mfa.not_enrolling': 'ยังไม่ได้เริ่มตั้งค่าการยืนยันสองขั้น',
+  'error.order.document_link_unusable':
+    'ไม่พบใบเสนอราคาสำหรับลิงก์นี้ — ลิงก์อาจหมดอายุแล้ว โปรดติดต่อทีมขาย',
   'error.mfa.no_recovery_path': 'ต้องมีรหัสสำรองที่ยังไม่ได้ใช้อย่างน้อยสองชุดก่อนเปิดใช้งาน',
   'error.mfa.needs_a_password': 'บัญชีนี้ยังไม่มีรหัสผ่าน — ต้องให้ผู้ดูแลระบบปิดการยืนยันสองขั้นให้',
   'error.auth.too_many_attempts': (p, f) =>

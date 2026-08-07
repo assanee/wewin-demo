@@ -357,6 +357,33 @@ export const en: PartialUiCatalogue = {
     'It will appear on the product page once it has been read, or when the review window elapses.',
   'review.meta.title': 'Write a review',
 
+  'quotation.meta.title': 'Your quotation',
+  'quotation.loading': 'Opening your quotation…',
+  'quotation.heading': 'Quotation',
+  'quotation.unavailable.title': 'This quotation cannot be opened',
+  'quotation.unavailable.body':
+    'The link may have expired, or it may have been copied incompletely. Ask the sales team for a fresh one.',
+  'quotation.unreachable.title': 'Cannot connect right now',
+  'quotation.unreachable.body': 'Please try again. If it keeps failing, contact the sales team.',
+  'quotation.retry': 'Try again',
+  'quotation.print': 'Print or save as PDF',
+  'quotation.orderNo': 'No.',
+  'quotation.revision': 'Revision',
+  'quotation.submittedAt': 'Confirmed on',
+  'quotation.leadTime': 'Lead time (days)',
+  'quotation.net': 'Before VAT',
+  'quotation.vat': 'VAT',
+  'quotation.total': 'Total',
+  'quotation.lineNo': '#',
+  'quotation.item': 'Item',
+  'quotation.qty': 'Qty',
+  'quotation.amount': 'Amount',
+  'quotation.charges': 'Other charges',
+  'quotation.pinnedNotice':
+    'This document was pinned on the day it was confirmed — its figures and its language do not change when it is reopened.',
+  'quotation.degraded': 'The pinned language is not available in this release, so it is shown in Thai.',
+  'quotation.contact': 'To',
+
   /* ---- Display settings ------------------------------------------------------
    *
    * Translated here as well as in Thai because this is the one screen whose whole subject is

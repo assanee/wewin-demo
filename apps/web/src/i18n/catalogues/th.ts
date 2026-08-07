@@ -331,6 +331,33 @@ export const th: UiCatalogue = {
   'review.form.done.body': 'รีวิวจะปรากฏบนหน้าสินค้าเมื่อผ่านการตรวจหรือครบกำหนด',
   'review.meta.title': 'เขียนรีวิว',
 
+  'quotation.meta.title': 'ใบเสนอราคาของคุณ',
+  'quotation.loading': 'กำลังเปิดใบเสนอราคา…',
+  'quotation.heading': 'ใบเสนอราคา',
+  'quotation.unavailable.title': 'เปิดใบเสนอราคานี้ไม่ได้',
+  'quotation.unavailable.body':
+    'ลิงก์อาจหมดอายุ หรือคัดลอกมาไม่ครบ โปรดติดต่อทีมขายเพื่อขอลิงก์ใหม่',
+  'quotation.unreachable.title': 'ตอนนี้เชื่อมต่อไม่ได้',
+  'quotation.unreachable.body': 'โปรดลองอีกครั้ง หากยังไม่ได้ให้ติดต่อทีมขาย',
+  'quotation.retry': 'ลองอีกครั้ง',
+  'quotation.print': 'พิมพ์หรือบันทึกเป็น PDF',
+  'quotation.orderNo': 'เลขที่',
+  'quotation.revision': 'ฉบับแก้ไข',
+  'quotation.submittedAt': 'วันที่ยืนยัน',
+  'quotation.leadTime': 'ระยะเวลาผลิต (วัน)',
+  'quotation.net': 'ราคาก่อนภาษี',
+  'quotation.vat': 'ภาษีมูลค่าเพิ่ม',
+  'quotation.total': 'ยอดรวมทั้งสิ้น',
+  'quotation.lineNo': 'ลำดับ',
+  'quotation.item': 'รายการ',
+  'quotation.qty': 'จำนวน',
+  'quotation.amount': 'จำนวนเงิน',
+  'quotation.charges': 'ค่าใช้จ่ายอื่น',
+  'quotation.pinnedNotice':
+    'เอกสารนี้ถูกตรึงไว้ตั้งแต่วันที่ยืนยัน — ตัวเลขและภาษาจะไม่เปลี่ยนเมื่อเปิดซ้ำ',
+  'quotation.degraded': 'ภาษาที่ตรึงไว้ไม่รองรับในรุ่นนี้ จึงแสดงเป็นภาษาไทยแทน',
+  'quotation.contact': 'เรียน',
+
   /* ---- Display settings ------------------------------------------------------ */
   'settings.nav': 'การแสดงผล',
   'settings.heading': 'ตั้งค่าการแสดงผล',

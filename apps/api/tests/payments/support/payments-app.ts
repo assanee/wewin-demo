@@ -12,6 +12,7 @@ import type { OrderLineRequestWire, OrderWire } from '@wewin/contract/order';
 
 import { AppModule } from '../../../src/app.module';
 import { AccessTokenService } from '../../../src/auth/session/access-token';
+import type { SessionConfig } from '../../../src/auth/session/session.config';
 import { parseOAuthConfig } from '../../../src/auth/oauth/oauth.config';
 import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.filter';
 import { parseEnv, type Env } from '../../../src/config/env';
@@ -48,10 +49,19 @@ export function paymentsEnv(databaseUrl: string): Env {
   return parseEnv({ NODE_ENV: 'test', DATABASE_URL: databaseUrl });
 }
 
-export async function bootPaymentsApp(env: Env): Promise<PaymentsApp> {
+export async function bootPaymentsApp(
+  env: Env,
+  /*
+   * ⚠️ Overridable because `testSessionConfig()` mints a **fresh random key every call**. A
+   * suite that needs to sign something the booted app will verify — an emailed quotation
+   * link, say — has to hold the very same config, and calling the helper twice quietly gives
+   * two keys and a test that fails with a valid token.
+   */
+  session: SessionConfig = testSessionConfig(),
+): Promise<PaymentsApp> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule.forRoot(env, {
-        session: testSessionConfig(),
+        session,
         mfaSecretKey: testMfaSecretKey(),
         oauth: parseOAuthConfig({}),
       })],

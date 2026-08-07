@@ -321,6 +321,31 @@ export interface UiParamsByKey {
   'review.form.done.body': Plain;
   'review.meta.title': Plain;
 
+  'quotation.meta.title': Plain;
+  'quotation.loading': Plain;
+  'quotation.heading': Plain;
+  'quotation.unavailable.title': Plain;
+  'quotation.unavailable.body': Plain;
+  'quotation.unreachable.title': Plain;
+  'quotation.unreachable.body': Plain;
+  'quotation.retry': Plain;
+  'quotation.print': Plain;
+  'quotation.orderNo': Plain;
+  'quotation.revision': Plain;
+  'quotation.submittedAt': Plain;
+  'quotation.leadTime': Plain;
+  'quotation.net': Plain;
+  'quotation.vat': Plain;
+  'quotation.total': Plain;
+  'quotation.lineNo': Plain;
+  'quotation.item': Plain;
+  'quotation.qty': Plain;
+  'quotation.amount': Plain;
+  'quotation.charges': Plain;
+  'quotation.pinnedNotice': Plain;
+  'quotation.degraded': Plain;
+  'quotation.contact': Plain;
+
   /* ---- Display settings — plan 4.1/4.2, 8.2 trap 3 and 10.6 -------------------
    *
    * The screen where a reader states how they want the site written, and — the half that

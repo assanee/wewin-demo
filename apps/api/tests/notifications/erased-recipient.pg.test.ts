@@ -12,6 +12,8 @@ import type {
 } from '../../src/notifications/channels/channel';
 import { NotificationWorker } from '../../src/notifications/notification-worker.service';
 import { parseNotificationsConfig } from '../../src/notifications/notifications.config';
+import { DocumentLinkService } from '../../src/orders/document-link';
+import { testSessionConfig } from '../support/app';
 import { NotificationsRepository } from '../../src/notifications/notifications.repository';
 
 /**
@@ -165,6 +167,8 @@ describeWithPg('the outbox against an erased recipient', () => {
       parseNotificationsConfig({ NODE_ENV: 'test' }),
       [recorder],
       new NotificationsRepository(db),
+      /* No `NOTIFICATIONS_WEB_BASE_URL` in that config, so nothing here mints a link. */
+      new DocumentLinkService(testSessionConfig()),
     ).runOnce();
 
     const delivered = recorder.sent.map((message) => message.recipientKey);

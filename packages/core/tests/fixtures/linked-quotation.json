@@ -1,0 +1,131 @@
+{
+  "orderNo": "WW-1002",
+  "status": "awaiting_payment",
+  "contactName": "สมหญิง ใจดี",
+  "submittedAt": "2026-08-07T15:33:56.887Z",
+  "document": {
+    "documentSchemaVersion": 2,
+    "revision": 1,
+    "documentHash": "52a15072e24c5e3094165e17384ecf85816f10b91f69d80ff7a924bd9aa4b657",
+    "currency": "THB",
+    "pinnedLocale": "th",
+    "pinnedCoreVersion": "dev",
+    "vat": {
+      "rateBp": 700,
+      "treatment": "standard"
+    },
+    "lines": [
+      {
+        "productVersionId": "1a1ad507-180c-4925-b532-04c15aab5377",
+        "documentHash": "a53f9ce070bfcc78801b8ab689545dcdafa673389e33e2f510e5d3802100e205",
+        "lineNo": 1,
+        "productId": "awn-1",
+        "skuCode": "AWN1-SG-CLR-T5-NS0",
+        "configHash": "67366a5f8532c229",
+        "nameTh": "หน้าต่างบานกระทุ้ง",
+        "selections": {
+          "glass_color": "CLR",
+          "insect_screen": "NS0",
+          "profile_color": "SG",
+          "glass_thickness": "T5"
+        },
+        "measures": {
+          "width": {
+            "unit": "um",
+            "digits": "3200000"
+          },
+          "height": {
+            "unit": "um",
+            "digits": "1600000"
+          }
+        },
+        "qty": 2,
+        "netMinor": {
+          "unit": "THB.satang",
+          "digits": "1382400"
+        },
+        "computedNetMinor": {
+          "unit": "THB.satang",
+          "digits": "1382400"
+        },
+        "override": null,
+        "isVatApplicable": true,
+        "customerDescriptionTh": null,
+        "price": {
+          "areaSqUm": {
+            "unit": "um2",
+            "digits": "5120000000000"
+          },
+          "billableSqUm": {
+            "unit": "um2",
+            "digits": "5120000000000"
+          },
+          "baseMinor": {
+            "unit": "THB.satang",
+            "digits": "691200"
+          },
+          "percentTotalMinor": {
+            "unit": "THB.satang",
+            "digits": "0"
+          },
+          "perSqmTotalMinor": {
+            "unit": "THB.satang",
+            "digits": "0"
+          },
+          "flatTotalMinor": {
+            "unit": "THB.satang",
+            "digits": "0"
+          },
+          "unitPriceMinor": {
+            "unit": "THB.satang",
+            "digits": "691200"
+          },
+          "unitPriceScaledMinor": {
+            "unit": "THB.satang/1e12",
+            "digits": "691200000000000000"
+          },
+          "qty": 2,
+          "totalMinor": {
+            "unit": "THB.satang",
+            "digits": "1382400"
+          },
+          "lines": [
+            {
+              "label": {
+                "key": "price.line.base",
+                "params": {
+                  "billableArea": {
+                    "kind": "area",
+                    "sqUm": {
+                      "unit": "um2",
+                      "digits": "5120000000000"
+                    }
+                  }
+                }
+              },
+              "amountMinor": {
+                "unit": "THB.satang",
+                "digits": "691200"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "charges": [],
+    "documentOverride": null,
+    "netThbMinor": {
+      "unit": "THB.satang",
+      "digits": "1382400"
+    },
+    "vatThbMinor": {
+      "unit": "THB.satang",
+      "digits": "96768"
+    },
+    "grandTotalThbMinor": {
+      "unit": "THB.satang",
+      "digits": "1479168"
+    },
+    "leadTimeDays": 30
+  }
+}

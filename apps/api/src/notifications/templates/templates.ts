@@ -52,6 +52,21 @@ export interface TemplateContext {
    * was five, or the next phone call is about the four they never heard of.
    */
   readonly coalescedCount: number;
+  /**
+   * ⭐ Where the customer can read the document this message is about.
+   *
+   * ⚠️ **Optional, and every renderer must survive its absence.** Two reasons, and the second
+   * is the one that keeps a deployment out of trouble:
+   *
+   *   ⓵ not every message is about a document — a delivery notice is not;
+   *   ⓶ `NOTIFY_WEB_BASE_URL` unset is a configuration mistake, and the right behaviour is
+   *     still to tell the customer their order was received. A sentence with `undefined`
+   *     interpolated into it is worse than a message with no link.
+   *
+   * Built by the worker from `notifications.order_id` and a token derived on the spot — see
+   * `orders/document-link.ts` for why nothing is stored.
+   */
+  readonly documentUrl?: string | undefined;
 }
 
 export interface RenderedTemplate {
@@ -78,6 +93,18 @@ const foldNote = (context: TemplateContext): string =>
 
 const SIGN_OFF = '\n\nขอแสดงความนับถือ\nWewin';
 
+/**
+ * The link, as its own paragraph, or nothing at all.
+ *
+ * ⚠️ Nothing at all — not "(ไม่มีลิงก์)", not an empty line. A message that mentions a link it
+ * does not have reads as a broken email, and the reader has no way to tell a misconfigured
+ * deployment from a phishing attempt.
+ */
+const documentLink = (context: TemplateContext, invitation: string): string =>
+  context.documentUrl === undefined || context.documentUrl === ''
+    ? ''
+    : `\n\n${invitation}\n${context.documentUrl}`;
+
 const customer = (subject: (context: TemplateContext) => string, body: (context: TemplateContext) => string): Renderer =>
   (context) => ({
     subject: subject(context),
@@ -98,7 +125,8 @@ const TH: Readonly<Record<string, Renderer>> = {
     (c) => `ได้รับคำสั่งซื้อของท่านแล้ว — ${orderLabel(c)}`,
     (c) =>
       `เราได้รับคำสั่งซื้อของท่านเรียบร้อยแล้ว (${orderLabel(c)}) และได้บันทึกรายละเอียดสินค้า ราคา และภาษีมูลค่าเพิ่มไว้ตามที่ท่านเห็นในขณะยืนยัน\n` +
-      'ขั้นตอนถัดไปคือการชำระเงินและอัปโหลดสลิป ทีมงานจะตรวจสอบและยืนยันให้ท่านทราบอีกครั้ง',
+      'ขั้นตอนถัดไปคือการชำระเงินและอัปโหลดสลิป ทีมงานจะตรวจสอบและยืนยันให้ท่านทราบอีกครั้ง' +
+      documentLink(c, 'ดูใบเสนอราคาฉบับเต็มได้ที่ลิงก์นี้ (บันทึกหรือสั่งพิมพ์ได้)'),
   ),
   'order.submitted_for_payment.sales': staff(
     (c) => `[ใหม่] รอชำระเงิน — ${orderLabel(c)}`,
@@ -110,8 +138,8 @@ const TH: Readonly<Record<string, Renderer>> = {
     (c) => `มีการแก้ไขใบเสนอราคาของท่าน — ${orderLabel(c)}`,
     (c) =>
       `ใบเสนอราคาที่ท่านตกลงไว้ (${orderLabel(c)}) ถูกแก้ไข\n` +
-      'ท่านมีสิทธิ์ตรวจสอบรายการที่เปลี่ยนแปลงและ **คัดค้าน** ได้ก่อนชำระเงิน หากมีข้อสงสัยโปรดติดต่อทีมขายก่อนโอน\n' +
-      '(รายละเอียดการเปลี่ยนแปลงแบบเทียบก่อน–หลัง จะแสดงในหน้าใบเสนอราคาเมื่อระบบส่วนนั้นเปิดใช้งาน)',
+      'ท่านมีสิทธิ์ตรวจสอบรายการที่เปลี่ยนแปลงและ **คัดค้าน** ได้ก่อนชำระเงิน หากมีข้อสงสัยโปรดติดต่อทีมขายก่อนโอน' +
+      documentLink(c, 'ใบเสนอราคาฉบับที่แก้ไขแล้ว อยู่ที่ลิงก์นี้ — โปรดตรวจสอบก่อนโอนเงิน'),
   ),
 
   'order.payment_confirmed.customer': customer(

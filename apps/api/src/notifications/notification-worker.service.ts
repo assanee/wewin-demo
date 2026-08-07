@@ -8,8 +8,9 @@ import {
 
 import { backoffMs } from './backoff';
 import type { DeliveryResult, NotificationChannelAdapter, RenderedMessage } from './channels/channel';
-import { preferredLocaleOf, resolveRenderLocale } from './locale';
+import { preferredLocaleOf, resolveRenderLocale, type SupportedLocale } from './locale';
 import type { NotificationsConfig } from './notifications.config';
+import { DocumentLinkService } from '../orders/document-link';
 import { NotificationsRepository, type ClaimedNotification } from './notifications.repository';
 import { NOTIFICATIONS_CONFIG, NOTIFICATION_CHANNEL_ADAPTERS } from './notifications.tokens';
 import { renderTemplate } from './templates/templates';
@@ -56,6 +57,16 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
     @Inject(NOTIFICATIONS_CONFIG) private readonly config: NotificationsConfig,
     @Inject(NOTIFICATION_CHANNEL_ADAPTERS) private readonly adapters: readonly NotificationChannelAdapter[],
     private readonly repository: NotificationsRepository,
+    /**
+     * ⭐ Mints the quotation link that goes in a customer message.
+     *
+     * ⚠️ Not `@Optional()`, deliberately. A graph wired without it would send every customer
+     * message with no link and say nothing — the "fails silent" shape this module's own notes
+     * warn about twice. Missing *wiring* is a code mistake and stops the boot; missing
+     * *configuration* (`NOTIFICATIONS_WEB_BASE_URL`) is a deployment choice and degrades to a
+     * message with no link, which is why only the second one is allowed to be absent.
+     */
+    private readonly links: DocumentLinkService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -125,6 +136,30 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
     return claimed.length;
   }
 
+  /**
+   * ⭐ The quotation link, for a customer message, or `undefined`.
+   *
+   * ⚠️ **`recipientKind === 'customer'` and nothing else.** The internal queue is read by
+   * people who hold `orders.read` and can open the order properly; a bearer link in a staff
+   * inbox is one forward away from being outside the company, and buys nothing.
+   *
+   * The token is **derived here, on the spot**, from the order id the outbox row already
+   * carries — see `orders/document-link.ts` for why nothing is stored. That has a consequence
+   * worth stating: every message carries a *fresh* link, so a customer who is still being
+   * written to never runs out of runway, and a message delivered on its fifth retry a day
+   * later is not shipping a token that is a day closer to expiry.
+   *
+   * `locale` picks the storefront path, so the page opens in the language this message was
+   * written in rather than making somebody switch after arriving.
+   */
+  private documentUrl(notification: ClaimedNotification, locale: SupportedLocale): string | undefined {
+    if (this.config.webBaseUrl === undefined) return undefined;
+    if (notification.recipientKind !== 'customer') return undefined;
+
+    const { token } = this.links.issue(notification.orderId);
+    return `${this.config.webBaseUrl}/${locale}/orders?t=${encodeURIComponent(token)}`;
+  }
+
   private async deliver(notification: ClaimedNotification): Promise<void> {
     /*
      * Plan 10.6: the recipient's language *now*, not the one pinned on the document. See
@@ -143,6 +178,7 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
       orderNo: notification.orderNo,
       contactName: notification.contactName,
       coalescedCount: notification.coalescedCount,
+      documentUrl: this.documentUrl(notification, locale.rendered),
     });
 
     if (rendered === undefined) {

@@ -7,6 +7,7 @@ import { createEmailTransport } from './channels/transports/create-transport';
 import type { EmailTransport } from './channels/transports/email-transport';
 import { NotificationWorker } from './notification-worker.service';
 import { parseNotificationsConfig, type NotificationsConfig } from './notifications.config';
+import { DocumentLinkService } from '../orders/document-link';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsRepository } from './notifications.repository';
 import { NotificationsService } from './notifications.service';
@@ -18,6 +19,20 @@ export interface NotificationsModuleOptions {
    * `OAuthModule` do — an SMTP password has no business in the frozen, logged `Env`.
    */
   readonly config?: NotificationsConfig;
+  /**
+   * ⭐ The application's one session graph, for the quotation link the worker puts in a
+   * customer message.
+   *
+   * ⚠️ **Required, not optional, and that is the point.** `DocumentLinkService` derives its
+   * signing key from `SESSION_CONFIG`; a graph assembled without this cannot resolve it and
+   * fails at boot rather than sending every customer message with no link and saying nothing.
+   * Typed as required so the mistake is a compile error, which is louder still.
+   *
+   * ⚠️ Passed in, never rebuilt. A second `SessionModule.forRoot(...)` derives a *different*
+   * key, and a link this worker minted would then be refused by the route that reads it — in
+   * the same process, with nothing in either log to explain it. See `auth.module.ts`.
+   */
+  readonly auth: DynamicModule;
 }
 
 /**
@@ -54,14 +69,28 @@ export interface NotificationsModuleOptions {
  */
 @Module({})
 export class NotificationsModule {
-  static forRoot(options: NotificationsModuleOptions = {}): DynamicModule {
+  /**
+   * ⚠️ `auth` is the application's one session graph, passed in and never rebuilt.
+   *
+   * It is here for `DocumentLinkService`, which derives its signing key from `SESSION_CONFIG`
+   * — and a second `SessionModule.forRoot(...)` would derive a *different* one, so a link this
+   * worker put in an email would be refused by the route that reads it, in the same process,
+   * with nothing in either log to say why. `auth.module.ts` makes the same argument at length.
+   *
+   * ⚠️ This module still does not import `OrdersModule`, and must not. It borrows one
+   * stateless signer by class; it has no way to load, move or price an order.
+   */
+  static forRoot(options: NotificationsModuleOptions): DynamicModule {
+    const auth = options.auth;
     const config = options.config ?? parseNotificationsConfig(process.env);
 
     return {
       module: NotificationsModule,
+      imports: [auth],
       controllers: [NotificationsController],
       providers: [
         { provide: NOTIFICATIONS_CONFIG, useValue: config },
+        DocumentLinkService,
         {
           provide: EMAIL_TRANSPORT,
           // One decision, in `create-transport.ts`, shared with `PasswordModule`.

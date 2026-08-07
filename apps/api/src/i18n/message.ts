@@ -142,6 +142,20 @@ const PARAM_SHAPES = {
   'error.auth.second_factor_rejected': {},
   'error.mfa.already_enabled': {},
   'error.mfa.not_enrolling': {},
+  /**
+   * ⭐ The first refusal in this catalogue whose reader is a **customer**, not staff.
+   *
+   * Every other sentence here is answered into a Thai dashboard, which is the argument
+   * `tests/i18n/envelope.test.ts` records for why 211 raw literals were tolerable. This one
+   * is answered to `/[locale]/orders`, which exists in eight languages and is opened from an
+   * email by somebody who may never have seen the dashboard — so it is keyed rather than
+   * written, and the pin stays where it is.
+   *
+   * ⚠️ One key for four different problems: expired, mistyped, unknown order, never
+   * submitted. The API refuses to distinguish them on purpose — see `document-link.ts` — and
+   * the sentence therefore offers the one action that works in every case.
+   */
+  'error.order.document_link_unusable': {},
   'error.mfa.no_recovery_path': {},
   /*
    * A provider-only account cannot re-prove with a password, so it cannot turn its own

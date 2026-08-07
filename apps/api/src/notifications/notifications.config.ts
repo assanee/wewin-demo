@@ -41,6 +41,7 @@ import { z } from 'zod';
  *   NOTIFICATIONS_EMAIL_FROM            wewin <no-reply@wewin.local>
  *   NOTIFICATIONS_EMAIL_DIR             <tmp>/wewin-mail        (file transport only)
  *   NOTIFICATIONS_SMTP_HOST/_PORT/_SECURE/_USER/_PASSWORD       (smtp transport only)
+ *   NOTIFICATIONS_WEB_BASE_URL          storefront origin, for the quotation link in a message
  *   NOTIFICATIONS_SALES_QUEUE_EMAIL     where `group:sales_queue` is delivered
  *   NOTIFICATIONS_APPROVER_QUEUE_EMAIL  where `group:approver_queue` is delivered
  *   NOTIFICATIONS_LINE_CHANNEL_ACCESS_TOKEN   absent ⇒ no LINE adapter is constructed
@@ -101,6 +102,27 @@ const schema = z.object({
    */
   NOTIFICATIONS_CLAIM_LEASE_MS: positiveInt(120_000),
 
+  /**
+   * ⭐ Where the storefront is, so a customer message can link to the document it is about.
+   *
+   * ⚠️ **Optional, and unset means no link rather than no message.** A deployment that forgot
+   * this still tells customers their order was received; it just cannot show them the
+   * quotation. Failing the boot instead would trade a degraded email for no email at all,
+   * which is the wrong way round for a notification system — and `templates.ts` renders the
+   * absence as *nothing*, never as a sentence with a hole in it.
+   *
+   * Not shared with `OAUTH_WEB_BASE_URL`. That one is where a *browser mid-sign-in* gets
+   * redirected and defaults to a dev port that is not this app; this one goes in an email a
+   * customer keeps for months. Two different lifetimes and two different consequences for
+   * getting it wrong, so two variables.
+   */
+  NOTIFICATIONS_WEB_BASE_URL: z
+    .string()
+    .url()
+    .optional()
+    /* One trailing slash stripped: every URL here is `base + '/something'`. */
+    .transform((value) => value?.replace(/\/+$/u, '')),
+
   NOTIFICATIONS_EMAIL_TRANSPORT: z.enum(['file', 'smtp']).default('file'),
   NOTIFICATIONS_EMAIL_FROM: z.string().min(1).default('wewin <no-reply@wewin.local>'),
   /*
@@ -141,6 +163,9 @@ export interface NotificationsConfig {
   readonly retryBaseMs: number;
   readonly retryMaxMs: number;
   readonly claimLeaseMs: number;
+
+  /** Storefront origin, without a trailing slash. `undefined` means messages carry no link. */
+  readonly webBaseUrl: string | undefined;
 
   readonly emailTransport: 'file' | 'smtp';
   readonly emailFrom: string;
@@ -220,6 +245,7 @@ export function parseNotificationsConfig(source: Record<string, string | undefin
     retryMaxMs: data.NOTIFICATIONS_RETRY_MAX_MS,
     claimLeaseMs: data.NOTIFICATIONS_CLAIM_LEASE_MS,
 
+    webBaseUrl: data.NOTIFICATIONS_WEB_BASE_URL,
     emailTransport: data.NOTIFICATIONS_EMAIL_TRANSPORT,
     emailFrom: data.NOTIFICATIONS_EMAIL_FROM,
     emailDir: data.NOTIFICATIONS_EMAIL_DIR,

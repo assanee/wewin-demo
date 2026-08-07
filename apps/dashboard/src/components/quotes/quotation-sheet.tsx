@@ -14,9 +14,10 @@ import { getPinnedDocument } from './quote-api';
 import {
   printableQuotation,
   quotationProblem,
+  pinnedDocumentFrom,
   type PinnedDocument,
   type PrintableQuotation,
-} from './printable-quotation';
+} from '@wewin/core/quotation';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -53,113 +54,21 @@ type State =
   | { readonly status: 'no-quotation'; readonly order: OrderDetail }
   | { readonly status: 'failed'; readonly problem: string };
 
-/** Ids and satang out of the pinned JSON. The unit is checked, never assumed. */
-const satang = (value: unknown, what: string): bigint => {
-  if (typeof value !== 'object' || value === null) throw new TypeError(`${what}: ไม่ใช่จำนวนเงิน`);
-  const money = value as { unit?: unknown; digits?: unknown };
-  if (money.unit !== 'THB.satang') throw new TypeError(`${what}: หน่วยไม่ใช่ THB.satang`);
-  return BigInt(String(money.digits));
-};
-
-const text = (value: unknown): string => (typeof value === 'string' ? value : '');
-
 /**
- * The option labels a line was priced with, in the order the document holds them.
+ * ⚠️ The mapping lives in `@wewin/core/quotation`, beside the renderer, and not here.
  *
- * `price.lines` is the breakdown: a `price.line.base` entry for the area, then one
- * `price.line.option` per selection **that changed the price**, each carrying `group` and
- * `option` as `catalogText`. Anything else — a rule surcharge, a rounding line — has no pair
- * of labels and is skipped rather than rendered as an empty row.
- *
- * ⚠️ **A known gap, and it belongs to the API rather than to this file.** A zero-delta
- * option — clear glass, no insect screen — produces no price line, so the pinned document
- * carries no Thai for it: `selections` has `glass_color: CLR` and nothing else. The
- * quotation therefore lists the options that cost something and omits the ones that did not.
- *
- * The alternative was falling back to `selections` for those, and it is worse: `CLR` on a
- * document a customer reads is not a specification, it is a warehouse code. Incomplete beats
- * unreadable.
- *
- * The real fix is upstream — `submit_for_payment` should pin a label for every selection,
- * not only for the priced ones — and it is a change to what the document *freezes*, which
- * this round does not own.
+ * It was here first, and the storefront's copy was written from an assumption about the wire
+ * rather than from a captured response — money is `{unit, digits}`, lines carry no `options`
+ * — so its tests passed against its own fixture and its page failed on the first real
+ * payload. Two decoders are two documents before either renders a character, which is the
+ * same argument plan 10.6 makes about two renderers.
  */
-function pinnedOptions(price: unknown): readonly { groupTh: string; valueTh: string }[] {
-  const lines = (price as { lines?: unknown })?.lines;
-  if (!Array.isArray(lines)) return [];
-
-  return lines.flatMap((raw) => {
-    const params = (raw as { label?: { params?: Record<string, unknown> } }).label?.params ?? {};
-    const group = params['group'] as { th?: unknown } | undefined;
-    const option = params['option'] as { th?: unknown } | undefined;
-
-    return typeof group?.th === 'string' && typeof option?.th === 'string'
-      ? [{ groupTh: group.th, valueTh: option.th }]
-      : [];
-  });
-}
-
-function pin(document: Record<string, unknown>, order: OrderDetail): PinnedDocument {
-  const vat = (document['vat'] ?? {}) as { rateBp?: unknown };
-  const lines = Array.isArray(document['lines']) ? document['lines'] : [];
-  const charges = Array.isArray(document['charges']) ? document['charges'] : [];
-
-  return {
-    revision: typeof document['revision'] === 'number' ? document['revision'] : 0,
-    documentHash: text(document['documentHash']),
-    /* ⚠️ From the document, never from the browser. This is the whole of plan 10.6. */
-    pinnedLocale: text(document['pinnedLocale']) || 'th',
+const pin = (document: Record<string, unknown>, order: OrderDetail): PinnedDocument =>
+  pinnedDocumentFrom(document, {
     orderNo: order.orderNo,
     contactName: order.contact.name,
     submittedAt: order.submittedAt,
-    vatRateBp: typeof vat.rateBp === 'number' ? vat.rateBp : 0,
-    leadTimeDays: typeof document['leadTimeDays'] === 'number' ? document['leadTimeDays'] : 0,
-    netThbMinor: satang(document['netThbMinor'], 'ยอดก่อนภาษี'),
-    vatThbMinor: satang(document['vatThbMinor'], 'ภาษี'),
-    grandTotalThbMinor: satang(document['grandTotalThbMinor'], 'ยอดรวม'),
-    lines: lines.map((raw, index) => {
-      const line = raw as Record<string, unknown>;
-      const measures = (line['measures'] ?? {}) as Record<string, { unit?: string; digits?: string }>;
-
-      return {
-        lineNo: typeof line['lineNo'] === 'number' ? line['lineNo'] : index + 1,
-        nameTh: text(line['nameTh']),
-        skuCode: text(line['skuCode']),
-        qty: typeof line['qty'] === 'number' ? line['qty'] : 1,
-        customerDescriptionTh:
-          typeof line['customerDescriptionTh'] === 'string' ? line['customerDescriptionTh'] : null,
-        /*
-         * ⭐ The pinned labels, out of `price.lines` — not the `selections` codes.
-         *
-         * `catalogText` carries the Thai the customer was shown, frozen at submit next to
-         * the prices and the locale, with a `ref` back to the catalogue entry it came from.
-         * Reading `selections` would print `DW` on a customer's document *and* would drift
-         * the day somebody renames the option, which is the whole reason the document is
-         * pinned at all.
-         */
-        options: pinnedOptions(line['price']),
-        /*
-         * Measures arrive as tagged lengths — micrometres. Rendered as millimetres here,
-         * which is what a workshop drawing uses and what the customer was shown.
-         */
-        measures: Object.fromEntries(
-          Object.entries(measures).map(([name, value]) => [
-            name,
-            `${(Number(value.digits ?? 0) / 1000).toLocaleString('th-TH')} mm`,
-          ]),
-        ),
-        netMinor: satang(line['netMinor'], `บรรทัด ${String(index + 1)}`),
-      };
-    }),
-    charges: charges.map((raw) => {
-      const charge = raw as Record<string, unknown>;
-      return {
-        labelTh: text(charge['labelTh']) || text(charge['kind']),
-        amountMinor: satang(charge['amountThbMinor'] ?? charge['amountMinor'], 'ค่าใช้จ่าย'),
-      };
-    }),
-  };
-}
+  });
 
 export function QuotationSheet({ orderId }: { readonly orderId: string }) {
   const [state, setState] = useState<State>({ status: 'loading' });

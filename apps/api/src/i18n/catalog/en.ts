@@ -44,4 +44,6 @@ export const EN: PartialCatalogue = {
   'error.money.duplicate': 'This entry already exists.',
   'error.money.missing_reference': 'This refers to something that does not exist.',
   'error.slip.duplicate': 'This already exists.',
+  'error.order.document_link_unusable':
+    'No quotation was found for this link — it may have expired. Please contact the sales team.',
 };

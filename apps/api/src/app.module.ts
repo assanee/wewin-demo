@@ -15,7 +15,7 @@ import { HealthModule } from './health/health.module';
 import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
 import { NotificationsModule } from './notifications';
-import { OrdersModule } from './orders';
+import { DocumentLinkModule, OrdersModule } from './orders';
 import { RefundsModule } from './payments/refunds';
 import { SlipsModule } from './payments/slips';
 import { AuthorityModule } from './quotes/authority';
@@ -112,7 +112,8 @@ export class AppModule implements NestModule {
          * transition. See the note at the top of orders.module.ts.
          */
         OrdersModule,
-        NotificationsModule.forRoot(),
+        DocumentLinkModule.forRoot(auth),
+        NotificationsModule.forRoot({ auth }),
         /*
          * Money that has actually moved (phase 5b), and it is listed here because *not* listing
          * it was the single largest finding of the round.
