@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { failureMessage } from '@/lib/api/errors';
 import { getOrder, type OrderDetail } from '@/components/orders/order-api';
 import { getPinnedDocument } from './quote-api';
+import { CustomerLinkBar } from './customer-link-bar';
 import {
   printableQuotation,
   quotationProblem,
@@ -50,7 +51,15 @@ import {
 
 type State =
   | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly sheet: PrintableQuotation }
+  /*
+   * ⚠️ The order travels alongside the sheet, though the sheet is what prints.
+   *
+   * `PrintableQuotation` is a pure function of the **pinned document** and must stay one —
+   * the contact channel is a fact about the order *now*, not about what was frozen at
+   * submit, and folding it in would make two prints of one quotation differ the day somebody
+   * added an address. It is carried beside it so the screen can warn that nothing was sent.
+   */
+  | { readonly status: 'ready'; readonly sheet: PrintableQuotation; readonly order: OrderDetail }
   | { readonly status: 'no-quotation'; readonly order: OrderDetail }
   | { readonly status: 'failed'; readonly problem: string };
 
@@ -86,7 +95,7 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
         }
 
         const document = await getPinnedDocument(orderId);
-        if (live) setState({ status: 'ready', sheet: printableQuotation(pin(document, order)) });
+        if (live) setState({ status: 'ready', sheet: printableQuotation(pin(document, order)), order });
       } catch (error) {
         if (live) setState({ status: 'failed', problem: failureMessage(error) });
       }
@@ -153,6 +162,32 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
           เลือก “บันทึกเป็น PDF” ในกล่องพิมพ์เพื่อดาวน์โหลด
         </span>
       </div>
+
+      {/*
+        ⭐ The gap this exists for, said out loud.
+
+        An order carrying a telephone number and no address satisfies the schema and receives
+        **nothing**: `order_events_fan_out_notifications()` resolves recipients for email
+        alone and files every other channel as `channel_disabled`. The row is in the queue as
+        `suppressed` — visible to anyone who looks, and nobody looks.
+
+        ⚠️ So the screen says it. Sales assuming the customer was told is the failure this
+        prevents, and it is worse than the silence itself: a customer who heard nothing calls;
+        a customer whose salesperson believes they were emailed does not.
+      */}
+      {state.order.contact.email === null && (
+        <Alert className="print:hidden">
+          <AlertTriangle />
+          <AlertTitle>ไม่มีอีเมล — ระบบไม่ได้ส่งอะไรถึงลูกค้า</AlertTitle>
+          <AlertDescription>
+            ออเดอร์นี้มีแต่เบอร์โทร การแจ้งเตือนทั้งหมดถูกพักไว้ในคิวและไม่ได้ถูกส่งออกไป
+            {state.order.contact.phone === null ? null : ` (${state.order.contact.phone})`} —
+            คัดลอกลิงก์ด้านล่างแล้วส่งทาง LINE ให้ลูกค้าเอง
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <CustomerLinkBar orderId={orderId} />
 
       {sheet.localeDegraded && (
         <Alert variant="destructive" className="print:hidden">

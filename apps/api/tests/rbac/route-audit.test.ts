@@ -310,6 +310,15 @@ describe('boot-time route audit', () => {
       'GET /meta [anonymous]',
       'GET /orders [principal]',
       'GET /orders/:orderId [principal]',
+      /*
+       * ⚠️ The route that *mints* the anonymous link route below, and therefore the opposite policy.
+       *
+       * `orders.read` and not `[principal]`: a principal policy would admit the customer —
+       * harmless, they hold the link already — and every other signed-in person, because the
+       * token is minted from the id in the path rather than from anything about the caller.
+       * That is one authenticated stranger away from every quotation the company has issued.
+       */
+      'GET /orders/:orderId/customer-link [permissions]',
       'GET /orders/:orderId/document [principal]',
       'GET /orders/:orderId/events [principal]',
       'GET /orders/:orderId/payment-slips [principal]',

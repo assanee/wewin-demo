@@ -433,7 +433,8 @@ export interface ChangeRequestWire {
 export type OrderLineRequestWire = PriceRequestWire;
 
 export interface OrderContactRequestWire {
-  readonly email: string;
+  /** ⚠️ Optional since a telephone number became a channel — but not *both* optional. */
+  readonly email?: string | undefined;
   readonly name?: string | undefined;
   readonly phone?: string | undefined;
   readonly locale?: string | undefined;
@@ -566,12 +567,48 @@ const emailSchema = z
   .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'must be an email address')
   .transform((value) => value.toLowerCase());
 
-export const orderContactRequestSchema: z.ZodType<OrderContactRequestWire> = z.strictObject({
-  email: emailSchema,
-  name: z.string().trim().min(1).max(200).optional(),
-  phone: z.string().trim().min(1).max(40).optional(),
-  locale: localeSchema.optional(),
-});
+/**
+ * ⭐ E.164, refused rather than normalised.
+ *
+ * `orders_contact_phone_e164` and `user_phones_number_e164` demand the identical string, so a
+ * contact number and a username are comparable — which is the whole reason a customer with
+ * only a telephone can have an account at all.
+ *
+ * ⚠️ **No transform.** This contract is shared with browsers, and normalising here would mean
+ * the storefront and the API each held an opinion about what a number is. `@wewin/core/phone`
+ * is the single one; a client calls it before it sends, and a refusal names the problem where
+ * the person can still fix it. A transform would also make the failure arrive as a 500 from a
+ * CHECK the day the two spellings diverged.
+ */
+const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9][0-9]{7,14}$/u, 'must be a telephone number in E.164 form, e.g. +66812345678');
+
+/**
+ * ⭐ **A channel, not an address** — plan 10.2, restated after Thai customers turned out
+ * frequently not to have an email address they use.
+ *
+ * ⚠️ This rule lives in two places and both had to move. The database's
+ * `orders_submitted_has_a_contact_channel` was relaxed to email-or-phone first, and a
+ * phone-only submit still failed here, with a 400 that looked like a client bug. See
+ * `tests/order-contact.test.ts`, which exists to keep the two agreeing.
+ *
+ * ⚠️ And the refusal when there is neither is load-bearing. An order nobody can be reached
+ * about is exactly what plan 10.2 is about; "no email required" must not have quietly become
+ * "no channel required".
+ */
+export const orderContactRequestSchema: z.ZodType<OrderContactRequestWire> = z
+  .strictObject({
+    email: emailSchema.optional(),
+    name: z.string().trim().min(1).max(200).optional(),
+    phone: phoneSchema.optional(),
+    locale: localeSchema.optional(),
+  })
+  .refine((contact) => contact.email !== undefined || contact.phone !== undefined, {
+    message: 'a submitted order needs an email address or a telephone number',
+    path: ['email'],
+  });
 
 export const createOrderRequestSchema: z.ZodType<CreateOrderRequestWire> = z.strictObject({
   contact: orderContactRequestSchema.optional(),

@@ -14,7 +14,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
-import { NotificationsModule } from './notifications';
+import { NotificationsModule, parseNotificationsConfig } from './notifications';
 import { DocumentLinkModule, OrdersModule } from './orders';
 import { RefundsModule } from './payments/refunds';
 import { SlipsModule } from './payments/slips';
@@ -59,6 +59,8 @@ export class AppModule implements NestModule {
      * mint a second session-signing key *and* a second reset throttle with its own counters,
      * neither of which fails loudly.
      */
+    const notifications = parseNotificationsConfig(process.env);
+
     const auth = AuthModule.forRoot({
       session: options.session,
       mfaSecretKey: options.mfaSecretKey,
@@ -112,8 +114,16 @@ export class AppModule implements NestModule {
          * transition. See the note at the top of orders.module.ts.
          */
         OrdersModule,
-        DocumentLinkModule.forRoot(auth),
-        NotificationsModule.forRoot({ auth }),
+        /*
+         * ⚠️ One storefront origin, built once and handed to both.
+         *
+         * The worker puts a quotation link in an email; the dashboard offers the same link
+         * for staff to paste into LINE. Two configurations would be two origins, and the
+         * customer who was emailed one and read the other out over the telephone would find
+         * that only one of them worked.
+         */
+        DocumentLinkModule.forRoot(auth, notifications.webBaseUrl),
+        NotificationsModule.forRoot({ auth, config: notifications }),
         /*
          * Money that has actually moved (phase 5b), and it is listed here because *not* listing
          * it was the single largest finding of the round.

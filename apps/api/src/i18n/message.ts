@@ -156,6 +156,8 @@ const PARAM_SHAPES = {
    * the sentence therefore offers the one action that works in every case.
    */
   'error.order.document_link_unusable': {},
+  /** Staff-facing: `NOTIFICATIONS_WEB_BASE_URL` is unset, so no link can be built at all. */
+  'error.order.storefront_not_configured': {},
   'error.mfa.no_recovery_path': {},
   /*
    * A provider-only account cannot re-prove with a password, so it cannot turn its own

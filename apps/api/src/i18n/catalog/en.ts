@@ -46,4 +46,6 @@ export const EN: PartialCatalogue = {
   'error.slip.duplicate': 'This already exists.',
   'error.order.document_link_unusable':
     'No quotation was found for this link — it may have expired. Please contact the sales team.',
+  'error.order.storefront_not_configured':
+    'The storefront address is not configured, so no link can be built. Tell an administrator.',
 };

@@ -1,8 +1,8 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 
-import { DocumentLinkController } from './document-link.controller';
+import { CustomerLinkController, DocumentLinkController } from './document-link.controller';
 import { DocumentLinkReader } from './document-link.reader';
-import { DocumentLinkService } from './document-link';
+import { DocumentLinkService, WEB_BASE_URL } from './document-link';
 import { OrderRepository } from './order.repository';
 import { OrderScopeModule } from './scope';
 
@@ -41,12 +41,23 @@ export class DocumentLinkModule {
    * minted would be refused by this route — in the same process, with nothing in either log
    * to explain it. `auth.module.ts` makes the argument at length.
    */
-  static forRoot(auth: DynamicModule): DynamicModule {
+  static forRoot(auth: DynamicModule, webBaseUrl: string | undefined): DynamicModule {
     return {
       module: DocumentLinkModule,
       imports: [auth, OrderScopeModule],
-      controllers: [DocumentLinkController],
-      providers: [DocumentLinkService, DocumentLinkReader, OrderRepository],
+      controllers: [DocumentLinkController, CustomerLinkController],
+      providers: [
+        DocumentLinkService,
+        DocumentLinkReader,
+        OrderRepository,
+        /*
+         * ⚠️ The same value the notification worker builds its links from, passed in rather
+         * than read again. Two reads of one variable are one deployment mistake away from
+         * two origins — and the customer emailed one and told the other over the telephone
+         * would find that only one of them works.
+         */
+        { provide: WEB_BASE_URL, useValue: webBaseUrl },
+      ],
     };
   }
 }

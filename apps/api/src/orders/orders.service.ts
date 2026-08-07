@@ -716,7 +716,15 @@ export class OrdersService {
       orderId: order.id,
       statusEventId: eventId,
       documentId,
-      contactEmail: body.contact.email,
+      /*
+       * ⚠️ `?? order.contactEmail`, like the other two, now that an address is optional.
+       *
+       * A submit that carries only a telephone number must not *erase* an address a cart
+       * already had — a customer who typed one at `POST /orders` and gave a number at submit
+       * has two channels, and dropping the first would silently move them to the one the
+       * outbox cannot reach.
+       */
+      contactEmail: body.contact.email ?? order.contactEmail,
       contactName: body.contact.name ?? order.contactName,
       contactPhone: body.contact.phone ?? order.contactPhone,
       contactLocale: priced.document.pinnedLocale,

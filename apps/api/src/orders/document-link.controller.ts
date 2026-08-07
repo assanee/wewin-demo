@@ -1,8 +1,16 @@
-import { Controller, Get, Header, Param } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Param } from '@nestjs/common';
 import { CONTRACT_VERSION, CONTRACT_VERSION_HEADER } from '@wewin/contract/version';
 
-import { AllowAnonymous } from '../rbac';
-import { DocumentLinkService, gone, type LinkedDocumentWire } from './document-link';
+import { AllowAnonymous, RequirePermissions } from '../rbac';
+import { AppError } from '../common/errors/app-error';
+import { message } from '../i18n';
+import {
+  DocumentLinkService,
+  WEB_BASE_URL,
+  documentLinkUrl,
+  gone,
+  type LinkedDocumentWire,
+} from './document-link';
 import { DocumentLinkReader } from './document-link.reader';
 
 /**
@@ -68,5 +76,76 @@ export class DocumentLinkController {
     if (!verified.ok) throw gone();
 
     return this.reader.byLink(verified.orderId);
+  }
+
+}
+
+/** What the dashboard shows beside "copy". */
+export interface CustomerLinkWire {
+  readonly url: string;
+  /** ISO 8601. Six months out — see `DOCUMENT_LINK_TTL_SECONDS`. */
+  readonly expiresAt: string;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE SAME LINK, FOR A MEMBER OF STAFF TO SEND BY HAND.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * An order carrying a telephone number and no address satisfies
+ * `orders_submitted_has_a_contact_channel` and still receives **nothing**: the fan-out
+ * resolves recipients for email alone and files every other channel as `channel_disabled`.
+ *
+ * This is how that gap is survived rather than hidden. Staff copy the link and paste it into
+ * LINE — which is where Thai customers read things anyway (plan 10.2) — and the customer gets
+ * the same quotation, opened the same way, verified by the same signature.
+ *
+ * ⚠️ It is a **separate controller with a separate policy**, and the split is the point.
+ * `orders/documents/:token` is `AllowAnonymous` because the token is the credential; this
+ * route mints one from an id, so it must be the other thing entirely.
+ */
+@Controller('orders')
+export class CustomerLinkController {
+  constructor(
+    private readonly links: DocumentLinkService,
+    private readonly reader: DocumentLinkReader,
+    @Inject(WEB_BASE_URL) private readonly webBaseUrl: string | undefined,
+  ) {}
+
+  /**
+   * ⚠️ `orders.read`, and not `RequirePrincipal`.
+   *
+   * A principal policy would be wrong in a way that is easy to miss: it would admit the
+   * customer — harmless, they already hold the link — *and* every other signed-in person,
+   * because the token is minted from whatever id is in the path rather than from anything
+   * about the caller. That is one authenticated stranger away from every quotation the
+   * company has issued.
+   */
+  @Get(':orderId/customer-link')
+  @RequirePermissions('orders.read')
+  @Header(CONTRACT_VERSION_HEADER, String(CONTRACT_VERSION))
+  @Header('Cache-Control', 'no-store')
+  async customerLink(@Param('orderId') orderId: string): Promise<CustomerLinkWire> {
+    if (this.webBaseUrl === undefined) {
+      throw AppError.conflict(message('error.order.storefront_not_configured'));
+    }
+
+    /*
+     * ⚠️ Loaded before the token is minted, so an unsubmitted or unknown order answers 404
+     * rather than handing back a working-looking URL that resolves to nothing. A link that
+     * looks right and 404s at the customer is worse than a refusal at the desk.
+     */
+    const linked = await this.reader.byLink(orderId);
+
+    const { token, expiresAt } = this.links.issue(orderId);
+
+    return {
+      /*
+       * The document's **pinned** locale, not the reader's. The member of staff copying this
+       * is Thai and the customer may not be — and it is the customer who opens it.
+       */
+      url: documentLinkUrl(this.webBaseUrl, linked.document.pinnedLocale, token),
+      expiresAt: expiresAt.toISOString(),
+    };
   }
 }

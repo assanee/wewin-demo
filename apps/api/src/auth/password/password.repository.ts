@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db/client';
 import { and, eq, sql } from '@wewin/db/sql';
-import { passwordCredentials, userEmails, users } from '@wewin/db/schema';
+import { passwordCredentials, userEmails, userPhones, users } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../../database/database.tokens';
 import type { UserStatus } from '@wewin/db/schema';
@@ -26,6 +26,18 @@ export interface PasswordCredentialRow {
  */
 export interface PasswordCredentialStore {
   findByVerifiedEmail(address: string): Promise<PasswordCredentialRow | undefined>;
+  /**
+   * ⭐ The same lookup, one field over.
+   *
+   * `user_phones_one_verified_owner` is partial exactly as the address index is, so
+   * `verified_at is not null` carries the same whole-of-the-security weight here: without
+   * it, this returns whichever account claimed the number first, verified or not.
+   *
+   * ⚠️ The number must already be **canonical** — `@wewin/core/phone`'s E.164. Every stored
+   * value obeys `user_phones_number_e164`, so an un-normalised argument silently matches
+   * nothing and reads to the caller as "wrong password".
+   */
+  findByVerifiedPhone(number: string): Promise<PasswordCredentialRow | undefined>;
   /**
    * By id, for a caller that already has a session and is re-proving.
    *
@@ -76,6 +88,35 @@ export class PasswordRepository implements PasswordCredentialStore {
       // small set of drizzle operators, and widening that surface for one predicate is the
       // wrong trade — see packages/db/src/sql.ts.
       .where(and(eq(userEmails.address, address), sql`${userEmails.verifiedAt} is not null`))
+      .limit(1);
+
+    return row === undefined ? undefined : { ...row, status: row.status as UserStatus };
+  }
+
+  /**
+   * ⭐ By verified telephone number — the other username.
+   *
+   * The argument is `findByVerifiedEmail`'s, verbatim, one field over: the unique index is
+   * *partial*, unverified duplicates exist by design because that is the state an attacker
+   * creates, and a lookup on the number alone would hand back whichever account claimed it
+   * first. `verified_at is not null` is what makes the row this returns the one the index
+   * guarantees is unique.
+   *
+   * ⚠️ The caller passes E.164 and this does not normalise. Doing it in both places is how
+   * the two drift; doing it in the service means one normalisation feeds the lookup *and*
+   * the throttle key, which is the property `password-sign-in.service.ts` needs.
+   */
+  async findByVerifiedPhone(number: string): Promise<PasswordCredentialRow | undefined> {
+    const [row] = await this.db
+      .select({
+        userId: users.id,
+        status: users.status,
+        passwordHash: passwordCredentials.passwordHash,
+      })
+      .from(userPhones)
+      .innerJoin(users, eq(users.id, userPhones.userId))
+      .leftJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+      .where(and(eq(userPhones.number, number), sql`${userPhones.verifiedAt} is not null`))
       .limit(1);
 
     return row === undefined ? undefined : { ...row, status: row.status as UserStatus };

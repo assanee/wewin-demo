@@ -36,9 +36,20 @@ class FakeStore implements PasswordCredentialStore {
   asked: string[] = [];
   rehashed: { userId: string; hash: string }[] = [];
 
+  /** Verified numbers, keyed canonically — the only ones the real query can return. */
+  phones = new Map<string, PasswordCredentialRow>();
+  /** Claims nobody proved. Present so a test can show the lookup does *not* reach them. */
+  unverifiedPhones = new Map<string, PasswordCredentialRow>();
+  askedPhones: string[] = [];
+
   async findByVerifiedEmail(address: string): Promise<PasswordCredentialRow | undefined> {
     this.asked.push(address);
     return this.rows.get(address);
+  }
+
+  async findByVerifiedPhone(number: string): Promise<PasswordCredentialRow | undefined> {
+    this.askedPhones.push(number);
+    return this.phones.get(number);
   }
 
   /** Not exercised by this suite — sign-in looks up by address. Present so the fake is one. */
@@ -431,5 +442,133 @@ describe('⭐ an account with a second factor gets a challenge, not a session', 
     expect(outcome.kind).toBe('session');
     expect(issuer.issued).toEqual(['user-1']);
     expect(secondFactor.challenged).toEqual([]);
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ A TELEPHONE NUMBER IS THE OTHER USERNAME.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Thai customers frequently have no email address, so `user_phones` makes a number an
+ * identity on the same terms an address is. One field carries either, and the service
+ * decides which by shape.
+ *
+ * ⚠️ **That decision must not become an oracle**, and this block is mostly about that.
+ * `password.contract.ts` refuses `z.string().email()` on the same field for the same
+ * reason: "that is not a valid address" is a shape-based enumeration leak arriving through
+ * the validator. Adding a second namespace doubles the ways to leak one:
+ *
+ *   ⓵ an unparseable username must fail **exactly like a wrong password** — same status,
+ *     same reason, and having paid the same argon2 cost, so it cannot be timed apart;
+ *   ⓶ the throttle must key on the **canonical** form, or `081-234-5678` and `0812345678`
+ *     are two buckets and the limit is worth however many spellings a number has;
+ *   ⓷ an unverified number must not sign anybody in, exactly as an unverified address does
+ *     not — `user_phones_one_verified_owner` is partial, so unverified duplicates exist by
+ *     design and a lookup that ignored `verified_at` would pick one of them.
+ */
+
+const PHONE_TYPED = '081-234-5678';
+const PHONE_CANONICAL = '+66812345678';
+
+describe('⭐ signing in with a telephone number', () => {
+  beforeEach(() => {
+    store.phones.set(PHONE_CANONICAL, {
+      userId: 'user-phone',
+      status: 'active',
+      passwordHash: store.rows.get(EMAIL)?.passwordHash ?? null,
+    });
+  });
+
+  it('⭐ signs in on a number the customer typed their own way', async () => {
+    const outcome = await attempt(PHONE_TYPED, PASSWORD);
+
+    expect(outcome.kind).toBe('session');
+    /* And the store was asked about the canonical form, never the typed one. */
+    expect(store.askedPhones).toStrictEqual([PHONE_CANONICAL]);
+  });
+
+  it.each(['0812345678', '+66 81 234 5678', '(081) 234-5678', '66812345678'])(
+    'reaches the same account from %s',
+    async (written) => {
+      expect((await attempt(written, PASSWORD)).kind).toBe('session');
+    },
+  );
+
+  it('⭐ an unparseable username fails exactly like a wrong password', async () => {
+    /*
+     * ⓵. Not "that is not a valid phone number" and not a 400 — the same 401 and the same
+     * reason an unknown address gets, so the shape of the input tells an attacker nothing
+     * about which namespace they are in or whether anything was found in it.
+     */
+    const nonsense = await refusalOf(attempt('not-a-username', PASSWORD));
+    const unknownEmail = await refusalOf(attempt('nobody@example.test', PASSWORD));
+
+    expect(nonsense).toStrictEqual(unknownEmail);
+  });
+
+  it('⚠️ still pays for the hash on an unparseable username', async () => {
+    /*
+     * The half a status-code assertion misses. Returning early on "this is neither a number
+     * nor an address" would answer in microseconds where a real miss pays for argon2, and
+     * the difference is a username oracle measurable over the network.
+     *
+     * ⚠️ Asserted as a **ratio against a known miss**, not against a millisecond threshold.
+     * A fixed number is a test that passes on this laptop and fails on a loaded CI box —
+     * and the property is not "takes 20 ms", it is "costs what a miss costs".
+     */
+    const time = async (username: string): Promise<number> => {
+      const before = performance.now();
+      await refusalOf(attempt(username, PASSWORD));
+      return performance.now() - before;
+    };
+
+    const knownShape = await time('nobody@example.test');
+    const unparseable = await time('not-a-username');
+
+    expect(unparseable).toBeGreaterThan(knownShape / 3);
+  });
+
+  it('⭐ counts every spelling of one number against the same bucket', async () => {
+    /*
+     * ⓶. The throttle keys on what the *lookup* used, not on what was typed — otherwise an
+     * attacker gets a fresh allowance per punctuation variant, and there are many.
+     */
+    const spellings = ['081-234-5678', '0812345678', '081 234 5678', '+66812345678'];
+    const outcomes: number[] = [];
+
+    for (let round = 0; round < 3; round += 1) {
+      for (const written of spellings) {
+        outcomes.push((await refusalOf(attempt(written, 'wrong password entirely'))).status);
+      }
+    }
+
+    expect(outcomes).toContain(429);
+  });
+
+  it('⭐ refuses a number nobody has proved', async () => {
+    /*
+     * ⓷. The store's phone lookup requires `verified_at`, so an unverified claim is simply
+     * not there — and the refusal is the ordinary one, because saying "that number exists
+     * but is unverified" would confirm the number.
+     */
+    store.phones.delete(PHONE_CANONICAL);
+    store.unverifiedPhones.set(PHONE_CANONICAL, {
+      userId: 'user-unverified',
+      status: 'active',
+      passwordHash: store.rows.get(EMAIL)?.passwordHash ?? null,
+    });
+
+    const refused = await refusalOf(attempt(PHONE_TYPED, PASSWORD));
+    const unknown = await refusalOf(attempt('+66899999999', PASSWORD));
+
+    expect(refused).toStrictEqual(unknown);
+    expect(issuer.issued).toHaveLength(0);
+  });
+
+  it('⚠️ an address is still an address', async () => {
+    /* The regression this block could cause. `somchai@example.test` has no digits to mistake. */
+    expect((await attempt(EMAIL, PASSWORD)).kind).toBe('session');
+    expect(store.askedPhones).toHaveLength(0);
   });
 });

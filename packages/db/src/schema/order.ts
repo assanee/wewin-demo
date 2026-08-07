@@ -553,10 +553,26 @@ export const orders = pgTable(
           and (${table.submittedAt} is null) = (${table.grandTotalThbMinor} is null)
           and (${table.submittedAt} is null) = (${table.scheduledDepositThbMinor} is null)`,
     ),
-    /* Plan 10.2: a quote with no channel on it is a quote nobody can be told anything about. */
+    /*
+     * Plan 10.2: a quote with no channel on it is a quote nobody can be told anything about.
+     *
+     * ⚠️ **A channel, not an address.** This was `contact_email is not null` until phone
+     * numbers became identities, and the weakening is real: an order with only a number
+     * satisfies this and still receives nothing, because the fan-out resolves recipients for
+     * `email` alone. `0025_user_phones.sql` argues it at length and names the two places that
+     * pay for it — the dashboard says the customer was not written to, and the quotation link
+     * can be copied into LINE by hand.
+     */
     check(
       'orders_submitted_has_a_contact_channel',
-      sql`${table.submittedAt} is null or ${table.contactEmail} is not null`,
+      sql`${table.submittedAt} is null
+          or ${table.contactEmail} is not null
+          or ${table.contactPhone} is not null`,
+    ),
+    /* The same canonical form `user_phones` demands — one telephone must not have two spellings across two columns. */
+    check(
+      'orders_contact_phone_e164',
+      sql`${table.contactPhone} is null or ${table.contactPhone} ~ '^\\+[1-9][0-9]{7,14}$'`,
     ),
     check(
       'orders_frozen_after_submitted',

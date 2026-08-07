@@ -195,6 +195,45 @@ describeWithPg('⭐ a quotation link is read by somebody carrying nothing', () =
     expect((await byLink(links.issue(mine.id).token)).status).toBe(200);
   });
 
+  it('⭐ hands staff the same link, so a phone-only customer can be sent one by hand', async () => {
+    /*
+     * An order with a telephone number and no address receives **nothing**: the fan-out
+     * resolves recipients for email alone and suppresses the rest. That is a real gap and
+     * this route is how it is survived rather than hidden — staff copy the link and paste it
+     * into LINE.
+     *
+     * ⚠️ The URL is built by the API, not by the dashboard, and this is what pins it: the
+     * token needs the signing key and the origin needs the deployment's configuration. A
+     * client concatenating its own base URL would be a second opinion about where the
+     * storefront is.
+     */
+    const mine = await order('i');
+
+    const answer = await call('GET', `/orders/${mine.id}/customer-link`, { token: staff.token });
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+
+    const body = answer.body as { readonly url: string; readonly expiresAt: string };
+    const url = new URL(body.url);
+    const opened = await byLink(url.searchParams.get('t') ?? '');
+
+    /* ⭐ The link staff copy is the link that works. Asserted by following it. */
+    expect(opened.status).toBe(200);
+    expect((opened.body as { orderNo: string | null }).orderNo).toBe(mine.orderNo);
+    expect(Date.parse(body.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
+  it('⭐ refuses the link to a caller without orders.read', async () => {
+    /*
+     * The route hands out a bearer credential for somebody else's quotation. `RequirePrincipal`
+     * would let the *customer* fetch their own — harmless — and would also let any signed-in
+     * stranger fetch anybody's, because the token is minted from the id in the path.
+     */
+    const mine = await order('j');
+
+    expect((await call('GET', `/orders/${mine.id}/customer-link`)).status).toBe(401);
+    expect((await call('GET', `/orders/${mine.id}/customer-link`, { token: customer.token })).status).toBe(403);
+  });
+
   it('⚠️ leaves the id-addressed route exactly as it was', async () => {
     /*
      * ⓷. A caller with no credential still gets nothing from the route the dashboard and the

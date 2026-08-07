@@ -415,7 +415,14 @@ export class OrderRepository {
       readonly orderId: string;
       readonly statusEventId: string;
       readonly documentId: string;
-      readonly contactEmail: string;
+      /**
+       * ⚠️ Nullable since a telephone number became a channel.
+       *
+       * `orders_submitted_has_a_contact_channel` still refuses an order with *neither*, so a
+       * null here is only legal beside a number — and the database, not this signature, is
+       * what enforces that. `orderContactRequestSchema` refuses the pair upstream.
+       */
+      readonly contactEmail: string | null;
       readonly contactName: string | null;
       readonly contactPhone: string | null;
       readonly contactLocale: string;

@@ -17,6 +17,7 @@ import {
   sessions,
   userEmails,
   userGroups,
+  userPhones,
   users,
 } from '../src/schema/index.js';
 import { PG, connect, connectPool, describeDb, errorCode } from './support/db.js';
@@ -1154,5 +1155,172 @@ describeDb('ⓔ a second factor cannot be enabled without a way past it', () => 
       .where(eq(mfaCredentials.userId, user));
 
     expect(row?.confirmedAt).not.toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⓕ A telephone number is an identity, on the same terms an address is
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeDb('ⓕ a number is owned by whoever proved it, and by nobody else', () => {
+  let db: Database;
+
+  beforeAll(async () => {
+    db = await connect();
+  });
+
+  /**
+   * ⭐ Block ⓐ, re-run against `user_phones`.
+   *
+   * Plan 6(a) does not care which field carries the identity, so this block is deliberately
+   * the same four tests one field over. Copying them rather than parameterising is the point:
+   * if somebody adds a third identity kind, the way to find out what it owes is to read what
+   * these two have in common, and a shared helper would hide it.
+   *
+   * ⚠️ The new failure mode, which addresses do not have: **one telephone has several
+   * spellings.** `081-234-5678` and `+66 81 234 5678` are the same number, and the unique
+   * index compares bytes — so the canonical form is not tidiness, it is the thing that makes
+   * the index mean anything. That is what `user_phones_number_e164` refuses to let go wrong.
+   */
+  const number = (tail: string): string => `+66811${tail}`;
+
+  it('lets the attack be *set up* — two accounts may both claim a number unverified', async () => {
+    const claimed = number('00001');
+    const attacker = await createUser(db, 'phone attacker');
+    const victim = await createUser(db, 'phone victim');
+
+    await db.insert(userPhones).values({ userId: attacker, number: claimed });
+    await db.insert(userPhones).values({ userId: victim, number: claimed });
+
+    // Not an oversight, and the same reasoning as for addresses: refusing the second claim
+    // would let the first person to type a number lock everyone else out of using it. What
+    // must be impossible is *acting* on one.
+    const rows = await db.select().from(userPhones).where(eq(userPhones.number, claimed));
+    expect(rows).toHaveLength(2);
+  });
+
+  it('⭐ strips the number from every unverified account when somebody proves it', async () => {
+    const claimed = number('00002');
+    const attacker = await createUser(db, 'phone attacker');
+    const victim = await createUser(db, 'phone victim');
+
+    await db.insert(userPhones).values({ userId: attacker, number: claimed });
+    const [victimPhone] = await db
+      .insert(userPhones)
+      .values({ userId: victim, number: claimed })
+      .returning({ id: userPhones.id });
+    if (!victimPhone) throw new Error('could not create the victim claim');
+
+    await db
+      .update(userPhones)
+      .set({ verifiedAt: new Date() })
+      .where(eq(userPhones.id, victimPhone.id));
+
+    const survivors = await db
+      .select({ userId: userPhones.userId, verifiedAt: userPhones.verifiedAt })
+      .from(userPhones)
+      .where(eq(userPhones.number, claimed));
+
+    // MUTATION: `DROP TRIGGER user_phones_strip_unverified ON user_phones` — the attacker's
+    // row survives, and a lookup that forgets `verified_at` finds two answers.
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0]?.userId).toBe(victim);
+    expect(survivors[0]?.verifiedAt).not.toBeNull();
+  });
+
+  it('refuses a second verified owner outright', async () => {
+    const claimed = number('00003');
+    const first = await createUser(db, 'phone first');
+    const second = await createUser(db, 'phone second');
+
+    await db.insert(userPhones).values({ userId: first, number: claimed, verifiedAt: new Date() });
+
+    await expectViolation(
+      db.insert(userPhones).values({ userId: second, number: claimed, verifiedAt: new Date() }),
+      PG.uniqueViolation,
+    );
+  });
+
+  it('⚠️ refuses to un-verify, so a proven number cannot be quietly re-claimed', async () => {
+    const claimed = number('00004');
+    const user = await createUser(db, 'phone owner');
+    const [row] = await db
+      .insert(userPhones)
+      .values({ userId: user, number: claimed, verifiedAt: new Date() })
+      .returning({ id: userPhones.id });
+    if (!row) throw new Error('could not create the phone');
+
+    await expectViolation(
+      db.update(userPhones).set({ verifiedAt: null }).where(eq(userPhones.id, row.id)),
+      PG.restrictViolation,
+    );
+    await expectViolation(
+      db.update(userPhones).set({ number: number('00099') }).where(eq(userPhones.id, row.id)),
+      PG.restrictViolation,
+    );
+  });
+
+  it('⭐ refuses a number that is not already canonical', async () => {
+    /*
+     * The constraint addresses do not need. `@wewin/core/phone` produces `+66812345678` and
+     * nothing else; a row written by a script, a migration or psql must obey the same rule,
+     * or the unique index above stops meaning "one owner per telephone" and starts meaning
+     * "one owner per way of writing a telephone".
+     */
+    const user = await createUser(db, 'phone spellings');
+
+    for (const written of ['0812345678', '081-234-5678', '+66 81 234 5678', '66812345678']) {
+      await expectViolation(
+        db.insert(userPhones).values({ userId: user, number: written }),
+        PG.checkViolation,
+      );
+    }
+  });
+
+  it('⚠️ refuses a primary number that nobody has proved', async () => {
+    const user = await createUser(db, 'phone primary');
+
+    await expectViolation(
+      db.insert(userPhones).values({ userId: user, number: number('00005'), isPrimary: true }),
+      PG.checkViolation,
+    );
+  });
+
+  it('⚠️ refuses a voucher on a number with no verification', async () => {
+    /*
+     * `verified_by_user_id` says "a member of staff asserted this". Set without
+     * `verified_at`, it is a half-finished write that reads as an endorsement of nothing.
+     */
+    const user = await createUser(db, 'phone vouchee');
+    const staff = await createUser(db, 'phone voucher');
+
+    await expectViolation(
+      db.insert(userPhones).values({ userId: user, number: number('00006'), verifiedByUserId: staff }),
+      PG.checkViolation,
+    );
+  });
+
+  it('records who vouched, since it is a person and not a code', async () => {
+    /*
+     * Until an OTP exists, verification is a member of staff on the telephone. That is a
+     * weaker proof than possession of the handset and the row says which kind it was: a
+     * non-null voucher means a human asserted it.
+     */
+    const user = await createUser(db, 'phone vouchee');
+    const staff = await createUser(db, 'phone voucher');
+
+    await db.insert(userPhones).values({
+      userId: user,
+      number: number('00007'),
+      verifiedAt: new Date(),
+      verifiedByUserId: staff,
+    });
+
+    const [row] = await db
+      .select({ by: userPhones.verifiedByUserId })
+      .from(userPhones)
+      .where(eq(userPhones.userId, user));
+
+    expect(row?.by).toBe(staff);
   });
 });

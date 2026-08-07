@@ -340,12 +340,21 @@ describeWithPg('RED TEAM 5a round two', () => {
      * assertion green for the wrong reason, so it is narrowed rather than relaxed: what the
      * finding says is that the routes which move an order's *status* carry no permission, and
      * that is still true of all nine.
+     *
+     * ⚠️ `customer-link` is excluded on the same terms and for the same reason. It mints a
+     * read-only quotation link for staff to send by hand and states `orders.read`, which is
+     * the correct policy for it — a `principal` there would hand any signed-in stranger a
+     * bearer credential for anybody's quotation. It moves nothing, so it is not what this
+     * finding is about, and folding it in would make the assertion pass or fail on a route
+     * whose policy is deliberately the opposite of the ones under discussion.
      */
     const orderRoutes = registry
       .records()
       .filter(
         (record: RouteRecord) =>
-          /\s\/orders\b/.test(record.key) && !record.key.includes('/quote/'),
+          /\s\/orders\b/.test(record.key) &&
+          !record.key.includes('/quote/') &&
+          !record.key.includes('/customer-link'),
       );
 
     expect(

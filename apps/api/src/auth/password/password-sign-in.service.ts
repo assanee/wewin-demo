@@ -12,6 +12,7 @@ import {
 } from './password.repository';
 import { SIGN_IN_THROTTLE, type SignInThrottle } from './sign-in-throttle.token';
 import { SECOND_FACTOR, type SecondFactor } from './second-factor';
+import { normaliseUsername } from './username';
 
 export interface PasswordSignInRequest {
   readonly email: string;
@@ -105,15 +106,29 @@ export class PasswordSignInService {
    * person their password was wrong.
    */
   async signIn(request: PasswordSignInRequest): Promise<SignInOutcome> {
-    // Normalised once, here, and used for the lookup *and* the throttle key. Two different
-    // normalisations would mean an attacker gets a fresh bucket per capitalisation.
-    const email = request.email.trim().toLowerCase();
+    /*
+     * ⭐ One field, two namespaces, and the shape decides which.
+     *
+     * Normalised once, here, and used for the lookup *and* the throttle key. Two different
+     * normalisations would mean an attacker gets a fresh bucket per capitalisation — and,
+     * now that a number is a username, per punctuation variant, of which there are many
+     * more.
+     *
+     * ⚠️ **A username this cannot parse is not an error.** `password.contract.ts` refuses
+     * `z.string().email()` on this field because "that is not a valid address" is a
+     * shape-based enumeration oracle arriving through the validator; answering "that is not
+     * a valid telephone number" here would be the same leak through a different door, and
+     * would additionally tell an attacker which namespace they had failed to be in. So an
+     * unparseable username falls through as an address that matches nothing, pays for the
+     * dummy hash like every other miss, and is refused identically.
+     */
+    const username = normaliseUsername(request.email);
 
     /*
      * Before the hash, not after. A 429 that still paid 19 MiB and two argon2 passes is not
      * a limit — it is the same attack, refused politely, at full cost to this process.
      */
-    const refusal = this.throttle.check(email, request.address);
+    const refusal = this.throttle.check(username.key, request.address);
     if (refusal !== undefined) {
       throw new AppError(
         'TOO_MANY_REQUESTS',
@@ -125,15 +140,23 @@ export class PasswordSignInService {
       );
     }
 
-    const found = await this.store.findByVerifiedEmail(email);
+    /*
+     * ⚠️ Exactly one lookup, chosen before the hash. Asking both and taking whichever
+     * answered would double the database work on every attempt and — worse — would let a
+     * number that is also a valid address shape reach two accounts.
+     */
+    const found =
+      username.kind === 'phone'
+        ? await this.store.findByVerifiedPhone(username.key)
+        : await this.store.findByVerifiedEmail(username.key);
     const usable = await this.check(found, request.password);
 
     if (usable === undefined) {
-      this.throttle.failed(email, request.address);
+      this.throttle.failed(username.key, request.address);
       throw PasswordSignInService.rejected();
     }
 
-    this.throttle.succeeded(email, request.address);
+    this.throttle.succeeded(username.key, request.address);
     await this.upgradeIfWeak(usable, request.password);
 
     /*

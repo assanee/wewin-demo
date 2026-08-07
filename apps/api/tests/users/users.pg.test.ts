@@ -255,10 +255,30 @@ describeWithPg('who works here', () => {
      * case a fake cannot construct honestly: the guard's answer depends on a join through
      * `user_groups`, `group_permissions` and `users.status`, and the third of those is the
      * one an implementation forgets.
+     *
+     * ⚠️ **Every one in the database, not this file's own two.** The pg suites share one
+     * database and run in a file order nothing pins, so `audit.pg.test.ts` — which also makes
+     * an administrator and correctly leaves it — may have run first. Suspending `[admin,
+     * deputy]` left that one active, the guard found a holder, and the removal succeeded:
+     * a 204 where a 409 belongs.
+     *
+     * It passed for as long as the ordering happened to be favourable, which is the worst way
+     * for a test to pass. Adding an unrelated pg file was enough to change it.
      */
-    for (const other of [admin, deputy]) {
+    const others = await db.execute(sql`
+      select distinct u.id::text as id
+        from users u
+        join user_groups ug on ug.user_id = u.id
+        join group_permissions gp on gp.group_id = ug.group_id
+       where gp.permission_code = 'users.write'
+         and u.status = 'active'
+         and u.id <> ${solo.userId}::uuid
+    `);
+    const suspended = (others as unknown as { rows: { id: string }[] }).rows.map((row) => row.id);
+
+    for (const id of suspended) {
       await db.execute(
-        sql`update users set status = 'suspended', suspended_at = now() where id = ${other.userId}::uuid`,
+        sql`update users set status = 'suspended', suspended_at = now() where id = ${id}::uuid`,
       );
     }
 
@@ -273,9 +293,10 @@ describeWithPg('who works here', () => {
         (attempt.body as { error?: { details?: { reason?: string } } }).error?.details?.reason,
       ).toBe('no-administrator-left');
     } finally {
-      for (const other of [admin, deputy]) {
+      /* Put back exactly what was suspended — including other files' actors. */
+      for (const id of suspended) {
         await db.execute(
-          sql`update users set status = 'active', suspended_at = null where id = ${other.userId}::uuid`,
+          sql`update users set status = 'active', suspended_at = null where id = ${id}::uuid`,
         );
       }
     }

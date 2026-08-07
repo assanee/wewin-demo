@@ -10,7 +10,7 @@ import { backoffMs } from './backoff';
 import type { DeliveryResult, NotificationChannelAdapter, RenderedMessage } from './channels/channel';
 import { preferredLocaleOf, resolveRenderLocale, type SupportedLocale } from './locale';
 import type { NotificationsConfig } from './notifications.config';
-import { DocumentLinkService } from '../orders/document-link';
+import { DocumentLinkService, documentLinkUrl } from '../orders/document-link';
 import { NotificationsRepository, type ClaimedNotification } from './notifications.repository';
 import { NOTIFICATIONS_CONFIG, NOTIFICATION_CHANNEL_ADAPTERS } from './notifications.tokens';
 import { renderTemplate } from './templates/templates';
@@ -156,8 +156,8 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
     if (this.config.webBaseUrl === undefined) return undefined;
     if (notification.recipientKind !== 'customer') return undefined;
 
-    const { token } = this.links.issue(notification.orderId);
-    return `${this.config.webBaseUrl}/${locale}/orders?t=${encodeURIComponent(token)}`;
+    /* The same builder the dashboard's copy button uses — one shape, one place. */
+    return documentLinkUrl(this.config.webBaseUrl, locale, this.links.issue(notification.orderId).token);
   }
 
   private async deliver(notification: ClaimedNotification): Promise<void> {

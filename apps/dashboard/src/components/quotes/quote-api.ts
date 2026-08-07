@@ -368,3 +368,37 @@ export const getPinnedDocument = (orderId: string): Promise<Record<string, unkno
     if (typeof body !== 'object' || body === null) throw new TypeError('เอกสาร: ไม่ใช่วัตถุ');
     return body as Record<string, unknown>;
   });
+
+/* ------------------------------------------------------------------ *
+ * The link a customer opens
+ * ------------------------------------------------------------------ */
+
+export interface CustomerLink {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
+/**
+ * ⭐ `GET /orders/:id/customer-link` — the quotation link, for sending by hand.
+ *
+ * ⚠️ **The URL comes from the API, whole.** Building it here from a token and a
+ * `NEXT_PUBLIC_WEB_BASE_URL` would be a second opinion about where the storefront is, and
+ * the two would disagree the first time somebody changed one — leaving a customer who was
+ * emailed one origin and read the other over the telephone with a link that 404s.
+ *
+ * ⚠️ It is a **bearer credential**. Whoever holds it sees this quotation, which is exactly
+ * why it exists: an order with a telephone number and no address receives nothing from the
+ * outbox, and a member of staff pasting this into LINE is how that gap is survived.
+ */
+export const getCustomerLink = (orderId: string): Promise<CustomerLink> =>
+  apiJson(`/orders/${orderId}/customer-link`, (body) => {
+    if (typeof body !== 'object' || body === null) throw new TypeError('ลิงก์: ไม่ใช่วัตถุ');
+    const raw = body as Record<string, unknown>;
+    if (typeof raw['url'] !== 'string' || raw['url'] === '') {
+      throw new TypeError('ลิงก์: ไม่มี url');
+    }
+    return {
+      url: raw['url'],
+      expiresAt: typeof raw['expiresAt'] === 'string' ? raw['expiresAt'] : '',
+    };
+  });

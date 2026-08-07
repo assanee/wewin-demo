@@ -106,6 +106,26 @@ import type { SessionConfig } from '../auth/session/session.config';
  */
 export const DOCUMENT_LINK_TTL_SECONDS = 180 * 24 * 60 * 60;
 
+/**
+ * Where the storefront is, so a link can be handed to a person rather than a token.
+ *
+ * `undefined` when `NOTIFICATIONS_WEB_BASE_URL` is unset — the same degradation the emails
+ * take, for the same reason: a deployment that forgot it should still serve the dashboard.
+ */
+export const WEB_BASE_URL = Symbol('wewin.orders.webBaseUrl');
+
+/**
+ * ⭐ The URL a customer opens, assembled in the one place that knows both halves.
+ *
+ * ⚠️ Built here rather than in the dashboard, though the dashboard is what displays it. The
+ * token needs the signing key and the origin needs the deployment's configuration; a client
+ * that concatenated its own `NEXT_PUBLIC_WEB_BASE_URL` onto a token would be a second
+ * opinion about where the storefront is, and the two would disagree the first time somebody
+ * changed one.
+ */
+export const documentLinkUrl = (base: string, locale: string, token: string): string =>
+  `${base}/${locale}/orders?t=${encodeURIComponent(token)}`;
+
 const HEADER = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' }), 'utf8').toString('base64url');
 
 /**

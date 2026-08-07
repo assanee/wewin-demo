@@ -225,6 +225,17 @@ export type SessionRevocationReason = (typeof SESSION_REVOCATION_REASONS)[number
  */
 export const ERASURE_TREATMENTS = {
   'user_emails.user_id': 'delete',
+  'user_phones.user_id': 'delete',
+  /*
+   * ⚠️ `scrub` and not `delete`, and the difference matters.
+   *
+   * This column names the member of *staff* who vouched for somebody else's number. Erasing
+   * that staff account must not take the customer's phone row with it — the customer did not
+   * ask to be forgotten — so the FK is `set null` and the treatment says so. What is lost is
+   * "who vouched", which `admin_events` still holds under the same accounting exemption as
+   * every other administrative act.
+   */
+  'user_phones.verified_by_user_id': 'scrub',
   'provider_identities.user_id': 'delete',
   'password_credentials.user_id': 'delete',
   'auth_tokens.user_id': 'delete',
@@ -748,6 +759,108 @@ export const userEmails = pgTable(
     check(
       'user_emails_primary_is_verified',
       sql`not ${table.isPrimary} or ${table.verifiedAt} is not null`,
+    ),
+  ],
+);
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ A TELEPHONE NUMBER AS A USERNAME.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Thai customers frequently have no email address they use, and one that never has to be
+ * asked for is one that never has to be typed wrong. A number is the identity they already
+ * carry, so this table is `user_emails` with a different string in it — deliberately, right
+ * down to the constraint names.
+ *
+ * ── ⚠️ Every constraint is here because the attack is the same one ───────────
+ *
+ * Plan 6(a) — account pre-hijacking — does not care which field it is. An attacker signs up
+ * claiming the victim's number, leaves it unverified, and waits. So the same two mechanisms
+ * that close it for addresses close it here, and they are **not redundant**:
+ *
+ *   `user_phones_one_verified_owner` makes two *verifications* of one number mutually
+ *   exclusive; `user_phones_strip_unverified` makes an unverified claim stop existing the
+ *   moment somebody proves the number. Neither alone is enough, and the stripping is a
+ *   trigger rather than a service method so that no future caller can forget it.
+ *
+ * ── ⭐ The number is stored in E.164 and nothing else ────────────────────────
+ *
+ * `081-234-5678`, `0812345678` and `+66 81 234 5678` are one telephone and three byte
+ * strings, and the unique index above compares bytes. `@wewin/core/phone` produces the one
+ * canonical spelling; `user_phones_number_e164` refuses anything that is not already in it,
+ * which makes the other spellings unrepresentable rather than merely discouraged.
+ *
+ * That is the same argument `user_emails_address_nfc` makes about `å` written two ways — and
+ * it is a stricter check, because a mis-stored number is not just an identity nobody can use.
+ * It is one that may reach a different person.
+ *
+ * ── ⚠️ What "verified" means here, and what it costs ─────────────────────────
+ *
+ * An address is proved by a link, which is free. A number is proved by an OTP over SMS, which
+ * is not — Thai SMS is charged per message and the owner has chosen not to spend it yet.
+ *
+ * So `verified_at` is set by **a member of staff**, in the dashboard, while they are on the
+ * telephone with the customer. That is a weaker proof than possession of the handset and it
+ * is written down as one: it says a person at this company believes this number belongs to
+ * this customer, and `admin_events` records which person and when. The day an OTP exists it
+ * sets the same column and nothing else in the schema changes.
+ *
+ * ⚠️ **Until then an unverified number cannot sign anybody in**, exactly as an unverified
+ * address cannot: `findByVerifiedPhone` requires the column, for the reason
+ * `password.repository.ts` gives at length. A claim is not an identity.
+ */
+export const userPhones = pgTable(
+  'user_phones',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** E.164, and the CHECK below makes any other spelling unrepresentable. */
+    number: text('number').notNull(),
+    /** Null until somebody proved it. Nothing may key off a number while this is null. */
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    /**
+     * ⚠️ Who said so, since it is a person and not a code.
+     *
+     * Null for an unverified claim, and null for a future OTP — which proves possession and
+     * needs no human to vouch. Non-null means "a member of staff asserted this", which is a
+     * different and weaker statement, and a reader of this row should be able to tell the two
+     * apart without going to `admin_events`.
+     */
+    verifiedByUserId: uuid('verified_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    ...timestamps,
+  },
+  (table) => [
+    unique('user_phones_user_number_key').on(table.userId, table.number),
+    /* ⓐ Partial, exactly as for addresses: unverified duplicates may exist — that is the state an attacker creates — they simply never become anybody's identity. */
+    uniqueIndex('user_phones_one_verified_owner')
+      .on(table.number)
+      .where(sql`verified_at is not null`),
+    uniqueIndex('user_phones_one_primary_per_user').on(table.userId).where(sql`is_primary`),
+    index('user_phones_number_idx').on(table.number),
+    /*
+     * ⭐ E.164 and nothing else: `+`, a country code that does not start with zero, then
+     * digits. 8 to 15 characters after the `+` is the standard's own range.
+     *
+     * A regex and not a call to `@wewin/core/phone`, because Postgres cannot call it — and
+     * that asymmetry is the point of `packages/db/tests`: the canonical form has to be
+     * checked in both places or a row written by psql escapes the rule the application obeys.
+     */
+    check('user_phones_number_e164', sql`${table.number} ~ '^\\+[1-9][0-9]{7,14}$'`),
+    /* An unverified number must never be the one we match on — the merge, wearing a different hat. */
+    check(
+      'user_phones_primary_is_verified',
+      sql`not ${table.isPrimary} or ${table.verifiedAt} is not null`,
+    ),
+    /* Somebody vouched, or nobody did. A voucher on an unverified row is a half-finished write. */
+    check(
+      'user_phones_voucher_needs_a_verification',
+      sql`${table.verifiedByUserId} is null or ${table.verifiedAt} is not null`,
     ),
   ],
 );
