@@ -48,4 +48,7 @@ export const EN: PartialCatalogue = {
     'No quotation was found for this link — it may have expired. Please contact the sales team.',
   'error.order.storefront_not_configured':
     'The storefront address is not configured, so no link can be built. Tell an administrator.',
+  'error.auth.register_phone_only': 'Register with a telephone number, e.g. 081-234-5678.',
+  'error.auth.number_already_registered':
+    'This number already has an account — sign in with it, or contact us if it is not yours.',
 };

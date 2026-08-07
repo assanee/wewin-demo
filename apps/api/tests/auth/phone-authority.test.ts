@@ -44,13 +44,22 @@ const files = (directory: string): string[] =>
   });
 
 /**
- * Every file allowed to query `user_phones`, and what makes each one safe.
+ * Every file allowed to touch `user_phones`, and what makes each one safe.
  *
- * `password.repository.ts` — the sign-in lookup, and the **only** one that reads a claim
+ * `password.repository.ts` — the sign-in lookup, and the only one that *reads* a claim
  * without `verified_at`. Safe because ⓵ makes it unambiguous and because what it returns is
  * the account that made the claim, never a customer somebody else is looking for.
+ *
+ * `registration.service.ts` — **writes** one, and reads none. It inserts with `verified_at`
+ * null and `is_primary` false, so it cannot manufacture the authority this file protects;
+ * `user_phones_primary_is_verified` would refuse the row if it tried. The collision it must
+ * handle is answered by the unique index rather than by a lookup, which is why it needs no
+ * SELECT — see its own comment on why a check-then-insert would be a race.
  */
-const READERS: readonly string[] = ['auth/password/password.repository.ts'];
+const READERS: readonly string[] = [
+  'auth/password/password.repository.ts',
+  'auth/password/registration.service.ts',
+];
 
 const relative = (path: string): string => path.slice(SOURCE.length + 1).replaceAll('\\', '/');
 

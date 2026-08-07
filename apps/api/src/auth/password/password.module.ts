@@ -1,4 +1,11 @@
-import { Module, type DynamicModule, type ModuleMetadata } from '@nestjs/common';
+import {
+  Module,
+  RequestMethod,
+  type DynamicModule,
+  type MiddlewareConsumer,
+  type ModuleMetadata,
+  type NestModule,
+} from '@nestjs/common';
 
 import { createEmailTransport } from '../../notifications/channels/transports/create-transport';
 import { EMAIL_TRANSPORT } from '../../notifications/notifications.tokens';
@@ -12,6 +19,8 @@ import {
 } from './password-reset.service';
 import { PASSWORD_RESET_STORE, PasswordResetRepository } from './password-reset.repository';
 import { PasswordController } from './password.controller';
+import { FunnelThrottleMiddleware } from '../../orders/funnel-throttle.middleware';
+import { RegistrationService } from './registration.service';
 import { PasswordSignInService } from './password-sign-in.service';
 import { PASSWORD_CREDENTIAL_STORE, PasswordRepository } from './password.repository';
 import { SESSION_STARTER } from './session-starter';
@@ -48,7 +57,7 @@ export interface PasswordModuleOptions {
 }
 
 @Module({})
-export class PasswordModule {
+export class PasswordModule implements NestModule {
   static forRoot(options: PasswordModuleOptions = {}): DynamicModule {
     return {
       module: PasswordModule,
@@ -57,6 +66,8 @@ export class PasswordModule {
       providers: [
         PasswordSignInService,
         PasswordResetService,
+        RegistrationService,
+        FunnelThrottleMiddleware,
         { provide: PASSWORD_CREDENTIAL_STORE, useClass: PasswordRepository },
         { provide: PASSWORD_RESET_STORE, useClass: PasswordResetRepository },
         {
@@ -131,5 +142,28 @@ export class PasswordModule {
        */
       exports: [PasswordResetService],
     };
+  }
+
+  /**
+   * ⚠️ `POST /auth/register` is metered, and the reason is the order module's.
+   *
+   * It is `AllowAnonymous` and it *creates rows* — a `users`, a `user_phones` and a
+   * `password_credentials` per call, none of which can be removed. That is the exact shape
+   * `funnel-throttle.middleware.ts` was written for after `POST /orders` shipped without one:
+   * unauthenticated row creation with no ceiling anywhere in the application.
+   *
+   * ⚠️ Worse here than there, in one respect. Each call also pays for an argon2 hash — 19 MiB
+   * and two passes — so an unmetered loop is a memory-and-CPU amplifier, not merely a way to
+   * fill tables. The limit is checked before the hash for the same reason the sign-in throttle
+   * is.
+   *
+   * The same middleware instance and the same window: a caller minting carts and a caller
+   * minting accounts are one source, and giving each its own allowance would double what one
+   * address may take.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(FunnelThrottleMiddleware)
+      .forRoutes({ path: 'auth/register', method: RequestMethod.POST });
   }
 }

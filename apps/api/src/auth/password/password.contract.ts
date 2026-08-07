@@ -105,3 +105,19 @@ export function assertPasswordAcceptable(password: string): void {
     );
   }
 }
+
+/**
+ * ⭐ Registration.
+ *
+ * ⚠️ `username` and not `phone`, though only a number is accepted today. The field names the
+ * *role* the value plays; the day email verification exists and an address becomes acceptable
+ * here, the name is already right and no client has to change. `registration.service.ts` owns
+ * the rule about what a username may currently be, and states it in a sentence a person can
+ * act on rather than in a regex a validator would leak.
+ */
+export const registrationSchema = z.strictObject({
+  username: z.string().min(1).max(320),
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH),
+});
+
+export type RegistrationBody = z.infer<typeof registrationSchema>;

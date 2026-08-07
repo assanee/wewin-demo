@@ -6,10 +6,13 @@ import { AllowAnonymous } from '../../rbac/access';
 import { refreshCookie } from '../session/refresh-cookie';
 import {
   passwordSignInSchema,
+  registrationSchema,
+  type RegistrationBody,
   type PasswordSignInBody,
   type PasswordSignInResponse,
   type SecondFactorRequiredResponse,
 } from './password.contract';
+import { RegistrationService } from './registration.service';
 import { PasswordSignInService } from './password-sign-in.service';
 
 /**
@@ -22,7 +25,10 @@ import { PasswordSignInService } from './password-sign-in.service';
  */
 @Controller('auth')
 export class PasswordController {
-  constructor(private readonly passwords: PasswordSignInService) {}
+  constructor(
+    private readonly passwords: PasswordSignInService,
+    private readonly registrations: RegistrationService,
+  ) {}
 
   /**
    * 200 with an access token, and the refresh token in a cookie the page cannot read.
@@ -91,6 +97,58 @@ export class PasswordController {
     );
 
     response.status(200).json({
+      accessToken: session.accessToken,
+      accessTokenExpiresAt: session.accessTokenExpiresAt.toISOString(),
+    } satisfies PasswordSignInResponse);
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * ⭐ THE FIRST SELF-SERVICE ACCOUNT.
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   * Until this, an account came from OAuth, an administrator, or the CLI — so a Thai customer
+   * with no email address had no way to have one. `registration.service.ts` argues why the
+   * username here is a telephone number and not an address.
+   *
+   * **201, not 200.** A row was created; the sign-in route reuses one.
+   *
+   * ⚠️ `@AllowAnonymous` for the reason the sign-in route gives, and one more that is worse:
+   * this route *creates rows* for an unauthenticated caller, which is the shape
+   * `funnel-throttle.middleware.ts` was written for. The middleware is applied to it in
+   * `password.module.ts` — a route like this without one is unbounded row creation, and the
+   * order module already paid for learning that.
+   */
+  @Post('register')
+  @HttpCode(201)
+  @Header('Cache-Control', 'no-store')
+  @AllowAnonymous(
+    'this route mints the account, so by definition the caller has no session for the guard ' +
+      'to read; it is metered by FunnelThrottleMiddleware because it also creates rows',
+  )
+  async register(
+    @Req() request: Request,
+    @Res() response: Response,
+    @Body(new ZodBodyPipe(registrationSchema)) body: RegistrationBody,
+  ): Promise<void> {
+    const session = await this.registrations.register({
+      username: body.username,
+      password: body.password,
+      address: request.ip ?? request.socket.remoteAddress ?? 'unknown',
+      userAgent: request.get('user-agent'),
+    });
+
+    /*
+     * ⚠️ Signed in immediately, refresh cookie and all. That *is* the feature — see
+     * `user_phones` on why nothing is verified first — and the shape matches sign-in exactly
+     * so a client has one code path for both.
+     */
+    response.setHeader(
+      'Set-Cookie',
+      refreshCookie(session.refreshToken, session.refreshTokenExpiresAt),
+    );
+
+    response.status(201).json({
       accessToken: session.accessToken,
       accessTokenExpiresAt: session.accessTokenExpiresAt.toISOString(),
     } satisfies PasswordSignInResponse);

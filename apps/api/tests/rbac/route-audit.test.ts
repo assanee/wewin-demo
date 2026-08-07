@@ -415,6 +415,18 @@ describe('boot-time route audit', () => {
       'POST /auth/password/reset [anonymous]',
       'POST /auth/password/reset-request [anonymous]',
       'POST /auth/refresh [anonymous]',
+      /*
+       * ⚠️ The only anonymous route that **creates rows** other than `POST /orders`, and the
+       * second one in this application to need a ceiling for that reason. It mints a `users`,
+       * a `user_phones` and a `password_credentials` per call, none removable — and pays for
+       * an argon2 hash on the way, so an unmetered loop is a memory amplifier as well as a
+       * way to fill tables.
+       *
+       * `FunnelThrottleMiddleware` is applied to it in `password.module.ts`, sharing the
+       * order module's instance and window: a caller minting carts and a caller minting
+       * accounts are one source.
+       */
+      'POST /auth/register [anonymous]',
        'POST /me/account/mfa [authenticated]',
       'POST /me/account/mfa/enrolment [authenticated]',
       /* ⚠️ Costs the password too — the old set dies and the new one is on screen. */

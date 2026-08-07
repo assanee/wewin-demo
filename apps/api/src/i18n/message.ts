@@ -158,6 +158,16 @@ const PARAM_SHAPES = {
   'error.order.document_link_unusable': {},
   /** Staff-facing: `NOTIFICATIONS_WEB_BASE_URL` is unset, so no link can be built at all. */
   'error.order.storefront_not_configured': {},
+  /** ⭐ Registration takes a number, not an address — see `registration.service.ts`. */
+  'error.auth.register_phone_only': {},
+  /**
+   * ⚠️ Says the number is taken, which every signup form must.
+   *
+   * A form that refuses without saying why is one nobody can complete. What is disclosed is
+   * that *somebody* registered it — not who, and not whether they proved it — and the
+   * sentence points at the two things that help: sign in, or telephone if it is not yours.
+   */
+  'error.auth.number_already_registered': {},
   'error.mfa.no_recovery_path': {},
   /*
    * A provider-only account cannot re-prove with a password, so it cannot turn its own

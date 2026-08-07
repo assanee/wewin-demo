@@ -256,11 +256,25 @@ export function PasswordSignInForm() {
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={emailId}>อีเมล</Label>
+        <Label htmlFor={emailId}>อีเมลหรือเบอร์โทร</Label>
         <Input
           id={emailId}
           name="email"
-          type="email"
+          /*
+           * ⚠️ `text`, and it was `email` until a telephone number became a username.
+           *
+           * `type="email"` makes the *browser* refuse anything without an `@` — before the
+           * request is sent, with a message in the browser's own language that has nothing to
+           * do with this application. The API had accepted numbers for a commit and nobody
+           * could reach it, which is a reminder that a rule stated in four places is a rule
+           * changed in three.
+           *
+           * ⚠️ And no pattern, no client-side "that is not a valid number". The sign-in path
+           * is required to be silent about what it recognises — `password.contract.ts`
+           * refuses `z.string().email()` for exactly that reason, and a validator here would
+           * reinstate the enumeration oracle in the one place an attacker sees it first.
+           */
+          type="text"
           /*
            * `username` and not `email`: it is what password managers look for on a sign-in
            * form, and a manager that cannot find the field is a person typing a passphrase
