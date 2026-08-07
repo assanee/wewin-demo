@@ -363,6 +363,25 @@ describe('what is still a Thai string, as a number', () => {
  *
  * ── 197 → 206: account settings ──────────────────────────────────────────────────
  *
+ * ── 206 → 211: the second factor ─────────────────────────────────────────────────
+ *
+ * ⚠️ A real increase, not a re-count. Three sources, and the largest is a *refactor that
+ * was right*:
+ *
+ *   `users/users.service.ts` +3 — `refuseSelf` was one `AppError.conflict` with a ternary
+ *   picking between two sentences. A third self-action arrived (`self-disable-mfa`) and the
+ *   ternary handed it the *permissions* sentence silently, because both arms were already
+ *   strings and nothing typed the pairing. It is a `switch` now, with no default arm, so the
+ *   fourth is a compile error — and three explicit calls where there was one conditional.
+ *
+ *   `auth/mfa/mfa-admin.controller.ts` +2 — a local `requireUuid` message and the refusal
+ *   when the route is aimed at the caller's own account.
+ *
+ * `account/signed-in.ts` shows three and cost nothing: they moved out of
+ * `account.controller.ts` when the helper was lifted so the MFA controller could share it
+ * rather than copy it. Copying would have added three.
+
+ *
  * 9 more, in `src/account`, and this is the round where the argument above stops being
  * comfortable. These are on `/me/account`, which is **not** an admin surface — it is a
  * person's own password, providers and devices, and the storefront is one route away from
@@ -372,4 +391,4 @@ describe('what is still a Thai string, as a number', () => {
  * the Thai dashboard. That is a scheduling decision, not a judgement that these sentences
  * are staff-only, and the two should not be confused when somebody picks this up.
  */
-const RAW_LITERAL_CALL_SITES = 206;
+const RAW_LITERAL_CALL_SITES = 211;

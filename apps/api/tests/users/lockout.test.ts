@@ -119,3 +119,25 @@ describe('⭐ the last administrator cannot be demoted', () => {
     expect(USER_ADMIN_PERMISSION).toBe('users.write');
   });
 });
+
+describe('⭐ the administrator door refuses self-service', () => {
+  it('⚠️ will not let an administrator disable their own second factor', () => {
+    /*
+     * The hole this closes is a combination, not a single mistake.
+     *
+     * `auth/mfa/reproof.ts` makes disabling a second factor cost the account's password —
+     * an unlocked laptop is otherwise a way to strip one off with nothing but what is
+     * already on the screen. The administrator route asks for no password, correctly,
+     * because an administrator does not have somebody else's.
+     *
+     * Point that route at yourself and the two combine: anybody holding `users.write` turns
+     * their own second factor off having proved nothing. Neither half is wrong on its own,
+     * which is why nothing catches it except a rule about the pair.
+     */
+    expect(selfActionProblem('user-1', 'user-1', 'disable-mfa')).toBe('self-disable-mfa');
+  });
+
+  it('still lets them disable somebody else’s, which is what the route is for', () => {
+    expect(selfActionProblem('user-1', 'user-2', 'disable-mfa')).toBeNull();
+  });
+});

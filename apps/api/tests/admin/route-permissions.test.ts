@@ -108,6 +108,15 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['GET /admin/groups', ['users.read']],
   ['POST /admin/users', ['users.write']],
   ['POST /admin/users/:userId/suspension', ['users.write']],
+  /*
+   * ⭐ `users.write`, the same code that suspends and reinstates — turning somebody's second
+   * factor off is administration of their account, not a separate authority.
+   *
+   * ⚠️ The route additionally refuses to point at the caller's own account. That is not
+   * expressible in this table, which is about permissions; it lives in `users/lockout.ts`
+   * beside self-suspension, because it is a rule about *who* rather than about *may*.
+   */
+  ['DELETE /admin/users/:userId/mfa', ['users.write']],
   ['DELETE /admin/users/:userId/suspension', ['users.write']],
   ['PUT /admin/users/:userId/groups', ['users.write']],
   ['POST /admin/users/:userId/sessions/revocation', ['users.write']],

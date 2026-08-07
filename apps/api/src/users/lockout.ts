@@ -33,8 +33,8 @@ import type { PermissionCode } from '../rbac/permissions';
  */
 export const USER_ADMIN_PERMISSION: PermissionCode = 'users.write';
 
-export type SelfAction = 'suspend' | 'permissions';
-export type SelfProblem = 'self-suspend' | 'self-permissions';
+export type SelfAction = 'suspend' | 'permissions' | 'disable-mfa';
+export type SelfProblem = 'self-suspend' | 'self-permissions' | 'self-disable-mfa';
 
 /**
  * Whether the caller is acting on their own account.
@@ -48,7 +48,29 @@ export function selfActionProblem(
   action: SelfAction,
 ): SelfProblem | null {
   if (callerUserId !== targetUserId) return null;
-  return action === 'suspend' ? 'self-suspend' : 'self-permissions';
+
+  switch (action) {
+    case 'suspend':
+      return 'self-suspend';
+    case 'permissions':
+      return 'self-permissions';
+    /*
+     * ⚠️ The hole this closes, and it is not obvious.
+     *
+     * `auth/mfa/reproof.ts` makes disabling a second factor cost the account's password,
+     * because an unlocked laptop is otherwise a way to strip one off with nothing but what
+     * is on the screen. The administrator route exists so somebody who has lost their phone
+     * can be helped — and it asks for no password, because the administrator does not have
+     * the other person's.
+     *
+     * Pointed at *yourself*, those two facts combine into a door round the rule: any holder
+     * of `users.write` could turn their own second factor off without proving anything. So
+     * the administrator door refuses self-service, and the self-service door is where the
+     * password is asked for.
+     */
+    case 'disable-mfa':
+      return 'self-disable-mfa';
+  }
 }
 
 export interface LastAdministratorCheck {

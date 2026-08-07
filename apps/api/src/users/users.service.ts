@@ -280,12 +280,30 @@ export class UsersService {
     const problem = selfActionProblem(callerUserId, targetUserId, action);
     if (problem === null) return;
 
-    throw AppError.conflict(
-      problem === 'self-suspend'
-        ? 'ระงับบัญชีของตัวเองไม่ได้ — จะออกจากระบบทันทีและกลับเข้ามาปลดไม่ได้'
-        : 'แก้สิทธิ์ของบัญชีตัวเองไม่ได้ — ให้ผู้ดูแลอีกคนเป็นผู้แก้',
-      { reason: problem },
-    );
+    /*
+     * ⚠️ A switch and not a ternary, and it became one when a third self-action arrived.
+     *
+     * `problem === 'self-suspend' ? a : b` gave `self-disable-mfa` the *permissions*
+     * sentence — silently, with no type error, because both arms were already strings. The
+     * same discipline `lockout.ts` argues for in the function that produces these values:
+     * no default arm, so the next one is a compile error rather than a wrong sentence.
+     */
+    switch (problem) {
+      case 'self-suspend':
+        throw AppError.conflict(
+          'ระงับบัญชีของตัวเองไม่ได้ — จะออกจากระบบทันทีและกลับเข้ามาปลดไม่ได้',
+          { reason: problem },
+        );
+      case 'self-permissions':
+        throw AppError.conflict('แก้สิทธิ์ของบัญชีตัวเองไม่ได้ — ให้ผู้ดูแลอีกคนเป็นผู้แก้', {
+          reason: problem,
+        });
+      case 'self-disable-mfa':
+        throw AppError.conflict(
+          'ปิดการยืนยันสองขั้นของตัวเองผ่านหน้าจัดการผู้ใช้ไม่ได้ — ให้ปิดจากหน้าบัญชีของฉัน ซึ่งจะถามรหัสผ่าน',
+          { reason: problem },
+        );
+    }
   }
 
   private static lastAdministrator(): AppError {

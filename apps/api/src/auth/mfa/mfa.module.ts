@@ -6,6 +6,7 @@ import { PASSWORD_CREDENTIAL_STORE, PasswordRepository } from '../password/passw
 import { SECOND_FACTOR, type SecondFactor } from '../password/second-factor';
 import { MfaChallengeService } from './challenge';
 import { MfaAccountController } from './mfa-account.controller';
+import { MfaAdminController } from './mfa-admin.controller';
 import { MfaController } from './mfa.controller';
 import { MfaRepository } from './mfa.repository';
 import { MfaEnrolmentService } from './mfa-enrolment.service';
@@ -72,7 +73,7 @@ export class MfaModule {
     return {
       module: MfaModule,
       imports: options.imports ?? [],
-      controllers: [MfaController, MfaAccountController],
+      controllers: [MfaController, MfaAccountController, MfaAdminController],
       providers: [
         MfaRepository,
         MfaChallengeService,

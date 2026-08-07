@@ -249,6 +249,15 @@ describe('boot-time route audit', () => {
       'DELETE /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
       'DELETE /admin/groups/:groupId [permissions]',
       'DELETE /admin/media/:mediaId [permissions]',
+      /*
+       * ⭐ The other half of plan 6.4's recovery: ten codes, and an administrator. Without
+       * it, losing a phone *and* the codes is a permanent lockout.
+       *
+       * ⚠️ `users.write`, and the route refuses to point at the caller's own account — see
+       * `users/lockout.ts`. Self-service disabling costs a password; this one asks for none,
+       * correctly, and aiming it at yourself would be a door around that rule.
+       */
+      'DELETE /admin/users/:userId/mfa [permissions]',
       'DELETE /admin/users/:userId/suspension [permissions]',
       /*
        * ⚠️ The one action here that leaves the account *less* protected, and the only one
