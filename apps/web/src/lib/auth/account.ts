@@ -174,3 +174,103 @@ export async function currentSession(): Promise<Session | null> {
 export async function signOut(): Promise<void> {
   await post('/auth/logout', {});
 }
+
+/* ------------------------------------------------------------------ *
+ * Changing a password from inside
+ * ------------------------------------------------------------------ */
+
+export type ChangeProblem =
+  | 'current-missing'
+  | 'too-short'
+  | 'same-as-current'
+  | 'refused'
+  | 'unreachable'
+  | 'unconfigured';
+
+export type ChangeResult =
+  | { readonly ok: true; readonly otherSessionsEnded: number }
+  | { readonly ok: false; readonly problem: ChangeProblem; readonly detail?: string | undefined };
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ CHANGE, NOT RESET — AND FOR THIS STOREFRONT THEY ARE NOT INTERCHANGEABLE.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * A **reset** proves control of a mailbox and works for somebody locked out. It is email-only
+ * by design — `phone-authority.test.ts` pins that, because a reset requestable *by number*
+ * would let somebody holding an unverified claim on a victim's number take the account, which
+ * turns the denial of service this design accepts into a takeover.
+ *
+ * ⚠️ **Every account registered through this storefront has a telephone number and no
+ * address.** So a reset link has nowhere to go, and building "forgot my password" here would
+ * be a screen nobody could use.
+ *
+ * A **change** needs no channel: the current password is the proof. That works for everyone,
+ * which is why it is what this file offers.
+ *
+ * ⚠️ The gap that remains is real and is not this file's to close: a customer who *forgets*
+ * their password has no self-service way back. Closing it needs either an SMS budget or a
+ * member of staff able to vouch — the same fork `user_phones` records for verification.
+ */
+export async function changePassword(input: {
+  readonly accessToken: string;
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}): Promise<ChangeResult> {
+  if (input.currentPassword.trim() === '') return { ok: false, problem: 'current-missing' };
+  if (passwordLength(input.newPassword) < PASSWORD_MIN_LENGTH) {
+    return { ok: false, problem: 'too-short' };
+  }
+  /*
+   * ⚠️ Refused here rather than sent. The API accepts it — a no-op change is not a security
+   * problem — but a person who typed the same thing twice meant to change something, and a
+   * cheerful "saved" is the wrong answer to that.
+   */
+  if (input.currentPassword === input.newPassword) return { ok: false, problem: 'same-as-current' };
+
+  const base = reviewsApiBaseUrl();
+  if (base === null) return { ok: false, problem: 'unconfigured' };
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/me/account/password`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${input.accessToken}`,
+      },
+      cache: 'no-store',
+      body: JSON.stringify({
+        currentPassword: input.currentPassword,
+        newPassword: input.newPassword,
+      }),
+    });
+  } catch {
+    return { ok: false, problem: 'unreachable' };
+  }
+
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const detail =
+      isRecord(body) && isRecord(body['error']) && typeof body['error']['message'] === 'string'
+        ? body['error']['message']
+        : undefined;
+
+    return { ok: false, problem: 'refused', detail };
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+
+  /*
+   * ⭐ Reported, not swallowed. Changing a password ends every *other* session, which is the
+   * point of doing it — and a customer who has just signed a family member's tablet out
+   * deserves to be told so rather than to find out later.
+   */
+  return {
+    ok: true,
+    otherSessionsEnded:
+      isRecord(body) && typeof body['otherSessionsEnded'] === 'number' ? body['otherSessionsEnded'] : 0,
+  };
+}

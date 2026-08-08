@@ -319,6 +319,19 @@ export interface UiParamsByKey {
   'review.meta.title': Plain;
 
   'account.title': Plain;
+  'account.password.section': Plain;
+  'account.password.current': Plain;
+  'account.password.new': Plain;
+  'account.password.confirm': Plain;
+  'account.password.action': Plain;
+  'account.password.saving': Plain;
+  'account.password.done': Plain;
+  'account.password.doneOthers': Plain;
+  'account.password.note': Plain;
+  'account.password.problem.currentMissing': Plain;
+  'account.password.problem.tooShort': Plain;
+  'account.password.problem.sameAsCurrent': Plain;
+  'account.password.problem.mismatch': Plain;
   'account.checking': Plain;
   'account.needAccount': Plain;
   'account.whyAccount': Plain;

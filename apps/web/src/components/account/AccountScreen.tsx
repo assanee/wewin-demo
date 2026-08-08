@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 import { localeHref } from '../../lib/routing';
 import { useLocale } from '../../state/localeContext';
 import { AccountGate } from './AccountGate';
+import { ChangePassword } from './ChangePassword';
 import { MyQuotations } from './MyQuotations';
 
 /**
@@ -30,16 +31,18 @@ export function AccountScreen(): ReactElement {
         <div className="flex flex-col gap-4">
           <h1 className="text-title text-chalk">{t('account.title')}</h1>
 
-          <section className="border border-line bg-panel p-4">
-            <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
-            <div className="mt-3">
-              <MyQuotations session={session} />
-            </div>
-          </section>
+          <Section title={t('account.myQuotations')}>
+            <MyQuotations session={session} />
+          </Section>
+
+          <Section title={t('account.password.section')}>
+            <ChangePassword session={session} />
+          </Section>
 
           {/*
-            The next sections go here — a shipping address, a change of password — each one a
-            heading and a component, with nothing above them to rename.
+            The next section goes here — a shipping address — as a `<Section>` and a component,
+            with nothing above it to rename. That is what the page being named after the
+            *account* rather than after one of its parts buys.
           */}
 
           <a
@@ -51,5 +54,26 @@ export function AccountScreen(): ReactElement {
         </div>
       )}
     </AccountGate>
+  );
+}
+
+/**
+ * One section, so the next one is a component and a title rather than a copied `<section>`.
+ *
+ * ⚠️ A heading level, too: `h1` is the page and every section is an `h2`. Getting that wrong is
+ * invisible on screen and turns a screen reader's outline into a flat list.
+ */
+function Section({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: ReactElement;
+}): ReactElement {
+  return (
+    <section className="border border-line bg-panel p-4">
+      <h2 className="text-lead text-chalk">{title}</h2>
+      <div className="mt-3">{children}</div>
+    </section>
   );
 }
