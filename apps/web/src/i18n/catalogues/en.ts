@@ -357,6 +357,28 @@ export const en: PartialUiCatalogue = {
     'It will appear on the product page once it has been read, or when the review window elapses.',
   'review.meta.title': 'Write a review',
 
+  'account.checking': 'Checking…',
+  'account.needAccount': 'Sign in to request a quotation',
+  'account.whyAccount':
+    'So the quotation belongs to your account and opens on any device — registering takes a telephone number and a password.',
+  'account.register': 'Create an account',
+  'account.signIn': 'Sign in',
+  'account.haveAccount': 'Already have an account?',
+  'account.noAccount': 'No account yet?',
+  'account.phone': 'Telephone',
+  'account.username': 'Telephone or email',
+  'account.usernameHint': 'The number you registered with, or your email if you already have an account.',
+  'account.password': 'Password',
+  'account.passwordHint': 'At least 12 characters.',
+  'account.signedInAs': 'Signed in',
+  'account.signOut': 'Sign out',
+  'account.problem.badPhone': 'That telephone number cannot be read — e.g. 081-234-5678.',
+  'account.problem.passwordTooShort': 'That password is too short — at least 12 characters.',
+  'account.problem.unreachable': 'Cannot connect. Please try again.',
+  'account.problem.unconfigured': 'Not available right now. Please contact the sales team.',
+  'account.myQuotations': 'My quotations',
+  'account.noQuotations': 'No quotations yet',
+
   'submit.heading': 'Request a quotation',
   'submit.intro':
     'Give us a name and one way to reach you, and we will issue the quotation immediately — the prices and details are frozen exactly as they appear in this cart.',

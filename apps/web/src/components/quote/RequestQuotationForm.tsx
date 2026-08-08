@@ -12,6 +12,7 @@ import {
   submitQuote,
   type ContactProblem,
 } from '../../lib/quote/submit';
+import type { Session } from '../../lib/auth/account';
 import { useLocale } from '../../state/localeContext';
 import type { PlainKey } from '../../i18n/keys';
 
@@ -62,7 +63,17 @@ type Phase =
   | { readonly kind: 'failed'; readonly message: string }
   | { readonly kind: 'done'; readonly orderId: string; readonly orderNo: string | null };
 
-export function RequestQuotationForm({ lines }: { readonly lines: readonly QuoteLine[] }): ReactElement {
+export function RequestQuotationForm({
+  lines,
+  session,
+  onSubmitted,
+}: {
+  readonly lines: readonly QuoteLine[];
+  /** Handed down by `AccountGate` rather than fetched — see its note on double rotation. */
+  readonly session: Session;
+  /** Called once a quotation exists, so a list on the same page can catch up. */
+  readonly onSubmitted?: (() => void) | undefined;
+}): ReactElement {
   const { t, locale } = useLocale();
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [name, setName] = useState('');
@@ -95,7 +106,11 @@ export function RequestQuotationForm({ lines }: { readonly lines: readonly Quote
       return;
     }
 
-    const result = await submitQuote({ lines: prepared.lines, contact: contact.contact });
+    const result = await submitQuote({
+      lines: prepared.lines,
+      contact: contact.contact,
+      accessToken: session.accessToken,
+    });
     if (!result.ok) {
       /*
        * The API's sentence when it sent one. It is rendered through the same message catalogue
@@ -113,7 +128,8 @@ export function RequestQuotationForm({ lines }: { readonly lines: readonly Quote
     }
 
     setPhase({ kind: 'done', orderId: result.orderId, orderNo: result.orderNo });
-  }, [email, lines, locale, name, phone, t]);
+    onSubmitted?.();
+  }, [email, lines, locale, name, onSubmitted, phone, session.accessToken, t]);
 
   if (phase.kind === 'done') {
     return (

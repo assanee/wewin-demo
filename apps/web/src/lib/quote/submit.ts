@@ -229,6 +229,15 @@ export async function fetchCatalogRefs(): Promise<readonly CatalogRef[] | null> 
 export async function submitQuote(input: {
   readonly lines: readonly SubmitLine[];
   readonly contact: ContactWire;
+  /**
+   * ⭐ The customer's access token, and it is what makes the order *theirs*.
+   *
+   * `OrdersService.createDraft` attaches `customer_user_id` when a session is present and
+   * falls back to a guest cookie when it is not. Without this header the order would be a
+   * guest's — findable by one browser, lost the moment that cookie is cleared, which is the
+   * whole reason the submit now stands behind an account.
+   */
+  readonly accessToken: string;
 }): Promise<SubmitResult> {
   const base = reviewsApiBaseUrl();
   if (base === null) return { ok: false, reason: 'unconfigured' };
@@ -238,7 +247,11 @@ export async function submitQuote(input: {
       return await fetch(`${base}${path}`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          authorization: `Bearer ${input.accessToken}`,
+        },
         cache: 'no-store',
         body: JSON.stringify(body),
       });

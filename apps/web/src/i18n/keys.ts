@@ -321,6 +321,27 @@ export interface UiParamsByKey {
   'review.form.done.body': Plain;
   'review.meta.title': Plain;
 
+  'account.checking': Plain;
+  'account.needAccount': Plain;
+  'account.whyAccount': Plain;
+  'account.register': Plain;
+  'account.signIn': Plain;
+  'account.haveAccount': Plain;
+  'account.noAccount': Plain;
+  'account.phone': Plain;
+  'account.username': Plain;
+  'account.usernameHint': Plain;
+  'account.password': Plain;
+  'account.passwordHint': Plain;
+  'account.signedInAs': Plain;
+  'account.signOut': Plain;
+  'account.problem.badPhone': Plain;
+  'account.problem.passwordTooShort': Plain;
+  'account.problem.unreachable': Plain;
+  'account.problem.unconfigured': Plain;
+  'account.myQuotations': Plain;
+  'account.noQuotations': Plain;
+
   'submit.heading': Plain;
   'submit.intro': Plain;
   'submit.name': Plain;

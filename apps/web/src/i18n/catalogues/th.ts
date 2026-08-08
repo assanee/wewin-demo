@@ -331,6 +331,28 @@ export const th: UiCatalogue = {
   'review.form.done.body': 'รีวิวจะปรากฏบนหน้าสินค้าเมื่อผ่านการตรวจหรือครบกำหนด',
   'review.meta.title': 'เขียนรีวิว',
 
+  'account.checking': 'กำลังตรวจสอบ…',
+  'account.needAccount': 'เข้าสู่ระบบก่อนขอใบเสนอราคา',
+  'account.whyAccount':
+    'เพื่อให้ใบเสนอราคาผูกกับบัญชีของท่าน และเปิดดูได้จากเครื่องไหนก็ได้ — สมัครใช้แค่เบอร์โทรกับรหัสผ่าน',
+  'account.register': 'สมัครสมาชิก',
+  'account.signIn': 'เข้าสู่ระบบ',
+  'account.haveAccount': 'มีบัญชีอยู่แล้ว?',
+  'account.noAccount': 'ยังไม่มีบัญชี?',
+  'account.phone': 'เบอร์โทรศัพท์',
+  'account.username': 'เบอร์โทรหรืออีเมล',
+  'account.usernameHint': 'ใส่เบอร์โทรที่สมัครไว้ หรืออีเมลถ้ามีบัญชีอยู่แล้ว',
+  'account.password': 'รหัสผ่าน',
+  'account.passwordHint': 'อย่างน้อย 12 ตัวอักษร',
+  'account.signedInAs': 'เข้าสู่ระบบแล้ว',
+  'account.signOut': 'ออกจากระบบ',
+  'account.problem.badPhone': 'เบอร์โทรไม่ถูกต้อง เช่น 081-234-5678',
+  'account.problem.passwordTooShort': 'รหัสผ่านสั้นเกินไป ต้องมีอย่างน้อย 12 ตัวอักษร',
+  'account.problem.unreachable': 'เชื่อมต่อไม่ได้ โปรดลองอีกครั้ง',
+  'account.problem.unconfigured': 'ระบบยังไม่พร้อม โปรดติดต่อทีมขาย',
+  'account.myQuotations': 'ใบเสนอราคาของฉัน',
+  'account.noQuotations': 'ยังไม่มีใบเสนอราคา',
+
   'submit.heading': 'ขอใบเสนอราคา',
   'submit.intro':
     'กรอกชื่อและช่องทางติดต่อ แล้วเราจะออกใบเสนอราคาให้ทันที — ราคาและรายละเอียดจะถูกตรึงไว้ตามที่เห็นในตะกร้านี้',

@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 import { getProductById } from '@wewin/core/fixtures';
 import { longestLeadTime, quoteItemCount, quoteTotal } from '@wewin/core/quote';
 
@@ -11,6 +13,8 @@ import { ButtonLink } from '../common/Button';
 import { StickyBar } from '../common/StickyBar';
 import { QuoteLineRow } from './QuoteLineRow';
 import { QuoteLineCard } from './QuoteLineCard';
+import { AccountGate } from '../account/AccountGate';
+import { MyQuotations } from '../account/MyQuotations';
 import { RequestQuotationForm } from './RequestQuotationForm';
 
 const TH_HEAD_CLASS = 'py-2 pe-3 text-caption font-normal tracking-[0.08em] text-chalk-3 uppercase';
@@ -64,6 +68,14 @@ const TH_HEAD_CLASS = 'py-2 pe-3 text-caption font-normal tracking-[0.08em] text
  * it is the screen that reads it.
  */
 export function QuoteScreen() {
+  /*
+   * ⚠️ Bumped when a quotation is created, so the list below it catches up.
+   *
+   * Without this the customer pressed the button, was told "WW-1008", and read
+   * "ยังไม่มีใบเสนอราคา" directly underneath — the data was right and only the list was stale.
+   */
+  const [quotationsKey, setQuotationsKey] = useState(0);
+
   const { lines, setQty, removeLine, duplicateLine, ready } = useQuote();
   const isDesktop = useIsDesktop();
   const { t, f, locale } = useLocale();
@@ -188,7 +200,29 @@ export function QuoteScreen() {
           >
             {summaryRows}
           </section>
-          <RequestQuotationForm lines={lines} />
+          <AccountGate>
+            {(session) => (
+              <>
+                <RequestQuotationForm
+                  lines={lines}
+                  session={session}
+                  onSubmitted={() => {
+                    setQuotationsKey((key) => key + 1);
+                  }}
+                />
+                {/*
+                  ⭐ The reason for having asked. A customer who signs in and sees nothing has
+                  been made to do work for a benefit they cannot observe.
+                */}
+                <section className="border border-line bg-panel p-4">
+                  <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
+                  <div className="mt-3">
+                    <MyQuotations session={session} reloadKey={quotationsKey} />
+                  </div>
+                </section>
+              </>
+            )}
+          </AccountGate>
         </div>
       ) : (
         <>
@@ -204,7 +238,29 @@ export function QuoteScreen() {
             with three fields inside it would cover the cart it is about.
           */}
           <div className="mt-4">
-            <RequestQuotationForm lines={lines} />
+            <AccountGate>
+            {(session) => (
+              <>
+                <RequestQuotationForm
+                  lines={lines}
+                  session={session}
+                  onSubmitted={() => {
+                    setQuotationsKey((key) => key + 1);
+                  }}
+                />
+                {/*
+                  ⭐ The reason for having asked. A customer who signs in and sees nothing has
+                  been made to do work for a benefit they cannot observe.
+                */}
+                <section className="border border-line bg-panel p-4">
+                  <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
+                  <div className="mt-3">
+                    <MyQuotations session={session} reloadKey={quotationsKey} />
+                  </div>
+                </section>
+              </>
+            )}
+          </AccountGate>
           </div>
 
           <StickyBar>
