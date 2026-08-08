@@ -10,11 +10,16 @@ import { useLocale } from '../../state/localeContext';
 /**
  * The account entry, and the label is the whole of it.
  *
- * ⚠️ **Signed out it says "sign in"; signed in it says "my quotations".** They are the same
- * destination and two different questions. A customer who submitted from a laptop and opens
- * the site on a phone is asking the first; a customer who submitted five minutes ago is asking
- * the second — and the answer to the second used to be "look in the cart", which is empty for
- * exactly those people, because the cart is cleared on success.
+ * ⚠️ **Signed out it says "sign in"; signed in it says "my account".** They are the same
+ * destination and two different questions. A customer who submitted from a laptop and opens the
+ * site on a phone is asking the first; a customer who submitted five minutes ago is asking the
+ * second — and the answer used to be "look in the cart", which is empty for exactly those
+ * people, because the cart is cleared on success.
+ *
+ * ⚠️ **"บัญชีของฉัน" rather than "ใบเสนอราคาของฉัน"**, which is what it said first. A shipping
+ * address and a change of password belong on that page too, and a menu named after one of its
+ * sections has to be renamed the day a second arrives — by which time customers have learned
+ * the old name.
  *
  * ⚠️ **Nothing renders while the session is `checking`.** The refresh cookie is `__Host-`
  * prefixed and unreadable from here, so the answer arrives over the network one commit after
@@ -29,7 +34,7 @@ export function AccountLink() {
 
   if (state.kind === 'checking') return null;
 
-  const label = t(state.kind === 'signed-in' ? 'account.myQuotations' : 'account.signIn');
+  const label = t(state.kind === 'signed-in' ? 'account.title' : 'account.signIn');
 
   return (
     <Link

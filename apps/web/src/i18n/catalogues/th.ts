@@ -331,6 +331,7 @@ export const th: UiCatalogue = {
   'review.form.done.body': 'รีวิวจะปรากฏบนหน้าสินค้าเมื่อผ่านการตรวจหรือครบกำหนด',
   'review.meta.title': 'เขียนรีวิว',
 
+  'account.title': 'บัญชีของฉัน',
   'account.checking': 'กำลังตรวจสอบ…',
   'account.needAccount': 'เข้าสู่ระบบก่อนขอใบเสนอราคา',
   'account.whyAccount':

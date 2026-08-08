@@ -32,7 +32,7 @@ export async function generateMetadata({
   if (locale === null) notFound();
 
   return {
-    title: localeBundle(locale).t('account.myQuotations'),
+    title: localeBundle(locale).t('account.title'),
     robots: { index: false, follow: true },
   };
 }
@@ -46,7 +46,8 @@ export default async function AccountPage({
 
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
-      <div className="max-w-130">
+      {/* `mx-auto`, like `QuoteScreen`. A `max-w` without it is a column pinned left. */}
+      <div className="mx-auto max-w-130">
         <AccountScreen />
       </div>
     </main>

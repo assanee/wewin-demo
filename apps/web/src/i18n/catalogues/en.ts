@@ -357,6 +357,7 @@ export const en: PartialUiCatalogue = {
     'It will appear on the product page once it has been read, or when the review window elapses.',
   'review.meta.title': 'Write a review',
 
+  'account.title': 'My account',
   'account.checking': 'Checking…',
   'account.needAccount': 'Sign in to request a quotation',
   'account.whyAccount':

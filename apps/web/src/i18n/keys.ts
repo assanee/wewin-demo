@@ -321,6 +321,7 @@ export interface UiParamsByKey {
   'review.form.done.body': Plain;
   'review.meta.title': Plain;
 
+  'account.title': Plain;
   'account.checking': Plain;
   'account.needAccount': Plain;
   'account.whyAccount': Plain;
