@@ -43,6 +43,41 @@ import { reviewsApiBaseUrl } from '../reviews/api';
  *       → 404 for every refusal, deliberately
  */
 
+/**
+ * ⭐ Which of the two ways this URL is, and there are two.
+ *
+ * ⚠️ **The second one did not exist**, and the failure was mine twice over: the page read
+ * `?t=` only, while `MyQuotations` and the success screen both linked without a token — under
+ * a comment of mine asserting that "the ordinary owned-order route works for it". It did not.
+ * Every customer opening their own quotation from their own list was told the link had expired.
+ *
+ *   `?t=…`      a bearer token from an email. Any device, no account, no cookie.
+ *   `?order=…`  an id, for somebody **signed in who owns it**. `ownershipFilter` decides, in
+ *               the query, so this cannot reach a stranger's order however it is called.
+ *
+ * ⚠️ **A token wins.** `document-link.pg.test.ts` pins the API half — the order id comes out
+ * of the signature and never from a parameter, because a valid signature beside a chosen id
+ * would be every quotation the company has issued. This is the same rule on the client: when
+ * a token is present, `order` is not read at all.
+ */
+export type QuotationSource =
+  | { readonly kind: 'token'; readonly token: string }
+  | { readonly kind: 'owned'; readonly orderId: string }
+  | { readonly kind: 'none' };
+
+/** The shape the API's own `isOrderUuid` accepts; refused here so it never reaches a path. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+export function quotationSource(search: string): QuotationSource {
+  const params = new URLSearchParams(search);
+
+  const token = params.get('t') ?? '';
+  if (token !== '') return { kind: 'token', token };
+
+  const orderId = params.get('order') ?? '';
+  return UUID.test(orderId) ? { kind: 'owned', orderId } : { kind: 'none' };
+}
+
 export interface LinkedQuotation {
   readonly orderNo: string | null;
   readonly status: string;
@@ -103,32 +138,79 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
   }
 }
 
-export async function fetchQuotation(token: string): Promise<QuotationResult> {
-  if (token === '') return { ok: false, reason: 'no-token' };
+/**
+ * ⚠️ Two endpoints with **two different shapes**, and that is why this is not one fetch.
+ *
+ * `GET /orders/documents/:token` answers `{orderNo, status, contactName, submittedAt, document}`
+ * — assembled by `DocumentLinkReader` precisely because a holder of a link cannot call anything
+ * else. `GET /orders/:id/document` answers the bare `OrderDocumentWire`, so the heading fields
+ * come from `GET /orders/:id` beside it, which is what the dashboard has always done.
+ *
+ * ⚠️ The owned path needs a **bearer token**, not merely a cookie. `@RequirePrincipal()` reads
+ * a session or a guest cookie, and an order attached to `customer_user_id` is not the guest's
+ * — so a fetch with `credentials: 'include'` and no `Authorization` reads the customer's own
+ * quotation as a stranger's and answers 404.
+ */
+export async function fetchQuotation(
+  source: QuotationSource,
+  accessToken?: string | undefined,
+): Promise<QuotationResult> {
+  if (source.kind === 'none') return { ok: false, reason: 'no-token' };
 
   const base = reviewsApiBaseUrl();
   if (base === null) return { ok: false, reason: 'unconfigured' };
 
-  let response: Response;
-  try {
-    response = await fetch(`${base}/orders/documents/${encodeURIComponent(token)}`, {
-      headers: { accept: 'application/json' },
-      /* The URL is the credential; nothing about this response may be reused for anyone. */
-      cache: 'no-store',
-    });
-  } catch {
-    return { ok: false, reason: 'unreachable' };
+  const get = async (path: string): Promise<Response | null> => {
+    try {
+      return await fetch(`${base}${path}`, {
+        headers: {
+          accept: 'application/json',
+          ...(accessToken === undefined ? {} : { authorization: `Bearer ${accessToken}` }),
+        },
+        credentials: 'include',
+        /* The URL is the credential on one path and the session on the other; cache neither. */
+        cache: 'no-store',
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  if (source.kind === 'token') {
+    const response = await get(`/orders/documents/${encodeURIComponent(source.token)}`);
+    if (response === null) return { ok: false, reason: 'unreachable' };
+    if (!response.ok) return { ok: false, reason: 'refused' };
+
+    const body: unknown = await response.json().catch(() => null);
+    const data = decodeQuotation(body);
+    return data === null ? { ok: false, reason: 'malformed' } : { ok: true, data };
   }
 
-  if (!response.ok) return { ok: false, reason: 'refused' };
+  /* Owned: the order for the heading, the document for the body. Both must succeed. */
+  const [order, document] = await Promise.all([
+    get(`/orders/${source.orderId}`),
+    get(`/orders/${source.orderId}/document`),
+  ]);
 
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return { ok: false, reason: 'malformed' };
-  }
+  if (order === null || document === null) return { ok: false, reason: 'unreachable' };
+  /*
+   * 404 covers "not yours" as well as "no such order" — `scoped-order.repository.ts` collapses
+   * them deliberately — and 404 on the document alone means a cart that was never submitted.
+   */
+  if (!order.ok || !document.ok) return { ok: false, reason: 'refused' };
 
-  const data = decodeQuotation(body);
+  const summary: unknown = await order.json().catch(() => null);
+  const pinned: unknown = await document.json().catch(() => null);
+  if (!isRecord(summary) || !isRecord(pinned)) return { ok: false, reason: 'malformed' };
+
+  const contact = isRecord(summary['contact']) ? summary['contact'] : {};
+  const data = decodeQuotation({
+    orderNo: summary['orderNo'],
+    status: summary['status'],
+    contactName: contact['name'],
+    submittedAt: summary['submittedAt'],
+    document: pinned,
+  });
+
   return data === null ? { ok: false, reason: 'malformed' } : { ok: true, data };
 }

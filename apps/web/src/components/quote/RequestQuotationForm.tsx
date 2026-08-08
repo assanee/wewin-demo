@@ -138,17 +138,17 @@ export function RequestQuotationForm({
           {t('submit.done')} {phase.orderNo ?? ''}
         </p>
         {/*
-          ⚠️ A link to `/orders` with no token, deliberately.
+          ⚠️ This comment used to say the page's "ordinary owned-order route works for it" and
+          link to `/orders` bare. **There was no such route** — the page read `?t=` and nothing
+          else, so every customer who pressed this was told their link had expired.
 
-          The quotation page needs `?t=…`, and this browser cannot mint one — the token is
-          signed with a key only the API holds. What this browser *does* have is the guest
-          cookie the submit just set, so the ordinary owned-order route works for it. The
-          emailed link is for every other device.
+          `?order=` is that route, built after the browser found it. The token in the email is
+          for every *other* device; this one is signed in and owns the order.
         */}
         <p className="mt-2 text-small text-chalk-2">{t('quotation.pinnedNotice')}</p>
         <a
           className="mt-4 inline-block border border-line px-4 py-2 text-small text-chalk"
-          href={localeHref(locale, '/quote')}
+          href={`${localeHref(locale, '/orders')}?order=${phase.orderId}`}
         >
           {t('submit.viewQuotation')}
         </a>

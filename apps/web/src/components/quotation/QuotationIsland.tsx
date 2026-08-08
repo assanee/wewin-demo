@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
 import { printableQuotation, type PrintableQuotation } from '@wewin/core/quotation';
 
-import { fetchQuotation, type QuotationFailure } from '../../lib/quotation/api';
+import { currentSession } from '../../lib/auth/account';
+import { fetchQuotation, quotationSource, type QuotationFailure } from '../../lib/quotation/api';
 import { useLocale } from '../../state/localeContext';
 
 /**
@@ -40,7 +41,7 @@ import { useLocale } from '../../state/localeContext';
 
 type Phase =
   | { readonly kind: 'reading' }
-  | { readonly kind: 'failed'; readonly reason: QuotationFailure; readonly token: string }
+  | { readonly kind: 'failed'; readonly reason: QuotationFailure }
   | {
       readonly kind: 'ready';
       readonly quotation: PrintableQuotation;
@@ -60,9 +61,23 @@ export function QuotationIsland(): ReactElement {
      * `state/useUrlSearch.ts` explains at length — and no `popstate` listener, because a
      * quotation that changes underneath somebody reading it is not a thing to support.
      */
-    const token = new URLSearchParams(window.location.search).get('t') ?? '';
+    const source = quotationSource(window.location.search);
 
-    void fetchQuotation(token).then((result) => {
+    /*
+     * ⚠️ A session is fetched **only** for the owned path, and never for a token.
+     *
+     * A quotation link is opened by somebody who may have no account at all — spending a
+     * refresh cookie for them would be a request that can only fail, and on a shared device
+     * it would rotate a session belonging to whoever used the browser last.
+     */
+    const withSession =
+      source.kind === 'owned'
+        ? currentSession().then((session) => session?.accessToken)
+        : Promise.resolve(undefined);
+
+    void withSession
+      .then((accessToken) => fetchQuotation(source, accessToken))
+      .then((result) => {
       if (cancelled) return;
 
       setPhase(
@@ -72,7 +87,7 @@ export function QuotationIsland(): ReactElement {
               quotation: printableQuotation(result.data.document),
               orderNo: result.data.orderNo,
             }
-          : { kind: 'failed', reason: result.reason, token },
+          : { kind: 'failed', reason: result.reason },
       );
     });
 

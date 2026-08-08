@@ -136,7 +136,15 @@ export function MyQuotations({
     <ul className="flex flex-col gap-2">
       {quotations.map((row) => (
         <li key={row.id} className="flex items-baseline justify-between gap-3 border-b border-line py-2">
-          <a className="text-body text-chalk underline" href={localeHref(locale, '/orders')}>
+          {/*
+            ⚠️ `?order=` — the owned path, which needs a session and did not exist until the
+            browser found that every link here was refused. It was `/orders` bare, so no link
+            in this list named which quotation it was about.
+          */}
+          <a
+            className="text-body text-chalk underline"
+            href={`${localeHref(locale, '/orders')}?order=${row.id}`}
+          >
             {row.orderNo ?? row.id.slice(0, 8)}
           </a>
           <span className="numeric text-small text-chalk-2">
