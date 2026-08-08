@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { Check, Minus, Pencil, Plus } from 'lucide-react';
+import { Minus, Plus } from 'lucide-react';
 import { getProductBySlug } from '@wewin/core/fixtures';
 import { getCustomGroup, getSkuGroup } from '@wewin/core/filters';
 import { configHash } from '@wewin/core/hash';
@@ -178,7 +178,6 @@ function ConfigureProduct({
   const { showToast } = useToast();
   const origin = useOrigin();
 
-  const [editingName, setEditingName] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const issueRef = useRef<HTMLDivElement>(null);
 
@@ -394,47 +393,32 @@ function ConfigureProduct({
 
         {/* ---- Right column: the controls ---- */}
         <div className="flex min-w-0 flex-col gap-6">
-          {/* 1. Name + rename */}
+          {/* 1. Name */}
           <div className="min-w-0">
             <p className="text-caption text-chalk-3">
               <CatalogText at={{ on: 'productName', productId: product.id }} th={product.nameTh} />
             </p>
-            {editingName ? (
-              <div className="mt-1 flex items-stretch gap-2">
-                <input
-                  autoFocus
-                  value={config.nickname}
-                  onChange={(event) => config.setNickname(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === 'Escape') setEditingName(false);
-                  }}
-                  aria-label={t('configure.name.editLabel')}
-                  className="min-w-0 flex-1 rounded-xs border border-line-2 bg-panel-2 px-3 py-2 text-title text-chalk outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setEditingName(false)}
-                  aria-label={t('configure.name.save')}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-xs border border-line text-chalk-2 hover:text-chalk"
-                >
-                  <Check size={16} aria-hidden />
-                </button>
-              </div>
-            ) : (
-              <div className="mt-1 flex min-w-0 items-center gap-2">
-                <h1 className="min-w-0 flex-1 text-title text-chalk lg:text-display">
-                  {config.nickname}
-                </h1>
-                <button
-                  type="button"
-                  onClick={() => setEditingName(true)}
-                  aria-label={t('configure.name.rename')}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xs border border-line text-chalk-2 transition-colors duration-180 ease-out hover:text-chalk"
-                >
-                  <Pencil size={15} aria-hidden />
-                </button>
-              </div>
-            )}
+            {/*
+              ⚠️ **The rename was removed, and the name was not.**
+              ─────────────────────────────────────────────────────────────────
+              A pencil here let a customer call a line "หน้าต่างห้องนอน 1" — and that name
+              **never left the browser**. `PriceRequestWire` carries no description field, and
+              `customerDescriptionTh` on the pinned document comes from `quote_lines`, which
+              sales edits. So the quotation the customer received said nothing they had typed.
+
+              An affordance that promises to name a thing and does not is worse than no
+              affordance: the customer did the work, believed it landed, and had no way to
+              discover it had not. Removing it closes the promise rather than the gap.
+
+              ⚠️ **The gap itself is still open**, upstream: `submit_for_payment` should freeze
+              a description alongside the prices and the locale. On the day it does, this is
+              where the pencil comes back.
+
+              `nickname` stays because it is still a *label* — the cart rows, the line cards
+              and every `aria-label` about "this window" read it, and it is the product name
+              until somebody has a reason to change it. It is derived now, not typed.
+            */}
+            <h1 className="mt-1 min-w-0 text-title text-chalk lg:text-display">{config.nickname}</h1>
             <p className="mt-2 max-w-[60ch] text-small text-chalk-2">
               <CatalogText
                 at={{ on: 'productSummary', productId: product.id }}

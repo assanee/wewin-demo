@@ -45,7 +45,17 @@ export interface Configurator extends ConfiguratorState {
    */
   measure: (groupCode: string, value: bigint, enteredUnit: LengthUnit) => void;
   setQty: (qty: number) => void;
-  setNickname: (nickname: string) => void;
+  /*
+   * ⚠️ `setNickname` is gone, and `nickname` is not.
+   *
+   * The rename affordance promised to name a line and the name never left the browser —
+   * `PriceRequestWire` carries no description and `customerDescriptionTh` comes from
+   * `quote_lines`, which sales edits. Removing the pencil closes the promise; the field stays
+   * because the cart rows, the line cards and their `aria-label`s all read it as the label for
+   * "this window". It is derived from the product now rather than typed.
+   *
+   * On the day `submit_for_payment` freezes a description, this is where the setter comes back.
+   */
   /* --- History ---------------------------------------------------------- */
   undo: () => void;
   redo: () => void;
@@ -162,7 +172,6 @@ export function useConfigurator(product: Product, initial?: Partial<Configurator
       ),
 
     setQty: (next) => edit((current) => ({ ...current, qty: next }), 'qty'),
-    setNickname: (next) => edit((current) => ({ ...current, nickname: next }), 'nickname'),
 
     undo: () => setHistory(undo),
     redo: () => setHistory(redo),

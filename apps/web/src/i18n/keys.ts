@@ -145,9 +145,6 @@ export interface UiParamsByKey {
   'configure.view.front': Plain;
   'configure.view.halfPanel': Plain;
   'configure.view.transom': Plain;
-  'configure.name.editLabel': Plain;
-  'configure.name.save': Plain;
-  'configure.name.rename': Plain;
   'configure.size.heading': Plain;
   'configure.area.line': { areaSqUm: bigint; minBillableSqUm: bigint };
   'configure.group.affectsSku': Plain;

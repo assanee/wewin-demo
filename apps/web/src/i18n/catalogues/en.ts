@@ -155,9 +155,6 @@ export const en: PartialUiCatalogue = {
   'configure.view.front': 'Front',
   'configure.view.halfPanel': 'Half panel',
   'configure.view.transom': 'Transom',
-  'configure.name.editLabel': 'Name for this item',
-  'configure.name.save': 'Save item name',
-  'configure.name.rename': 'Give this item your own name',
   'configure.size.heading': 'Size',
   'configure.area.line': (p, f) =>
     `Area ${f.area(p.areaSqUm)} m² · minimum charged ${f.area(p.minBillableSqUm)} m²`,

@@ -133,9 +133,6 @@ export const th: UiCatalogue = {
   'configure.view.front': 'ด้านหน้า',
   'configure.view.halfPanel': 'ครึ่งบาน',
   'configure.view.transom': 'ช่องแสงบน',
-  'configure.name.editLabel': 'ชื่อรายการนี้',
-  'configure.name.save': 'บันทึกชื่อรายการ',
-  'configure.name.rename': 'ตั้งชื่อรายการนี้เอง',
   'configure.size.heading': 'ขนาด',
   'configure.area.line': (p, f) =>
     `พื้นที่ ${f.area(p.areaSqUm)} ตร.ม. · คิดขั้นต่ำ ${f.area(p.minBillableSqUm)} ตร.ม.`,
