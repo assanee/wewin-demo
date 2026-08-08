@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReviewBlockContent } from '@/components/reviews/ReviewBlock';
 import { DisplayUnitProvider } from '@/state/useDisplayUnit';
 import { formattersFor } from '@/i18n/format';
+import { LOCALES } from '@/i18n/locales';
 import { averageTenths, averageText, starFills } from '@/lib/reviews/average';
 import { loadProductReviews, reviewsPath } from '@/lib/reviews/api';
 import { decodeInvitation } from '@/lib/reviews/invitation';
@@ -109,19 +110,26 @@ describe('plan 9.5 — an average cannot be rendered on its own', () => {
   it('`f.rating` is called from the catalogues and nowhere else', () => {
     /*
      * The structural half of the rule. `rating(sum, count)` cannot be called without the
-     * denominator, and this asserts that the *only* callers are the two catalogue entries
-     * for `review.summary` — which also render the count, in the same sentence, because
-     * there is no second key to put it in.
+     * denominator, and this asserts that the *only* callers are the catalogue entries for
+     * `review.summary` — which also render the count, in the same sentence, because there
+     * is no second key to put it in.
      *
      * A component that wanted "just the stars, in the header" would have to appear in this
      * list, in front of a reviewer, which is the visibility the rule needs to survive.
+     *
+     * ⚠️ Eight files rather than two. It was `en.ts` and `th.ts` while the other six
+     * catalogues were empty; each translated locale writes its own `review.summary` and so
+     * joins this list. The rule is unchanged — every caller is still a catalogue — which is
+     * why the assertion is built from `LOCALES` rather than lengthened by hand each time.
      */
     const callers = files
       .filter(({ name, source }) => name !== join('i18n', 'format.ts') && /\bf\.rating\(/.test(source))
       .map(({ name }) => name)
       .sort();
 
-    expect(callers).toEqual([join('i18n', 'catalogues', 'en.ts'), join('i18n', 'catalogues', 'th.ts')]);
+    expect(callers).toEqual(
+      [...LOCALES].map((locale) => join('i18n', 'catalogues', `${locale}.ts`)).sort(),
+    );
   });
 
   it('the scan can still see — `f.baht(` is findable the same way', () => {

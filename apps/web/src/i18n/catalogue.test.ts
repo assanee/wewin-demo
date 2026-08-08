@@ -14,6 +14,33 @@ import { decodeNumerals } from './testing/decode';
  * discovered one.
  */
 
+/**
+ * Run `body` with one entry missing from one catalogue, then put it back.
+ *
+ * ⚠️ **This exists because all eight catalogues are complete.** The fallback path used to
+ * be observable for free — six locales were empty, so any key demonstrated it. Now none is,
+ * and the mechanism did not stop mattering: it is what happens between a key landing in
+ * Thai and the other seven catching up, which is how every future key arrives.
+ *
+ * Mutating the real catalogue rather than building a fake one is deliberate. A fake would
+ * test a copy of `lookup`'s inputs; this tests `lookup`. The `finally` is not optional —
+ * these modules are shared across every test in the file, so a gap left behind would
+ * surface as an unrelated failure somewhere later and be very hard to trace back here.
+ */
+function withGap(locale: Locale, key: UiKey, body: () => void): void {
+  // `PartialUiCatalogue` marks its properties readonly, which is right for every caller
+  // except this one. The cast is the narrowest way to say so.
+  const catalogue = UI_CATALOGUES[locale] as Record<string, unknown>;
+  const saved = catalogue[key];
+
+  delete catalogue[key];
+  try {
+    body();
+  } finally {
+    catalogue[key] = saved;
+  }
+}
+
 describe('the source catalogue is the one that has to be complete', () => {
   test('Thai defines every key, and none of them is empty', () => {
     // `UiCatalogue` makes a missing Thai key a compile error, so this cannot fail while
@@ -159,14 +186,29 @@ describe('a lookup always returns a sentence', () => {
   );
 
   test('a missing entry falls back to Thai and says it did', () => {
-    const { td } = translatorFor('de');
+    /*
+     * ⚠️ **The gap is synthetic now, and it has to be.**
+     *
+     * This test used to pick German and rely on its catalogue being empty. All eight are
+     * complete, so there is no naturally missing entry left to observe — and the mechanism
+     * did not stop mattering. It fires the moment a 347th key lands in Thai and the other
+     * seven have not caught up, which is the ordinary way this app grows.
+     *
+     * So the gap is made here and put back in a `finally`. That exercises the real
+     * `lookup`, through the real `translatorFor`, on the real catalogues — rather than
+     * asserting against a state the app is no longer in.
+     */
+    withGap('de', 'catalog.heading', () => {
+      const heading = translatorFor('de').td('catalog.heading');
+      expect(heading.fallback).toBe(true);
+      expect(heading.text).toBe('สินค้าทั้งหมด');
+    });
 
-    // German has no catalogue at all today, so every key is the fallback path.
-    const heading = td('catalog.heading');
-    expect(heading.fallback).toBe(true);
-    expect(heading.text).toBe('สินค้าทั้งหมด');
-
-    // English has one, so it is not.
+    // Restored, and now it is German's own sentence rather than a fallback.
+    expect(translatorFor('de').td('catalog.heading')).toEqual({
+      text: 'Alle Produkte',
+      fallback: false,
+    });
     expect(translatorFor('en').td('catalog.heading')).toEqual({
       text: 'All products',
       fallback: false,
@@ -179,26 +221,38 @@ describe('a lookup always returns a sentence', () => {
 });
 
 describe('a fallback sentence still carries the reader’s own numbers', () => {
-  test('German words fall back to Thai; German numbers do not fall back at all', () => {
-    // This is the bargain the language picker announces. The words are Thai because
-    // nobody has translated them (plan 13); the *number* is the part a German reader
-    // can act on, and it is written the way they write numbers.
-    const { td } = translatorFor('de');
-    const line = td('configure.area.line', {
+  test('words fall back to Thai; numbers do not fall back at all', () => {
+    /*
+     * The bargain the language picker announces, and the half of it that survives every
+     * catalogue being complete: **the formatters follow the active locale even when the
+     * words do not.** A German reader looking at a Thai sentence can still act on the
+     * number in it, because the number is written the way they write numbers.
+     *
+     * Synthetic gap, for the reason given above — there is no empty catalogue left.
+     */
+    const params = {
       areaSqUm: 5_120_000_000_000n,
       minBillableSqUm: 1_500_000_000_000n,
+    };
+
+    withGap('de', 'configure.area.line', () => {
+      const line = translatorFor('de').td('configure.area.line', params);
+
+      expect(line.fallback).toBe(true);
+      expect(line.text).toContain('พื้นที่');
+      // German decimal commas inside a Thai sentence.
+      expect(line.text).toContain('5,12');
+      expect(line.text).toContain('1,50');
+      expect(decodeNumerals(line.text, 'de')).toBe(
+        translatorFor('th').t('configure.area.line', params),
+      );
     });
 
-    expect(line.fallback).toBe(true);
-    expect(line.text).toContain('พื้นที่');
-    expect(line.text).toContain('5,12');
-    expect(line.text).toContain('1,50');
-    expect(decodeNumerals(line.text, 'de')).toBe(
-      translatorFor('th').t('configure.area.line', {
-        areaSqUm: 5_120_000_000_000n,
-        minBillableSqUm: 1_500_000_000_000n,
-      }),
-    );
+    // And with the entry present, the words are German too.
+    const own = translatorFor('de').td('configure.area.line', params);
+    expect(own.fallback).toBe(false);
+    expect(own.text).toContain('Fläche');
+    expect(own.text).toContain('5,12');
   });
 
   test('and a price inside a fallback sentence is still the same price', () => {
@@ -242,25 +296,51 @@ describe('the two complete catalogues disagree where they must', () => {
 });
 
 describe('coverage is read from the catalogues, not maintained beside them', () => {
-  test('Thai is complete and the untranslated six are not', () => {
-    expect(coverageOf('th')).toBe(1);
-    expect(coverageOf('en')).toBe(1);
-
-    for (const locale of LOCALES) {
-      if (locale === 'th' || locale === 'en') continue;
-      // Zero today. The assertion is `< 1`, not `=== 0`: the first entry a translator
-      // adds must not turn this test red, or the test becomes a reason not to translate.
-      expect(coverageOf(locale), locale).toBeLessThan(1);
-      expect(coverageOf(locale)).toBeGreaterThanOrEqual(0);
-    }
+  test('all eight are complete', () => {
+    /*
+     * ⚠️ This assertion is the reverse of the one it replaces, which read "Thai is complete
+     * and the untranslated six are not". That was true and deliberate: plan 13 called the
+     * translations a bottleneck that is not code, and six empty catalogues were the honest
+     * state rather than a placeholder. The six were translated on request and are shipped.
+     *
+     * What did **not** change is the argument for *content* — product names, option labels,
+     * rule messages — which still goes through `ContentRef` in `content.ts` and is still a
+     * person's job. This covers the UI shell only: a closed set of keys, which is what made
+     * finishing it a bounded piece of work in the first place.
+     */
+    for (const locale of LOCALES) expect(coverageOf(locale), locale).toBe(1);
   });
 
-  test('the picker has a note to show for exactly the incomplete ones', () => {
-    // `LanguagePicker` renders the notice when coverage < 1, so the notice has to exist
-    // in the language the notice is about — or at least in its fallback.
+  test('and the figure is derived, so removing one entry moves it', () => {
+    /*
+     * ⭐ Without this, the test above proves nothing.
+     *
+     * `coverageOf` could return a hardcoded 1 and every assertion here would still pass.
+     * Taking one entry away and watching the number fall is the only thing that shows it is
+     * counting the catalogue rather than reporting a constant — and it is the same check
+     * that would catch the figure being maintained by hand beside the files again.
+     */
+    withGap('de', 'catalog.heading', () => {
+      expect(coverageOf('de')).toBeLessThan(1);
+      expect(coverageOf('de')).toBeGreaterThan(0.99);
+      expect(coverageOf('th'), 'an unrelated locale must not move').toBe(1);
+    });
+
+    expect(coverageOf('de')).toBe(1);
+  });
+
+  test('the picker has a note to show, in every language, before it is needed', () => {
+    /*
+     * ⚠️ Asserted unconditionally, and it used to be skipped for any locale at full
+     * coverage — which is now all of them, so the loop body would never run and the test
+     * would pass by doing nothing.
+     *
+     * `LanguagePicker` renders this notice when coverage drops below 1. That happens the
+     * day a key is added to Thai, in whichever language is behind — so the sentence has to
+     * already exist in all eight rather than be written in the same hurry as the new key.
+     */
     for (const locale of LOCALES) {
-      if (coverageOf(locale) === 1) continue;
-      expect(translatorFor(locale).t('locale.partial').length).toBeGreaterThan(0);
+      expect(translatorFor(locale).t('locale.partial').length, locale).toBeGreaterThan(0);
     }
   });
 });
