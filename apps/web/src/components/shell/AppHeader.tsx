@@ -5,6 +5,7 @@ import { company } from '../../data/company';
 import { aboutHref, catalogHref, localeHome, quoteHref } from '../../lib/routing';
 import { useLocale } from '../../state/localeContext';
 import { useQuote } from '../../state/useQuote';
+import { AccountLink } from './AccountLink';
 import { LanguagePicker } from './LanguagePicker';
 
 const NAV_LINK_CLASS =
@@ -70,6 +71,21 @@ export function AppHeader() {
 
         <div className="flex min-w-0 items-center gap-2">
           <LanguagePicker />
+
+          {/*
+            ⭐ The door to an account, in the one place a customer will look.
+
+            ⚠️ Its label changes with the session, and both halves matter. Signed out it says
+            "เข้าสู่ระบบ", because a customer who submitted from another device has no other way
+            back. Signed in it says "ใบเสนอราคาของฉัน", because by then the question is not how
+            to get in but where the quotations are — and the answer used to be "inside the cart",
+            which is empty for exactly the people who need it.
+
+            ⚠️ It renders nothing while the session is `checking`. Showing "sign in" and swapping
+            it a moment later flashes the wrong label at somebody who is already signed in, and
+            on a prerendered page it is a hydration mismatch — the server does not know either.
+          */}
+          <AccountLink />
 
           <Link
             href={quoteHref(locale)}

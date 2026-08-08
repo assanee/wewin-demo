@@ -174,6 +174,18 @@ export type AboutRoute = `/${Locale}/about`;
 export type SettingsRoute = `/${Locale}/settings`;
 
 /**
+ * ⭐ Where a customer signs in, and sees what they have asked for.
+ *
+ * ⚠️ It exists as a *route* rather than as a panel inside the cart because a sign-in reachable
+ * only through a cart is a sign-in nobody finds — the same failure `AppFooter` records for the
+ * dashboard's `/quotes`, which shipped for a round with no entry in the menu.
+ *
+ * A customer who has already submitted has an **empty cart**, by design, so the cart is exactly
+ * the wrong place to keep the only door.
+ */
+export type AccountRoute = `/${Locale}/account`;
+
+/**
  * The catalogue with a facet preselected, as the object form `next/link` accepts.
  *
  * A `UrlObject` rather than a string, and the compiler is what decided it: `typedRoutes`
@@ -194,6 +206,8 @@ export const aboutHref = (locale: Locale): AboutRoute => `/${locale}/about`;
 export const quoteHref = (locale: Locale): QuoteRoute => `/${locale}/quote`;
 
 export const settingsHref = (locale: Locale): SettingsRoute => `/${locale}/settings`;
+
+export const accountHref = (locale: Locale): AccountRoute => `/${locale}/account`;
 
 /**
  * One product's page.

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import type { Locale } from '../../i18n/locales';
 import { LocaleProvider } from '../../state/LocaleProvider';
 import { QuoteProvider } from '../../state/QuoteContext';
+import { SessionProvider } from '../../state/SessionProvider';
 import { DisplayUnitProvider } from '../../state/useDisplayUnit';
 import { useLocale } from '../../state/localeContext';
 import { ToastProvider } from '../common/Toast';
@@ -63,6 +64,7 @@ export function AppShell({
     <LocaleProvider locale={locale}>
       <DisplayUnitProvider>
         <QuoteProvider>
+          <SessionProvider>
           <ToastProvider>
             {/* Subtract the sticky bar's reservation from the full-height shell. A plain
                 min-h-dvh is measured against the viewport and ignores the body padding, so
@@ -86,6 +88,7 @@ export function AppShell({
               {showsFooter(pathname) ? <AppFooter /> : null}
             </div>
           </ToastProvider>
+          </SessionProvider>
         </QuoteProvider>
       </DisplayUnitProvider>
     </LocaleProvider>
