@@ -78,7 +78,11 @@ export function AppFooter() {
   const sourceLang = locale === SOURCE_LOCALE ? {} : { lang: SOURCE_LOCALE };
 
   return (
-    <footer className="mt-auto border-t border-line bg-panel">
+    <footer
+      /* See `AppHeader` — `data-chrome` names the shell's own furniture for the print rule. */
+      data-chrome
+      className="mt-auto border-t border-line bg-panel"
+    >
       <div className="container-page grid grid-cols-1 gap-8 py-10 md:grid-cols-2 md:py-12 lg:grid-cols-4">
         {/* Identity */}
         <div className="min-w-0">

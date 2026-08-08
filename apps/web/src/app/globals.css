@@ -296,3 +296,130 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * ⭐ What a customer's "save as PDF" actually contains
+ *
+ * ⚠️ **This block did not exist**, and `QuotationIsland` claimed it did — its comment
+ * beside the print button read "`print:hidden`, and the print stylesheet does the rest".
+ * There was none, so the PDF a customer downloaded carried the wordmark, the language
+ * picker, the account icon and the cart icon across the top of their quotation.
+ *
+ * The dashboard has had its equivalent since the sheet was built; this app never got one,
+ * because until three phases ago no customer could reach a printable page at all.
+ *
+ * Site chrome is hidden on every page rather than only on the quotation. A printed web page
+ * wants the content and not the navigation, and scoping it to one route would leave the next
+ * printable page to rediscover all of this.
+ * ------------------------------------------------------------------ */
+
+@media print {
+  /*
+   * ── The palette, re-inked. This half matters more than the hiding half. ──
+   *
+   * This storefront is a dark theme: `--color-ink` is a near-black page, so `--color-chalk`
+   * is near-**white**, and `--color-lime` — which the design system reserves for price and
+   * for the single active action — is a pale yellow-green. Both are right on screen.
+   *
+   * ⚠️ Chrome prints with **"Background graphics" off by default.** The page therefore lands
+   * on white paper with every foreground colour unchanged, and the grand total — the one
+   * number a customer is being asked to agree to — arrives at about the contrast of a
+   * watermark. Measured at relative luminance 0.58 against white before this existed; 0.006
+   * after.
+   *
+   * ⚠️ The `color: #000` below does **not** fix that, and it was the first thing tried. Every
+   * element carries its own `text-chalk` or `text-lime` utility, and a rule on the element
+   * beats a colour inherited from `main`. The *tokens* have to change — which is also why not
+   * one component needs to know this block exists: the utilities compile to
+   * `color: var(--color-lime)` and read the variable at use time, exactly as
+   * `:root[data-script='han']` above relies on for line-height.
+   *
+   * ⚠️ Kept in the palette's own hues rather than flattened to neutral grey. `#33421f` for
+   * price is `--color-sel-bg`, a colour this system already owns. A printed quotation is the
+   * document a customer forwards to whoever signs it, and it should still look like the firm
+   * that sent it.
+   */
+  :root {
+    /* Surfaces become paper. */
+    --color-ink: #ffffff;
+    --color-panel: #ffffff;
+    --color-panel-2: #ffffff;
+
+    /*
+     * Hairlines stay grey, and this is the one pair that must *not* go dark: a table rule in
+     * full black prints heavier than the text it separates and turns a quotation into a
+     * spreadsheet. `tests/print.test.ts` exempts these two by name for that reason.
+     */
+    --color-line: #a9aea3;
+    --color-line-2: #7f8579;
+
+    /* Text, in the same three-step hierarchy, inverted. */
+    --color-chalk: #10130f;
+    --color-chalk-2: #3c4238;
+    --color-chalk-3: #5c6257;
+
+    /*
+     * Accents. `--color-lime` is the price and the only one that was truly unreadable; the
+     * rest follow so a warning or a dimension never prints lighter than the body text it
+     * sits beside.
+     */
+    --color-lime: #33421f;
+    --color-blueprint: #2f4a60;
+    --color-danger: #8c2f1d;
+    --color-warn: #6d4a08;
+  }
+
+  /*
+   * ── The shell's own furniture, and only the shell's ──
+   *
+   * ⚠️ `[data-chrome]` and not `header, footer`. The bare element selectors also hid
+   * `article > header` — the block carrying the quotation's number, its date and the
+   * customer's name — so the PDF lost the top of the document along with the navigation. It
+   * was measured doing that, which is the only reason it is not still doing it.
+   *
+   * ⚠️ Two other selectors here were invented and matched nothing: `[data-skip-link]` and
+   * `[data-toast-viewport]`. A rule matching nothing is worse than a missing rule, because it
+   * reads as coverage. The skip link needs none — it is `sr-only` until focused — and the
+   * toast viewport is `role='status'`.
+   *
+   * The *document* keeps its own structure. `print:hidden` on the print button itself is the
+   * component's business, and it already carries one.
+   */
+  [data-chrome],
+  [role='status'] {
+    display: none !important;
+  }
+
+  /*
+   * Belt and braces for anything the tokens do not reach — a hard-coded colour, or a element
+   * with no utility at all. `economy` asks the browser not to spend toner reproducing a dark
+   * theme when a reader has turned background graphics on.
+   */
+  html,
+  body,
+  main {
+    background: #fff !important;
+    color: #000 !important;
+    print-color-adjust: economy;
+    -webkit-print-color-adjust: economy;
+  }
+
+  /* The page pads for a sticky header that is no longer there. */
+  main {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+
+  @page {
+    /* A4 with the margin a Thai office letterhead expects. */
+    size: A4;
+    margin: 18mm 16mm;
+  }
+
+  /* A quotation that splits a line item across two pages is one somebody reads twice. */
+  tr,
+  article > header,
+  tfoot {
+    break-inside: avoid;
+  }
+}

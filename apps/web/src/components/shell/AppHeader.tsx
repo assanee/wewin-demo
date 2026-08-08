@@ -48,7 +48,17 @@ export function AppHeader() {
   const about = aboutHref(locale);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-ink/95 backdrop-blur-sm">
+    <header
+      /*
+       * ⚠️ `data-chrome` exists so the print rule can name *this* header and not every header.
+       *
+       * A bare `header { display: none }` in `@media print` also hides `article > header` —
+       * the block carrying a quotation's number, its date and the customer's name. It was
+       * measured doing exactly that: the site chrome went, and the top of the document with it.
+       */
+      data-chrome
+      className="sticky top-0 z-40 border-b border-line bg-ink/95 backdrop-blur-sm"
+    >
       <div className="container-page flex h-16 items-center justify-between gap-3">
         <Link
           href={localeHome(locale)}
