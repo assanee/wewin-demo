@@ -541,7 +541,26 @@ export const quoteLineWireSchema: z.ZodType<QuoteLineWire> = z.object({
   kind: z.literal(QUOTE_LINE_KINDS_WIRE),
   productVersionId: z.uuid().nullable(),
   documentHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
-  productId: z.uuid().nullable(),
+  /**
+   * ⚠️ A **catalogue slug**, and this was `z.uuid()` until a real order reached the dashboard.
+   *
+   * `product_versions.product_id` is a `text` column holding `awn-1`, `lvr-adj`, `sld-2p`. The
+   * interface beside this has always said `string | null`; the rule said uuid, and the two
+   * disagreed from the day they were written.
+   *
+   * Nothing noticed for months because no order created through the storefront had ever
+   * reached this decoder — every fixture went in another way. The first customer to press
+   * "ขอใบเสนอราคา" produced a payload the API sends and the dashboard refuses, and sales saw
+   * "เนื้อหาไม่ตรงกับที่แดชบอร์ดรู้จัก" on a live quotation.
+   *
+   * That is what a schema can be wrong about and a type cannot: `z.uuid()` was a claim about
+   * production data, and `tsc` has no way to check one.
+   *
+   * ⚠️ `.min(1)` and not a bare string. `null` is how a **charge** line says it has no product;
+   * an empty slug is a catalogue line pointing at nothing, and it would reach a production
+   * sheet as a blank.
+   */
+  productId: z.string().min(1).nullable(),
   skuCode: z.string().min(1).nullable(),
   selections: z.record(z.string(), z.string()).nullable(),
   measures: z.record(z.string(), lengthWireSchema).nullable(),

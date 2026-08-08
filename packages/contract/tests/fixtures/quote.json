@@ -1,0 +1,83 @@
+{
+  "orderId": "b1178ae7-d2fd-4e44-bd6e-add6edce714d",
+  "quoteRevision": "fb949e6b5b6683eb",
+  "currency": "THB",
+  "lines": [
+    {
+      "id": "a145d856-d0d6-4736-90a3-199f42e1073a",
+      "seq": 1,
+      "kind": "catalog",
+      "productVersionId": "6aae52a6-74a9-4d35-ba17-d217acec3730",
+      "documentHash": "876d1b7333ea5fb7a615d8bd3bca67d778db78f6008f011c429e0627d8e1764f",
+      "productId": "lvr-adj",
+      "skuCode": "LVR1-SG-B150-MAN",
+      "selections": {
+        "control": "MAN",
+        "blade_width": "B150",
+        "profile_color": "SG"
+      },
+      "measures": {
+        "width": {
+          "unit": "um",
+          "digits": "3000000"
+        },
+        "height": {
+          "unit": "um",
+          "digits": "2000000"
+        }
+      },
+      "qty": 1,
+      "customerDescriptionTh": null,
+      "isVatApplicable": true,
+      "computedTotalThbMinor": {
+        "unit": "THB.satang",
+        "digits": "1320000"
+      },
+      "chargeTotalThbMinor": null,
+      "effectiveTotalThbMinor": {
+        "unit": "THB.satang",
+        "digits": "1320000"
+      }
+    }
+  ],
+  "money": {
+    "netThbMinor": {
+      "unit": "THB.satang",
+      "digits": "1320000"
+    },
+    "taxableNetThbMinor": {
+      "unit": "THB.satang",
+      "digits": "1320000"
+    },
+    "exemptNetThbMinor": {
+      "unit": "THB.satang",
+      "digits": "0"
+    },
+    "vatThbMinor": {
+      "unit": "THB.satang",
+      "digits": "92400"
+    },
+    "grandTotalThbMinor": {
+      "unit": "THB.satang",
+      "digits": "1412400"
+    },
+    "vat": {
+      "rateBp": 700,
+      "treatment": "standard"
+    }
+  },
+  "computedLeadTimeDays": 30,
+  "effectiveLeadTimeDays": 30,
+  "sales": {
+    "overrides": [],
+    "marginConcessionThbMinor": {
+      "unit": "THB.satang",
+      "digits": "0"
+    },
+    "baselineGrandTotalThbMinor": {
+      "unit": "THB.satang",
+      "digits": "1412400"
+    },
+    "staleBaselines": []
+  }
+}
