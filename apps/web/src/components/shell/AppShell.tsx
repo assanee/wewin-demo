@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { Locale } from '../../i18n/locales';
 import { LocaleProvider } from '../../state/LocaleProvider';
@@ -8,6 +9,7 @@ import { DisplayUnitProvider } from '../../state/useDisplayUnit';
 import { useLocale } from '../../state/localeContext';
 import { ToastProvider } from '../common/Toast';
 import { AppFooter } from './AppFooter';
+import { showsFooter } from './footer-routes';
 import { AppHeader } from './AppHeader';
 
 /**
@@ -55,6 +57,8 @@ export function AppShell({
   readonly locale: Locale;
   readonly children: ReactNode;
 }) {
+  const pathname = usePathname();
+
   return (
     <LocaleProvider locale={locale}>
       <DisplayUnitProvider>
@@ -70,7 +74,16 @@ export function AppShell({
               <div id="main" className="flex-1">
                 {children}
               </div>
-              <AppFooter />
+              {/*
+                ⭐ The shop front, on the three pages somebody is still deciding on.
+
+                ⚠️ `usePathname` and not `useSearchParams`. `state/useUrlSearch.ts` explains
+                the difference at length: a search parameter only exists per request and
+                reading one makes a statically rendered route dynamic. A pathname is part of
+                the route itself, which is why `AppHeader` already reads it for its active
+                state and why the eight prerendered shells stay prerendered.
+              */}
+              {showsFooter(pathname) ? <AppFooter /> : null}
             </div>
           </ToastProvider>
         </QuoteProvider>

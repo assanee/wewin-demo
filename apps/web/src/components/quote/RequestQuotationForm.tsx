@@ -4,7 +4,6 @@ import { useCallback, useState, type ReactElement } from 'react';
 
 import type { QuoteLine } from '@wewin/core';
 
-import { localeHref } from '../../lib/routing';
 import {
   contactToWire,
   fetchCatalogRefs,
@@ -14,6 +13,7 @@ import {
 } from '../../lib/quote/submit';
 import type { Session } from '../../lib/auth/account';
 import { useLocale } from '../../state/localeContext';
+import { SubmittedNotice } from './SubmittedNotice';
 import type { PlainKey } from '../../i18n/keys';
 
 /**
@@ -71,8 +71,11 @@ export function RequestQuotationForm({
   readonly lines: readonly QuoteLine[];
   /** Handed down by `AccountGate` rather than fetched — see its note on double rotation. */
   readonly session: Session;
-  /** Called once a quotation exists, so a list on the same page can catch up. */
-  readonly onSubmitted?: (() => void) | undefined;
+  /**
+   * Called once a quotation exists — the list on the same page catches up, and the cart is
+   * emptied, because it has become an order.
+   */
+  readonly onSubmitted?: ((order: { orderId: string; orderNo: string | null }) => void) | undefined;
 }): ReactElement {
   const { t, locale } = useLocale();
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
@@ -127,33 +130,20 @@ export function RequestQuotationForm({
       return;
     }
 
+    /*
+     * ⚠️ `done` before `onSubmitted`, and the order matters.
+     *
+     * `onSubmitted` empties the cart, and this component takes `lines` as a prop — so the
+     * render that follows has none. Setting `done` first means the success screen is what is
+     * showing when that happens, rather than the form briefly re-rendering against an empty
+     * cart with its button disabled.
+     */
     setPhase({ kind: 'done', orderId: result.orderId, orderNo: result.orderNo });
-    onSubmitted?.();
+    onSubmitted?.({ orderId: result.orderId, orderNo: result.orderNo });
   }, [email, lines, locale, name, onSubmitted, phone, session.accessToken, t]);
 
   if (phase.kind === 'done') {
-    return (
-      <div className="border border-line bg-panel p-4">
-        <p className="text-lead text-chalk">
-          {t('submit.done')} {phase.orderNo ?? ''}
-        </p>
-        {/*
-          ⚠️ This comment used to say the page's "ordinary owned-order route works for it" and
-          link to `/orders` bare. **There was no such route** — the page read `?t=` and nothing
-          else, so every customer who pressed this was told their link had expired.
-
-          `?order=` is that route, built after the browser found it. The token in the email is
-          for every *other* device; this one is signed in and owns the order.
-        */}
-        <p className="mt-2 text-small text-chalk-2">{t('quotation.pinnedNotice')}</p>
-        <a
-          className="mt-4 inline-block border border-line px-4 py-2 text-small text-chalk"
-          href={`${localeHref(locale, '/orders')}?order=${phase.orderId}`}
-        >
-          {t('submit.viewQuotation')}
-        </a>
-      </div>
-    );
+    return <SubmittedNotice orderId={phase.orderId} orderNo={phase.orderNo} />;
   }
 
   const busy = phase.kind === 'sending';

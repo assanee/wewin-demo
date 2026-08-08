@@ -119,6 +119,9 @@ export function QuoteProvider({ children }: { children: ReactNode }) {
       duplicateLine: (lineId) =>
         dispatch({ type: 'duplicate', lineId, newLineId: newId(), addedAt: new Date().toISOString() }),
       getLine: (lineId) => state.lines.find((line) => line.lineId === lineId),
+      clear: () => {
+        dispatch({ type: 'clear' });
+      },
     }),
     [state.lines, state.hydrated, addLine, updateLine],
   );

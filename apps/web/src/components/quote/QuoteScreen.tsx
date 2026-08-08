@@ -16,6 +16,7 @@ import { QuoteLineCard } from './QuoteLineCard';
 import { AccountGate } from '../account/AccountGate';
 import { MyQuotations } from '../account/MyQuotations';
 import { RequestQuotationForm } from './RequestQuotationForm';
+import { SubmittedNotice } from './SubmittedNotice';
 
 const TH_HEAD_CLASS = 'py-2 pe-3 text-caption font-normal tracking-[0.08em] text-chalk-3 uppercase';
 
@@ -75,8 +76,17 @@ export function QuoteScreen() {
    * "ยังไม่มีใบเสนอราคา" directly underneath — the data was right and only the list was stale.
    */
   const [quotationsKey, setQuotationsKey] = useState(0);
+  /*
+   * ⚠️ Kept in memory only. On the next visit the cart genuinely is empty and the quotation
+   * lives in the account — persisting this would show a stale "your quotation is ready" to
+   * somebody who came back a week later to start a new one.
+   */
+  const [justSubmitted, setJustSubmitted] = useState<{
+    readonly orderId: string;
+    readonly orderNo: string | null;
+  } | null>(null);
 
-  const { lines, setQty, removeLine, duplicateLine, ready } = useQuote();
+  const { clear, lines, setQty, removeLine, duplicateLine, ready } = useQuote();
   const isDesktop = useIsDesktop();
   const { t, f, locale } = useLocale();
 
@@ -92,6 +102,40 @@ export function QuoteScreen() {
     return (
       <main className="container-page py-16">
         <p className="text-body text-chalk-2">{t('configure.loadingLine')}</p>
+      </main>
+    );
+  }
+
+  /*
+   * ⚠️ Two different empty carts, and they must not render the same screen.
+   *
+   * Clearing on success is right — the lines became an order, and leaving them kept "ตะกร้า 1"
+   * in the header and the button live for a second identical submit. But falling straight into
+   * "your cart is empty" would take the success screen away in the same commit, so the
+   * customer would be told their quotation number and then shown an invitation to start
+   * shopping, with the number gone.
+   *
+   * `justSubmitted` keeps the outcome on screen. It is deliberately *not* persisted: on the
+   * next visit the cart genuinely is empty, and the quotation lives in the account.
+   */
+  if (lines.length === 0 && justSubmitted !== null) {
+    return (
+      <main className="container-page py-16 md:py-24">
+        <div className="mx-auto max-w-130">
+          <AccountGate>
+            {(session) => (
+              <>
+                <SubmittedNotice orderId={justSubmitted.orderId} orderNo={justSubmitted.orderNo} />
+                <section className="mt-4 border border-line bg-panel p-4">
+                  <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
+                  <div className="mt-3">
+                    <MyQuotations session={session} reloadKey={quotationsKey} />
+                  </div>
+                </section>
+              </>
+            )}
+          </AccountGate>
+        </div>
       </main>
     );
   }
@@ -206,8 +250,15 @@ export function QuoteScreen() {
                 <RequestQuotationForm
                   lines={lines}
                   session={session}
-                  onSubmitted={() => {
+                  onSubmitted={(order) => {
+                    setJustSubmitted(order);
                     setQuotationsKey((key) => key + 1);
+                    /*
+                     * ⭐ The cart is now an order. Leaving it behind kept "ตะกร้า 1" in the
+                     * header and left the button live — a second press submitted a second
+                     * identical order, and `orders_block_delete()` refuses to remove one.
+                     */
+                    clear();
                   }}
                 />
                 {/*
@@ -244,8 +295,15 @@ export function QuoteScreen() {
                 <RequestQuotationForm
                   lines={lines}
                   session={session}
-                  onSubmitted={() => {
+                  onSubmitted={(order) => {
+                    setJustSubmitted(order);
                     setQuotationsKey((key) => key + 1);
+                    /*
+                     * ⭐ The cart is now an order. Leaving it behind kept "ตะกร้า 1" in the
+                     * header and left the button live — a second press submitted a second
+                     * identical order, and `orders_block_delete()` refuses to remove one.
+                     */
+                    clear();
                   }}
                 />
                 {/*

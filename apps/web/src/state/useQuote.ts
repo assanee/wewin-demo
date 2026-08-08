@@ -33,6 +33,15 @@ export interface QuoteContextValue {
   removeLine: (lineId: string) => void;
   duplicateLine: (lineId: string) => void;
   getLine: (lineId: string) => QuoteLine | undefined;
+  /**
+   * ⭐ Empty the cart, because it has become an order.
+   *
+   * ⚠️ The reducer has had `{ type: 'clear' }` since it was written and nothing exposed it —
+   * so after a quotation was issued the lines stayed, the header still read "ตะกร้า 1", and
+   * **pressing the button again submitted a second identical order**. `orders_block_delete()`
+   * refuses to remove a submitted one, correctly, so the tidying up was a person's.
+   */
+  clear: () => void;
 }
 
 export const QuoteCtx = createContext<QuoteContextValue | null>(null);
