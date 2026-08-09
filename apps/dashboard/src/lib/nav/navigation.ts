@@ -1,5 +1,6 @@
 import type { Route } from 'next';
 import {
+  Building2,
   ClipboardList,
   Inbox,
   MessageSquare,
@@ -208,6 +209,18 @@ export const NAVIGATION: readonly NavSection[] = [
         labelTh: 'ผู้ใช้และสิทธิ์',
         icon: Users,
         requires: ['users.read'],
+      },
+      {
+        /*
+         * `organisation.read`, not `.write` — the same rule `/products` follows: the profile
+         * and the bank-account list, including retired accounts, are readable by anyone who
+         * may see the company's own settings at all. Every edit, add and deactivate control
+         * on the screen itself is decided per action against `organisation.write`.
+         */
+        href: '/organisation',
+        labelTh: 'ข้อมูลบริษัท',
+        icon: Building2,
+        requires: ['organisation.read'],
       },
       {
         /*
