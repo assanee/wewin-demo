@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 
+import { OrganisationModule } from '../../organisation';
 import { OrderRepository } from '../../orders/order.repository';
 import { OrderScopeModule } from '../../orders/scope';
 import { LedgerModule } from '../ledger';
@@ -42,6 +43,11 @@ export interface SlipsModuleOptions {
  * second instance of a stateless class over the same `@Global` `DRIZZLE` connection, which
  * is a wiring detail with no behaviour attached.
  *
+ * `OrganisationModule`, task 13 fix round 1's addition: `createSlip` checks a customer's
+ * `receivedBankAccountId` against `OrganisationRepository.account()` before it ever reaches
+ * the insert — the same repository `OrdersModule` already imports it for, over `activeAccounts()`.
+ *
+
  * It does **not** import `MediaModule`. That module exports nothing, deliberately, and the
  * one thing wanted from it is a class: `SlipImageStore` constructs its own `ObjectStorage`
  * pointed at a *different, private* bucket. Sharing a provider would be one `useValue` away
@@ -67,7 +73,7 @@ export class SlipsModule {
   static forRoot(options: SlipsModuleOptions = {}): DynamicModule {
     return {
       module: SlipsModule,
-      imports: [OrderScopeModule, LedgerModule],
+      imports: [OrderScopeModule, LedgerModule, OrganisationModule],
       controllers: [SlipsController, SlipReviewController, SlipImagesController],
       providers: [
         {

@@ -355,6 +355,16 @@ export interface CreateSlipInput {
   /** An instant with an offset — pass it through `toInstant` first. */
   readonly transferredAt: string;
   readonly bankReference?: string | undefined;
+  /**
+   * ⚠️ Required here, not optional — fix round 1. `createSlipRequestSchema` on the API side
+   * keeps this field `.optional()`, because the column predates it and a staff-entered slip
+   * may have no picker behind it. This screen's picker cannot be bypassed — there is no path
+   * through `PaymentIsland` that reaches `createSlip` without an account already chosen — so
+   * the type here is stricter than the wire's: a caller that somehow had no id to pass would
+   * be a compile error, not a slip with `received_bank_account_id` silently left `NULL`.
+   * `tests/payment.test.ts` pins that this function always sends it.
+   */
+  readonly receivedBankAccountId: string;
 }
 
 /**
@@ -377,6 +387,7 @@ export async function createSlip(
       imageHandle: input.imageHandle,
       amountThbMinor: { unit: 'THB.satang', digits: input.amountThbMinor.toString() },
       transferredAt: input.transferredAt,
+      receivedBankAccountId: input.receivedBankAccountId,
       ...(input.bankReference === undefined ? {} : { bankReference: input.bankReference }),
     }),
   });

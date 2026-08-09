@@ -62,6 +62,21 @@ const instantSchema = z.string().datetime({ offset: true });
  * `payerName` and `payerAccountLast4` are kept beside the row and never inside the image,
  * which is plan 7.6's PDPA line: the picture can be destroyed on a retention sweep while
  * the four digits that reconcile a bank statement survive.
+ *
+ * ── `receivedBankAccountId` — which of the company's accounts this transfer names ────
+ *
+ * Optional in the *schema*, because the column it fills predates it (`0027_organisation.sql`)
+ * and a slip a staff member types in from a phone call may have no picker behind it at all.
+ * It is not optional in the one caller this round adds: `apps/web`'s payment screen shows a
+ * picker with no way to submit without choosing one of the accounts it lists, so every slip
+ * that screen produces carries this field. `apps/web/tests/payment.test.ts` pins that the
+ * storefront always sends it — the shape here staying `.optional()` is what makes that pin
+ * meaningful rather than redundant with the type.
+ *
+ * Only a UUID is asserted here. Whether it names an account that exists, and whether that
+ * account is one a customer may currently be shown, is `SlipsService.createSlip`'s job, not
+ * this schema's — the same split `imageHandle`'s signature check makes: shape here, meaning
+ * downstream.
  */
 export const createSlipRequestSchema = z.strictObject({
   imageHandle: z.string().min(1).max(4096),
@@ -74,6 +89,7 @@ export const createSlipRequestSchema = z.strictObject({
     .string()
     .regex(/^[0-9]{4}$/, 'ต้องเป็นเลขสี่หลักท้ายบัญชีเท่านั้น')
     .optional(),
+  receivedBankAccountId: z.string().uuid().optional(),
 });
 
 export type CreateSlipRequestWire = z.infer<typeof createSlipRequestSchema>;

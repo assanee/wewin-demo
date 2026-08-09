@@ -263,6 +263,13 @@ function PaymentForOrder({
           amountThbMinor: parsedAmount.value,
           transferredAt,
           bankReference: bankReference.trim() === '' ? undefined : bankReference.trim(),
+          /*
+           * ⚠️ Fix round 1. `selectedAccountId` was narrowed to `string` by the null check
+           * above, before the upload branch even runs — so every path that reaches this call
+           * already has one. The picker cannot be bypassed; this line is what stops that
+           * fact from staying true only in the UI and not in the request.
+           */
+          receivedBankAccountId: selectedAccountId,
         },
         session.accessToken,
       );

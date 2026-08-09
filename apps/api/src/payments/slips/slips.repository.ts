@@ -413,6 +413,8 @@ export class SlipsRepository {
       readonly payerAccountLast4: string | null;
       readonly submittedByUserId: string | null;
       readonly submittedByGuestId: string | null;
+      /** Which of the company's accounts this transfer names — task 13 fix round 1. */
+      readonly receivedBankAccountId: string | null;
     },
   ): Promise<string> {
     const [row] = await tx
@@ -427,6 +429,7 @@ export class SlipsRepository {
         payerAccountLast4: input.payerAccountLast4,
         submittedByUserId: input.submittedByUserId,
         submittedByGuestId: input.submittedByGuestId,
+        receivedBankAccountId: input.receivedBankAccountId,
       })
       .returning({ id: paymentSlips.id });
 

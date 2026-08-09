@@ -400,5 +400,15 @@ describe('what is still a Thai string, as a number', () => {
  * and keying a sentence nobody today can see in another language is not this round's job.
  * `media-admin.controller.ts`'s `userIdOf` — the helper this one is modelled on — is
  * likewise unkeyed, for the identical reason.
+ *
+ * ── 212 → 213: task 13 fix round 1 ────────────────────────────────────────────────
+ *
+ * One, in `payments/slips/slips.service.ts`'s new `assertKnownActiveAccount` — refused when
+ * a customer's `receivedBankAccountId` names no active account. Unlike the two additions
+ * above, this one is reachable by a customer through the storefront, not staff-only — but
+ * it lands beside `assertSlipAttachable`'s, `assertRoomForAnotherSlip`'s and
+ * `assertTransferPlausible`'s literal Thai sentences in the very same file, none of which
+ * `payments/slips/slip-errors.ts`'s "converted" list (below) claims, so keying only the new
+ * one would be a smaller, inconsistent island inside a file the round otherwise left alone.
  */
-const RAW_LITERAL_CALL_SITES = 212;
+const RAW_LITERAL_CALL_SITES = 213;
