@@ -36,6 +36,8 @@ export const PERMISSION_CODES = [
   'quotes.approve',
   'payments.read',
   'payments.verify',
+  'organisation.read',
+  'organisation.write',
   'users.read',
   'users.write',
   'users.erase',
