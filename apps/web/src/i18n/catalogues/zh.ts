@@ -480,10 +480,11 @@ export const zh: PartialUiCatalogue = {
   'payment.history.heading': '已提交的付款凭证',
   'payment.history.empty': '尚未提交过凭证',
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}·${f.date(p.sentAt)}提交·待审核`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·待审核`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}·${f.date(p.sentAt)}提交·已确认`,
-  'payment.history.rejected': (p, f) => `฿${f.plain(p.slipMinor / 100n)}·未通过——${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·已确认`,
+  'payment.history.rejected': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')}·未通过——${p.reason}`,
   'payment.problem.noImage': '请上传一张凭证照片。',
   'payment.problem.imageTooBig': (p, f) =>
     `这张照片太大——请控制在 ${f.plain(p.limitMib)} MB 以内。`,

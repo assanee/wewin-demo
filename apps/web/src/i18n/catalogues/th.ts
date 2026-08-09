@@ -489,11 +489,19 @@ export const th: UiCatalogue = {
   'payment.done': 'ได้รับสลิปแล้ว ทีมงานจะตรวจสอบและแจ้งกลับ',
   'payment.history.heading': 'สลิปที่ส่งไปแล้ว',
   'payment.history.empty': 'ยังไม่ได้ส่งสลิป',
+  // Baht and satang split inline here, the same way `payment.outstandingAmount` does —
+  // and *not* `satangField` from `@wewin/core/money`. That helper is ASCII with no
+  // grouping and no currency mark because it writes into a field `readSatang` reads back;
+  // these three are display, not input, so the baht part goes through `f.plain` (a
+  // Burmese reader sees Burmese digits) and only the two-digit fractional part stays
+  // ASCII. The slip history is where a customer checks "did they receive what I sent?" —
+  // rounding it to whole baht here is the exact failure this page exists to avoid.
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · ส่งเมื่อ ${f.date(p.sentAt)} · รอตรวจสอบ`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รอตรวจสอบ`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · ส่งเมื่อ ${f.date(p.sentAt)} · รับแล้ว`,
-  'payment.history.rejected': (p, f) => `฿${f.plain(p.slipMinor / 100n)} · ไม่ผ่าน — ${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รับแล้ว`,
+  'payment.history.rejected': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ไม่ผ่าน — ${p.reason}`,
   'payment.problem.noImage': 'กรุณาแนบรูปสลิป',
   'payment.problem.imageTooBig': (p, f) => `รูปใหญ่เกินไป — ไม่เกิน ${f.plain(p.limitMib)} MB`,
   'payment.problem.badAmount': 'กรอกจำนวนเงินเป็นตัวเลข ทศนิยมไม่เกินสองตำแหน่ง',

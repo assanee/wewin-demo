@@ -564,11 +564,11 @@ export const de: PartialUiCatalogue = {
   'payment.history.heading': 'Von Ihnen gesendete Belege',
   'payment.history.empty': 'Noch keine Belege gesendet',
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · gesendet am ${f.date(p.sentAt)} · wird geprüft`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · wird geprüft`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · gesendet am ${f.date(p.sentAt)} · akzeptiert`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · akzeptiert`,
   'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · nicht akzeptiert — ${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · nicht akzeptiert — ${p.reason}`,
   'payment.problem.noImage': 'Bitte fügen Sie ein Foto des Belegs hinzu.',
   'payment.problem.imageTooBig': (p, f) =>
     `Dieses Foto ist zu groß — bis zu ${f.plain(p.limitMib)} MB.`,

@@ -538,11 +538,11 @@ export const hi: PartialUiCatalogue = {
   'payment.history.heading': 'आपकी भेजी गई स्लिप',
   'payment.history.empty': 'अभी तक कोई स्लिप नहीं भेजी गई',
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · ${f.date(p.sentAt)} को भेजी गई · जाँच जारी है`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} को भेजी गई · जाँच जारी है`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · ${f.date(p.sentAt)} को भेजी गई · स्वीकृत`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} को भेजी गई · स्वीकृत`,
   'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · स्वीकृत नहीं — ${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · स्वीकृत नहीं — ${p.reason}`,
   'payment.problem.noImage': 'कृपया स्लिप की फ़ोटो जोड़ें।',
   'payment.problem.imageTooBig': (p, f) =>
     `यह फ़ोटो बहुत बड़ी है — अधिकतम ${f.plain(p.limitMib)} MB.`,

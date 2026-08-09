@@ -523,11 +523,11 @@ export const vi: PartialUiCatalogue = {
   'payment.history.heading': 'Các biên nhận bạn đã gửi',
   'payment.history.empty': 'Chưa gửi biên nhận nào',
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · gửi ${f.date(p.sentAt)} · đang được kiểm tra`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · gửi ${f.date(p.sentAt)} · đang được kiểm tra`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · gửi ${f.date(p.sentAt)} · đã được chấp nhận`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · gửi ${f.date(p.sentAt)} · đã được chấp nhận`,
   'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · không được chấp nhận — ${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · không được chấp nhận — ${p.reason}`,
   'payment.problem.noImage': 'Vui lòng đính kèm một tấm ảnh biên nhận.',
   'payment.problem.imageTooBig': (p, f) =>
     `Tấm ảnh này quá lớn — tối đa ${f.plain(p.limitMib)} MB.`,

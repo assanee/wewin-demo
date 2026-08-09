@@ -521,10 +521,11 @@ export const my: PartialUiCatalogue = {
   'payment.history.heading': 'သင်ပို့ခဲ့သော ငွေလွှဲပြေစာများ',
   'payment.history.empty': 'ငွေလွှဲပြေစာ မပို့ရသေးပါ',
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`,
-  'payment.history.rejected': (p, f) => `฿${f.plain(p.slipMinor / 100n)} · လက်မခံပါ — ${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`,
+  'payment.history.rejected': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · လက်မခံပါ — ${p.reason}`,
   'payment.problem.noImage': 'ငွေလွှဲပြေစာဓာတ်ပုံ တွဲပို့ပေးပါ။',
   'payment.problem.imageTooBig': (p, f) =>
     `ဓာတ်ပုံ ကြီးလွန်းသည် — ${f.plain(p.limitMib)} MB အထိသာ ခွင့်ပြုသည်။`,

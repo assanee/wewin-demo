@@ -522,10 +522,11 @@ export const en: PartialUiCatalogue = {
   'payment.history.heading': 'Slips you have sent',
   'payment.history.empty': 'No slips sent yet',
   'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · sent ${f.date(p.sentAt)} · being checked`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · sent ${f.date(p.sentAt)} · being checked`,
   'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)} · sent ${f.date(p.sentAt)} · accepted`,
-  'payment.history.rejected': (p, f) => `฿${f.plain(p.slipMinor / 100n)} · not accepted — ${p.reason}`,
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · sent ${f.date(p.sentAt)} · accepted`,
+  'payment.history.rejected': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · not accepted — ${p.reason}`,
   'payment.problem.noImage': 'Please attach a photo of the slip.',
   'payment.problem.imageTooBig': (p, f) => `That photo is too large — up to ${f.plain(p.limitMib)} MB.`,
   'payment.problem.badAmount': 'Enter the amount as a number with at most two decimal places.',
