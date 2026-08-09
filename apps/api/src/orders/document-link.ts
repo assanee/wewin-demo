@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 import type { OrderDocumentWire } from '@wewin/contract/order';
+import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 
 import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
@@ -237,6 +238,22 @@ export interface LinkedDocumentWire {
   readonly contactName: string | null;
   readonly submittedAt: string | null;
   readonly document: OrderDocumentWire;
+  /**
+   * ⭐ Fix round 1: the same sibling `GET /orders/:orderId/document` carries, read live rather
+   * than pinned — see `OrderDocumentResponseWire`'s own comment for why.
+   *
+   * ⚠️ **This route is `@AllowAnonymous` and this field is fine to serve there anyway.**
+   * `organisation_profile` is the company's own letterhead — legal name, address, phone,
+   * VAT registration number — not a fact about the customer or the order. It is not access-
+   * controlled because it is secret; `OrganisationController.profile()` gates *editing* and
+   * gates *browsing the admin surface*, exactly as `AppFooter` already prints the same phone
+   * number and address on every public storefront page with no session at all. Serving it
+   * to whoever holds a signed link to one specific order — which is what this whole module
+   * exists to do — discloses nothing beyond what every visitor to the storefront already
+   * sees, and rather less than `GET /orders/:orderId/document` already discloses to any
+   * customer or guest who owns an order (no staff permission required there either).
+   */
+  readonly seller: OrganisationProfileWire;
 }
 
 /**

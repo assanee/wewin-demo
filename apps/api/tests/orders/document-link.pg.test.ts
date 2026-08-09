@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
+import { eq } from '@wewin/db/sql';
+import { organisationProfile } from '@wewin/db/schema';
 import type { OrderDocumentWire, OrderLineRequestWire, OrderWire } from '@wewin/contract/order';
+import type { LinkedDocumentWire } from '../../src/orders/document-link';
 
 import { DocumentLinkService } from '../../src/orders/document-link';
 import { testSessionConfig } from '../support/app';
@@ -101,6 +104,32 @@ describeWithPg('⭐ a quotation link is read by somebody carrying nothing', () =
     const body = answer.body as { readonly orderNo: string | null; readonly document: OrderDocumentWire };
     expect(body.orderNo).toBe(mine.orderNo);
     expect(body.document.lines.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * ⭐ Fix round 1: the emailed link is where most customers actually meet their quotation —
+   * `quotationSource` gives the token precedence over `?order=`, and `/[locale]/orders`
+   * describes itself as where that link lands. The first pass of this task widened only the
+   * cookie-scoped route, which missed the path most customers use.
+   */
+  it('⭐ carries the seller alongside the pinned document, on the token path too', async () => {
+    const mine = await order('seller-link');
+
+    const [profile] = await db
+      .select({ legalNameTh: organisationProfile.legalNameTh })
+      .from(organisationProfile)
+      .where(eq(organisationProfile.id, 1));
+    if (!profile) throw new Error('organisation_profile is unseeded');
+
+    const answer = await byLink(links.issue(mine.id).token);
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+
+    const body = answer.body as LinkedDocumentWire;
+    expect(body.seller.legalNameTh).toBe(profile.legalNameTh);
+
+    /* Beside `document`, never inside it — the same property `lifecycle.pg.test.ts` pins for the owned route. */
+    expect(body.document).not.toHaveProperty('seller');
+    expect(body.document.documentSchemaVersion).toBe(2);
   });
 
   it('⭐ a token for one order never reads another', async () => {

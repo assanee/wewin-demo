@@ -39,8 +39,13 @@ import { reviewsApiBaseUrl } from '../reviews/api';
  * 🔗 **The seam**, stated so a mismatch is a conversation rather than a blank page:
  *
  *     GET {API}/orders/documents/{token}
- *       → 200 { orderNo, status, contactName, submittedAt, document }
+ *       → 200 { orderNo, status, contactName, submittedAt, document, seller }
  *       → 404 for every refusal, deliberately
+ *
+ * ⚠️ `seller` as of fix round 1 — beside `document`, never inside it, read live from
+ * `organisation_profile` on every call. Fine to serve on this anonymous route for the same
+ * reason `AppFooter` prints the same address with no session at all: it is the company's own
+ * letterhead, not a fact about the customer or the order.
  */
 
 /**
@@ -95,11 +100,11 @@ export interface Seller {
 }
 
 /**
- * `null` on a decode failure and — deliberately — on a response that simply has no `seller`
- * key. `GET /orders/documents/:token` (the `?t=` link a customer without a cookie opens)
- * answers `{orderNo, status, contactName, submittedAt, document}` with no `seller` at all;
- * task 11b widened the cookie-scoped route only, so a quotation opened that way renders with
- * no letterhead rather than failing to render at all.
+ * `null` on a decode failure and, defensively, on a response that has no `seller` key at
+ * all — every current server response carries one (fix round 1 widened both
+ * `GET /orders/documents/:token` and `GET /orders/:id/document`), but a caller a version
+ * behind, or a future endpoint that forgets it, should render a quotation with no letterhead
+ * rather than fail to render at all.
  */
 function sellerFrom(value: unknown): Seller | null {
   if (!isRecord(value)) return null;
@@ -177,12 +182,13 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
 /**
  * ⚠️ Two endpoints with **two different shapes**, and that is why this is not one fetch.
  *
- * `GET /orders/documents/:token` answers `{orderNo, status, contactName, submittedAt, document}`
- * — assembled by `DocumentLinkReader` precisely because a holder of a link cannot call anything
- * else, and carries no `seller` (task 11b widened the cookie-scoped route only). `GET
- * /orders/:id/document` answers `{document, seller}` — `seller` beside the pinned document
- * and never inside it, read live from `organisation_profile` on every call — so the heading
- * fields come from `GET /orders/:id` beside it, which is what the dashboard has always done.
+ * `GET /orders/documents/:token` answers
+ * `{orderNo, status, contactName, submittedAt, document, seller}` — assembled by
+ * `DocumentLinkReader` precisely because a holder of a link cannot call anything else. `GET
+ * /orders/:id/document` answers `{document, seller}` only — the heading fields come from `GET
+ * /orders/:id` beside it instead, which is what the dashboard has always done. `seller` is the
+ * one field both shapes carry the same way: beside the pinned document, never inside it, read
+ * live from `organisation_profile` on every call.
  *
  * ⚠️ The owned path needs a **bearer token**, not merely a cookie. `@RequirePrincipal()` reads
  * a session or a guest cookie, and an order attached to `customer_user_id` is not the guest's
