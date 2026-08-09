@@ -117,30 +117,29 @@ Expected, and already verified on 2026-08-09:
 
 If any of these disagree, **stop and report**. The rest of this task assumes the database is correct and only the metadata is stale.
 
-- [ ] **Step 2: Show the failure before fixing it**
+- [ ] **Step 2: Generate a snapshot that describes the current schema**
 
 ```bash
-cd packages/db && pnpm db:generate --custom
+cd packages/db && pnpm db:generate
 ```
 
-Expected: it writes `drizzle/0027_<name>.sql` (an empty stub), `drizzle/meta/0027_snapshot.json`, and a `_journal.json` entry. Open the snapshot it wrote and confirm it describes the **current** TypeScript schema, including `admin_events_not_both_subjects`.
+Expected: it writes `drizzle/0027_<generated-name>.sql`, `drizzle/meta/0027_snapshot.json`, and a `_journal.json` entry with `idx: 27`. The SQL will contain the `DROP CONSTRAINT` statements this task exists to eliminate — **that is the failure, made visible.** Read it, confirm it names `admin_events_one_subject`, and record it in the report.
 
-Now delete the stub SQL file it created but **keep** the snapshot and journal entry:
+⚠️ **Do not use `--custom` here.** It does not diff against the TypeScript schema at all — it clones the previous snapshot forward unchanged, so it would carry the stale `admin_events_one_subject` into the new file and fix nothing. Verified against drizzle-kit 0.31.10.
+
+- [ ] **Step 3: Keep the snapshot, discard the rest, and name it after the last real migration**
+
+The snapshot is the only useful artefact: it describes the current TypeScript schema, which is also what the database has. The SQL file and the journal entry must go.
 
 ```bash
-rm packages/db/drizzle/0027_<name>.sql
+rm packages/db/drizzle/0027_<generated-name>.sql
+git checkout packages/db/drizzle/meta/_journal.json
+mv packages/db/drizzle/meta/0027_snapshot.json packages/db/drizzle/meta/0026_snapshot.json
 ```
 
-⚠️ Do not hand-write a second journal entry. `--custom` already wrote one; adding another produces a duplicate `idx`.
+⚠️ **The journal entry must not survive, and this is not a style preference.** `drizzle-orm`'s `readMigrationFiles()` requires every `_journal.json` entry to have a matching `.sql` file, and it runs in the db suite's global setup — a dangling `idx: 27` entry makes all 326 tests fail before one of them executes. Task 5 writes the journal entry and the SQL file together, which is the only order that holds.
 
-- [ ] **Step 3: Rename the generated artefacts to the migration this plan actually adds**
-
-Task 5 writes `0027_organisation.sql`. Rename the journal `tag` and the snapshot file to match:
-
-```bash
-mv packages/db/drizzle/meta/0027_snapshot.json packages/db/drizzle/meta/0027_snapshot.json
-# edit _journal.json: set the idx-27 entry's "tag" to "0027_organisation"
-```
+⚠️ **`0026` and not `0027`.** `drizzle-kit` picks its baseline by globbing `meta/` and taking the highest, not by reading the journal, so the name only has to sort last. `0026` is also the honest name: the snapshot describes the state *after* migration `0026_phone_one_claim`, which is the newest migration that exists. Naming it `0027` would claim a migration that has not been written, and would push Task 5's generated migration to `0028`.
 
 - [ ] **Step 4: Prove the baseline is now clean**
 
@@ -148,7 +147,7 @@ mv packages/db/drizzle/meta/0027_snapshot.json packages/db/drizzle/meta/0027_sna
 cd packages/db && pnpm db:generate
 ```
 
-Expected: **"No schema changes, nothing to migrate"** — because the snapshot now matches the TypeScript schema exactly. If it emits any `DROP CONSTRAINT`, the baseline is still wrong; stop and report.
+Expected: **"No schema changes, nothing to migrate 😴"** — the snapshot matches the TypeScript schema exactly. If it emits any `DROP CONSTRAINT`, the baseline is still wrong; stop and report.
 
 - [ ] **Step 5: Run the database suite**
 
@@ -171,7 +170,15 @@ migrate aborted on the first one, before reaching any new table.
 The live database already agrees with the TypeScript schema on all three
 drifted objects; only meta/ was stale. Verified by querying pg_constraint and
 pg_indexes for admin_events, user_phones and the orders contact-channel check
-before touching anything."
+before touching anything.
+
+The new baseline is named 0026 because that is the newest migration that
+exists. drizzle-kit picks its baseline by globbing meta/ and taking the
+highest, so the name only has to sort last — and claiming a 0027 that nobody
+has written would push the real one to 0028. No journal entry is added:
+readMigrationFiles requires every entry to have a .sql file, and it runs in
+the db suite's global setup, so a dangling entry fails all 326 tests before
+one executes."
 ```
 
 ---
