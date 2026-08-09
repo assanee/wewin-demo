@@ -126,6 +126,21 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['PATCH /admin/groups/:groupId', ['users.write']],
   ['DELETE /admin/groups/:groupId', ['users.write']],
   ['PUT /admin/groups/:groupId/permissions', ['users.write']],
+
+  /*
+   * The company's own profile and the bank accounts it is paid into — settings, not a
+   * customer-facing resource (`src/organisation/`). `organisation.read` for looking,
+   * `organisation.write` for editing, including the availability route: a deactivation is
+   * `PUT` and not `DELETE` because a retired account is never removed (`bank_accounts_block_delete`
+   * refuses it), so switching it off is a write like any other and carries the same permission.
+   */
+  ['GET /admin/organisation', ['organisation.read']],
+  ['PUT /admin/organisation', ['organisation.write']],
+  ['GET /admin/organisation/bank-accounts', ['organisation.read']],
+  ['POST /admin/organisation/bank-accounts', ['organisation.write']],
+  ['PATCH /admin/organisation/bank-accounts/:id', ['organisation.write']],
+  ['PUT /admin/organisation/bank-accounts/:id/availability', ['organisation.write']],
+  ['GET /admin/organisation/bank-accounts/:id/changes', ['organisation.read']],
 ]);
 
 const codesOf = (record: RouteRecord): readonly string[] =>

@@ -211,6 +211,10 @@ export const TH: Catalogue = {
     `ยอดที่ตัดชำระรวม ${fmt.money(params.allocated)} แต่สลิปใบนี้เป็นเงิน ${fmt.money(params.slip)} — ` +
     `ต่างกัน ${fmt.money(params.difference)} · สลิปที่รับแล้วต้องตัดชำระเท่ากับเงินที่เป็นหลักฐานพอดี`,
 
+  /* ── Organisation ────────────────────────────────────────────────────────── */
+  'error.organisation.account_missing': 'ไม่พบบัญชีธนาคารรายการนี้',
+  'error.organisation.profile_missing': 'ไม่พบข้อมูลบริษัท',
+
   /* ── Staleness ───────────────────────────────────────────────────────────── */
   /*
    * Two catalogue-stale sentences and not one. `…กำลังเลือก` is said to a customer in the

@@ -16,6 +16,7 @@ import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
 import { NotificationsModule, parseNotificationsConfig } from './notifications';
 import { DocumentLinkModule, OrdersModule } from './orders';
+import { OrganisationModule } from './organisation';
 import { RefundsModule } from './payments/refunds';
 import { SlipsModule } from './payments/slips';
 import { AuthorityModule } from './quotes/authority';
@@ -177,6 +178,12 @@ export class AppModule implements NestModule {
         AccountModule,
         ProfileModule,
         OverviewModule,
+        /*
+         * The company's own settings — its profile, and the bank accounts it is paid into.
+         * Imports nothing and is imported by nothing else in this list, so its place here is
+         * not load-bearing; it is last because it is the newest.
+         */
+        OrganisationModule,
       ],
     };
   }

@@ -390,5 +390,15 @@ describe('what is still a Thai string, as a number', () => {
  * They are keyed last rather than first only because the screen that consumes them today is
  * the Thai dashboard. That is a scheduling decision, not a judgement that these sentences
  * are staff-only, and the two should not be confused when somebody picks this up.
+ *
+ * ── 211 → 212: the organisation module ───────────────────────────────────────────
+ *
+ * One, in `organisation.controller.ts`'s local `userIdOf` — the sentence for a scope the
+ * permission guard should never let reach this handler in the first place. Same reasoning
+ * as the account-settings note above and the same answer: every route on this controller
+ * demands `organisation.read` or `organisation.write`, so the only reader is Thai staff,
+ * and keying a sentence nobody today can see in another language is not this round's job.
+ * `media-admin.controller.ts`'s `userIdOf` — the helper this one is modelled on — is
+ * likewise unkeyed, for the identical reason.
  */
-const RAW_LITERAL_CALL_SITES = 211;
+const RAW_LITERAL_CALL_SITES = 212;
