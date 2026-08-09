@@ -4,6 +4,8 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from '../src/client.js';
 import {
   ERASURE_TREATMENTS,
+  bankAccountChanges,
+  bankAccounts,
   mfaCredentials,
   mfaRecoveryCodes,
   authTokens,
@@ -12,6 +14,7 @@ import {
   notifications,
   orderEvents,
   orders,
+  organisationProfile,
   passwordCredentials,
   providerIdentities,
   sessions,
@@ -69,6 +72,8 @@ interface Subject {
   readonly userId: string;
   readonly address: string;
   readonly sessionId: string;
+  /** The bank account this subject is recorded as having last touched. See `createSubject`. */
+  readonly bankAccountId: string;
 }
 
 let sequence = 0;
@@ -137,7 +142,35 @@ async function createSubject(db: Database, label: string): Promise<Subject> {
     lastAcceptedStep: 56_000_000,
   });
 
-  return { userId: user.id, address, sessionId: session.id };
+  /*
+   * ⚠️ Seeded so the `scrub` coverage below tests something.
+   *
+   * The row-count loop counts rows *belonging to the subject*; a table the fixture never
+   * writes to counts zero either way and passes without asserting anything. This file already
+   * records that hazard at the top — these three exist so it does not apply to them.
+   */
+  const [account] = await db
+    .insert(bankAccounts)
+    .values({
+      bankCode: 'KTB',
+      accountNumber: `9${Date.now().toString().slice(-11)}`,
+      accountName: 'erasure fixture',
+      updatedByUserId: user.id,
+    })
+    .returning({ id: bankAccounts.id });
+
+  await db.insert(bankAccountChanges).values({
+    bankAccountId: account!.id,
+    changedByUserId: user.id,
+    after: { accountName: 'erasure fixture' },
+  });
+
+  await db
+    .update(organisationProfile)
+    .set({ updatedByUserId: user.id })
+    .where(eq(organisationProfile.id, 1));
+
+  return { userId: user.id, address, sessionId: session.id, bankAccountId: account!.id };
 }
 
 const close = (db: Database, userId: string): Promise<unknown> =>
@@ -732,6 +765,59 @@ describeDb('the specification that replaced the cascades', () => {
     expect(row?.secretHash, 'the guest cookie is still presentable after an erasure').toBeNull();
     expect(row?.claimedBy).toBe(subject.userId);
     expect(row?.claimedAt).not.toBeNull();
+  });
+
+  /**
+   * The three organisation `scrub`s — phase 9, and none of them were checked by anything
+   * until now.
+   *
+   * Mutation: comment out any one of the three `UPDATE ... SET ... = NULL WHERE ... = p_user`
+   * statements 0028 adds to `erase_user()`. Before this test that mutation was silent: the
+   * generic loop above checks `delete` treatments only, and a `scrub` "names a foreign-key
+   * column and says nothing about which column gets scrubbed" (see the block comment on that
+   * loop), so each `scrub` needs a named test of its own — this is that test for the third
+   * one, `guests.claimed_by_user_id` above being the first.
+   *
+   * Each column names the *staff member* who last touched a payment record or the company
+   * profile, never the customer being erased — so, as with the guest cookie, both halves are
+   * asserted: the name is gone, and the row it named survives. `bank_accounts_block_delete`,
+   * `bank_account_changes_append_only` and `organisation_profile_block_delete` would refuse a
+   * DELETE outright, but `scrub` is a promise about the column, not merely a consequence of a
+   * trigger, and only reading the row after erasure proves it was kept.
+   */
+  it('nulls the staff member on a bank account, its change record and the company profile, while keeping the rows', async () => {
+    // The declaration itself, checked the same way tests/review.test.ts checks its own scrub
+    // column: `erase_user()` is hand-written SQL that does not consult this map at runtime, so
+    // flipping an entry here to `keep` changes nothing this test would otherwise notice.
+    expect(ERASURE_TREATMENTS['bank_accounts.updated_by_user_id']).toBe('scrub');
+    expect(ERASURE_TREATMENTS['bank_account_changes.changed_by_user_id']).toBe('scrub');
+    expect(ERASURE_TREATMENTS['organisation_profile.updated_by_user_id']).toBe('scrub');
+
+    const db = await connect();
+    const subject = await createSubject(db, 'organisation-actor');
+
+    await close(db, subject.userId);
+    await erase(db, subject.userId);
+
+    const [account] = await db
+      .select({ updatedBy: bankAccounts.updatedByUserId })
+      .from(bankAccounts)
+      .where(eq(bankAccounts.id, subject.bankAccountId));
+    expect(account, 'bank_accounts is declared scrub and the row is gone, not scrubbed').toBeDefined();
+    expect(account?.updatedBy, 'bank_accounts.updated_by_user_id still names the erased user').toBeNull();
+
+    const [change] = await db
+      .select({ changedBy: bankAccountChanges.changedByUserId })
+      .from(bankAccountChanges)
+      .where(eq(bankAccountChanges.bankAccountId, subject.bankAccountId));
+    expect(change, 'bank_account_changes is declared scrub and the row is gone, not scrubbed').toBeDefined();
+    expect(change?.changedBy, 'bank_account_changes.changed_by_user_id still names the erased user').toBeNull();
+
+    const [profile] = await db
+      .select({ updatedBy: organisationProfile.updatedByUserId })
+      .from(organisationProfile)
+      .where(eq(organisationProfile.id, 1));
+    expect(profile?.updatedBy, 'organisation_profile.updated_by_user_id still names the erased user').toBeNull();
   });
 });
 
