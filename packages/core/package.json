@@ -31,7 +31,8 @@
     "./money": "./dist/money.js",
     "./vat": "./dist/vat.js",
     "./quotation": "./dist/quotation.js",
-    "./phone": "./dist/phone.js"
+    "./phone": "./dist/phone.js",
+    "./promptpay": "./dist/promptpay.js"
   },
   "files": [
     "dist"
