@@ -25,18 +25,19 @@ import { useLocale } from '../../state/localeContext';
  * longer on screen. `LocaleProvider` is where that lives; this component still just calls
  * `setLocale`.
  *
- * ## The honest bit, and why it is not a sentence
+ * ## The honest bit, kept around for the day it is needed again
  *
- * Six of the eight catalogues are empty (plan 13: translation is a bottleneck that is not
- * code). Choosing one of them gives that language's *numbers* and Thai *words*. Saying so
- * under the control is the difference between a known limitation and a site that appears
- * broken — and `coverageCountsOf` reads the catalogue rather than a hand-kept list, so the
- * notice disappears by itself as entries land.
+ * All eight catalogues are complete now (plan 13's bottleneck, closed): every key,
+ * including this one's own notice, is translated in every language, so `partial` is
+ * `false` for all eight and the notice below renders nothing today.
  *
- * The notice leads with something no language is needed for: two endonyms and two counts.
- * `Deutsch 0/205 · ไทย 205/205` is legible to anybody who can see their own language's
- * name. The Thai sentence follows, marked `lang="th"` so a screen reader announces it in
- * Thai rather than reading it as broken German.
+ * It stays wired up rather than deleted because `coverageOf` reads the catalogue live
+ * rather than trusting a hand-kept list — the day someone adds a key to `keys.ts` and
+ * ships seven catalogues a translation behind, this reappears by itself, with no code
+ * change needed to bring it back. `IncompleteLocaleNotice` below is the visible half;
+ * `CoverageSummary` is what would print `Deutsch <translated>/<total> · ไทย <total>/<total>`
+ * for the language actually left behind, rather than a number this comment would have to
+ * be kept in sync with.
  */
 export function LanguagePicker(): ReactElement {
   const { locale, setLocale, t } = useLocale();
@@ -79,7 +80,7 @@ export function LanguagePicker(): ReactElement {
       {partial ? (
         <span id={noticeId} className="sr-only">
           <CoverageSummary locale={locale} />{' '}
-          <span lang={SOURCE_LOCALE}>{t('locale.partial')}</span>
+          {t('locale.partial')}
         </span>
       ) : null}
     </div>
@@ -90,8 +91,8 @@ export function LanguagePicker(): ReactElement {
  * The same notice, visible rather than only announced.
  *
  * Kept apart from the control because the header has no room for a sentence at 360px and
- * because this belongs where the untranslated text actually is. `AppFooter` renders it:
- * the one strip of every page, below the content it is describing.
+ * because this belongs where the untranslated text actually is. `AppFooter` renders it,
+ * on the routes `AppFooter` itself appears on, below the content it is describing.
  */
 export function IncompleteLocaleNotice(): ReactElement | null {
   const { locale, t } = useLocale();
@@ -100,14 +101,15 @@ export function IncompleteLocaleNotice(): ReactElement | null {
   return (
     <p className="text-caption text-chalk-3">
       <CoverageSummary locale={locale} />{' '}
-      {/* Marked, not translated. This is the sentence the bottleneck is about. */}
-      <span lang={SOURCE_LOCALE}>{t('locale.partial')}</span>
+      {t('locale.partial')}
     </p>
   );
 }
 
 /**
- * `Deutsch 0/205 · ไทย 205/205` — the state of the catalogue, in no language at all.
+ * `Deutsch <translated>/<total> · ไทย <total>/<total>` — the state of the catalogue, in no
+ * language at all. All eight are equal today, so both halves currently print the same pair;
+ * the format is what survives a key landing in `keys.ts` a translation behind.
  *
  * Endonyms and digits. The digits go through the *active* locale's formatter, so a Burmese
  * reader gets Burmese numerals here as everywhere else; the endonyms never go through
