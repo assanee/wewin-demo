@@ -1226,6 +1226,13 @@ docker exec wewin-demo-postgres-1 psql -U wewin -d wewin -tAc \
   "SELECT prosrc FROM pg_proc WHERE proname='erase_user';" > /tmp/erase_user.sql
 ```
 
+⚠️ **Two databases, and the tests do not use the one that command names.**
+`packages/db/vitest.config.ts` overrides `DATABASE_URL` for every worker to `<base>/wewin_db_test`.
+`pnpm db:migrate` reads `.env` and targets `wewin`. A migration applied to `wewin` and never to
+`wewin_db_test` leaves the suite testing the old function while the dev database has the new one —
+which looks like a passing test and is not. Confirm with:
+`docker exec wewin-demo-postgres-1 psql -U wewin -d wewin_db_test -tAc "SELECT prosrc ~ 'bank_accounts' FROM pg_proc WHERE proname='erase_user';"`
+
 The live body touches `notifications`, `review_photos`, `user_preferences` and `guests.secret_hash` among others. A version reconstructed from the newest migration alone silently drops whichever statements arrived later — this has already happened once in this repository.
 
 Write `0028_erase_organisation_actors.sql` as `CREATE OR REPLACE FUNCTION erase_user(...)` carrying the dumped body **unchanged**, plus exactly these three statements:
@@ -1277,6 +1284,43 @@ Inside `createSubject`, after the existing inserts:
 ```
 
 ⚠️ `Date.now()` is fine in a test fixture here — this package's suites are serialised (`maxWorkers: 1`) and the value only needs to be unique against the unique index.
+
+- [ ] **Step 1b: Write the dedicated scrub assertion — seeding alone proves nothing**
+
+⚠️ **`scrub` treatments have no generic check.** The row-count loop covers `delete` treatments only; `erasure.test.ts` says so itself — *"each `scrub` needs its own named test… a second `scrub` treatment added without one would reintroduce this hole silently."* `guests.claimed_by_user_id` has such a test; the three new columns do not. Seeding the fixture without adding an assertion leaves the suite green over a real dangling reference — confirmed by querying `wewin_db_test` and finding `bank_accounts` rows whose `updated_by_user_id` still names an erased user.
+
+Mirror the existing `guests.claimed_by_user_id` test:
+
+```ts
+it('scrubs who changed a bank account, and keeps the change itself', async () => {
+  /*
+   * ⚠️ The row survives and only the name goes. Erasing a member of staff must not erase the
+   * record that a receiving account was changed — that record is the company's own history,
+   * and it is the only thing standing between a changed account number and nobody being able
+   * to say it happened.
+   */
+  const subject = await createSubject();
+  await erase(subject);
+
+  for (const [table, column] of [
+    ['bank_accounts', 'updated_by_user_id'],
+    ['bank_account_changes', 'changed_by_user_id'],
+    ['organisation_profile', 'updated_by_user_id'],
+  ] as const) {
+    const [row] = await db.execute(
+      sql`select count(*)::int as still_named from ${sql.identifier(table)}
+          where ${sql.identifier(column)} = ${subject.userId}`,
+    );
+    expect(row!['still_named'], `${table}.${column} still names the erased user`).toBe(0);
+  }
+
+  // And the rows themselves are still there — scrub, not delete.
+  const [accounts] = await db.execute(sql`select count(*)::int as n from bank_account_changes`);
+  expect(accounts!['n']).toBeGreaterThan(0);
+});
+```
+
+Adapt the query helper to whatever `erasure.test.ts` already uses; do not introduce a second style.
 
 - [ ] **Step 2: Run the erasure suite**
 
