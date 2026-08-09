@@ -2623,7 +2623,24 @@ Replace the hand-written array with one derived from the same source the storefr
 
 `slips.module.ts` — the comment says the module still has to be added to `AppModule`; it is imported at `app.module.ts:20,149`, and adding it twice fails the boot audit.
 
-- [ ] **Step 5: Gate and commit**
+- [ ] **Step 5: The payment page's empty state**
+
+⚠️ Found during Task 13: `0027_organisation.sql` seeds **no bank accounts at all**, so on a fresh
+database the payment page renders a legend over an empty box and says nothing. A customer who
+reaches it sees a form they cannot use and no reason why.
+
+Do not seed fake bank details to paper over it — inventing account numbers in a migration is worse
+than an empty list. Instead give the empty case a sentence: one new key,
+`payment.account.none`, in all eight catalogues, saying that no receiving account has been set up
+yet and to contact the sales team. Render it in place of the picker when `accounts` is empty, and
+keep the submit control unreachable in that state — there is nowhere for the money to go.
+
+Thai: `'ยังไม่ได้ตั้งค่าบัญชีรับเงิน กรุณาติดต่อทีมขายเพื่อขอช่องทางชำระเงิน'`
+English: `'No receiving account has been set up yet. Please contact the sales team for payment details.'`
+
+The other six follow their own catalogue's conventions, as in Task 12.
+
+- [ ] **Step 6: Gate and commit**
 
 ---
 
