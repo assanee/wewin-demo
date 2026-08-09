@@ -21,7 +21,8 @@
     "./schedule": "./dist/schedule.js",
     "./pricing": "./dist/pricing.js",
     "./errors": "./dist/errors.js",
-    "./version": "./dist/version.js"
+    "./version": "./dist/version.js",
+    "./organisation": "./dist/organisation.js"
   },
   "files": [
     "dist"

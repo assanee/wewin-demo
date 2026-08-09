@@ -150,6 +150,18 @@ export type {
 } from './schedule.js';
 
 export type {
+  AvailabilityRequestWire,
+  BankAccountChangeWire,
+  BankAccountCreateRequestWire,
+  BankAccountPatchRequestWire,
+  BankAccountPublicWire,
+  BankAccountWire,
+  OrganisationProfilePutRequestWire,
+  OrganisationProfileWire,
+  PaymentInstructionsWire,
+} from './organisation.js';
+
+export type {
   AdminOptionGroupListWire,
   AdminOptionGroupWire,
   AdminOptionValueWire,
