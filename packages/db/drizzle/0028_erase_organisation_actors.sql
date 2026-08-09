@@ -186,6 +186,12 @@ BEGIN
   -- this file that reaches `erase_user()` fail with "bank_account_changes is append-only".
   -- Same bypass, same reasoning as the recovery-codes DELETE above: the trigger is right to
   -- refuse an ordinary caller and wrong to refuse this one.
+  --
+  -- ⚠️ This also disables the FK-integrity check trigger on `changed_by_user_id → users.id`
+  -- for the one statement, not only the append-only guard — `session_replication_role` cannot
+  -- target a single trigger. It is harmless here only because the value written is a literal
+  -- NULL, which every foreign key accepts unconditionally; that is a property of *this*
+  -- statement, not of the bypass, and would not hold for a write that named a row.
   SET LOCAL session_replication_role = replica;
   UPDATE bank_account_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = p_user;
   SET LOCAL session_replication_role = origin;

@@ -813,10 +813,17 @@ describeDb('the specification that replaced the cascades', () => {
     expect(change, 'bank_account_changes is declared scrub and the row is gone, not scrubbed').toBeDefined();
     expect(change?.changedBy, 'bank_account_changes.changed_by_user_id still names the erased user').toBeNull();
 
+    // `id = 1` and not a subject-scoped id, unlike the two checks above: `organisation_profile`
+    // is a true singleton (`organisation_profile_one_row` CHECKs `id = 1`), so there is no
+    // per-subject row to scope to — id 1 *is* the row every subject in this file writes to.
+    // This is sound only because `createSubject`'s own write above is the last write to that
+    // row before this test's own `erase()`, and this suite runs its tests strictly serially
+    // (`fileParallelism: false`, `maxWorkers: 1`) with no `test.concurrent` anywhere in it.
     const [profile] = await db
       .select({ updatedBy: organisationProfile.updatedByUserId })
       .from(organisationProfile)
       .where(eq(organisationProfile.id, 1));
+    expect(profile, 'organisation_profile is declared scrub and the row is gone, not scrubbed').toBeDefined();
     expect(profile?.updatedBy, 'organisation_profile.updated_by_user_id still names the erased user').toBeNull();
   });
 });
