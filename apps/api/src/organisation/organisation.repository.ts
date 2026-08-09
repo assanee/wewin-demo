@@ -62,6 +62,25 @@ export class OrganisationRepository {
     return this.executor(tx).select().from(bankAccounts).where(eq(bankAccounts.id, id)).limit(1);
   }
 
+  /**
+   * The same row, locked, inside a transaction the caller opened.
+   *
+   * ⚠️ `FOR UPDATE` orders two concurrent `PATCH`es on the same account — the same reason
+   * `slips.repository.ts:186` gives for `lockSlip`. Without it, READ COMMITTED (this
+   * codebase never overrides the Postgres default) lets a plain `SELECT` return a pre-image
+   * that predates another transaction's still-uncommitted write, so two overlapping patches
+   * can each record a `before` that was already stale the moment it was read. On every other
+   * table here that would be an ordinary lost-update race; on this one it breaks the
+   * property `bank_account_changes` exists to hold — entry N's `before` equal to entry
+   * N−1's `after` (`0027_organisation.sql:47-49`) — so the chain itself, not just the row,
+   * would be wrong. `patchAccount` takes this lock before reading the pre-image for exactly
+   * that reason; a plain `account()` read here would be the one write in this module with
+   * no lock behind it.
+   */
+  lockAccount(id: string, tx: Tx) {
+    return tx.select().from(bankAccounts).where(eq(bankAccounts.id, id)).limit(1).for('update');
+  }
+
   changes(accountId: string, tx?: Tx) {
     return this.executor(tx)
       .select()

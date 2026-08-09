@@ -12,6 +12,7 @@ import type { PermissionCode } from '../../src/rbac';
 import { encodeAccountPublic } from '../../src/organisation/encode';
 import { OrganisationRepository } from '../../src/organisation/organisation.repository';
 import { bootApp, type BootedApp } from '../support/app';
+import { waitForBlockedBackend } from '../orders/scope/support/fixtures';
 
 /**
  * The organisation module against a real Postgres, over real HTTP.
@@ -198,6 +199,55 @@ describeWithPg('the organisation module against Postgres', () => {
       expect(changes[0]?.['before']).toBeNull();
     });
 
+    /**
+     * `lockAccount`'s `FOR UPDATE`, proved rather than assumed — the same test
+     * `scoped-order.pg.test.ts`'s `describe('lock', …)` runs for `ScopedOrderRepository.lock`,
+     * copied onto this repository's own lock method.
+     *
+     * ⚠️ A first attempt at this test fired two concurrent `PATCH`es over HTTP and asserted
+     * the resulting history chain stayed contiguous. Mutation-tested against the pre-fix code
+     * (`patchAccount` reading through the unlocked `account()` instead of `lockAccount()`), it
+     * passed in 5 of 5 runs anyway — two fast local requests never reliably overlapped at the
+     * database layer, so the test proved nothing about the lock and would have shipped as a
+     * green check on a real gap. Replaced with this: two transactions are opened without
+     * awaiting either to completion, so both are genuinely in flight, and the assertion waits
+     * on Postgres *reporting* a blocked backend (`pg_blocking_pids`) rather than on a timer —
+     * `waitForBlockedBackend`'s own comment names the same trap the first attempt fell into.
+     * This version was mutation-tested the same way and reliably failed without the fix.
+     */
+    it('lockAccount holds the row against a second transaction until the first commits', async () => {
+      const created = await asWriter('POST', '/admin/organisation/bank-accounts', createRequest());
+      const id = String(created.body?.['id']);
+      const repository = app.app.get(OrganisationRepository);
+
+      let secondSettled = false;
+      let releaseFirst: () => void = () => undefined;
+      const firstMayCommit = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      const first = repository.transaction(async (tx) => {
+        const [locked] = await repository.lockAccount(id, tx);
+        expect(locked?.id).toBe(id);
+        await firstMayCommit;
+      });
+
+      const second = repository.transaction(async (tx) => {
+        await repository.lockAccount(id, tx);
+        secondSettled = true;
+      });
+
+      const blocked = await waitForBlockedBackend(pool);
+      expect(blocked, 'no backend was ever reported as blocked — the row was not locked').toBe(true);
+      expect(secondSettled, 'the second transaction acquired the row while the first still held it').toBe(
+        false,
+      );
+
+      releaseFirst();
+      await Promise.all([first, second]);
+      expect(secondSettled).toBe(true);
+    });
+
     it('a patch writes a history row carrying both before and after', async () => {
       const created = await asWriter('POST', '/admin/organisation/bank-accounts', createRequest());
       const id = String(created.body?.['id']);
@@ -272,16 +322,30 @@ describeWithPg('the organisation module against Postgres', () => {
       );
     });
 
-    it('refuses a caller without organisation.write, and an anonymous caller entirely', async () => {
-      const anonymous = await call('POST', '/admin/organisation/bank-accounts', {
-        body: createRequest(),
-      });
-      expect(anonymous.status).toBe(401);
+    it('refuses a caller without organisation.write on every one of the four writes, and an anonymous caller entirely', async () => {
+      const created = await asWriter('POST', '/admin/organisation/bank-accounts', createRequest());
+      const id = String(created.body?.['id']);
 
-      const refused = await asReader('POST', '/admin/organisation/bank-accounts', createRequest());
-      expect(refused.status).toBe(403);
-      const message = (refused.body?.['error'] as { message?: string } | undefined)?.message;
-      expect(message).toContain('organisation.write');
+      const writes: readonly [method: string, path: string, body: unknown][] = [
+        ['POST', '/admin/organisation/bank-accounts', createRequest()],
+        ['PATCH', `/admin/organisation/bank-accounts/${id}`, { accountName: 'ไม่ควรเปลี่ยน' }],
+        ['PUT', `/admin/organisation/bank-accounts/${id}/availability`, { isActive: false }],
+      ];
+
+      for (const [method, path, body] of writes) {
+        const anonymous = await call(method, path, { body });
+        expect(anonymous.status, `${method} ${path} as nobody`).toBe(401);
+
+        const refused = await asReader(method, path, body);
+        expect(refused.status, `${method} ${path} as a reader`).toBe(403);
+        const message = (refused.body?.['error'] as { message?: string } | undefined)?.message;
+        expect(message, `${method} ${path} as a reader`).toContain('organisation.write');
+      }
+
+      // None of the three refused writes touched the account — the point of asserting them
+      // together rather than one at a time.
+      const rows = await historyRows(id);
+      expect(rows).toHaveLength(1);
     });
   });
 });

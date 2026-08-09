@@ -13,7 +13,16 @@ import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
 import { OrganisationRepository } from './organisation.repository';
 
-/** The fields the history records. Ordering and timestamps are not changes worth keeping. */
+/**
+ * The fields the history records. Ordering and timestamps are not changes worth keeping.
+ *
+ * ⚠️ `updatedByUserId` is deliberately not here. `erase_user()` (migration 0028,
+ * `0028_erase_organisation_actors.sql:182`) writes `bank_accounts.updated_by_user_id`
+ * directly to `NULL` when the staff member it names is erased — outside this service,
+ * inside a stored procedure, and with no history row. That is correct rather than a gap:
+ * the column an erasure scrubs is exactly the one column `RECORDED` never captured, so
+ * there is nothing a history row could have recorded that the erasure changes.
+ */
 const RECORDED = ['bankCode', 'accountNumber', 'accountName', 'promptpayId', 'isActive'] as const;
 
 const snapshot = (row: Record<string, unknown>): Record<string, unknown> =>
@@ -59,7 +68,13 @@ export class OrganisationService {
 
   async patchAccount(actorUserId: string, id: string, patch: BankAccountPatchRequestWire) {
     return this.repository.transaction(async (tx) => {
-      const [before] = await this.repository.account(id, tx);
+      /*
+       * ⚠️ Locked, not a plain read. Two `PATCH`es on the same account can otherwise race
+       * under READ COMMITTED: each reads the pre-image before the other's write commits, so
+       * both compute a `before` off the same stale row and the resulting history chain no
+       * longer has entry N's `before` equal to entry N−1's `after` — see `lockAccount`.
+       */
+      const [before] = await this.repository.lockAccount(id, tx);
       if (before === undefined) throw AppError.notFound(message('error.organisation.account_missing'));
 
       const [after] = await tx
