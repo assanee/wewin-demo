@@ -64,9 +64,10 @@ const SECTION_HEADING_CLASS = 'text-caption tracking-[0.08em] text-chalk-3 upper
  * reach. So the contact details are laid out in full rather than parked behind a contact
  * page.
  *
- * The footer also carries the honest note about an incomplete language: it is the one
- * strip that appears on every route, and it sits below the untranslated text rather than
- * in front of it.
+ * The footer also carries the honest note about an incomplete language. It is not on
+ * every route — `showsFooter` (`./footer-routes.ts`) limits it to the shop front: home,
+ * `/products` and `/about`, times eight locales, twenty-four paths in total — but on the
+ * routes it does appear on, it sits below the untranslated text rather than in front of it.
  */
 export function AppFooter() {
   const { t, locale } = useLocale();
