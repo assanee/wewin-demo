@@ -27,6 +27,7 @@ import {
   type OrderWire,
   type ResolveChangeRequestWire,
 } from '@wewin/contract/order';
+import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
 import type { OrderStatus } from '@wewin/db/schema';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
@@ -253,6 +254,25 @@ export class OrdersController {
     @Param('orderId') orderId: string,
   ): Promise<OrderDocumentWire> {
     return this.orders.getDocument(scope, orderId);
+  }
+
+  /**
+   * How much is owed, and where to send it.
+   *
+   * ⚠️ Ownership-scoped rather than a public account list, for two reasons. There is no
+   * reason to publish the company's account numbers to callers with no order — and P2 makes
+   * the accounts vary by destination country, which this shape absorbs without changing the
+   * endpoint.
+   */
+  @Get(':orderId/payment-instructions')
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePrincipal()
+  async paymentInstructions(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+  ): Promise<PaymentInstructionsWire> {
+    return this.orders.paymentInstructions(scope, orderId);
   }
 
   /**

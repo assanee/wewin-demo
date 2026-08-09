@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { OrderStatus } from '@wewin/db/schema';
+import { encodeThb } from '@wewin/contract/order';
 import {
   type ChangeRequestWire,
   type CreateChangeRequestWire,
@@ -10,11 +11,14 @@ import {
   type OrderWire,
   type ResolveChangeRequestWire,
 } from '@wewin/contract/order';
+import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
 
 import { AppError } from '../common/errors/app-error';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { CatalogRepository } from '../catalog/catalog.repository';
+import { encodeAccountPublic } from '../organisation/encode';
+import { OrganisationRepository } from '../organisation/organisation.repository';
 import { PaymentLifecycleService } from '../payments/lifecycle';
 import { AuthorityService } from '../quotes/authority';
 import { QuotesService } from '../quotes/quotes.service';
@@ -120,6 +124,13 @@ export class OrdersService {
      */
     private readonly scoped: ScopedOrderRepository,
     private readonly catalog: CatalogRepository,
+    /**
+     * Task 10's other read: the accounts to pay into. `activeAccounts()` is the same query
+     * `admin/organisation` would use for its own list, filtered to `is_active = true` — see
+     * `OrganisationRepository`'s own note on why that filter lives in the repository rather
+     * than in this service.
+     */
+    private readonly organisation: OrganisationRepository,
     @Inject(ENV) private readonly env: Env,
     /**
      * What happens to money when this order moves — 5b's closing seam.
@@ -210,6 +221,38 @@ export class OrdersService {
     const document = await this.orders.findDocumentById(order.documentId);
     if (!document) throw notFound();
     return document.document;
+  }
+
+  /**
+   * How much this order owes, and where to send it — task 10.
+   *
+   * Ownership-scoped through `this.scoped.findOrFail`, the same door and the same 404 as every
+   * other read on this controller: a missing order and somebody else's order are answered
+   * identically, so a caller cannot use the difference to learn which order ids exist.
+   *
+   * `outstandingThbMinor` comes from `PaymentLifecycleService.outstandingThbMinor`, which is
+   * the same SQL fold the staff slip-review wire reads (`order_outstanding_thb_minor()`,
+   * summing every instalment's accepted allocations) — never `grandTotal` minus a sum this
+   * service assembles itself, which is wrong the moment a slip carries `unallocated_thb_minor`
+   * or the order has more than one instalment.
+   *
+   * `grandTotalThbMinor` reads ฿0.00 for an order that has never been submitted: the ledger
+   * fold already treats a null total that way (`coalesce(grand_total_thb_minor, 0)`), and a
+   * cart with nothing priced yet owes nothing.
+   */
+  async paymentInstructions(scope: Scope, orderId: string): Promise<PaymentInstructionsWire> {
+    const order = await this.scoped.findOrFail(scope, orderId, 'read');
+
+    const [outstandingThbMinor, accounts] = await Promise.all([
+      this.payments.outstandingThbMinor(order.id),
+      this.organisation.activeAccounts(),
+    ]);
+
+    return {
+      grandTotalThbMinor: encodeThb(order.grandTotalThbMinor ?? 0n),
+      outstandingThbMinor: encodeThb(outstandingThbMinor),
+      accounts: accounts.map(encodeAccountPublic),
+    };
   }
 
   /* ---------------------------------------------------------------- *

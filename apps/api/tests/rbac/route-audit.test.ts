@@ -324,6 +324,7 @@ describe('boot-time route audit', () => {
       'GET /orders/:orderId/customer-link [permissions]',
       'GET /orders/:orderId/document [principal]',
       'GET /orders/:orderId/events [principal]',
+      'GET /orders/:orderId/payment-instructions [principal]',
       'GET /orders/:orderId/payment-slips [principal]',
       /*
        * `[principal]` and not `[permissions]`, alone among the quote routes: a customer reads

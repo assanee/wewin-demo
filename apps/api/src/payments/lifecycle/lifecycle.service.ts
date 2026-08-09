@@ -60,6 +60,27 @@ export class PaymentLifecycleService {
   ) {}
 
   /* ---------------------------------------------------------------- *
+   * Reading — the customer's own question, task 10
+   * ---------------------------------------------------------------- */
+
+  /**
+   * How much is left to pay, from the same fold the staff slip-review screen reads.
+   *
+   * `LedgerRepository.money()` and `SlipsRepository.orderMoney()` are two callers of the one
+   * SQL function this comes from, `order_outstanding_thb_minor()` — `grand_total_thb_minor`
+   * minus `order_settled_thb_minor()`, which folds every instalment's accepted allocations, not
+   * only the gate instalment's. This is the third caller, and it exists *because*
+   * `OrdersModule` may not import `SlipsModule` (see the module-level note above): the customer
+   * figure has to reach the same fold through this module's one seam rather than by opening a
+   * second path to it, let alone by re-deriving it from `grandTotal − Σ(accepted slips)` —
+   * which disagrees with the fold the moment a slip carries `unallocated_thb_minor` or an
+   * order has more than one instalment.
+   */
+  async outstandingThbMinor(orderId: string): Promise<bigint> {
+    return (await this.ledgerRepository.money(orderId)).outstandingThbMinor;
+  }
+
+  /* ---------------------------------------------------------------- *
    * Submit — the transaction that pins
    * ---------------------------------------------------------------- */
 
