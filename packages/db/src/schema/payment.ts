@@ -16,6 +16,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { guests, users } from './auth.js';
 import { ORDER_STATUSES, orderDocuments, orderEvents, orders } from './order.js';
+import { bankAccounts } from './organisation.js';
 
 /**
  * Money that has actually moved — phase 5b.
@@ -525,6 +526,18 @@ export const paymentSlips = pgTable(
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     /** Plan 7.3: a rejection the customer cannot read is a rejection that produces a phone call. */
     rejectedReasonTh: text('rejected_reason_th'),
+
+    /**
+     * Which of the company's accounts received this transfer.
+     *
+     * Nullable: no slip existed when the column was added, and a retired account must stay
+     * referenceable. `on delete restrict` is redundant beside `bank_accounts_block_delete`
+     * and is written anyway, because a guard and a constraint fail differently and the
+     * constraint is the one a reader finds.
+     */
+    receivedBankAccountId: uuid('received_bank_account_id').references(() => bankAccounts.id, {
+      onDelete: 'restrict',
+    }),
 
     ...timestamps,
   },
