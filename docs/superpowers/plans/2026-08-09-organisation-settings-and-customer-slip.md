@@ -1204,12 +1204,43 @@ hard-codes, so the first render after this migration is not blank."
 
 `erasure.test.ts` counts rows belonging to the erasure subject. **A table the fixture never seeds counts 0 before and after**, so a `scrub` treatment added without extending the fixture buys a green test that checks nothing. The file records at lines 108-117 that this was proved by deleting a real statement and watching twenty tests stay green.
 
+⚠️ **And the scrub has no implementation yet.** `ERASURE_TREATMENTS` says `scrub` for all three columns, but `erase_user()` in the database does not mention `bank_accounts`, `bank_account_changes` or `organisation_profile` at all — verified by reading `prosrc` from `pg_proc` after Task 5. The coverage gate that passed in Task 5 checks only that every FK to `users` has a *declared* treatment; it does not check that anything happens. So this task writes the behaviour as well as the test that proves it.
+
+The FK is `ON DELETE SET NULL`, which fires only if the user row is deleted — and erasure does not delete the user, it scrubs and closes. So `erase_user()` must null these columns explicitly.
+
 **Files:**
+- Create: `packages/db/drizzle/0028_erase_organisation_actors.sql`
+- Modify: `packages/db/drizzle/meta/_journal.json`
 - Modify: `packages/db/tests/erasure.test.ts` (`createSubject`, ~lines 76-141)
 
 **Interfaces:**
 - Consumes: Task 4's `ERASURE_TREATMENTS` entries, Task 5's tables.
 - Produces: an erasure suite that fails if the scrub is removed.
+
+- [ ] **Step 0: Add the scrub to `erase_user()`, by grafting rather than rewriting**
+
+⚠️ **Dump the live function and edit that. Do not write it from memory or from an older migration.**
+
+```bash
+docker exec wewin-demo-postgres-1 psql -U wewin -d wewin -tAc \
+  "SELECT prosrc FROM pg_proc WHERE proname='erase_user';" > /tmp/erase_user.sql
+```
+
+The live body touches `notifications`, `review_photos`, `user_preferences` and `guests.secret_hash` among others. A version reconstructed from the newest migration alone silently drops whichever statements arrived later — this has already happened once in this repository.
+
+Write `0028_erase_organisation_actors.sql` as `CREATE OR REPLACE FUNCTION erase_user(...)` carrying the dumped body **unchanged**, plus exactly these three statements:
+
+```sql
+  UPDATE bank_accounts SET updated_by_user_id = NULL WHERE updated_by_user_id = p_user_id;
+  UPDATE bank_account_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = p_user_id;
+  UPDATE organisation_profile SET updated_by_user_id = NULL WHERE updated_by_user_id = p_user_id;
+```
+
+⚠️ Use the parameter name the dumped function actually uses; `p_user_id` is a guess until you have read it.
+
+Then **diff the dump against your migration body** and confirm the only difference is those three lines. Put that diff in the report.
+
+Add the `_journal.json` entry (`idx: 28`, tag `0028_erase_organisation_actors`) in the same commit as the `.sql` file — `readMigrationFiles()` requires the pair.
 
 - [ ] **Step 1: Seed the three rows in `createSubject`**
 
@@ -1252,7 +1283,11 @@ Inside `createSubject`, after the existing inserts:
 ```bash
 pnpm --filter @wewin/db exec vitest run tests/erasure.test.ts
 ```
-Expected: PASS. The three columns are scrubbed to null and the rows survive.
+Expected: PASS — the three columns are scrubbed to null and the rows survive.
+
+⚠️ If you seed the fixture (Step 1) **before** adding the scrub (Step 0), this fails, and that
+failure is worth seeing once: it is the proof that Step 0 does something. Run it in that order if
+you want the evidence, and record both runs.
 
 - [ ] **Step 3: Mutate to prove the fixture made the test real**
 
