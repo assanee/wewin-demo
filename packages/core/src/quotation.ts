@@ -119,6 +119,15 @@ const FALLBACK = 'th';
  * the way in, for the same reason: a float in a money path is a rounding decision hiding
  * somewhere between the database and the page.
  */
+/*
+ * ⚠️ Not `satangField` from `./money`, and not a duplicate of it either.
+ *
+ * `satangField` renders into a *text box*: no currency mark, no grouping, so the value it
+ * writes is the value `readSatang` reads back. This one renders onto a *document*: it has
+ * the ฿ and it groups thousands in the reader's locale, neither of which a field may carry.
+ * They split digits the same way for the same reason, and merging them would break whichever
+ * caller lost its half.
+ */
 function money(minor: bigint, locale: string): string {
   const negative = minor < 0n;
   const magnitude = negative ? -minor : minor;

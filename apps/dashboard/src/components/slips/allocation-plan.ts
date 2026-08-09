@@ -32,6 +32,10 @@
  * provable without rendering anything.
  */
 
+import { readSatang, satangField, type ParseResult } from '@wewin/core/money';
+
+export { readSatang, satangField, type ParseResult };
+
 export interface Draft {
   readonly instalmentId: string;
   /** Satang. Zero means the reviewer cleared the box — see `sendable`. */
@@ -108,57 +112,4 @@ export function allocationPlan(
       amountThbMinor: money(draft.amountThbMinor),
     })),
   };
-}
-
-/* ------------------------------------------------------------------ *
- * Reading an amount out of a text box
- * ------------------------------------------------------------------ */
-
-export type ParseResult = { readonly ok: true; readonly value: bigint } | { readonly ok: false; readonly problemTh: string };
-
-/** `฿1,972.24` for a text box: no currency mark, no grouping, always two places. */
-export function satangField(minor: bigint): string {
-  const negative = minor < 0n;
-  const magnitude = negative ? -minor : minor;
-  const satang = (magnitude % 100n).toString().padStart(2, '0');
-
-  return `${negative ? '-' : ''}${(magnitude / 100n).toString()}.${satang}`;
-}
-
-/** Optional thousands separators, then baht, then at most two decimal places. */
-const AMOUNT = /^(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{1,2}))?$/u;
-
-/**
- * ⭐ Baht-and-satang from a text box, read as digits rather than as a number.
- *
- * ⚠️ **`Math.trunc(parseFloat(text) * 100)` is wrong 2.6% of the time.** Measured, not
- * assumed: across the 200,000 amounts between ฿0 and ฿40,000 ending in .01/.29/.57/.83/.99,
- * it produces the wrong satang for 5,209 of them — `0.29` becomes 28, `2.01` becomes 200 —
- * because those decimals are not representable in binary and land a hair below.
- *
- * `Math.round` rescues these magnitudes, and that is the problem with it: it is a claim
- * about how large the numbers will be, made in a function whose job is deciding where
- * somebody's money goes. Splitting the string has no magnitude at which it starts being
- * wrong, and needs no argument about which magnitudes are reachable.
- *
- * The API refuses anything but positive amounts (`positiveThbSchema`), so a minus is a typo
- * here and not a credit — refused with a sentence rather than sent and 422'd.
- */
-export function readSatang(text: string): ParseResult {
-  const trimmed = text.trim();
-  if (trimmed === '') return { ok: false, problemTh: 'กรอกจำนวนเงิน' };
-
-  const match = AMOUNT.exec(trimmed);
-  if (match === null) {
-    return { ok: false, problemTh: 'กรอกเป็นตัวเลข ทศนิยมไม่เกินสองตำแหน่ง เช่น 1972.24' };
-  }
-
-  const baht = (match[1] ?? '').replaceAll(',', '');
-  /*
-   * `.4` is forty satang, not four. Padding rather than parsing is the same decision as
-   * above: "5.4" and "5.40" are one amount, and the place a digit sits in decides its value.
-   */
-  const satang = (match[2] ?? '').padEnd(2, '0');
-
-  return { ok: true, value: BigInt(baht) * 100n + BigInt(satang === '' ? '0' : satang) };
 }

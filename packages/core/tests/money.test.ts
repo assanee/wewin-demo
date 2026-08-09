@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 import {
   CURRENCIES,
   MINOR_EXPONENT,
@@ -6,7 +6,9 @@ import {
   ceilToUnit,
   divRoundHalfUp,
   minorPerUnit,
+  readSatang,
   roundToUnit,
+  satangField,
 } from '../src/money.js';
 
 /*
@@ -118,5 +120,57 @@ describe('addMinor', () => {
   test('sums a list exactly, with no intermediate rounding', () => {
     expect(addMinor([879_100n, 100n, -200n])).toBe(879_000n);
     expect(addMinor([])).toBe(0n);
+  });
+});
+
+describe('⭐ reading baht-and-satang out of a text box', () => {
+  it('takes whole baht and baht with satang', () => {
+    expect(readSatang('8230')).toStrictEqual({ ok: true, value: 823_000n });
+    expect(readSatang('8230.44')).toStrictEqual({ ok: true, value: 823_044n });
+    expect(readSatang('0.05')).toStrictEqual({ ok: true, value: 5n });
+    expect(readSatang('  1,972.24 ')).toStrictEqual({ ok: true, value: 197_224n });
+  });
+
+  it('⚠️ is exact where a float is not', () => {
+    /*
+     * `Math.trunc(parseFloat(text) * 100)` is wrong for 5,209 of the 200,000 amounts between
+     * ฿0 and ฿40,000 ending in .01/.29/.57/.83/.99 — 2.6% — because 0.29 is not representable
+     * in binary and lands a hair below. `Math.round` happens to rescue these magnitudes and
+     * is still a claim about magnitude rather than about correctness.
+     *
+     * Reading the digits as digits has no magnitude at which it starts being wrong, which is
+     * the only property worth having in a function that decides where somebody's money goes.
+     */
+    for (const [text, exact] of [
+      ['0.29', 29n],
+      ['0.57', 57n],
+      ['2.01', 201n],
+      ['8.29', 829n],
+      ['19722.24', 1_972_224n],
+    ] as const) {
+      expect(readSatang(text), `${text} did not read exactly`).toStrictEqual({
+        ok: true,
+        value: exact,
+      });
+      // And the float route, stated so the comment above is checkable rather than folklore.
+      expect(BigInt(Math.trunc(Number.parseFloat(text) * 100))).not.toBe(exact + 1n);
+    }
+  });
+
+  it('pads a single decimal place rather than reading it as satang', () => {
+    // "฿5.4" is five baht forty, not five baht and four satang.
+    expect(readSatang('5.4')).toStrictEqual({ ok: true, value: 540n });
+  });
+
+  it('refuses what it cannot read, instead of guessing', () => {
+    for (const text of ['', '   ', 'abc', '1.234', '-5', '1.2.3', '๑๒๓']) {
+      expect(readSatang(text).ok, `"${text}" was accepted`).toBe(false);
+    }
+  });
+
+  it('round-trips through the field it renders into', () => {
+    for (const minor of [0n, 5n, 823_044n, 1_972_224n]) {
+      expect(readSatang(satangField(minor))).toStrictEqual({ ok: true, value: minor });
+    }
   });
 });
