@@ -400,6 +400,8 @@ export const zh: PartialUiCatalogue = {
   'quotation.pinnedNotice': '本文件已于确认当日固定——重新打开时，其金额与语言都不会改变。',
   'quotation.degraded': '固定的语言在本版本中不可用，因此以泰文显示。',
   'quotation.contact': '致',
+  'quotation.seller.phone': '电话',
+  'quotation.seller.taxId': '税号',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': '显示',

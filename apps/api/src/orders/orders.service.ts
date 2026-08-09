@@ -5,7 +5,7 @@ import {
   type ChangeRequestWire,
   type CreateChangeRequestWire,
   type CreateOrderRequestWire,
-  type OrderDocumentWire,
+  type OrderDocumentResponseWire,
   type OrderEventListWire,
   type OrderListWire,
   type OrderWire,
@@ -16,8 +16,9 @@ import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
 import { AppError } from '../common/errors/app-error';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
+import { message } from '../i18n';
 import { CatalogRepository } from '../catalog/catalog.repository';
-import { encodeAccountPublic } from '../organisation/encode';
+import { encodeAccountPublic, encodeProfile } from '../organisation/encode';
 import { OrganisationRepository } from '../organisation/organisation.repository';
 import { PaymentLifecycleService } from '../payments/lifecycle';
 import { AuthorityService } from '../quotes/authority';
@@ -30,6 +31,7 @@ import {
 } from './defaults';
 import {
   encodeChangeRequest,
+  encodeDocumentResponse,
   encodeEvent,
   encodeOrder,
   encodeOrderSummary,
@@ -211,16 +213,32 @@ export class OrdersService {
     return { events: events.map((event) => encodeEvent(event, audience)) };
   }
 
-  async getDocument(scope: Scope, orderId: string): Promise<OrderDocumentWire> {
+  /**
+   * ⚠️ `seller` is a sibling of `document`, never a field on it — see
+   * `OrderDocumentResponseWire`. `document` is exactly what `findDocumentById` decoded
+   * against the pinned `documentSchemaVersion`, passed through this function unchanged;
+   * `seller` is read fresh from `organisation_profile` on every call, the same read Task
+   * 10's `paymentInstructions` above makes through the same `OrganisationRepository`. A
+   * price is frozen at submit; a letterhead is not, so this is the one field on the
+   * response that answers "today", not "back then".
+   */
+  async getDocument(scope: Scope, orderId: string): Promise<OrderDocumentResponseWire> {
     const order = await this.scoped.findOrFail(scope, orderId, 'read');
 
     if (order.documentId === null) {
       throw AppError.notFound('ออร์เดอร์นี้ยังไม่มีเอกสารที่ตรึงไว้ — ยังไม่ได้ส่งใบเสนอราคา');
     }
 
-    const document = await this.orders.findDocumentById(order.documentId);
+    const [document, [profile]] = await Promise.all([
+      this.orders.findDocumentById(order.documentId),
+      this.organisation.profile(),
+    ]);
     if (!document) throw notFound();
-    return document.document;
+    if (profile === undefined) {
+      throw AppError.notFound(message('error.organisation.profile_missing'));
+    }
+
+    return encodeDocumentResponse(document.document, encodeProfile(profile));
   }
 
   /**

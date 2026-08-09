@@ -438,6 +438,8 @@ export const vi: PartialUiCatalogue = {
   'quotation.degraded':
     'Ngôn ngữ đã chốt không có trong phiên bản này, nên tài liệu hiển thị bằng tiếng Thái.',
   'quotation.contact': 'Kính gửi',
+  'quotation.seller.phone': 'Điện thoại',
+  'quotation.seller.taxId': 'Mã số thuế',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'Hiển thị',

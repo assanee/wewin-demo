@@ -21,7 +21,7 @@ import {
   type ChangeRequestWire,
   type CreateChangeRequestWire,
   type CreateOrderRequestWire,
-  type OrderDocumentWire,
+  type OrderDocumentResponseWire,
   type OrderEventListWire,
   type OrderListWire,
   type OrderWire,
@@ -244,7 +244,14 @@ export class OrdersController {
     return this.orders.listEvents(scope, orderId);
   }
 
-  /** What was frozen at submit — trap 3's pin, as the customer saw it. */
+  /**
+   * What was frozen at submit — trap 3's pin, as the customer saw it — beside who is
+   * offering it, read live.
+   *
+   * ⚠️ `seller` sits beside `document`, never inside it. See `OrderDocumentResponseWire`:
+   * the pinned half's shape does not move, and the live half is a fresh read of
+   * `organisation_profile` on every call.
+   */
   @Get(':orderId/document')
   @contractVersion()
   @privateToTheCaller()
@@ -252,7 +259,7 @@ export class OrdersController {
   async document(
     @CurrentScope() scope: Scope,
     @Param('orderId') orderId: string,
-  ): Promise<OrderDocumentWire> {
+  ): Promise<OrderDocumentResponseWire> {
     return this.orders.getDocument(scope, orderId);
   }
 

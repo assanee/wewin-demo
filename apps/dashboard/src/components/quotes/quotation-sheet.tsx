@@ -19,6 +19,7 @@ import {
   type PinnedDocument,
   type PrintableQuotation,
 } from '@wewin/core/quotation';
+import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +60,18 @@ type State =
    * submit, and folding it in would make two prints of one quotation differ the day somebody
    * added an address. It is carried beside it so the screen can warn that nothing was sent.
    */
-  | { readonly status: 'ready'; readonly sheet: PrintableQuotation; readonly order: OrderDetail }
+  | {
+      readonly status: 'ready';
+      readonly sheet: PrintableQuotation;
+      readonly order: OrderDetail;
+      /**
+       * ⚠️ Also beside the sheet, for the same reason as `order` above, and task 11b's:
+       * the seller is read live from `organisation_profile`, never pinned, so folding it
+       * into `PrintableQuotation` would make two prints of one quotation differ the day
+       * the company moved address — exactly what plan 10.6 forbids.
+       */
+      readonly seller: OrganisationProfileWire;
+    }
   | { readonly status: 'no-quotation'; readonly order: OrderDetail }
   | { readonly status: 'failed'; readonly problem: string };
 
@@ -94,8 +106,10 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
           return;
         }
 
-        const document = await getPinnedDocument(orderId);
-        if (live) setState({ status: 'ready', sheet: printableQuotation(pin(document, order)), order });
+        const { document, seller } = await getPinnedDocument(orderId);
+        if (live) {
+          setState({ status: 'ready', sheet: printableQuotation(pin(document, order)), order, seller });
+        }
       } catch (error) {
         if (live) setState({ status: 'failed', problem: failureMessage(error) });
       }
@@ -143,7 +157,7 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
     );
   }
 
-  const { sheet } = state;
+  const { sheet, seller } = state;
 
   return (
     <div className="flex flex-col gap-4">
@@ -200,14 +214,25 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
         </Alert>
       )}
 
-      {/* ── ⭐ The document. Everything below is what the hash covers. ── */}
+      {/*
+        ── ⭐ The document. Everything below is what the hash covers — with one exception,
+        immediately below: the seller block. It is read live from `organisation_profile` on
+        every load rather than pinned at submit, by design (task 11b) — a price is an offer
+        and is frozen, a letterhead is not, and it sits inside this `<article>` only so that
+        `[data-chrome]`'s print rule leaves it alone.
+      ── */}
       <article className="bg-background text-foreground mx-auto w-full max-w-[210mm] p-10 print:p-0 print:text-black">
         <header className="mb-8 flex items-start justify-between gap-8">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">ใบเสนอราคา</h1>
-            <p className="text-muted-foreground mt-1 text-sm print:text-black">
-              WEWIN — อะลูมิเนียมสั่งทำ
-            </p>
+            <div className="text-muted-foreground mt-1 text-sm print:text-black">
+              <p>{seller.legalNameTh}</p>
+              <p>{seller.addressTh}</p>
+              <p>
+                โทร {seller.phone}
+                {seller.taxId === null ? null : ` · เลขผู้เสียภาษี ${seller.taxId}`}
+              </p>
+            </div>
           </div>
           <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-right text-sm">
             <dt className="text-muted-foreground print:text-black">เลขที่</dt>

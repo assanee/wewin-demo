@@ -6,7 +6,7 @@ import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/
 import { eq } from '@wewin/db/sql';
 import { authorityLimits, orders, userGroups } from '@wewin/db/schema';
 import { toBigInt } from '@wewin/contract/exact';
-import type { OrderDocumentWire, OrderWire } from '@wewin/contract';
+import type { OrderDocumentResponseWire, OrderWire } from '@wewin/contract';
 import type { QuoteWire } from '@wewin/contract/quote';
 
 import { client, makeActor, type Actor, type Json } from '../orders/support/lifecycle-app';
@@ -287,9 +287,10 @@ describeWithPg('one quote, end to end', () => {
       .from(orders)
       .where(eq(orders.id, orderId));
 
+    /* ⚠️ `seller` is beside `document`, not inside it — see `OrderDocumentResponseWire`. */
     const document = (
-      await call('GET', `/orders/${orderId}/document`, auth(sales))
-    ).body as OrderDocumentWire;
+      (await call('GET', `/orders/${orderId}/document`, auth(sales))).body as OrderDocumentResponseWire
+    ).document;
 
     // eslint-disable-next-line no-console
     console.log('');

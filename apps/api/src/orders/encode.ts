@@ -3,10 +3,13 @@ import {
   encodeThb,
   type AvailableTransitionWire,
   type ChangeRequestWire,
+  type OrderDocumentResponseWire,
+  type OrderDocumentWire,
   type OrderEventWire,
   type OrderSummaryWire,
   type OrderWire,
 } from '@wewin/contract/order';
+import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 
 import type { ChangeRequestRow, OrderEventRow } from './order.repository';
 import type { ScopedOrder } from './scope';
@@ -181,6 +184,19 @@ function withoutStaffProse(payload: Record<string, unknown>): Record<string, unk
   for (const key of STAFF_PROSE_KEYS) delete visible[key];
   return visible;
 }
+
+/**
+ * ⚠️ Beside the pinned document, never merged into it.
+ *
+ * `document` passes through exactly as `order.repository.ts` decoded it — this function adds
+ * nothing to it and removes nothing from it, because either would be a shape the stored
+ * `documentSchemaVersion` literal does not describe. `seller` is the one thing on this
+ * response read live rather than pinned: see `OrderDocumentResponseWire`.
+ */
+export const encodeDocumentResponse = (
+  document: OrderDocumentWire,
+  seller: OrganisationProfileWire,
+): OrderDocumentResponseWire => ({ document, seller });
 
 export const encodeChangeRequest = (row: ChangeRequestRow): ChangeRequestWire => ({
   id: row.id,

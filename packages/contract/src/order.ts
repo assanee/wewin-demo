@@ -7,6 +7,7 @@ import {
 import { priceBreakdownWireSchema, priceRequestWireSchema, type PriceBreakdownWire, type PriceRequestWire } from './pricing.js';
 import { catalogRefShape, type CatalogRef } from './catalog.js';
 import { lengthWireSchema, type LengthWire } from './measure.js';
+import type { OrganisationProfileWire } from './organisation.js';
 
 /**
  * The order lifecycle on the wire — phase 5a.
@@ -317,6 +318,26 @@ export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
   grandTotalThbMinor: thb,
   leadTimeDays: z.int().min(0),
 });
+
+/**
+ * `GET /orders/:orderId/document` — the pinned document, and beside it, never inside it,
+ * who is offering it.
+ *
+ * ⚠️ **`seller` is a sibling of `document`, not a field on it.** `document` is
+ * `OrderDocumentWire` exactly as `orderDocumentWireSchema` reads it back from
+ * `order_documents` — `documentSchemaVersion` is a bare literal there and
+ * `order.repository.ts` `safeParse`s every stored row against it with no v1/v2 union
+ * reader, so a field added inside `document` is a version bump that stops every
+ * already-issued quotation from parsing. `seller` carries no such pin: it is
+ * `OrganisationProfileWire`, read live from `organisation_profile` on every request, because
+ * a price is an offer and is frozen, but a letterhead is not — a company that moves office
+ * wants last year's quotation reprinted at the new address, not the old one repeated
+ * forever.
+ */
+export interface OrderDocumentResponseWire {
+  readonly document: OrderDocumentWire;
+  readonly seller: OrganisationProfileWire;
+}
 
 /* ------------------------------------------------------------------ *
  * The order

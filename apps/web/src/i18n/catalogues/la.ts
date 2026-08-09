@@ -425,6 +425,8 @@ export const la: PartialUiCatalogue = {
     'ເອກະສານນີ້ຖືກຕຶງໄວ້ຕັ້ງແຕ່ວັນທີຢືນຢັນ — ຕົວເລກ ແລະ ພາສາຈະບໍ່ປ່ຽນເມື່ອເປີດຄືນ.',
   'quotation.degraded': 'ພາສາທີ່ຕຶງໄວ້ບໍ່ມີໃນລຸ້ນນີ້ ຈຶ່ງສະແດງເປັນພາສາໄທ.',
   'quotation.contact': 'ຮຽນ',
+  'quotation.seller.phone': 'ໂທລະສັບ',
+  'quotation.seller.taxId': 'ເລກອາກອນ',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'ການສະແດງຜົນ',

@@ -515,8 +515,9 @@ describeWithPg('RED TEAM 5: getting at an order that is not yours', () => {
         `/orders/${(cheapSubmit.body as OrderWire).id}/document`,
         { token: victim.token },
       );
+      /* ⚠️ `seller` is beside `document`, not inside it — see `OrderDocumentResponseWire`. */
       const skuOf = (answer: Json): string =>
-        (answer.body as { lines: readonly { skuCode: string }[] }).lines[0]?.skuCode ?? '';
+        (answer.body as { document: { lines: readonly { skuCode: string }[] } }).document.lines[0]?.skuCode ?? '';
 
       expect(skuOf(cheapDoc)).toBe(skuOf(honestDoc));
 

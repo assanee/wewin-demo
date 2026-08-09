@@ -4,12 +4,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq } from '@wewin/db/sql';
-import { notifications, orderEvents } from '@wewin/db/schema';
+import { notifications, orderEvents, organisationProfile } from '@wewin/db/schema';
 import { products } from '@wewin/core/fixtures';
 import type { Product } from '@wewin/core';
 import { encodeUm } from '@wewin/contract/measure';
 import { toBigInt } from '@wewin/contract/exact';
 import type {
+  OrderDocumentResponseWire,
   OrderEventListWire,
   OrderEventWire,
   OrderLineRequestWire,
@@ -223,9 +224,55 @@ describeWithPg('the order lifecycle end to end', () => {
 
     const document = await call('GET', `/orders/${order.id}/document`, { token: customerA.token });
     expect(document.status).toBe(200);
-    const pinned = document.body as { documentHash: string; lines: readonly { productVersionId: string }[] };
+    /* ⚠️ `seller` sits beside `document`, not inside it — see the test just below this one. */
+    const pinned = (document.body as OrderDocumentResponseWire).document as {
+      documentHash: string;
+      lines: readonly { productVersionId: string }[];
+    };
     expect(pinned.documentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(pinned.lines[0]?.productVersionId).toBe(line.productVersionId);
+  });
+
+  /**
+   * ⭐ Task 11b: the seller, beside the pinned document, never inside it.
+   *
+   * `/[locale]/orders` carries no company name, address or tax id today — the quotation
+   * says what is being sold and for how much, and never who is offering it.
+   * `organisation_profile` fills that hole, but only if it lands as a *sibling* of
+   * `document`. `documentSchemaVersion` is a bare `z.literal` at both
+   * `packages/contract/src/order.ts` and `orderDocumentWireSchema`, and
+   * `order.repository.ts` `safeParse`s every stored row against it on the way out with no
+   * v1/v2 union reader — a field added inside `document` is a version bump that stops every
+   * already-issued quotation from parsing.
+   */
+  it('carries the seller alongside the pinned document, and not inside it', async () => {
+    const order = await submittedOrder('seller');
+
+    /*
+     * The organisation's own row, read directly rather than hard-coded — migration 0027
+     * seeds exactly one and nothing in this application can delete it
+     * (`organisation_profile_block_delete`), but the fixture used for local verification is
+     * not a fact this test should assume.
+     */
+    const [profile] = await db
+      .select({ legalNameTh: organisationProfile.legalNameTh })
+      .from(organisationProfile)
+      .where(eq(organisationProfile.id, 1));
+    if (!profile) throw new Error('organisation_profile is unseeded');
+
+    const answer = await call('GET', `/orders/${order.id}/document`, { token: customerA.token });
+    expect(answer.status).toBe(200);
+
+    const body = answer.body as OrderDocumentResponseWire;
+    expect(body.seller.legalNameTh).toBe(profile.legalNameTh);
+
+    /*
+     * ⚠️ The pinned half must be untouched. Adding a field inside `document` would change
+     * `documentSchemaVersion`, and `order.repository.ts` safeParses stored documents against
+     * a `z.literal` on the way out — every already-issued quotation would stop printing.
+     */
+    expect(body.document).not.toHaveProperty('seller');
+    expect(body.document.documentSchemaVersion).toBe(2);
   });
 
   it('refuses a submit whose catalogue handle has moved under it', async () => {

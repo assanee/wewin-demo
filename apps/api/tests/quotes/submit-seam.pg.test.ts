@@ -9,7 +9,7 @@ import { products } from '@wewin/core/fixtures';
 import type { Product } from '@wewin/core';
 import { encodeUm } from '@wewin/contract/measure';
 import { toBigInt } from '@wewin/contract/exact';
-import type { OrderDocumentWire, OrderWire, PriceRequestWire } from '@wewin/contract';
+import type { OrderDocumentResponseWire, OrderDocumentWire, OrderWire, PriceRequestWire } from '@wewin/contract';
 import type { QuoteWire } from '@wewin/contract/quote';
 
 import { client, makeActor, type Actor, type Json } from '../orders/support/lifecycle-app';
@@ -154,7 +154,8 @@ describeWithPg('the submit seam — the quote is the document', () => {
   const documentOf = async (orderId: string, actor: Actor): Promise<OrderDocumentWire> => {
     const read = await call('GET', `/orders/${orderId}/document`, auth(actor));
     if (read.status !== 200) throw new Error(JSON.stringify(read.body));
-    return read.body as OrderDocumentWire;
+    /* ⚠️ `seller` is beside `document`, not inside it — see `OrderDocumentResponseWire`. */
+    return (read.body as OrderDocumentResponseWire).document;
   };
 
   /* ================================================================ *

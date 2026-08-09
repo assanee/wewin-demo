@@ -80,6 +80,7 @@ export type {
   OrderDocumentChargeWire,
   OrderDocumentLineWire,
   OrderDocumentOverrideWire,
+  OrderDocumentResponseWire,
   OrderDocumentWire,
   OrderEventListWire,
   OrderEventTypeWire,

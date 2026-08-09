@@ -396,6 +396,8 @@ export interface UiParamsByKey {
   'quotation.pinnedNotice': Plain;
   'quotation.degraded': Plain;
   'quotation.contact': Plain;
+  'quotation.seller.phone': Plain;
+  'quotation.seller.taxId': Plain;
 
   /* ---- Display settings — plan 4.1/4.2, 8.2 trap 3 and 10.6 -------------------
    *

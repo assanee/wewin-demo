@@ -438,6 +438,8 @@ export const my: PartialUiCatalogue = {
   'quotation.degraded':
     'ပုံသေထားသောဘာသာစကားသည် ဤဗားရှင်းတွင် မရရှိနိုင်သဖြင့် ထိုင်းဘာသာဖြင့် ပြသထားသည်။',
   'quotation.contact': 'သို့',
+  'quotation.seller.phone': 'ဖုန်း',
+  'quotation.seller.taxId': 'အခွန် ID',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'ပြသမှု',

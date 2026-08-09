@@ -78,10 +78,45 @@ export function quotationSource(search: string): QuotationSource {
   return UUID.test(orderId) ? { kind: 'owned', orderId } : { kind: 'none' };
 }
 
+/**
+ * Who is offering the quotation — `organisation_profile`, read live rather than pinned.
+ *
+ * ⚠️ Hand-decoded rather than imported from `@wewin/contract/organisation`, for the reason
+ * `lib/reviews/wire.ts` gives at length: this app does not depend on `@wewin/contract` and
+ * a company's address is content, not a UI string (`i18n/keys.ts`'s own rule) — so the
+ * fields below are rendered exactly as the API sent them, in whatever language the company
+ * typed them in.
+ */
+export interface Seller {
+  readonly legalNameTh: string;
+  readonly addressTh: string;
+  readonly taxId: string | null;
+  readonly phone: string;
+}
+
+/**
+ * `null` on a decode failure and — deliberately — on a response that simply has no `seller`
+ * key. `GET /orders/documents/:token` (the `?t=` link a customer without a cookie opens)
+ * answers `{orderNo, status, contactName, submittedAt, document}` with no `seller` at all;
+ * task 11b widened the cookie-scoped route only, so a quotation opened that way renders with
+ * no letterhead rather than failing to render at all.
+ */
+function sellerFrom(value: unknown): Seller | null {
+  if (!isRecord(value)) return null;
+
+  const legalNameTh = asString(value['legalNameTh']);
+  const addressTh = asString(value['addressTh']);
+  const phone = asString(value['phone']);
+  if (legalNameTh === null || addressTh === null || phone === null) return null;
+
+  return { legalNameTh, addressTh, phone, taxId: asString(value['taxId']) };
+}
+
 export interface LinkedQuotation {
   readonly orderNo: string | null;
   readonly status: string;
   readonly document: PinnedDocument;
+  readonly seller: Seller | null;
 }
 
 export type QuotationFailure =
@@ -132,6 +167,7 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
         contactName: asString(body['contactName']),
         submittedAt: asString(body['submittedAt']),
       }),
+      seller: sellerFrom(body['seller']),
     };
   } catch {
     return null;
@@ -143,8 +179,10 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
  *
  * `GET /orders/documents/:token` answers `{orderNo, status, contactName, submittedAt, document}`
  * — assembled by `DocumentLinkReader` precisely because a holder of a link cannot call anything
- * else. `GET /orders/:id/document` answers the bare `OrderDocumentWire`, so the heading fields
- * come from `GET /orders/:id` beside it, which is what the dashboard has always done.
+ * else, and carries no `seller` (task 11b widened the cookie-scoped route only). `GET
+ * /orders/:id/document` answers `{document, seller}` — `seller` beside the pinned document
+ * and never inside it, read live from `organisation_profile` on every call — so the heading
+ * fields come from `GET /orders/:id` beside it, which is what the dashboard has always done.
  *
  * ⚠️ The owned path needs a **bearer token**, not merely a cookie. `@RequirePrincipal()` reads
  * a session or a guest cookie, and an order attached to `customer_user_id` is not the guest's
@@ -200,8 +238,11 @@ export async function fetchQuotation(
   if (!order.ok || !document.ok) return { ok: false, reason: 'refused' };
 
   const summary: unknown = await order.json().catch(() => null);
-  const pinned: unknown = await document.json().catch(() => null);
-  if (!isRecord(summary) || !isRecord(pinned)) return { ok: false, reason: 'malformed' };
+  /* ⚠️ `{document, seller}` — `seller` beside the pinned document, never merged into it. */
+  const wrapped: unknown = await document.json().catch(() => null);
+  if (!isRecord(summary) || !isRecord(wrapped) || !isRecord(wrapped['document'])) {
+    return { ok: false, reason: 'malformed' };
+  }
 
   const contact = isRecord(summary['contact']) ? summary['contact'] : {};
   const data = decodeQuotation({
@@ -209,7 +250,8 @@ export async function fetchQuotation(
     status: summary['status'],
     contactName: contact['name'],
     submittedAt: summary['submittedAt'],
-    document: pinned,
+    document: wrapped['document'],
+    seller: wrapped['seller'],
   });
 
   return data === null ? { ok: false, reason: 'malformed' } : { ok: true, data };

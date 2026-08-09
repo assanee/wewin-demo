@@ -437,6 +437,8 @@ export const en: PartialUiCatalogue = {
     'This document was pinned on the day it was confirmed — its figures and its language do not change when it is reopened.',
   'quotation.degraded': 'The pinned language is not available in this release, so it is shown in Thai.',
   'quotation.contact': 'To',
+  'quotation.seller.phone': 'Telephone',
+  'quotation.seller.taxId': 'Tax ID',
 
   /* ---- Display settings ------------------------------------------------------
    *

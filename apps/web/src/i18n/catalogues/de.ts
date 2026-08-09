@@ -477,6 +477,8 @@ export const de: PartialUiCatalogue = {
   'quotation.degraded':
     'Die festgeschriebene Sprache ist in dieser Version nicht verfügbar, daher wird das Dokument auf Thai angezeigt.',
   'quotation.contact': 'An',
+  'quotation.seller.phone': 'Telefon',
+  'quotation.seller.taxId': 'Steuernummer',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'Darstellung',

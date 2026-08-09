@@ -456,6 +456,8 @@ export const hi: PartialUiCatalogue = {
   'quotation.degraded':
     'स्थिर की गई भाषा इस संस्करण में उपलब्ध नहीं है, इसलिए इसे थाई में दिखाया जा रहा है।',
   'quotation.contact': 'प्रति',
+  'quotation.seller.phone': 'फ़ोन',
+  'quotation.seller.taxId': 'टैक्स आईडी',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'प्रदर्शन',

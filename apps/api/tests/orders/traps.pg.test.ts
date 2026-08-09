@@ -248,7 +248,10 @@ describeWithPg('plan 7.4 — the seven traps, one test each', () => {
 
     const document = await call('GET', `/orders/${order.id}/document`, { token: customerA.token });
     expect(document.status).toBe(200);
-    const pinned = document.body as { documentHash: string; lines: readonly { productVersionId: string }[] };
+    /* ⚠️ `seller` is beside `document`, not inside it — see `OrderDocumentResponseWire`. */
+    const pinned = (
+      document.body as { document: { documentHash: string; lines: readonly { productVersionId: string }[] } }
+    ).document;
     expect(pinned.documentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(pinned.lines[0]?.productVersionId).toBe(line.productVersionId);
 
