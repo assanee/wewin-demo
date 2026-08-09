@@ -495,4 +495,45 @@ export const vi: PartialUiCatalogue = {
   'notFound.title': 'Không tìm thấy trang',
   'notFound.body':
     'Liên kết có thể đã thay đổi. Hãy bắt đầu lại từ danh sách sản phẩm.',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'Báo cho chúng tôi biết bạn đã thanh toán',
+  'payment.heading': 'Báo cho chúng tôi biết bạn đã thanh toán',
+  'payment.loading': 'Đang mở thông tin thanh toán của bạn…',
+  'payment.outstanding': 'Số tiền còn thiếu',
+  'payment.outstandingAmount': (p, f) =>
+    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.settled': 'Đơn hàng này đã thanh toán đủ',
+  'payment.account.legend': 'Chuyển vào một trong các tài khoản sau',
+  'payment.account.copy': (p) => `Sao chép số tài khoản ${p.accountDigits}`,
+  'payment.account.copied': 'Đã sao chép số tài khoản',
+  'payment.account.qrAlt': 'Mã QR PromptPay cho số tiền đã nhập',
+  'payment.account.qrHint': 'Quét bằng ứng dụng ngân hàng của bạn — số tiền sẽ được điền sẵn',
+  'payment.form.legend': 'Đính kèm biên nhận chuyển khoản',
+  'payment.form.image': 'Ảnh biên nhận',
+  'payment.form.imageHint': 'Ảnh chụp màn hình từ ứng dụng ngân hàng cũng được. Tối đa 8 MB.',
+  'payment.form.amount': 'Số tiền đã chuyển',
+  'payment.form.transferredAt': 'Ngày và giờ chuyển khoản',
+  'payment.form.reference': 'Số tham chiếu (không bắt buộc)',
+  'payment.form.submit': 'Gửi biên nhận',
+  'payment.phase.uploading': 'Đang tải ảnh lên…',
+  'payment.phase.creating': 'Đang lưu biên nhận…',
+  'payment.done':
+    'Chúng tôi đã nhận được biên nhận của bạn. Đội ngũ sẽ kiểm tra và phản hồi lại bạn.',
+  'payment.history.heading': 'Các biên nhận bạn đã gửi',
+  'payment.history.empty': 'Chưa gửi biên nhận nào',
+  'payment.history.submitted': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · gửi ${f.date(p.sentAt)} · đang được kiểm tra`,
+  'payment.history.accepted': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · gửi ${f.date(p.sentAt)} · đã được chấp nhận`,
+  'payment.history.rejected': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · không được chấp nhận — ${p.reason}`,
+  'payment.problem.noImage': 'Vui lòng đính kèm một tấm ảnh biên nhận.',
+  'payment.problem.imageTooBig': (p, f) =>
+    `Tấm ảnh này quá lớn — tối đa ${f.plain(p.limitMib)} MB.`,
+  'payment.problem.badAmount': 'Nhập số tiền dưới dạng số, tối đa hai chữ số thập phân.',
+  'payment.problem.badTime': 'Vui lòng cho biết ngày và giờ chuyển khoản.',
+  'payment.problem.signInAgain':
+    'Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại — thông tin bạn đã nhập vẫn còn ở đây.',
+  'payment.problem.unreachable': 'Không thể kết nối. Vui lòng thử lại.',
 };

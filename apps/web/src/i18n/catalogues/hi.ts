@@ -511,4 +511,44 @@ export const hi: PartialUiCatalogue = {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'पृष्ठ नहीं मिला',
   'notFound.body': 'लिंक बदल गया हो सकता है। उत्पाद सूची से शुरू कीजिए।',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'भुगतान की सूचना दें',
+  'payment.heading': 'भुगतान की सूचना दें',
+  'payment.loading': 'आपके भुगतान का विवरण खोला जा रहा है…',
+  'payment.outstanding': 'बकाया राशि',
+  'payment.outstandingAmount': (p, f) =>
+    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.settled': 'यह ऑर्डर पूरी तरह भुगतान हो चुका है',
+  'payment.account.legend': 'इनमें से किसी भी खाते में ट्रांसफर करें',
+  'payment.account.copy': (p) => `खाता नंबर ${p.accountDigits} कॉपी करें`,
+  'payment.account.copied': 'खाता नंबर कॉपी हो गया',
+  'payment.account.qrAlt': 'भरी गई राशि के लिए प्रॉम्प्टपे क्यूआर कोड',
+  'payment.account.qrHint': 'अपने बैंकिंग ऐप से स्कैन कीजिए — राशि खुद भर जाएगी',
+  'payment.form.legend': 'स्लिप जोड़ें',
+  'payment.form.image': 'स्लिप की फ़ोटो',
+  'payment.form.imageHint': 'अपने बैंकिंग ऐप का स्क्रीनशॉट भी चलेगा। अधिकतम 8 MB.',
+  'payment.form.amount': 'ट्रांसफर की गई राशि',
+  'payment.form.transferredAt': 'ट्रांसफर की तारीख और समय',
+  'payment.form.reference': 'संदर्भ नंबर (वैकल्पिक)',
+  'payment.form.submit': 'स्लिप भेजें',
+  'payment.phase.uploading': 'फ़ोटो अपलोड हो रही है…',
+  'payment.phase.creating': 'स्लिप सहेजी जा रही है…',
+  'payment.done': 'आपकी स्लिप मिल गई है। हमारी टीम इसकी जाँच करके आपको सूचित करेगी।',
+  'payment.history.heading': 'आपकी भेजी गई स्लिप',
+  'payment.history.empty': 'अभी तक कोई स्लिप नहीं भेजी गई',
+  'payment.history.submitted': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · ${f.date(p.sentAt)} को भेजी गई · जाँच जारी है`,
+  'payment.history.accepted': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · ${f.date(p.sentAt)} को भेजी गई · स्वीकृत`,
+  'payment.history.rejected': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · स्वीकृत नहीं — ${p.reason}`,
+  'payment.problem.noImage': 'कृपया स्लिप की फ़ोटो जोड़ें।',
+  'payment.problem.imageTooBig': (p, f) =>
+    `यह फ़ोटो बहुत बड़ी है — अधिकतम ${f.plain(p.limitMib)} MB.`,
+  'payment.problem.badAmount': 'राशि को अंकों में लिखें, दशमलव के बाद अधिकतम दो अंक।',
+  'payment.problem.badTime': 'कृपया ट्रांसफर की तारीख और समय दीजिए।',
+  'payment.problem.signInAgain':
+    'आपका सेशन समाप्त हो गया। कृपया फिर से साइन इन कीजिए — आपकी भरी जानकारी अभी भी यहीं है।',
+  'payment.problem.unreachable': 'कनेक्ट नहीं हो सका। कृपया फिर से कोशिश कीजिए।',
 };

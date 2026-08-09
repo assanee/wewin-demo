@@ -479,4 +479,43 @@ export const la: PartialUiCatalogue = {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'ບໍ່ພົບໜ້ານີ້',
   'notFound.body': 'ລິ້ງອາດປ່ຽນໄປແລ້ວ. ລອງເລີ່ມຈາກລາຍການສິນຄ້າ.',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'ແຈ້ງການຊຳລະເງິນ',
+  'payment.heading': 'ແຈ້ງການຊຳລະເງິນ',
+  'payment.loading': 'ກຳລັງເປີດຂໍ້ມູນການຊຳລະເງິນ…',
+  'payment.outstanding': 'ຍອດຄ້າງຈ່າຍ',
+  'payment.outstandingAmount': (p, f) =>
+    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.settled': 'ອໍເດີນີ້ຊຳລະຄົບແລ້ວ',
+  'payment.account.legend': 'ໂອນເຂົ້າບັນຊີໃດບັນຊີໜຶ່ງ',
+  'payment.account.copy': (p) => `ສຳເນົາເລກບັນຊີ ${p.accountDigits}`,
+  'payment.account.copied': 'ສຳເນົາເລກບັນຊີແລ້ວ',
+  'payment.account.qrAlt': 'QR ໂຄດ PromptPay ສຳລັບຍອດທີ່ປ້ອນໄວ້',
+  'payment.account.qrHint': 'ສະແກນດ້ວຍແອັບທະນາຄານ — ຍອດຈະຖືກປ້ອນໃຫ້ອັດຕະໂນມັດ',
+  'payment.form.legend': 'ແນບສະລິບ',
+  'payment.form.image': 'ຮູບສະລິບ',
+  'payment.form.imageHint': 'ຖ່າຍຈາກແອັບທະນາຄານກໍ່ໄດ້. ຂະໜາດຮູບບໍ່ເກີນ 8 MB.',
+  'payment.form.amount': 'ຈຳນວນເງິນທີ່ໂອນ',
+  'payment.form.transferredAt': 'ວັນ ແລະ ເວລາທີ່ໂອນ',
+  'payment.form.reference': 'ເລກອ້າງອີງ (ຖ້າມີ)',
+  'payment.form.submit': 'ສົ່ງສະລິບ',
+  'payment.phase.uploading': 'ກຳລັງອັບໂຫລດຮູບ…',
+  'payment.phase.creating': 'ກຳລັງບັນທຶກສະລິບ…',
+  'payment.done': 'ໄດ້ຮັບສະລິບແລ້ວ. ທີມງານຈະກວດສອບ ແລະ ແຈ້ງກັບຄືນ.',
+  'payment.history.heading': 'ສະລິບທີ່ສົ່ງໄປແລ້ວ',
+  'payment.history.empty': 'ຍັງບໍ່ໄດ້ສົ່ງສະລິບ',
+  'payment.history.submitted': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · ສົ່ງເມື່ອ ${f.date(p.sentAt)} · ລໍຖ້າກວດສອບ`,
+  'payment.history.accepted': (p, f) =>
+    `฿${f.plain(p.slipMinor / 100n)} · ສົ່ງເມື່ອ ${f.date(p.sentAt)} · ຮັບແລ້ວ`,
+  'payment.history.rejected': (p, f) => `฿${f.plain(p.slipMinor / 100n)} · ບໍ່ຜ່ານ — ${p.reason}`,
+  'payment.problem.noImage': 'ກະລຸນາແນບຮູບສະລິບ.',
+  'payment.problem.imageTooBig': (p, f) =>
+    `ຮູບໃຫຍ່ເກີນໄປ — ບໍ່ເກີນ ${f.plain(p.limitMib)} MB.`,
+  'payment.problem.badAmount': 'ປ້ອນຈຳນວນເງິນເປັນຕົວເລກ ທົດສະນິຍົມບໍ່ເກີນສອງຕຳແໜ່ງ.',
+  'payment.problem.badTime': 'ກະລຸນາເລືອກວັນ ແລະ ເວລາທີ່ໂອນ.',
+  'payment.problem.signInAgain':
+    'ເຊດຊັນຂອງທ່ານໝົດອາຍຸແລ້ວ. ກະລຸນາເຂົ້າລະບົບອີກເທື່ອ. ຂໍ້ມູນທີ່ປ້ອນໄວ້ຍັງຢູ່.',
+  'payment.problem.unreachable': 'ເຊື່ອມຕໍ່ບໍ່ໄດ້. ກະລຸນາລອງໃໝ່.',
 };

@@ -164,6 +164,22 @@ const SAMPLE_PARAMS = {
   // on a Tuesday.
   at: new Date('2026-03-14T04:00:00Z'),
   name: 'บานเกล็ดปรับระดับได้ 4 ใบ',
+  /*
+   * Payment and slips — plan section 12/13.
+   *
+   * `owedMinor`/`slipMinor` and not `minor`: `minor` is already bound above as
+   * `879_100n` for `price.perPiece`, and an outstanding balance or a slip amount is a
+   * different figure with a different shape of consequence — a param with one name and
+   * two call sites is how this bag would stop meaning what its own comment says it means.
+   * Both are exact satang, chosen to divide evenly by 100 so the sample exercises the
+   * common case; `numerals.test.ts` is where an odd satang value earns its own test.
+   */
+  owedMinor: 2_824_800n,
+  slipMinor: 1_412_400n,
+  sentAt: new Date('2026-03-14T04:00:00Z'),
+  accountDigits: '1234567890',
+  reason: 'ยอดเงินไม่ตรงกับที่แจ้ง',
+  limitMib: 8,
 } as const;
 
 describe('a lookup always returns a sentence', () => {
