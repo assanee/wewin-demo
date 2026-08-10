@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import type { Database } from '../src/client.js';
-import { PG, connect, describeDb, errorCode } from './support/db.js';
+import { PG, connect, connectPool, describeDb, errorCode } from './support/db.js';
 
 /*
  * There is no `withDb` in this repo — the helper is `connect()` (support/db.ts:47). One local
@@ -136,16 +136,31 @@ describeDb('tax_countries', () => {
    * `exempt` (packages/core/src/vat.ts:47) — a future tightening to `rate_bp = 0` outright
    * would silently make that distinction impossible to record, and nothing above this test
    * would notice.
+   *
+   * ⚠️ Run inside a transaction that is rolled back, not through `withConnection`/`db.execute`.
+   * Every other test in this describe block exercises a rejection, so nothing they do commits
+   * a row; this is the first one where the insert is supposed to succeed. Committing it would
+   * leave a permanent 'AU' row that `seeds exactly Thailand` — which asserts the table holds
+   * *exactly* one row — would then depend on running before this test, i.e. on this file's
+   * declaration order rather than on anything either test actually asserts. Same idiom
+   * `erasure.test.ts`'s `attemptSelfErasure` uses for the identical reason: a real INSERT, on
+   * a real connection, that never becomes a fact the rest of the suite has to account for.
    */
   it('accepts standard at zero rate — the pairing the constraint must not catch', async () => {
-    await withConnection(async (db) => {
+    const pool = await connectPool();
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
       await expect(
-        db.execute(sql`
-          insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
-          values ('AU', 'ออสเตรเลีย', 0, 'standard', true)
-        `),
+        client.query(
+          `insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
+           values ('AU', 'ออสเตรเลีย', 0, 'standard', true)`,
+        ),
       ).resolves.toBeDefined();
-    });
+    } finally {
+      await client.query('rollback').catch(() => undefined);
+      client.release();
+    }
   });
 
   /*
@@ -184,17 +199,32 @@ describeDb('tax_countries', () => {
     });
   });
 
+  /*
+   * ⚠️ Both the UPDATE and the DELETE below are scoped to the one row this test just
+   * inserted, not to the whole table. Unscoped, they pass today only because
+   * `tax_country_changes_append_only` refuses them before they touch anything — if that
+   * trigger were ever dropped, an unscoped statement would wipe the shared history table for
+   * every other test and every other subject `erasure.test.ts` writes there, instead of
+   * failing in place on the one row this test owns. Same class of defect as the leak above:
+   * a test whose safety depends on something other than what it names in its own assertion.
+   */
   it('records history that cannot be edited or un-recorded', async () => {
     await withConnection(async (db) => {
-      await db.execute(sql`
+      const inserted = await db.execute(sql`
         insert into tax_country_changes (tax_country_code, after)
         values ('TH', '{"rateBp":700}'::jsonb)
+        returning id
       `);
+      const id = inserted.rows[0]?.['id'];
+
       await expectRefusal(
-        db.execute(sql`update tax_country_changes set after = '{"rateBp":0}'::jsonb`),
+        db.execute(sql`update tax_country_changes set after = '{"rateBp":0}'::jsonb where id = ${id}`),
         'append-only',
       );
-      await expectRefusal(db.execute(sql`delete from tax_country_changes`), 'append-only');
+      await expectRefusal(
+        db.execute(sql`delete from tax_country_changes where id = ${id}`),
+        'append-only',
+      );
     });
   });
 });
