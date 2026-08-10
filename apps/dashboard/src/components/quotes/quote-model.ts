@@ -153,6 +153,24 @@ export interface QuoteView {
   /** Whether this screen may show provenance at all. False is a customer, not a failure. */
   readonly showsProvenance: boolean;
   /**
+   * ⭐ The destination code the order names, when the server could not resolve it. Null otherwise.
+   *
+   * **Relayed, not derived.** `destination.recognised` is the server's own statement — this
+   * module does not decide what a country code means and has no list to check one against.
+   * That is what keeps it out of the class of thing `hasStaleBaselines`' note forbids: a second
+   * gate computed here would disagree with the API's the first time either moved, and this
+   * cannot disagree because it does no deciding.
+   *
+   * It exists because degrading was the *right* fix and it has one bad edge. `POST /orders`
+   * accepts any two-letter code, `GET …/quote` no longer refuses one it cannot resolve — a cart
+   * carrying a typo has to stay openable, or nobody could correct it — and the money that comes
+   * back is computed at the **default** rule rather than that country's. Without this field a
+   * salesperson opens the quote, reads plausible Thai totals, and can negotiate a whole
+   * quotation before the refusal arrives at submit. The refusal is not the problem; arriving
+   * that late is.
+   */
+  readonly unrecognisedDestination: string | null;
+  /**
    * Whether a catalogue publish landed under a promise on this quote.
    *
    * The **only** send-blocker this module knows about, and deliberately so: whether the
@@ -286,16 +304,31 @@ export function foldQuote(wire: QuoteWire): QuoteView {
   const grandTotalOverride = first(index.get('grand_total:'));
 
   /*
-   * The footing check compares like with like: `effectiveTotalThbMinor` is VAT-exclusive and
-   * so is `netThbMinor`. It is skipped when a document-level override exists, because that
-   * override *is* the reason the two differ — the contract's `marginConcessionThbMinor` is one
-   * subtraction rather than a sum for the same reason, and asserting a sum here would report
-   * the feature working as a fault.
+   * The footing check compares like with like — and **which figure that is depends on the
+   * destination's basis**, which is why `destination.basis` is on the wire at all.
+   *
+   *   `exclusive`  the line figures are the tax base, so they sum to `netThbMinor` and the
+   *                grand total is that plus VAT.
+   *   `inclusive`  the line figures already contain the tax, so they sum to
+   *                `grandTotalThbMinor` and the *net* is what is left after dividing it out.
+   *
+   * ⚠️ This comment used to read *"`effectiveTotalThbMinor` is VAT-exclusive and so is
+   * `netThbMinor`"*, which was true of every quote in the system until per-destination VAT
+   * landed. Afterwards it was false for every inclusive country, and the two sums differ by
+   * exactly `vatThbMinor` — so a correct Singapore quote raised *"this quote contradicts
+   * itself, do not send it"* with ฿13,824.00 folded against ฿12,682.57, a ฿1,141.43 gap that
+   * is simply the VAT. Found by opening the screen, not by any test.
+   *
+   * Skipped when a document-level override exists, because that override *is* the reason the
+   * two differ — the contract's `marginConcessionThbMinor` is one subtraction rather than a sum
+   * for the same reason, and asserting a sum here would report the feature working as a fault.
    */
   const folded = lines.reduce((sum, view) => sum + view.effectiveThbMinor, 0n);
-  const net = thbMinorOf(wire.money.netThbMinor);
-  if (grandTotalOverride === null && folded !== net) {
-    alarms.push({ kind: 'lines_do_not_foot', serverThbMinor: net, foldedThbMinor: folded });
+  const footsTo = thbMinorOf(
+    wire.destination.basis === 'inclusive' ? wire.money.grandTotalThbMinor : wire.money.netThbMinor,
+  );
+  if (grandTotalOverride === null && folded !== footsTo) {
+    alarms.push({ kind: 'lines_do_not_foot', serverThbMinor: footsTo, foldedThbMinor: folded });
   }
 
   const concession: ConcessionView | null =
@@ -316,6 +349,12 @@ export function foldQuote(wire: QuoteWire): QuoteView {
     alarms,
     concession,
     showsProvenance: sales !== null,
+    /*
+     * Relayed off `destination.recognised`, and read for both audiences rather than out of
+     * `sales`: an unresolvable country is a fact about the customer's own order, not a
+     * concession-shaped one, and the API puts it outside the sales block for that reason.
+     */
+    unrecognisedDestination: wire.destination.recognised ? null : wire.destination.country,
     /*
      * The server's own list, not a rule this module invented. An alarm is deliberately not
      * folded in beside it: an alarm does not block the API, and a screen that refused on top

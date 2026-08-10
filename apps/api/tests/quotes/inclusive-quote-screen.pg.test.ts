@@ -229,6 +229,20 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
        computed at 9% — the totals would agree and the sentence beside them would not. */
     expect(onScreen.money.vat).toStrictEqual({ rateBp: 900, treatment: 'standard' });
 
+    /* …and which arithmetic produced them. A client adding the effective line totals up gets
+       the grand total here and the net under an exclusive destination; the two differ by
+       exactly the VAT and nothing else on the payload tells them apart. The dashboard's
+       footing alarm reads this, and condemned every inclusive quote before it existed. */
+    expect(onScreen.destination).toStrictEqual({
+      country: 'SG',
+      recognised: true,
+      basis: 'inclusive',
+    });
+    expect(
+      onScreen.lines.reduce((sum, line) => sum + minor(line.effectiveTotalThbMinor), 0n),
+      'the effective line totals foot to the grand total on an inclusive destination',
+    ).toBe(minor(onScreen.money.grandTotalThbMinor));
+
     /* ② The quoted gross *is* the catalogue sum — ฿13,824.00, not ฿15,068.16. */
     expect(minor(onScreen.money.grandTotalThbMinor)).toBe(CATALOGUE_SUM);
     expect(minor(onScreen.money.grandTotalThbMinor)).toBe(1_382_400n);
@@ -293,6 +307,15 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
     const onScreen = await quoteScreen(orderId);
 
     expect(onScreen.money.vat).toStrictEqual({ rateBp: 600, treatment: 'standard' });
+    expect(onScreen.destination).toStrictEqual({
+      country: 'MY',
+      recognised: true,
+      basis: 'exclusive',
+    });
+    /* The other footing identity: here the lines are the tax base and sum to the *net*. */
+    expect(onScreen.lines.reduce((sum, line) => sum + minor(line.effectiveTotalThbMinor), 0n)).toBe(
+      minor(onScreen.money.netThbMinor),
+    );
 
     /* grand = net × 1.06, and the net is the catalogue sum. ฿13,824.00 → ฿14,653.44. */
     expect(minor(onScreen.money.netThbMinor)).toBe(CATALOGUE_SUM);
@@ -374,7 +397,7 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
 
     /* …and says the money is not this country's, rather than passing the default off as it. */
     const empty = opened.body as QuoteWire;
-    expect(empty.destination).toStrictEqual({ country: 'ZZ', recognised: false });
+    expect(empty.destination).toStrictEqual({ country: 'ZZ', recognised: false, basis: 'exclusive' });
     expect(empty.money.vat).toStrictEqual({ rateBp: 700, treatment: 'standard' });
 
     /* ② It edits. */
@@ -404,7 +427,7 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
 
     /* The screen agrees with it afterwards, because the row now carries a code that resolves. */
     const after = (await tryQuoteScreen(orderId)).body as QuoteWire;
-    expect(after.destination).toStrictEqual({ country: 'SG', recognised: true });
+    expect(after.destination).toStrictEqual({ country: 'SG', recognised: true, basis: 'inclusive' });
   }, 60_000);
 
   /**

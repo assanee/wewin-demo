@@ -137,7 +137,7 @@ const SAMPLE = {
   currency: 'THB',
   /* Required by `quoteWireSchema`, so `decodeQuote` refuses a payload without it — which is the
    * point: `money.vat` names a rate but cannot say whether it is this country's. */
-  destination: { country: 'TH', recognised: true },
+  destination: { country: 'TH', recognised: true, basis: 'exclusive' },
   lines: [
     {
       id: '00000000-0000-4000-8000-0000000000b1',

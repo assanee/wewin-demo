@@ -87,7 +87,14 @@ export function encodeQuote(input: EncodeQuoteInput): QuoteWire {
     currency: 'THB',
     /* Outside `sales`, so a customer sees it too: an unresolvable country is a fact about
      * their own order that only they can correct, not the company's negotiating position. */
-    destination: { country: input.destination.code, recognised: input.destination.known },
+    destination: {
+      country: input.destination.code,
+      recognised: input.destination.known,
+      /* Which of `fromNet`/`fromGrand` produced `money` below. A client adding the lines up
+       * cannot derive it — the two identities differ by exactly `vatThbMinor` and every other
+       * field is consistent under either. See `QuoteDestinationWire`. */
+      basis: input.destination.basis,
+    },
     lines: input.lines.map((line) =>
       encodeLine(line, {
         effectiveByLineId,

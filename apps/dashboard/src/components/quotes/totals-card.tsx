@@ -96,7 +96,17 @@ export function TotalsCard({
         )}
         <Row
           label={vatLabelTh(money.vat.rateBp, money.vat.treatment)}
-          hint="คำนวณจากฐานภาษี ไม่มีช่องให้กรอก"
+          /*
+           * ⚠️ The rate beside a figure is a claim about *whose* rate it is, and on an order
+           * naming a country the server could not resolve that claim is false — the money came
+           * back at the default rule. Said here rather than by changing `vatLabelTh`, which the
+           * customer's own document renders too: a staff warning must not reach that page.
+           */
+          hint={
+            view.unrecognisedDestination === null
+              ? 'คำนวณจากฐานภาษี ไม่มีช่องให้กรอก'
+              : 'อัตราเริ่มต้น ไม่ใช่อัตราของประเทศปลายทางที่ระบุไว้ — ดูคำเตือนด้านบน'
+          }
           value={<Figure minor={vatMinor} provenance={{ kind: 'computed' }} />}
         />
 

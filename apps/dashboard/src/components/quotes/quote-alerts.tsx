@@ -1,4 +1,6 @@
-import { CircleAlert, RefreshCw, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
+import type { Route } from 'next';
+import { CircleAlert, Globe, RefreshCw, ShieldAlert } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -143,6 +145,77 @@ export function StaleBaselineBanner({ view }: { readonly view: QuoteView }) {
     </Alert>
   );
 }
+
+/**
+ * ⭐ The destination the server could not resolve — and the one banner here that is about a
+ * refusal which has **not happened yet**.
+ *
+ * Every other notice in this file is a 409 that already came back, or a contradiction already
+ * present in the data. This one is a 422 the person is *going to* get, shown at the moment they
+ * open the quote rather than at the moment they press send.
+ *
+ * That gap is the whole reason it exists. `POST /orders` accepts any two-letter code without
+ * validating it, and the API used to refuse an unresolvable one on every read — which made a
+ * typo terminal, because nothing but a submit can rewrite `orders.destination_country`. The fix
+ * was to let reads and edits degrade to the default rule so the cart stays openable and
+ * correctable. The cost of that fix is exactly this screen: without a notice, a salesperson
+ * opens the quote, sees plausible Thai totals, and can negotiate an entire quotation before the
+ * refusal surfaces. They were losing a loud 422 at the door and getting a quiet one at the end.
+ *
+ * ⚠️ **A warning and not a gate.** Nothing here disables a control. The refusal is
+ * `assertSubmittable`'s in apps/api and it stays there — a second gate computed on this screen
+ * is the thing `QuoteView.hasStaleBaselines`' own note forbids, and it would be a *worse* gate
+ * because it could be reached by a client that had not been updated.
+ *
+ * It says three things, because a person needs all three: the code is not one the system knows,
+ * the figures on screen are therefore the **default** rule rather than that country's, and
+ * there are two ways out — submit naming a real country, or add this one under ตั้งค่าบริษัท.
+ */
+export function UnrecognisedDestinationBanner({ view }: { readonly view: QuoteView }) {
+  const code = view.unrecognisedDestination;
+  if (code === null) return null;
+
+  return (
+    <Alert variant="destructive">
+      <Globe />
+      <AlertTitle>{unrecognisedDestinationTitleTh(code)}</AlertTitle>
+      <AlertDescription className="flex flex-col items-start gap-2">
+        <ul className="flex list-disc flex-col gap-1 ps-4">
+          {unrecognisedDestinationPointsTh(code).map((point) => (
+            <li key={point}>{point}</li>
+          ))}
+        </ul>
+        <Button asChild size="sm" variant="outline">
+          <Link href={'/organisation' as Route}>เปิดตั้งค่าประเทศปลายทาง</Link>
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/**
+ * The heading, as a pure function of the code — so the assertion about *what it says* can be
+ * made without a DOM, the way `visibleNavigation` is asserted in `tests/navigation.test.ts`.
+ *
+ * It leads with the consequence rather than the cause. "ส่งใบเสนอราคาไม่ได้" is what changes
+ * what the reader does next; the code is why.
+ */
+export const unrecognisedDestinationTitleTh = (code: string | null): string =>
+  `ส่งใบเสนอราคานี้ไม่ได้ — ไม่รู้จักประเทศปลายทาง "${code ?? '—'}"`;
+
+/**
+ * The three sentences, in the order a person needs them: what is wrong, why the numbers in
+ * front of them cannot be quoted, and the two ways out.
+ *
+ * ⚠️ The second one is the one worth keeping. Somebody who reads only the title might still
+ * repeat the total on the screen to a customer over the phone — it looks like a finished quote
+ * — and that total is the **default** rule, not this country's.
+ */
+export const unrecognisedDestinationPointsTh = (code: string | null): readonly string[] => [
+  `ออร์เดอร์นี้ระบุรหัสประเทศ "${code ?? '—'}" ซึ่งไม่มีอยู่ในตั้งค่าประเทศปลายทาง`,
+  'ยอดและอัตราภาษีที่แสดงอยู่จึงคิดจากอัตราเริ่มต้น (VAT 7% แบบไม่รวมภาษี) ไม่ใช่ของประเทศนี้ — อย่ายืนยันตัวเลขนี้กับลูกค้า',
+  `แก้ได้สองทาง: ส่งใบเสนอราคาโดยระบุประเทศปลายทางที่ถูกต้อง หรือเพิ่มรหัส "${code ?? '—'}" ในตั้งค่าบริษัท > ประเทศปลายทาง แล้วเปิดใบนี้ใหม่`,
+];
 
 /**
  * Things that should be impossible, said out loud.

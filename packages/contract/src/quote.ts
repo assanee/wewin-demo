@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { type MoneyWire, moneyWireSchema } from './money.js';
 import { lengthWireSchema, type LengthWire } from './measure.js';
 import { priceRequestWireSchema, type PriceRequestWire } from './pricing.js';
+import { DESTINATION_TAX_BASES, type DestinationTaxBasis } from './tax.js';
 
 /**
  * The sales-editable quote on the wire — phase 5c.
@@ -470,6 +471,25 @@ export interface QuoteDestinationWire {
   readonly country: string | null;
   /** False when `country` names no row: `money.vat` is the default rule, not this country's. */
   readonly recognised: boolean;
+  /**
+   * ⭐ Which arithmetic produced `money` — and a client genuinely cannot work it out.
+   *
+   * Under `exclusive` the line figures are the tax base and the effective line totals sum to
+   * `money.netThbMinor`. Under `inclusive` they already **contain** the tax, so they sum to
+   * `money.grandTotalThbMinor` instead and the net is what is left after dividing it back out.
+   * The two sums differ by exactly `vatThbMinor`, and nothing else on this payload distinguishes
+   * them — `net`, `grand` and `vat` are consistent with each other under either reading.
+   *
+   * It is here because a screen that adds the lines up and compares has to know which identity
+   * it is checking. The dashboard's does, and without this field it read every inclusive quote
+   * as a document that does not foot: a destructive *"this quote contradicts itself — do not
+   * send it"* banner on correct money, off by the VAT, on every order for an inclusive country.
+   *
+   * The same value the document pins as `taxBasis`, from the same resolution — see
+   * `TaxCountryService.resolveDestination`. `TaxRule` still carries only a rate and a treatment;
+   * the basis travels beside it, never inside it.
+   */
+  readonly basis: DestinationTaxBasis;
 }
 
 export interface QuoteWire {
@@ -643,6 +663,7 @@ export const quoteDestinationWireSchema: z.ZodType<QuoteDestinationWire> = z.obj
    * that reports it. `orders.destination_country`'s own CHECK is where shape is decided. */
   country: z.string().nullable(),
   recognised: z.boolean(),
+  basis: z.literal(DESTINATION_TAX_BASES),
 });
 
 export const quoteWireSchema: z.ZodType<QuoteWire> = z.object({
