@@ -14,7 +14,7 @@ import type { QuoteWire } from '@wewin/contract/quote';
 
 import { TaxCountryService } from '../../src/organisation/tax-country.service';
 import { createPgHarness } from '../support/pg-harness';
-import { client, makeActor } from '../orders/support/lifecycle-app';
+import { client, makeActor, type Json } from '../orders/support/lifecycle-app';
 
 /**
  * ⭐ Tasks 10 + 11: the money the staff screen shows is the money the customer is quoted.
@@ -65,7 +65,19 @@ interface Harness {
   /** `GET /orders/:id/quote` — what a salesperson is looking at. */
   readonly quoteScreen: (orderId: string) => Promise<QuoteWire>;
   /** Submit naming no lines: the quote is already there, and the document must come from it. */
-  readonly submit: (orderId: string) => Promise<void>;
+  readonly submit: (orderId: string, destinationCountry?: string) => Promise<void>;
+  /** The same submit, unwrapped, for the cases that are about the refusal rather than the money. */
+  readonly trySubmit: (orderId: string, destinationCountry?: string) => Promise<Json>;
+  /** `GET /orders/:id/quote` without asserting 200 — for the paths that used to 422. */
+  readonly tryQuoteScreen: (orderId: string) => Promise<Json>;
+  /** `POST /orders/:id/quote/lines` without asserting 201, same reason. */
+  readonly tryAddLine: (orderId: string) => Promise<Json>;
+  /** `POST /orders/:id/quote/verification` — `assertSubmittable` without the submit. */
+  readonly tryVerification: (orderId: string) => Promise<Json>;
+  /** Promise a whole-document total, so a `grand_total` baseline exists to go stale. */
+  readonly promiseTotal: (orderId: string, amountText: string) => Promise<QuoteWire>;
+  /** Promise one line's total — the `line_total` anchor `measureMargin` grosses up. */
+  readonly promiseLine: (orderId: string, amountText: string) => Promise<QuoteWire>;
   readonly documentOf: (orderId: string) => Promise<OrderDocumentWire>;
 }
 
@@ -90,6 +102,42 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
       return read.body as QuoteWire;
     };
 
+    const tryAddLine = async (orderId: string): Promise<Json> => {
+      const current = await call('GET', `/orders/${orderId}/quote`, { token: sales.token });
+      const revision = (current.body as QuoteWire | null)?.quoteRevision;
+      return call('POST', `/orders/${orderId}/quote/lines`, {
+        token: sales.token,
+        /* When the read itself failed there is no revision to send; the write is expected to
+           answer the same refusal, and `expect` is optional on the wire. */
+        body: revision === undefined ? { line } : { expect: { quoteRevision: revision }, line },
+      });
+    };
+
+    const trySubmit = async (orderId: string, destinationCountry?: string): Promise<Json> =>
+      call('POST', `/orders/${orderId}/transitions/awaiting_payment`, {
+        token: sales.token,
+        body: {
+          contact: {
+            email: 'a@b.co',
+            ...(destinationCountry === undefined ? {} : { destinationCountry }),
+          },
+        },
+      });
+
+    /** `POST …/quote/overrides` — the client sends what was typed, never a computed figure. */
+    const promise = async (
+      orderId: string,
+      body: Record<string, unknown>,
+    ): Promise<QuoteWire> => {
+      const current = await quoteScreen(orderId);
+      const written = await call('POST', `/orders/${orderId}/quote/overrides`, {
+        token: sales.token,
+        body: { expect: { quoteRevision: current.quoteRevision }, reasonCode: 'volume', ...body },
+      });
+      if (written.status !== 201) throw new Error(JSON.stringify(written.body));
+      return written.body as QuoteWire;
+    };
+
     return {
       admin: actor,
       taxCountries: app.app.get(TaxCountryService),
@@ -108,20 +156,39 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
       },
 
       addLine: async (orderId) => {
-        const current = await quoteScreen(orderId);
-        const added = await call('POST', `/orders/${orderId}/quote/lines`, {
-          token: sales.token,
-          body: { expect: { quoteRevision: current.quoteRevision }, line },
-        });
+        const added = await tryAddLine(orderId);
         if (added.status !== 201) throw new Error(JSON.stringify(added.body));
         return added.body as QuoteWire;
       },
 
-      submit: async (orderId) => {
-        const submitted = await call('POST', `/orders/${orderId}/transitions/awaiting_payment`, {
-          token: sales.token,
-          body: { contact: { email: 'a@b.co' } },
+      tryAddLine,
+      tryQuoteScreen: async (orderId) =>
+        call('GET', `/orders/${orderId}/quote`, { token: sales.token }),
+      tryVerification: async (orderId) =>
+        call('POST', `/orders/${orderId}/quote/verification`, { token: sales.token, body: {} }),
+      trySubmit,
+
+      promiseTotal: async (orderId, amountText) =>
+        promise(orderId, {
+          anchor: 'grand_total',
+          enteredAs: 'grand_total',
+          enteredValueText: amountText,
+        }),
+
+      promiseLine: async (orderId, amountText) => {
+        const current = await quoteScreen(orderId);
+        const target = current.lines[0];
+        if (target === undefined) throw new Error('no line to promise against');
+        return promise(orderId, {
+          anchor: 'line_total',
+          enteredAs: 'line_total',
+          enteredValueText: amountText,
+          quoteLineId: target.id,
         });
+      },
+
+      submit: async (orderId, destinationCountry) => {
+        const submitted = await trySubmit(orderId, destinationCountry);
         expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
       },
 
@@ -268,6 +335,161 @@ describeWithPg('the quote screen and the pinned document, per destination', () =
     /* Absent, not `null` — the document names no country, so it carries no basis either. */
     expect(pinned.taxBasis).toBeUndefined();
     expect(minor(pinned.grandTotalThbMinor)).toBe(minor(onScreen.money.grandTotalThbMinor));
+  }, 60_000);
+
+  /**
+   * ⭐ THE BRICK: a two-character typo must not make a cart unopenable and unfixable.
+   *
+   * `POST /orders` accepts any `/^[A-Z]{2}$/` and deliberately does not validate it, because
+   * `resolveDestination` used to run only at submit. Once the screen and every write began
+   * resolving, that stopped being harmless — measured before this fix:
+   *
+   *     POST /orders {contact:{destinationCountry:'ZZ'}}   201
+   *     GET  /orders/:id/quote                             422 unknown_destination_country
+   *     POST /orders/:id/quote/lines                       422
+   *
+   * Both were 200 before, and `applySubmission` is the only writer of
+   * `orders.destination_country`, so there was no endpoint — for staff *or* the customer — that
+   * could change it back. The cart was dead.
+   *
+   * The refusal stays exactly where it pins. Everything before the pin degrades to the default
+   * rule and **says so** on the wire, which is what separates this from the silent fallback
+   * `resolveDestination` refuses to make.
+   */
+  it('keeps a cart with an unrecognised country openable, editable and correctable', async () => {
+    const {
+      admin, taxCountries, draftFor, tryQuoteScreen, tryAddLine, tryVerification,
+      trySubmit, submit, documentOf,
+    } = await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+
+    const orderId = await draftFor('ZZ');
+
+    /* ① It opens. */
+    const opened = await tryQuoteScreen(orderId);
+    expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+
+    /* …and says the money is not this country's, rather than passing the default off as it. */
+    const empty = opened.body as QuoteWire;
+    expect(empty.destination).toStrictEqual({ country: 'ZZ', recognised: false });
+    expect(empty.money.vat).toStrictEqual({ rateBp: 700, treatment: 'standard' });
+
+    /* ② It edits. */
+    const added = await tryAddLine(orderId);
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    expect((added.body as QuoteWire).destination.recognised).toBe(false);
+
+    /* ③ It still refuses to become a contract — the pin is where the refusal belongs, and
+       `POST …/quote/verification` must not green-light what the submit will reject. */
+    const refused = await trySubmit(orderId);
+    expect(refused.status).toBe(422);
+    expect(
+      (refused.body as { error: { details: { reason: string } } }).error.details.reason,
+    ).toBe('unknown_destination_country');
+
+    const verification = await tryVerification(orderId);
+    expect(verification.status).toBe(422);
+
+    /* ④ And it is correctable through the ordinary path: the submit names a real country,
+       `applySubmission` writes it onto the row, and the order goes out. */
+    await submit(orderId, 'SG');
+    const pinned = await documentOf(orderId);
+
+    expect(pinned.destinationCountry).toBe('SG');
+    expect(pinned.taxBasis).toBe('inclusive');
+    expect(minor(pinned.grandTotalThbMinor)).toBe(CATALOGUE_SUM);
+
+    /* The screen agrees with it afterwards, because the row now carries a code that resolves. */
+    const after = (await tryQuoteScreen(orderId)).body as QuoteWire;
+    expect(after.destination).toStrictEqual({ country: 'SG', recognised: true });
+  }, 60_000);
+
+  /**
+   * ⭐ The 409 that blamed the catalogue for a country change.
+   *
+   * A `grand_total` promise's stored baseline is the document total under the arithmetic in
+   * force when it was written. Submit under a different country and the tax is computed another
+   * way, so the baseline moves and `verifyBaselines` correctly refuses — but the sentence was
+   * *"แคตตาล็อกเปลี่ยนหลังจากที่ตกลงราคาไว้"*, with both product-version fields null and no country
+   * anywhere in the body. The catalogue had not moved.
+   *
+   * The refusal is unchanged — same 409, same rows. Only the words and the two codes are new.
+   */
+  it('names the destination, not the catalogue, when a country change moves a promised total', async () => {
+    const { admin, taxCountries, draftFor, addLine, promiseTotal, trySubmit } = await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+
+    /* Quoted, and the total agreed, for Thailand at 700 bp exclusive. */
+    const orderId = await draftFor('TH');
+    await addLine(orderId);
+    const promised = await promiseTotal(orderId, '14000');
+    expect(minor(promised.money.grandTotalThbMinor)).toBe(1_400_000n);
+
+    /* Submitted for Singapore, where ฿13,824.00 of goods is a ฿13,824.00 gross rather than a
+       ฿14,791.68 one — so the figure the promise was measured against is not today's. */
+    const refused = await trySubmit(orderId, 'SG');
+    expect(refused.status).toBe(409);
+
+    const details = (
+      refused.body as {
+        error: {
+          message: string;
+          details: {
+            reason: string;
+            quotedFor: string | null;
+            submittedFor: string | null;
+            lines: readonly { kind: string }[];
+          };
+        };
+      }
+    ).error;
+
+    expect(details.details.reason).toBe('quote_destination_changed');
+    expect(details.details.quotedFor).toBe('TH');
+    expect(details.details.submittedFor).toBe('SG');
+    /* The rows are still there — the recovery list is unchanged, only the sentence over it. */
+    expect(details.details.lines[0]?.kind).toBe('document_baseline_moved');
+    /* And the message no longer sends anybody to look at a catalogue that did not move. */
+    expect(details.message).not.toContain('แคตตาล็อก');
+    expect(details.message).toContain('ประเทศปลายทาง');
+  }, 60_000);
+
+  /**
+   * ⭐ The third `DEFAULT_VAT_RULE` site: the concession on screen is grossed up at the
+   * destination's rate.
+   *
+   * `measureMargin` grosses a reduction up to what the customer does not transfer, so the rate
+   * is part of the figure. Left at 700 bp this measured ฿1,951.68 where the submit gate — which
+   * runs after `pinDocument` and reads the pinned rate — measures ฿1,988.16, and the screen
+   * would show a number no ceiling is ever compared against. `overrides.ts`' header records
+   * what that costs.
+   *
+   * ฿13,824.00 promised at ฿12,000.00 is a ฿1,824.00 reduction; at 900 bp the customer stops
+   * transferring 182 400 × 1.09 = **198 816**. At 700 it would be 195 168.
+   */
+  it('grosses the concession up at the destination rate, not the default', async () => {
+    const { admin, taxCountries, draftFor, addLine, promiseLine } = await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+
+    const orderId = await draftFor('SG');
+    await addLine(orderId);
+    const promised = await promiseLine(orderId, '12000');
+
+    expect(promised.sales, 'the concession is a sales-only figure').not.toBeNull();
+    expect(minor(promised.sales?.marginConcessionThbMinor)).toBe(198_816n);
+    /* Stated as the arithmetic rather than only the constant, so the number is checkable. */
+    expect(minor(promised.sales?.marginConcessionThbMinor)).toBe(
+      182_400n + divRoundHalfUp(182_400n * 900n, 10_000n),
+    );
   }, 60_000);
 });
 

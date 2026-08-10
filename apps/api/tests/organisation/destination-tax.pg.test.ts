@@ -62,6 +62,7 @@ describeWithPg('resolveDestination against Postgres', () => {
       code: 'SG',
       rule: { rateBp: 900, treatment: 'standard' },
       basis: 'inclusive',
+      known: true,
     });
   });
 
@@ -77,6 +78,7 @@ describeWithPg('resolveDestination against Postgres', () => {
       code: 'TH',
       rule: { rateBp: 700, treatment: 'standard' },
       basis: 'exclusive',
+      known: true,
     });
   });
 
@@ -93,6 +95,45 @@ describeWithPg('resolveDestination against Postgres', () => {
     });
   });
 
+  /**
+   * ⭐ The same code, for a caller that pins nothing — and the reason the two readings differ.
+   *
+   * The refusal above is about the **pin**: falling back would compute Thai tax on a foreign
+   * sale and freeze it. A read freezes nothing, and once `GET /orders/:id/quote` and every
+   * quote write started resolving, that refusal made a two-character typo terminal — the cart
+   * could not be opened, edited, or corrected, because `applySubmission` is the only writer of
+   * `orders.destination_country`.
+   *
+   * So this returns rather than throws, keeps the code the order actually names, and reports
+   * `known: false` — which is what stops it being the silent fallback the refusal exists to
+   * prevent. The arithmetic is the default's; the answer says so.
+   */
+  it('degrades an unknown code for an editing caller, and preserves the code so it can be fixed', async () => {
+    const { service } = await harness();
+
+    expect(await service.resolveForEditing('XX', undefined)).toStrictEqual({
+      code: 'XX',
+      rule: DEFAULT_VAT_RULE,
+      basis: 'exclusive',
+      known: false,
+    });
+  });
+
+  /** A code that *does* resolve is identical either way — the two readings differ on one case. */
+  it('is the same answer as resolveDestination for every code that resolves', async () => {
+    const { service, actor } = await harness();
+    await service.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      actor.id,
+    );
+
+    for (const code of ['SG', 'TH', null]) {
+      expect(await service.resolveForEditing(code, undefined), code ?? 'null').toStrictEqual(
+        await service.resolveDestination(code, undefined),
+      );
+    }
+  });
+
   it('falls back to the default rule when the order names no destination', async () => {
     const { service } = await harness();
 
@@ -100,6 +141,7 @@ describeWithPg('resolveDestination against Postgres', () => {
       code: null,
       rule: DEFAULT_VAT_RULE,
       basis: 'exclusive',
+      known: true,
     });
   });
 });

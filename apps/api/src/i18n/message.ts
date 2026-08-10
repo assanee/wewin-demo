@@ -337,6 +337,13 @@ const PARAM_SHAPES = {
   'error.stale.catalog_while_editing_quote': {},
   'error.stale.quote_edited_by_someone_else': {},
   'error.stale.override_baselines': {},
+  /**
+   * The one cause `override_baselines` describes wrongly: the destination changed, not the
+   * catalogue. The two country codes travel in the error's `details` rather than in the
+   * sentence — `ServerParamKind` is `'money' | 'count'` on purpose, and a code a client sent is
+   * not a thing to interpolate into prose. See `quotes/errors.ts`.
+   */
+  'error.stale.destination_changed_under_promise': {},
 
   /* ── Configuration — src/quotes/pricing.ts, src/orders/order-document.ts ──── */
   'error.line.cannot_be_made': {},

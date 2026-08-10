@@ -126,6 +126,7 @@ export type {
   OverrideEntryModeWire,
   OverrideReasonWire,
   PresentLineRequestWire,
+  QuoteDestinationWire,
   QuoteLineKindWire,
   QuoteLineWire,
   QuoteMoneyWire,

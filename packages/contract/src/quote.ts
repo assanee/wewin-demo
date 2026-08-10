@@ -446,10 +446,37 @@ export interface QuoteSalesViewWire {
   readonly staleBaselines: readonly StaleBaselineWire[];
 }
 
+/**
+ * ⭐ Where this quote is going, and whether the money above is actually that country's.
+ *
+ * `money.vat` names a rate but cannot say *whose*. `POST /orders` accepts any two-letter code
+ * without validating it — deliberately, so an anonymous cart is never refused for a country the
+ * company is about to add — so an order can name a code `tax_countries` has no row for. The
+ * quote screen and every quote write degrade that to the default rule rather than refusing,
+ * because they freeze nothing and a read that refuses leaves a cart nobody can open or correct.
+ *
+ * `recognised: false` is what stops the degrade being silent. It means: **the figures above are
+ * the default rule, not this country's**, the submit will refuse until the code is corrected,
+ * and the correction is a real destination on the submit's own `contact`. Without this field a
+ * client could not tell a genuine Thai quote from a Singapore typo priced as one, which is the
+ * exact failure `TaxCountryService.resolveDestination` refuses at the pin to avoid.
+ *
+ * Outside `sales` and therefore visible to a customer, unlike everything concession-shaped: it
+ * is a fact about their own order that they chose and may have to fix, not the company's
+ * position in a negotiation.
+ */
+export interface QuoteDestinationWire {
+  /** Verbatim, including a code that names no row. Null when the order names no destination. */
+  readonly country: string | null;
+  /** False when `country` names no row: `money.vat` is the default rule, not this country's. */
+  readonly recognised: boolean;
+}
+
 export interface QuoteWire {
   readonly orderId: string;
   readonly quoteRevision: string;
   readonly currency: 'THB';
+  readonly destination: QuoteDestinationWire;
   readonly lines: readonly QuoteLineWire[];
   readonly money: QuoteMoneyWire;
   readonly computedLeadTimeDays: number;
@@ -610,10 +637,19 @@ export const quoteMoneyWireSchema: z.ZodType<QuoteMoneyWire> = z.object({
   vat: z.object({ rateBp: z.int().min(0).max(10_000), treatment: z.string().min(1) }),
 });
 
+export const quoteDestinationWireSchema: z.ZodType<QuoteDestinationWire> = z.object({
+  /* No `/^[A-Z]{2}$/` here, on purpose: this field's whole job is to carry a code the server
+   * could not resolve, and a schema that refused a malformed one would refuse the very payload
+   * that reports it. `orders.destination_country`'s own CHECK is where shape is decided. */
+  country: z.string().nullable(),
+  recognised: z.boolean(),
+});
+
 export const quoteWireSchema: z.ZodType<QuoteWire> = z.object({
   orderId: z.uuid(),
   quoteRevision: z.string().regex(QUOTE_REVISION_PATTERN),
   currency: z.literal('THB'),
+  destination: quoteDestinationWireSchema,
   lines: z.array(quoteLineWireSchema),
   money: quoteMoneyWireSchema,
   computedLeadTimeDays: z.int().min(0),

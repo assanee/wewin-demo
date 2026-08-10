@@ -17,6 +17,7 @@ import type { ZodType } from 'zod';
 
 import { CatalogRepository, type PublishedProduct } from '../catalog/catalog.repository';
 import { AppError } from '../common/errors/app-error';
+import { message } from '../i18n';
 /*
  * `DEFAULT_VAT_RULE` is deliberately no longer imported here, exactly as `orders.service.ts`
  * stopped importing it. Every rate and every basis this file uses now comes from
@@ -39,7 +40,7 @@ import { scopeHolds, type Scope, type UserScope } from '../rbac';
 import { ConcessionIntegrityError, measureMargin } from './authority/concession';
 import { DEFAULT_LEAD_TIME_DAYS, MAX_LEAD_TIME_DAYS, MAX_QUOTE_LINES } from './defaults';
 import { encodeQuote, type QuoteAudience } from './encode';
-import { baselinesStale, catalogStale, quoteStale } from './errors';
+import { baselinesStale, catalogStale, destinationChanged, quoteStale } from './errors';
 import { EntryError, normaliseCharge, normaliseEntry } from './entry';
 import {
   applyOverrides,
@@ -172,8 +173,15 @@ export class QuotesService {
      * `ScopedOrder` in hand carries it and this costs one read of `tax_countries` rather than a
      * second read of the order. `undefined` for the transaction because a plain GET genuinely
      * has none — see `resolveDestination`'s note on why that argument is required but nullable.
+     *
+     * ⚠️ `resolveForEditing` and **not** `resolveDestination`: a read pins nothing, and a read
+     * that refused would leave a cart carrying a mistyped country permanently unopenable —
+     * `applySubmission` is the only writer of `orders.destination_country`, so there would be
+     * no screen from which to correct it. The degrade is reported on the wire
+     * (`destination.recognised`) rather than passed off as a real answer, and the refusal stays
+     * where the money is frozen: `assertSubmittable` below, and `OrdersService.submit`.
      */
-    const destination = await this.taxCountries.resolveDestination(
+    const destination = await this.taxCountries.resolveForEditing(
       order.destinationCountry,
       undefined,
     );
@@ -202,14 +210,16 @@ export class QuotesService {
       documentHashByVersionId: documentHashes(published),
       productIdByVersionId: productIdsByVersion(published),
       /*
-       * ⚠️ The rate the screen *prints*, which is a separate thing from the money.
+       * ⚠️ The whole envelope, because the rate the screen *prints* is a separate thing from
+       * the money and both come from here.
        *
-       * `encodeMoney` copies this onto `money.vat`, and left at `DEFAULT_VAT_RULE` an inclusive
-       * Singapore order would return figures computed at 9% under a heading reading "VAT 7%".
-       * Two numbers that agree with each other and disagree with the sentence beside them is
-       * worse than a wrong total, because nothing on the page looks wrong.
+       * `encodeMoney` copies `destination.rule` onto `money.vat`, and left at
+       * `DEFAULT_VAT_RULE` an inclusive Singapore order returned figures computed at 9% under a
+       * heading reading "VAT 7%". Two numbers that agree with each other and disagree with the
+       * sentence beside them is worse than a wrong total, because nothing on the page looks
+       * wrong. `destination.known` travels with it so a degraded resolution says so.
        */
-      vat: destination.rule,
+      destination,
       staleBaselines,
       audience,
     });
@@ -248,6 +258,27 @@ export class QuotesService {
       this.quotes.listLiveOverrides(order.id, tx),
     ]);
 
+    /*
+     * ⭐ The refusal the read and the write no longer make, made here — where it pins.
+     *
+     * `resolveForEditing` degrades an unrecognised country to the default so a mistyped cart
+     * can still be opened and edited. This is the other half of that bargain: a quote naming a
+     * country `tax_countries` cannot resolve must not become a contract, and
+     * `POST …/quote/verification` must not answer 200 for one either — a gate that green-lit a
+     * quote the submit will reject is worse than no gate.
+     *
+     * `OrdersService.submit` calls `resolveDestination`, which throws the same refusal before
+     * this method is even reached, so on that path this is the second lock rather than the
+     * first. It is not redundant: `verify()` reaches here through `write`, whose resolution is
+     * the degrading one.
+     */
+    if (!destination.known) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+        destinationCountry: destination.code,
+      });
+    }
+
     if (lines.length === 0) {
       /*
        * Zero lines would produce a contract for nothing at a total of zero, which every rule
@@ -261,7 +292,7 @@ export class QuotesService {
     }
 
     const stale = await this.staleBaselines(order.id, lines, overrides, destination, tx);
-    if (stale.length > 0) throw baselinesStale(stale);
+    if (stale.length > 0) throw this.staleRefusal(stale, order, destination);
 
     const effective = this.effective(lines, overrides, destination);
     this.assertCoherent(effective);
@@ -864,12 +895,16 @@ export class QuotesService {
        * locked and *before* anything is written, so the arithmetic that decides whether the
        * write may commit is the arithmetic the write is judged by.
        *
+       * ⚠️ `resolveForEditing`, for the reason `getQuote` gives: an edit freezes nothing, and a
+       * write path that refused an unrecognised country would make the read's degrade pointless
+       * — the quote would open and then refuse every change made on it.
+       *
        * `tx` and not a bare call: the same discipline `OrdersService.submit` follows. It buys
        * one connection rather than two, and a read that sees whatever this transaction has
        * already written — see `resolveDestination`'s own note for what it honestly does and
        * does not buy under READ COMMITTED.
        */
-      const destination = await this.taxCountries.resolveDestination(
+      const destination = await this.taxCountries.resolveForEditing(
         order.destinationCountry,
         tx,
       );
@@ -903,9 +938,9 @@ export class QuotesService {
         marginConcessionThbMinor: this.marginConcession(after, afterOverrides, destination),
         documentHashByVersionId: documentHashes(published),
         productIdByVersionId: productIdsByVersion(published),
-        /* The printed rate, same reason as `getQuote`'s: a write answers with the whole quote,
-         * and the heading over the money has to name the rate the money was computed at. */
-        vat: destination.rule,
+        /* Same envelope, same reason as `getQuote`'s: a write answers with the whole quote, and
+         * the heading over the money has to name the rate the money was computed at. */
+        destination,
         staleBaselines,
         audience: 'sales',
       });
@@ -1136,6 +1171,44 @@ export class QuotesService {
     }
 
     return { computedThbMinor: baseline, computedDays: null, qty: line.qty };
+  }
+
+  /**
+   * The same 409, with the sentence that matches the cause.
+   *
+   * `verifyBaselines` reports *that* the document baseline moved; it cannot report *why*, and
+   * for one cause the default sentence is actively misleading. A submit naming a different
+   * country from the one the quote was edited under recomputes the tax another way, which moves
+   * the baseline and produced *"แคตตาล็อกเปลี่ยน…"* with two null product-version fields and no
+   * country in the body — a message that sends somebody to check a catalogue that did not move.
+   *
+   * Narrow on purpose, and it narrows nothing away:
+   *
+   *   * **every** row must be `document_baseline_moved`. One line-level row and the catalogue
+   *     sentence is the right one, because a line really did go stale;
+   *   * the codes must actually differ. Same country, moved rate — an admin `PATCH` between the
+   *     promise and the submit — is a real case this cannot tell from a catalogue move, and it
+   *     keeps the generic sentence rather than claiming something unproven.
+   *
+   * Both branches are the same 409 over the same rows. The refusal is the refusal; this picks
+   * the words.
+   */
+  private staleRefusal(
+    stale: readonly StaleBaselineWire[],
+    order: ScopedOrder,
+    destination: DestinationTax,
+  ): AppError {
+    const onlyDocument = stale.every((row) => row.kind === 'document_baseline_moved');
+
+    if (onlyDocument && destination.code !== order.destinationCountry) {
+      return destinationChanged({
+        stale,
+        quotedFor: order.destinationCountry,
+        submittedFor: destination.code,
+      });
+    }
+
+    return baselinesStale(stale);
   }
 
   private async requireLine(orderId: string, lineId: string, tx: Tx): Promise<QuoteLineRow> {

@@ -80,6 +80,19 @@ export interface DestinationTax {
   readonly code: string | null;
   readonly rule: TaxRule;
   readonly basis: DestinationTaxBasis;
+  /**
+   * Whether `code` named a row in `tax_countries`.
+   *
+   * `true` for every destination that resolved, **including `code: null`** — naming no country
+   * is a known state with a known answer (`DEFAULT_VAT_RULE`, `exclusive`). It is `false` only
+   * for an envelope `resolveForEditing` built for a code the table has no row for, where `rule`
+   * and `basis` are the default's and are **not** this country's.
+   *
+   * `resolveDestination` never returns `false`: it throws instead. So a `false` cannot reach
+   * `priceOrderDocument` by any path, which is the property that keeps the pin honest while the
+   * editor stays open.
+   */
+  readonly known: boolean;
 }
 
 const encodeChange = (row: {
@@ -272,19 +285,59 @@ export class TaxCountryService {
    * transaction, and nothing about their correctness depends on which connection they use.
    */
   async resolveDestination(code: string | null, tx: Tx | undefined): Promise<DestinationTax> {
-    if (code === null) return { code: null, rule: DEFAULT_VAT_RULE, basis: 'exclusive' };
+    const resolved = await this.lookup(code, tx);
+    if (resolved.known) return resolved;
+
+    throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+      reason: 'unknown_destination_country',
+      destinationCountry: code,
+    });
+  }
+
+  /**
+   * ⭐ The same lookup for a path that **pins nothing** — and the reason the two are separate.
+   *
+   * `POST /orders` accepts any `/^[A-Z]{2}$/` and deliberately does not validate it (see
+   * `OrdersService.createDraft`). That was harmless while resolution happened only at submit.
+   * The moment the quote screen and every quote write began resolving too, a two-character
+   * typo became terminal: `GET /orders/:id/quote` answered 422, so did every edit, and
+   * `applySubmission` is the only writer of `orders.destination_country` — so the cart could
+   * not be opened, could not be edited, and could not be corrected. Measured: create with
+   * `'ZZ'`, then 422 on the read and 422 on adding a line, both of which were 200 before.
+   *
+   * The refusal above is right and stays exactly where it was: `resolveDestination`'s own note
+   * says falling back to `DEFAULT_VAT_RULE` *"would compute Thai tax on a foreign sale and pin
+   * it to the document permanently, with nothing recording that a fallback happened"* — and
+   * every word of that is about **pinning**. A read freezes nothing. So a read degrades, keeps
+   * the code the order actually names, and reports `known: false` so the answer records that a
+   * fallback happened rather than passing off Thai money as Singapore's.
+   *
+   * The submit still refuses, in two places: here, for `OrdersService.submit`, and again in
+   * `QuotesService.assertSubmittable`, so that `POST …/quote/verification` cannot green-light a
+   * quote the submit will reject.
+   */
+  async resolveForEditing(code: string | null, tx: Tx | undefined): Promise<DestinationTax> {
+    return this.lookup(code, tx);
+  }
+
+  /** One statement and one interpretation of the row, shared by both readings above. */
+  private async lookup(code: string | null, tx: Tx | undefined): Promise<DestinationTax> {
+    if (code === null) {
+      return { code: null, rule: DEFAULT_VAT_RULE, basis: 'exclusive', known: true };
+    }
 
     const [row] = await this.repository.byCode(code, tx);
     if (row === undefined) {
-      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
-        reason: 'unknown_destination_country',
-      });
+      /* The code is preserved, not blanked: it is what the customer chose and what has to be
+       * shown back to them to be corrected. Only the arithmetic falls back. */
+      return { code, rule: DEFAULT_VAT_RULE, basis: 'exclusive', known: false };
     }
 
     return {
       code: row.code,
       rule: { rateBp: row.rateBp, treatment: row.treatment as TaxTreatment },
       basis: row.pricesIncludeTax ? 'inclusive' : 'exclusive',
+      known: true,
     };
   }
 }

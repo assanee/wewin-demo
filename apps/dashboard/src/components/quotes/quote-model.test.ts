@@ -112,6 +112,9 @@ const quote = (over: Partial<QuoteWire> = {}): QuoteWire => {
     orderId: '00000000-0000-4000-8000-000000000001',
     quoteRevision: '0123456789abcdef',
     currency: 'THB',
+    /* A domestic order, resolved. `recognised: false` means the money block above is the
+     * default rule rather than this country's — see `QuoteDestinationWire`. */
+    destination: { country: 'TH', recognised: true },
     lines,
     money: {
       netThbMinor: thb(net),

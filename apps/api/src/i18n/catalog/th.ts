@@ -246,6 +246,16 @@ export const TH: Catalogue = {
     'ใบเสนอราคานี้ถูกแก้ไขโดยคนอื่นระหว่างที่คุณกำลังทำรายการ — กรุณาโหลดใหม่',
   'error.stale.override_baselines':
     'แคตตาล็อกเปลี่ยนหลังจากที่ตกลงราคาไว้ — ต้องยืนยันราคาที่ตกลงใหม่ทีละรายการก่อนส่งใบเสนอราคา',
+  /*
+   * ⚠️ Deliberately does **not** mention the catalogue. This is the sentence a salesperson gets
+   * when the submit names a different destination from the one the total was agreed under: the
+   * tax is computed another way, so the agreed total no longer means what it said. Sending them
+   * to check the catalogue — which is what the line above did — is sending them to look at
+   * something that did not move.
+   */
+  'error.stale.destination_changed_under_promise':
+    'ประเทศปลายทางที่ส่งมาไม่ใช่ประเทศที่ตกลงยอดรวมไว้ ภาษีจึงคิดคนละแบบ — ' +
+    'ต้องยืนยันยอดรวมที่ตกลงไว้ใหม่ตามประเทศปลายทางนี้ หรือยกเลิกยอดรวมที่ตกลงไว้ก่อนส่งใบเสนอราคา',
 
   /* ── Configuration ───────────────────────────────────────────────────────── */
   'error.line.cannot_be_made': 'รายการนี้ผลิตไม่ได้ตามที่กำหนดไว้',

@@ -45,6 +45,7 @@ import { message } from '../i18n';
 
 export const QUOTE_STALE = 'quote_stale';
 export const QUOTE_BASELINES_STALE = 'quote_baselines_stale';
+export const QUOTE_DESTINATION_CHANGED = 'quote_destination_changed';
 
 /**
  * Said to a salesperson mid-edit, and deliberately not the same key the configurator uses.
@@ -99,6 +100,48 @@ export function baselinesStale(stale: readonly StaleBaselineWire[]): AppError {
     reason: QUOTE_BASELINES_STALE,
     /* `Exact` again: opaque in TypeScript, an object on the wire. */
     lines: stale as unknown as JsonValue,
+  });
+}
+
+/**
+ * ⭐ The same refusal, for the one cause the sentence above gets wrong.
+ *
+ * A submit naming a different country from the one the quote was edited under, while a live
+ * `grand_total` promise exists, moves the document baseline — the tax is computed at another
+ * rate, or divided out instead of added on — and `verifyBaselines` correctly reports
+ * `document_baseline_moved`. It then travelled as *"แคตตาล็อกเปลี่ยนหลังจากที่ตกลงราคาไว้"*, with
+ * `pinnedProductVersionId` and `publishedProductVersionId` both null and no country anywhere in
+ * the body. The catalogue had not moved. Somebody acting on that message goes and checks the
+ * catalogue, finds nothing, and has no next step.
+ *
+ * ⚠️ **This weakens nothing.** It fires only where `baselinesStale` would have fired, on
+ * exactly the same rows, with the same 409 and the same `lines` payload; it changes the
+ * sentence and adds the two countries so the recovery — re-confirm the total under the country
+ * actually being submitted, or withdraw it — is a thing a person can do.
+ *
+ * The discriminator is the observable one: the two codes differ. A rate edited under a quote
+ * *without* the country changing produces the same movement and still gets the catalogue
+ * sentence — imprecise, and deliberately not inferred, because the only way to tell it apart
+ * would be to store what arithmetic each baseline was taken under, which is a column and not a
+ * comment.
+ *
+ * The sentence names the *subject* and the two codes travel in `details`, the arrangement
+ * `quoteStale` already uses for `sent`/`current`. Interpolating them would need a `'text'`
+ * param kind, and `ServerParamKind` is deliberately `'money' | 'count'` — a message machinery
+ * that accepts arbitrary strings is one that eventually renders a country code a client sent.
+ */
+export function destinationChanged(input: {
+  readonly stale: readonly StaleBaselineWire[];
+  readonly quotedFor: string | null;
+  readonly submittedFor: string | null;
+}): AppError {
+  return AppError.conflict(message('error.stale.destination_changed_under_promise'), {
+    reason: QUOTE_DESTINATION_CHANGED,
+    /** The country the quote was edited and the promise measured under. */
+    quotedFor: input.quotedFor,
+    /** The country this submit is pricing for. */
+    submittedFor: input.submittedFor,
+    lines: input.stale as unknown as JsonValue,
   });
 }
 
