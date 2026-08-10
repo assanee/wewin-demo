@@ -23,7 +23,7 @@ treatment: 'standard' }` at `apps/api/src/orders/defaults.ts:33-36` feeds every 
 and every pin. Live database: all 21 issued documents are `700 | standard`; `select
 count(distinct pinned_vat_rate_bp) from order_documents` returns 1.
 
-**Two tax functions, and nothing else computes tax.** `packages/core/src/vat.ts` is 72 lines
+**Two tax functions, and nothing else computes tax.** `packages/core/src/vat.ts` is 71 lines
 and exports exactly `fromNet(netMinor, rule)` at `:50` and `fromGrand(grandMinor, rule)` at
 `:65`. Rounding is `divRoundHalfUp` — half away from zero, bigint, no float
 (`packages/core/src/money.ts:56-69`). `fromNet` rounds the VAT and adds; `fromGrand` rounds
@@ -37,8 +37,9 @@ occurrences of `vat` or `tax`.
 
 **The percentage-deposit generator already exists and is fully tested.**
 `depositPercentTerms(percentBp)` at `apps/api/src/payments/schedule/terms.ts:71-74`, exported
-at `payments/schedule/index.ts:41`, exercised in six test files. It refuses 0 bp and refuses
-anything above 10 000 bp (`plan.test.ts:171-177`). P2(c) needs no new deposit arithmetic.
+at `payments/schedule/index.ts:41`, exercised in four test files plus a shared support helper. It
+refuses 0 bp and refuses anything above 10 000 bp (`plan.test.ts:171-177`). P2(c) needs no new
+deposit arithmetic.
 
 **The concession floor is already a parameter — one level deeper than it looks.**
 `cashflowConcessionMinor(totalMinor, rows, floorBp = GATE_COVERAGE_BP_DEFAULT)` at
@@ -317,8 +318,16 @@ country. The edits, enumerated:
 
 | Site | Today | Becomes |
 |---|---|---|
-| `apps/api/src/orders/orders.service.ts:721` | `vat: DEFAULT_VAT_RULE` into `priceOrderDocument` | `vat: destination.rule` |
+| `apps/api/src/orders/order-document.ts:119-132` | `PriceOrderParams` carries `vat: TaxRule` and nothing about a destination | gains `destinationCountry: string \| null` and `taxBasis: 'inclusive' \| 'exclusive'` |
+| `apps/api/src/orders/order-document.ts:325` | the `withHash({ documentSchemaVersion, revision, … })` literal — the **only** place the pinned JSON is assembled | writes both new fields into the document |
+| `apps/api/src/orders/orders.service.ts:721` | `vat: DEFAULT_VAT_RULE` into `priceOrderDocument` | `vat: destination.rule`, plus the two new params |
 | `apps/api/src/orders/orders.service.ts:747-748` | `pinnedVatRateBp: DEFAULT_VAT_RULE.rateBp`, `pinnedVatTreatment: DEFAULT_VAT_RULE.treatment` | both from `destination.rule` |
+
+**The first two rows are why `:741` alone cannot do this, and an earlier draft implied it could.**
+`pinDocument` (`order.repository.ts:476`) receives the built document plus the pinned *columns*,
+and §6.2 deliberately adds no destination column — so the code and the basis can only reach
+storage inside `input.document`, which `priceOrderDocument` built. A `:741`-only edit has nowhere
+to put them.
 
 Without A, nothing else in §5 matters.
 
@@ -333,12 +342,31 @@ no basis; it gains `basis: 'inclusive' | 'exclusive'`. Then:
 :246  grand-total override      UNCHANGED — see below
 ```
 
-`:268` is not optional and is the easiest thing here to miss. It computes the concession
-*baseline* with `fromNet(baseTaxable, vat)`, which reaches the dashboard through
+`:268` is not optional and is the easiest thing here to miss. It computes the *baseline* with
+`fromNet(baseTaxable, vat)`, which reaches the dashboard through
 `apps/api/src/quotes/encode.ts:96` as `baselineGrandTotalThbMinor`. Left exclusive while `:224`
 goes inclusive, the baseline sits ~7–9% above the effective total, so **every inclusive quote
-with nothing negotiated displays a phantom concession** — and a phantom concession is measured
-by the authority gate, which is fail-closed.
+with nothing negotiated shows staff a "before negotiation" figure above what the customer is
+actually being charged.**
+
+**The authority gate does not see this, and an earlier draft of this spec wrongly said it did.**
+`measureMargin`'s input is `{ vat, lines, overrides }` (`concession.ts:136-141`) and every source
+is derived from override rows, negative charge lines and non-taxable lines (`:250-337`);
+`AuthorityService.measureFor` (`authority.service.ts:142-181`) reads live lines, overrides and
+instalments and never calls `applyOverrides`. With no override rows the margin concession is
+`0n`. So no inclusive quote is blocked, and the only consumer of `EffectiveQuote.baseline`
+outside `overrides.ts` itself is that one display field
+(`grep -rn '\.baseline' apps/api/src` → `encode.ts:96`).
+
+**Which changes how this is tested, and that is why the correction matters.** The assertion is
+`sales.baselineGrandTotalThbMinor == money.grandTotalThbMinor` on an inclusive quote with **no**
+overrides — it goes red if `:268` stays `fromNet`. Asserting that a submit is refused passes
+whether or not `:268` is fixed, so an implementer told "the gate blocks it" would write a green
+test that proves nothing.
+
+While here: `overrides.ts:256`'s inline comment calls the baseline *"the baseline the concession
+is measured from"*, which is stale — nothing measures a concession from it. The comment is
+corrected as part of edit B, since leaving it is how the next reader repeats this mistake.
 
 `:246` stays as it is. It is reserved for a human grand-total override, and it carries the
 exempt-charge split and the `belowExempt` refusal that raises
@@ -361,12 +389,33 @@ the customer receives another.
 
 **D. Per-line tax inside approval measurement — deliberately untouched.**
 
-`apps/api/src/quotes/authority/concession.ts:195` and `:332` gross lines up individually
-(`grossUp`). They stay exclusive-only. Two reasons, and the second is the repo's own: the
-figure is never printed — `concession.ts:187` accepts a satang-per-source divergence on that
-basis — and the margin dimension measures *movement between two states*, both computed the same
-way, so a uniform basis cancels out of the difference. §11 test 7 pins that a document-level
-basis change does not move a margin measurement.
+`apps/api/src/quotes/authority/concession.ts:195` and `:332` gross figures up individually
+(`grossUp`). They stay exclusive-only, and the consequence must be stated honestly rather than
+argued away.
+
+**An earlier draft claimed a uniform basis "cancels out of the difference". It does not.**
+`grossUp` is applied to the reduction *itself*, not to two states that are then differenced:
+`const reduction = computed - value` (`:260`) goes straight into `grossUp(reduction, …)` (`:283`).
+Multiplying by (1 + rate) is correct only when the line figures are net. Under inclusive, edit B
+reinterprets those same per-line figures as VAT-inclusive, so at 700 bp a ฿1,000.00 reduction the
+customer genuinely saves measures as **฿1,070.00**. `:332` is not a difference at all — it is
+`fromNet(listed, vat).vatMinor` on an absolute list figure, ฿70.00 where the VAT actually
+embedded in an inclusive ฿1,000.00 is ฿65.42. Both are overstated by the rate.
+
+**Why that is acceptable, stated as a cost rather than a non-issue:**
+
+- The figure is **never posted**. `concession.ts:187-192` records that it is compared against a
+  ceiling and written into `approvals.concession_thb_minor` as a record of what was *asked for*;
+  nothing derives cash from it.
+- The error's direction is **fail-closed**: a larger measured concession demands more authority,
+  never less. It cannot let something through.
+- The costs, so nobody discovers them as bugs: on inclusive orders the approver's inbox shows
+  `sources` rows up to the rate above the customer's real saving, and the recorded audit figure
+  carries the same inflation.
+
+Making these two sites basis-aware is a legitimate follow-up. It is out of P2 because it changes
+a measurement that is currently unreachable in practice — `authority_limits` is empty — and would
+be built with no way to observe it end to end.
 
 **E. Per-line tax in the document — still forbidden.** Tax is taken once, at document level.
 Nothing in P2 introduces a per-line VAT figure into a document.
@@ -425,7 +474,7 @@ being true for a deposit **at** policy, and stays true for one below it.
 **Why H is load-bearing rather than tidy.** Without it, the first configured deposit under 100%
 makes **every** submit throw and roll back the whole transaction — document, order, schedule and
 status event — because the gate runs inside the submit transaction
-(`orders.service.ts:830`), a below-floor schedule measures as a cashflow concession, and
+(`orders.service.ts:829`), a below-floor schedule measures as a cashflow concession, and
 `authority_limits` has zero rows, so fail-closed cannot grant the approval it demands.
 
 ---
@@ -445,11 +494,17 @@ this spec listed the order row before resolution, which would have an implemente
 destination after the document had already been pinned without it.
 
 1. **Contract.** `orderContactRequestSchema`
-   (`packages/contract/src/order.ts:622-633`) gains `destinationCountry:
-   z.string().regex(/^[A-Z]{2}$/u).optional()`. It is a `.strictObject(...).refine(...)` —
-   a `ZodEffects`, **not** an object schema — so it cannot be `.extend()`ed: the object
-   literal is edited in place, and the `OrderContactRequestWire` interface beside it is
-   edited to match.
+   (`packages/contract/src/order.ts:622-632`) gains `destinationCountry:
+   z.string().regex(/^[A-Z]{2}$/u).optional()`. Edit the object literal in place, and edit the
+   `OrderContactRequestWire` interface beside it to match.
+
+   An earlier draft justified this by claiming the schema is a `ZodEffects` that cannot be
+   `.extend()`ed. **That is false for this repo's zod** — 4.4.3, where `.refine()` returns a
+   `ZodObject` and `.extend` is a function (verified by running it). The claim was stated twice as
+   load-bearing and is withdrawn. Editing the literal is simply the right move here: the schema is
+   one declaration consumed by `submitOrderRequestSchema` at `:646`, and the wire interface has to
+   gain the field either way, so an `.extend()` chain would add a second place to keep honest for
+   no benefit.
 2. **Storefront form.** A `ประเทศปลายทาง` select on `RequestQuotationForm`, options from
    the public read of §7.3, ordered by `sort_order`, defaulting to `TH`. It joins the
    contact fields that P1's pre-fill work already remembers
@@ -461,16 +516,20 @@ destination after the document had already been pinned without it.
    carries only a telephone number must not erase an address a cart already had"*). Reading it
    from the body alone would silently erase a destination the cart already held. §5.1 then turns
    the code into a `DestinationTax`, or refuses.
-4. **Document.** Priced at `:715` with `vat: destination.rule` (§5.2 edit A), pinned at `:741`
-   with the rate, treatment, code and basis. Permanent from this point.
+4. **Document.** Priced at `:715`, which is where the code and the basis enter — they travel
+   inside the built document via `PriceOrderParams` and the `withHash` literal, **not** through
+   the pinning call (§5.2 edit A). `:741` then pins the rate and treatment as columns, and stores
+   the document that already carries the other two. Permanent from this point.
 5. **Order row.** `applySubmission` at `:776` records `destination_country` (§4.4) — after the
    document, not before.
 6. **Read-back, or the pre-fill in hop 2 cannot work.** `OrderContactWire`
-   (`packages/contract/src/order.ts:387`) carries `name`, `phone` and `email` and no
-   destination, and `apps/web/src/lib/quote/prefillContact.ts:47-58` reads the prior order's
-   contact back out of `GET /orders/:id`. Without extending that wire type, its encoder, and the
-   repository's column selection, the country can never be pre-filled. This hop is listed
-   separately because it is easy to believe hop 2 delivers the benefit on its own; it does not.
+   (`packages/contract/src/order.ts:346`, used at `:387` as `OrderWire.contact`) carries `name`,
+   `phone`, `email` and `locale` — four fields, no destination. `GET /orders/:id`'s contact is
+   decoded at `apps/web/src/lib/quote/prefillContact.ts:172-176`. Without extending that wire
+   type, its encoder, and the repository's column selection, the country can never be pre-filled.
+   `locale` is the field to copy from: it is the one that already makes this exact round trip, so
+   whatever it touches, the destination touches too. This hop is listed separately because it is
+   easy to believe hop 2 delivers the benefit on its own; it does not.
 
 ### 6.2 What is pinned
 
@@ -519,11 +578,15 @@ field.
 ### 7.1 The write pattern, copied exactly
 
 Every write and its history row are **one transaction**, and the pre-image is read under a row
-lock. From `apps/api/src/organisation/organisation.service.ts:31-40` and `:77`:
-`SELECT … FOR UPDATE` before the UPDATE, history INSERT as the last statement. This is not
-stylistic — P1's final review found that an unlocked pre-image read lets concurrent PATCHes
-break history contiguity (`before[N] == after[N-1]`), and `FOR UPDATE` is the house pattern at
-eight sites.
+lock. The service holds the transaction and the ordering
+(`apps/api/src/organisation/organisation.service.ts:31-40`; `:77` reads the pre-image, `:75`
+records why); the lock itself lives in the repository —
+`organisation.repository.ts:80-82`, `tx.select().from(bankAccounts).where(…).limit(1).for('update')`.
+History INSERT is the last statement.
+
+This is not stylistic. P1's final review found that an unlocked pre-image read lets concurrent
+PATCHes break history contiguity (`before[N] == after[N-1]`), and `.for('update')` is the house
+pattern at nine sites across `apps/api/src`.
 
 ### 7.2 Permissions — reuse, do not invent
 
@@ -532,19 +595,22 @@ P2 reuses **`organisation.read`** and **`organisation.write`**
 settings, and `organisation.write` already means "edit the company's settings". Inventing
 `tax.write` would split one idea across two codes.
 
-**The reason is not that reuse avoids a 403.** It does not. No migration grants
-`organisation.read` or `organisation.write` to any group — `grep` for either code across
-`packages/db/drizzle/*.sql` returns nothing, and
-`apps/api/tests/organisation/organisation.pg.test.ts:126-127` mints them per test via
-`makeActor`. So the new routes are unreachable until somebody writes a grant, exactly as a new
-code would be. That is true of P1's routes today and is not a P2 problem to solve; it is stated
-here only so an implementer does not read "reuse" as "works out of the box" and spend a day
-debugging a 403 that is the intended answer.
+**The reason is not that reuse avoids a 403.** No migration grants `organisation.read` or
+`organisation.write` to any group — `grep` for either code across `packages/db/drizzle/*.sql`
+returns nothing, and `apps/api/tests/organisation/organisation.pg.test.ts:126-127` mints them per
+test via `makeActor`. On a freshly migrated database the new routes are unreachable until somebody
+writes a grant, exactly as a new code would be.
+
+**In the working dev database they are already reachable.** It carries 19 grants, including both
+`organisation.*` codes, so P2's routes will answer for whoever holds them from the first run. The
+distinction matters in one direction only: a green dev environment is not evidence that a fresh
+deployment can reach these routes. Neither reuse nor a new code changes that, and P2 does not
+solve it.
 
 ### 7.3 Routes
 
 Added to the existing `OrganisationController` (`@Controller('admin/organisation')`,
-`apps/api/src/organisation/organisation.controller.ts:46-121`), following its idiom exactly:
+`apps/api/src/organisation/organisation.controller.ts:46-122`), following its idiom exactly:
 `@RequirePermissions(...)`, `@contractVersion()`, and `@Body(new ZodBodyPipe(schema))`.
 
 | Route | Permission |
@@ -582,19 +648,23 @@ treatment and the basis, which are tax policy and belong on the quotation the cu
 actually received. The order-scoping P1 chose is unavailable here by construction: the customer
 must pick a destination *before* an order exists.
 
-### 7.4 Three test tables that will fail
+### 7.4 Two test tables that will fail
 
-Each is an exhaustive `toStrictEqual` list. None of them is optional, and all three fail for
-reasons that look unrelated to tax:
+Both are exhaustive `toStrictEqual` lists, and both fail for reasons that look unrelated to tax:
 
 - `apps/api/tests/admin/route-permissions.test.ts` — `ADMIN_ROUTE_PERMISSIONS` map, which
   lists the seven organisation routes at `:137-143`; the assertion at `:164-175` compares key
-  sets both ways.
+  sets both ways. The five `/admin` routes above go here; `GET /destinations` does **not**.
 - `apps/api/tests/rbac/route-audit.test.ts` — a sorted whole-app route inventory; each new
   endpoint needs a literal line in the right sorted position with its access kind in brackets
-  (existing organisation entries at `:293-295`, `:389`, `:398`, `:470-471`).
-- `apps/dashboard/tests/navigation.test.ts` — asserts exact href lists per permission set and
-  that hrefs are unique (`:92-96`).
+  (existing organisation entries at `:293-295`, `:389`, `:398`, `:470-471`). All six new routes
+  go here, including `GET /destinations [anonymous]`.
+
+**`apps/dashboard/tests/navigation.test.ts` will *not* fail, and an earlier draft wrongly listed
+it as a third.** Every assertion in that file is a function of `NAVIGATION` and `holdsAll` alone,
+and P2 adds no permission code (§7.2) and no nav entry (§7.5 — the tax table joins the existing
+`/organisation` page). An implementer told it is mandatory would either hunt for a red test that
+does not exist or, worse, edit `navigation.ts` to manufacture one.
 
 The dashboard's hand-maintained permission copy at
 `apps/dashboard/src/lib/auth/permissions.ts:27-47` needs **no change**, because P2 adds no
@@ -701,7 +771,7 @@ Two structural consequences the plan must handle rather than discover:
 - **`about/page.tsx`'s `Fact` takes `note: string` as a required prop** (`:313`) and renders it
   unconditionally in a `<span>` (`:320`). Removing the note means `note?: string` plus a guard,
   not merely deleting the argument.
-- **`AppFooter` is on only three of the eight storefront routes** —
+- **`AppFooter` is on only three of the ten storefront page routes** —
   home, `/products`, `/about` (`footer-routes.ts:32-34`, gated at `AppShell.tsx:88`). Treating
   the footer as the global fix leaves `/quote` and the product pages untouched, which is
   precisely why `QuoteScreen.tsx:180` and `ConfiguratorIsland.tsx:611` render their own copies.
@@ -736,7 +806,7 @@ Four mechanics, each of which has already bitten this repo:
    fails with *"a treatment names a foreign key that no longer exists"* (`:682`). Migration and
    treatments ship in one change; treatments-first is a red build.
 3. **`scrub` has no generic coverage.** The coverage loop does `if (treatment !== 'delete')
-   continue;` (`:707`), so declaring `scrub` and forgetting the UPDATE in `erase_user()` is
+   continue;` (`:708`), so declaring `scrub` and forgetting the UPDATE in `erase_user()` is
    silent repo-wide — the test file records that commenting out a real scrub left all 148
    package tests and all 721 API tests green. Each new scrub column therefore needs **its own
    named test** *and* **a seeded row in `createSubject`**, or the test counts zero either way
@@ -826,11 +896,22 @@ one reason.
    `coverageOf(locale) === 1` for all eight. Deleting keys and adding one must leave it green;
    `th.ts` is typed `UiCatalogue` so a missing key there is a compile error, while the other
    seven are `PartialUiCatalogue` and fail only in that test.
-7. **A basis change does not move a margin measurement.** Referenced by §5.2 edit D, which leaves
-   `concession.ts:195`/`:332` exclusive-only. Measure the margin dimension for one document under
-   `exclusive`, then under `inclusive` with everything else identical, and assert the measurement
-   is unchanged — the claim that a uniform per-line basis cancels out of a difference between two
-   states. If it does move, edit D is wrong and those two sites must become basis-aware.
+7. **The baseline agrees with the effective total when nothing was negotiated.** On an inclusive
+   quote with **no** override rows, assert
+   `sales.baselineGrandTotalThbMinor == money.grandTotalThbMinor`. It goes red if §5.2 edit B
+   leaves `overrides.ts:268` on `fromNet`, which is the only way to catch that miss — the field is
+   display-only and no gate reads it.
+
+   An earlier draft proposed a different test here: measure the margin dimension "under exclusive,
+   then under inclusive" and assert no change. **That test cannot fail.** Basis is not an input to
+   the measurement at any level — `MarginInput` is `{ vat, lines, overrides }`
+   (`concession.ts:136-141`), `TaxRule` is `{ rateBp, treatment }`, and no per-line row read by
+   `authority.repository.ts:186,239` is basis-dependent — so the "two runs" are one function call
+   with identical arguments. It is precisely the hazard test 2 and §9 item 3 warn about, and it was
+   written into this spec by the same reflex it warns against. The per-source overstatement that
+   edit D accepts is **documented, not tested**: there is no assertion that can distinguish
+   accepted-and-understood from broken, so §5.2 D states the cost in prose instead of pretending a
+   green test proves it safe.
 
 Money is `bigint` minor units throughout. P1's final review found a sign-split bug where
 `-150n` rendered as `-1.-50` because BigInt truncates toward zero; any new money rendering in
@@ -847,11 +928,11 @@ P2 uses the corrected `f.baht`/sign-split form rather than a fresh division.
 | The deposit ships without the `concession.ts` edit and every submit rolls back. | Test 4, and the two changes are specified as one deliverable, not two tasks. |
 | Lines and charges stop summing to the printed grand total under inclusive pricing. | Test 3, with a fixture that carries a charge. No database constraint covers this — `order_documents_total_foots` checks only `grand = net + vat`. |
 | The quote screen shows exclusive money while the pinned document is inclusive. | §5.2 edit C — all five `effective()` call sites. This is the divergence `order-document.ts:254` exists to prevent. |
-| Every inclusive quote displays a phantom concession, which the fail-closed gate then measures. | §5.2 edit B — `overrides.ts:268`, the baseline branch, takes the same switch as `:224`. |
+| Staff see a "before negotiation" figure above what the customer is charged, on every inclusive quote. | §5.2 edit B — `overrides.ts:268`, the baseline branch, takes the same switch as `:224`. Pinned by test 7. The authority gate does **not** read this field, so a gate assertion would pass either way. |
 | The rate stays 700 bp for every country because only the formula was changed. | §5.2 edit A — `orders.service.ts:721` and `:747-748`. Without it the feature is cosmetic. |
 | The shipped default deposit silently changes the schedule's shape and reddens a passing test. | §5.3 edit G — `deposit_bp === 10_000` keeps today's pay-in-full terms; `lifecycle.pg.test.ts:188` stays green. |
 | A schedule mismatch surfaces as an untargeted 409 at COMMIT. | VAT must be final before `pinsForSubmit`; the ordering is stated at `orders.service.ts:769-772`, and the schedule's constraints are DEFERRED (`schedule.repository.ts:28-33`). |
-| A new optional contact field silently erases a value the cart already held. | `orderContactRequestSchema` is `.strictObject().refine(...)` — a `ZodEffects`, so it cannot be `.extend()`ed; the object literal and the `OrderContactRequestWire` interface are both edited. The service reads contact fields as `body.contact.X ?? order.contactX` (`orders.service.ts:780-790`) and the destination field follows that same pattern. |
+| A new optional contact field silently erases a value the cart already held. | The service reads contact fields as `body.contact.X ?? order.contactX` (`orders.service.ts:780-790`) and the destination field follows that same pattern. |
 | Storefront ships the country select before the contract accepts it. | Both submit schemas are `strictObject`, so an undeclared key is a 400, not an ignored field (`transitions.ts:100-104`). Contract before storefront, in that order. |
 
 ---
@@ -860,9 +941,14 @@ P2 uses the corrected `f.baht`/sign-split form rather than a fresh division.
 
 - **No approval UI and no `authority_limits` seeding — so a below-policy deposit stays
   unauthorable.** D2 removes the need for approval on a deposit **at** policy; it deliberately
-  keeps the requirement below policy ("the control moves, it does not disappear"). With
-  `authority_limits` empty and `quotes.approve` granted to no group, "requires approval" is in
-  practice "is refused, and rolls back the whole submit". P2 therefore ships a company deposit
+  keeps the requirement below policy ("the control moves, it does not disappear"). **What closes
+  the door is the empty ceiling table, and only that.** `authority_limits` has 0 rows and
+  `approvals` has 0 rows in the live dev database, so there is nothing to measure a request
+  against. The approver permission is *not* the blocker: `permissions.ts:43-50` says
+  `quotes.approve` is "granted to no group at boot", which is true of migrations and misleading
+  about reality — the dev database carries 19 grants including `quotes.approve` and both
+  `organisation.*` codes. So "requires approval" is in practice "is refused, and rolls back the
+  whole submit", for want of a ceiling. P2 therefore ships a company deposit
   policy that works, and leaves per-quotation deviation from it as impossible as it is today —
   neither better nor worse. §11 test 4 asserts the measurement, not that the submit succeeds.
   The dashboard screen for setting authority ceilings remains unbuilt.
