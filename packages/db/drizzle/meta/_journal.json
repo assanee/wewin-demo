@@ -190,6 +190,20 @@
       "when": 1786104428773,
       "tag": "0026_phone_one_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786270407505,
+      "tag": "0027_organisation",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786270407506,
+      "tag": "0028_erase_organisation_actors",
+      "breakpoints": true
     }
   ]
 }

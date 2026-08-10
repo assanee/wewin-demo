@@ -290,6 +290,9 @@ describe('boot-time route audit', () => {
       'GET /admin/notifications [permissions]',
       'GET /admin/notifications/:notificationId/attempts [permissions]',
       'GET /admin/notifications/summary [permissions]',
+      'GET /admin/organisation [permissions]',
+      'GET /admin/organisation/bank-accounts [permissions]',
+      'GET /admin/organisation/bank-accounts/:id/changes [permissions]',
 
       'GET /admin/reviews/queue [permissions]',
       'GET /admin/users [permissions]',
@@ -321,6 +324,7 @@ describe('boot-time route audit', () => {
       'GET /orders/:orderId/customer-link [permissions]',
       'GET /orders/:orderId/document [principal]',
       'GET /orders/:orderId/events [principal]',
+      'GET /orders/:orderId/payment-instructions [principal]',
       'GET /orders/:orderId/payment-slips [principal]',
       /*
        * `[principal]` and not `[permissions]`, alone among the quote routes: a customer reads
@@ -382,6 +386,7 @@ describe('boot-time route audit', () => {
       'PATCH /admin/catalog/products/:productId/draft [permissions]',
       'PATCH /admin/groups/:groupId [permissions]',
       'PATCH /admin/media/:mediaId [permissions]',
+      'PATCH /admin/organisation/bank-accounts/:id [permissions]',
       'POST /admin/catalog/option-groups [permissions]',
       'POST /admin/catalog/option-groups/:groupCode/values [permissions]',
       'POST /admin/catalog/products [permissions]',
@@ -390,6 +395,7 @@ describe('boot-time route audit', () => {
       'POST /admin/groups [permissions]',
       'POST /admin/media [permissions]',
       'POST /admin/notifications/:notificationId/retry [permissions]',
+      'POST /admin/organisation/bank-accounts [permissions]',
       'POST /admin/reviews/:reviewId/hide [permissions]',
       'POST /admin/reviews/:reviewId/publish [permissions]',
       'POST /admin/reviews/:reviewId/reply [permissions]',
@@ -461,6 +467,8 @@ describe('boot-time route audit', () => {
       'PUT /admin/catalog/products/:productId/draft/options/:groupCode [permissions]',
       'PUT /admin/catalog/products/:productId/draft/rules/:ruleCode [permissions]',
       'PUT /admin/groups/:groupId/permissions [permissions]',
+      'PUT /admin/organisation [permissions]',
+      'PUT /admin/organisation/bank-accounts/:id/availability [permissions]',
       'PUT /admin/users/:userId/groups [permissions]',
       'PUT /me/preferences [authenticated]',
       'PUT /quotes/authority/limits [permissions]',

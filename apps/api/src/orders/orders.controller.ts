@@ -21,12 +21,13 @@ import {
   type ChangeRequestWire,
   type CreateChangeRequestWire,
   type CreateOrderRequestWire,
-  type OrderDocumentWire,
+  type OrderDocumentResponseWire,
   type OrderEventListWire,
   type OrderListWire,
   type OrderWire,
   type ResolveChangeRequestWire,
 } from '@wewin/contract/order';
+import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
 import type { OrderStatus } from '@wewin/db/schema';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
@@ -243,7 +244,14 @@ export class OrdersController {
     return this.orders.listEvents(scope, orderId);
   }
 
-  /** What was frozen at submit — trap 3's pin, as the customer saw it. */
+  /**
+   * What was frozen at submit — trap 3's pin, as the customer saw it — beside who is
+   * offering it, read live.
+   *
+   * ⚠️ `seller` sits beside `document`, never inside it. See `OrderDocumentResponseWire`:
+   * the pinned half's shape does not move, and the live half is a fresh read of
+   * `organisation_profile` on every call.
+   */
   @Get(':orderId/document')
   @contractVersion()
   @privateToTheCaller()
@@ -251,8 +259,27 @@ export class OrdersController {
   async document(
     @CurrentScope() scope: Scope,
     @Param('orderId') orderId: string,
-  ): Promise<OrderDocumentWire> {
+  ): Promise<OrderDocumentResponseWire> {
     return this.orders.getDocument(scope, orderId);
+  }
+
+  /**
+   * How much is owed, and where to send it.
+   *
+   * ⚠️ Ownership-scoped rather than a public account list, for two reasons. There is no
+   * reason to publish the company's account numbers to callers with no order — and P2 makes
+   * the accounts vary by destination country, which this shape absorbs without changing the
+   * endpoint.
+   */
+  @Get(':orderId/payment-instructions')
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePrincipal()
+  async paymentInstructions(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+  ): Promise<PaymentInstructionsWire> {
+    return this.orders.paymentInstructions(scope, orderId);
   }
 
   /**

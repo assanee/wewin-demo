@@ -452,6 +452,18 @@ export const ERASURE_TREATMENTS = {
    * status while a row survives, exactly as it does for a credential.
    */
   'user_preferences.user_id': 'delete',
+
+  /*
+   * ⚠️ `scrub` and not `delete`, for the reason `user_phones.verified_by_user_id` gives.
+   *
+   * These name the member of *staff* who changed a bank account or the company profile.
+   * Erasing that account must not erase the record that the company acted — that record is
+   * the company's own history, and it is the only thing standing between a changed account
+   * number and nobody being able to say who changed it.
+   */
+  'bank_accounts.updated_by_user_id': 'scrub',
+  'bank_account_changes.changed_by_user_id': 'scrub',
+  'organisation_profile.updated_by_user_id': 'scrub',
 } as const satisfies Record<string, 'delete' | 'scrub' | 'keep' | 'escalated'>;
 
 export const authTokenPurpose = pgEnum('auth_token_purpose', [

@@ -390,5 +390,25 @@ describe('what is still a Thai string, as a number', () => {
  * They are keyed last rather than first only because the screen that consumes them today is
  * the Thai dashboard. That is a scheduling decision, not a judgement that these sentences
  * are staff-only, and the two should not be confused when somebody picks this up.
+ *
+ * ── 211 → 212: the organisation module ───────────────────────────────────────────
+ *
+ * One, in `organisation.controller.ts`'s local `userIdOf` — the sentence for a scope the
+ * permission guard should never let reach this handler in the first place. Same reasoning
+ * as the account-settings note above and the same answer: every route on this controller
+ * demands `organisation.read` or `organisation.write`, so the only reader is Thai staff,
+ * and keying a sentence nobody today can see in another language is not this round's job.
+ * `media-admin.controller.ts`'s `userIdOf` — the helper this one is modelled on — is
+ * likewise unkeyed, for the identical reason.
+ *
+ * ── 212 → 213: task 13 fix round 1 ────────────────────────────────────────────────
+ *
+ * One, in `payments/slips/slips.service.ts`'s new `assertKnownActiveAccount` — refused when
+ * a customer's `receivedBankAccountId` names no active account. Unlike the two additions
+ * above, this one is reachable by a customer through the storefront, not staff-only — but
+ * it lands beside `assertSlipAttachable`'s, `assertRoomForAnotherSlip`'s and
+ * `assertTransferPlausible`'s literal Thai sentences in the very same file, none of which
+ * `payments/slips/slip-errors.ts`'s "converted" list (below) claims, so keying only the new
+ * one would be a smaller, inconsistent island inside a file the round otherwise left alone.
  */
-const RAW_LITERAL_CALL_SITES = 211;
+const RAW_LITERAL_CALL_SITES = 213;

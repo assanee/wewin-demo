@@ -76,6 +76,15 @@ export function encodeSlip(
     payerVerified: row.payerVerifiedByUserId !== null,
     submittedByUserId: audience === 'staff' ? row.submittedByUserId : null,
     reviewedByUserId: audience === 'staff' ? row.reviewedByUserId : null,
+    /*
+     * Both columns come from the same left join in `SlipsRepository` (`RECEIVING_ACCOUNT_JOIN`)
+     * and are `null` together — a slip with no receiving account on file has neither a code nor
+     * a name to report, never one without the other.
+     */
+    receivedBankAccount:
+      row.receivedBankAccountCode === null || row.receivedBankAccountName === null
+        ? null
+        : { bankCode: row.receivedBankAccountCode, accountName: row.receivedBankAccountName },
   };
 }
 

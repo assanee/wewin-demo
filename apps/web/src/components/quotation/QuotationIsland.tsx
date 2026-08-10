@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { printableQuotation, type PrintableQuotation } from '@wewin/core/quotation';
 
 import { currentSession } from '../../lib/auth/account';
-import { fetchQuotation, quotationSource, type QuotationFailure } from '../../lib/quotation/api';
+import { fetchQuotation, quotationSource, type QuotationFailure, type Seller } from '../../lib/quotation/api';
 import { useLocale } from '../../state/localeContext';
 
 /**
@@ -46,6 +46,15 @@ type Phase =
       readonly kind: 'ready';
       readonly quotation: PrintableQuotation;
       readonly orderNo: string | null;
+      /**
+       * ⚠️ Beside `quotation`, not folded into it — the same split
+       * `quotation-sheet.tsx` makes for the order it carries alongside the sheet.
+       * `PrintableQuotation` is a pure function of the **pinned document** and must stay
+       * one; the seller is read live and would make two prints of one quotation differ
+       * the day the company moved address, which is exactly what plan 10.6 forbids.
+       * `null` when the API answered with none — see `sellerFrom`.
+       */
+      readonly seller: Seller | null;
     };
 
 export function QuotationIsland(): ReactElement {
@@ -86,6 +95,7 @@ export function QuotationIsland(): ReactElement {
               kind: 'ready',
               quotation: printableQuotation(result.data.document),
               orderNo: result.data.orderNo,
+              seller: result.data.seller,
             }
           : { kind: 'failed', reason: result.reason },
       );
@@ -136,7 +146,7 @@ export function QuotationIsland(): ReactElement {
     );
   }
 
-  return <Sheet quotation={phase.quotation} orderNo={phase.orderNo} t={t} />;
+  return <Sheet quotation={phase.quotation} orderNo={phase.orderNo} seller={phase.seller} t={t} />;
 }
 
 type Translate = ReturnType<typeof useLocale>['t'];
@@ -144,10 +154,12 @@ type Translate = ReturnType<typeof useLocale>['t'];
 function Sheet({
   quotation,
   orderNo,
+  seller,
   t,
 }: {
   readonly quotation: PrintableQuotation;
   readonly orderNo: string | null;
+  readonly seller: Seller | null;
   readonly t: Translate;
 }): ReactElement {
   return (
@@ -186,6 +198,24 @@ function Sheet({
           <Field label={t('quotation.contact')} value={quotation.contactName} />
         )}
       </dl>
+
+      {/*
+       * ⭐ Who is offering this — task 11b. `seller` is read live, never pinned: the
+       * legal name and address are the company's own content, rendered as stored rather
+       * than through a translation key (`i18n/keys.ts`'s own rule for content), while
+       * "Telephone" and "Tax ID" are UI chrome and follow the reader's locale like every
+       * other label on this page.
+       */}
+      {seller === null ? null : (
+        <div className="mt-5 border-b border-line pb-4 text-small">
+          <p className="text-body text-chalk">{seller.legalNameTh}</p>
+          <p className="mt-1 text-chalk-2">{seller.addressTh}</p>
+          <p className="mt-1 text-chalk-2">
+            {t('quotation.seller.phone')} {seller.phone}
+            {seller.taxId === null ? null : ` · ${t('quotation.seller.taxId')} ${seller.taxId}`}
+          </p>
+        </div>
+      )}
 
       <div className="mt-6 overflow-x-auto">
         <table className="w-full min-w-[520px] border-collapse text-body">

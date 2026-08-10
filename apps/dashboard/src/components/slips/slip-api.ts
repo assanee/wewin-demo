@@ -67,6 +67,12 @@ export interface Slip {
   readonly rejectedReasonTh: string | null;
   readonly unallocatedThbMinor: bigint;
   readonly createdAt: string;
+  /**
+   * Which of the company's accounts received this transfer — F2's fix. `null` when the slip
+   * predates the column or (in principle only) its account has since been deleted; the dialog
+   * says so rather than leaving the row blank, because an older slip genuinely does not know.
+   */
+  readonly receivedBankAccount: { readonly bankCode: string; readonly accountName: string } | null;
 }
 
 export interface QueueEntry {
@@ -124,6 +130,17 @@ export interface SlipReview {
   readonly unallocatableReasonTh: string | null;
 }
 
+const decodeReceivedBankAccount = (
+  value: unknown,
+): { readonly bankCode: string; readonly accountName: string } | null => {
+  if (value === null || value === undefined) return null;
+  const account = asRecord(value, 'slip.receivedBankAccount');
+  return {
+    bankCode: asText(account['bankCode'], 'slip.receivedBankAccount.bankCode'),
+    accountName: asText(account['accountName'], 'slip.receivedBankAccount.accountName'),
+  };
+};
+
 const decodeSlip = (raw: unknown): Slip => {
   const slip = asRecord(raw, 'สลิป');
 
@@ -143,6 +160,7 @@ const decodeSlip = (raw: unknown): Slip => {
     rejectedReasonTh: asTextOrNull(slip['rejectedReasonTh'], 'slip.rejectedReasonTh'),
     unallocatedThbMinor: asSatang(slip['unallocatedThbMinor'], 'slip.unallocatedThbMinor'),
     createdAt: asText(slip['createdAt'], 'slip.createdAt'),
+    receivedBankAccount: decodeReceivedBankAccount(slip['receivedBankAccount']),
   };
 };
 

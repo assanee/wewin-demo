@@ -52,6 +52,15 @@ export const PERMISSIONS = {
   'payments.read': 'Read payments and payment slips.',
   'payments.verify': 'Accept or reject a payment slip.',
 
+  /*
+   * The company's own profile and the bank accounts it is paid into — settings, not a
+   * customer-facing resource. Placed next to `payments.*` rather than at the end of the
+   * list: `payment_slips.received_bank_account_id` points at a row this permission
+   * governs, so a payments admin reads this permission where they would look for it.
+   */
+  'organisation.read': "Read the company's profile and its receiving bank accounts.",
+  'organisation.write': "Edit the company's profile and its receiving bank accounts.",
+
   'users.read': 'Read user accounts, their addresses and their sign-in methods.',
   'users.write': 'Suspend, reinstate, close and edit user accounts.',
   /*

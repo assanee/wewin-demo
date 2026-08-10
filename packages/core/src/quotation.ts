@@ -103,8 +103,18 @@ export interface PrintableQuotation {
   readonly localeDegraded: boolean;
 }
 
-/** The eight the API renders. Anything else falls back and says so. */
-const RENDERABLE = new Set(['th', 'en', 'zh', 'ja', 'de', 'hi', 'my', 'vi']);
+/**
+ * The eight the API renders. Anything else falls back and says so.
+ *
+ * ⚠️ Hand-written, and pinned against drift from outside this package rather than
+ * inside it: this is the storefront's locale list, but `@wewin/i18n` — which owns the
+ * real one, `LOCALES` in `@wewin/i18n/locales` — depends on `@wewin/core`, so importing
+ * it here would be a cycle. `packages/i18n/tests/quotation-locales.test.ts` is the one
+ * place both lists are visible at once; it renders a pinned document in every locale
+ * `@wewin/i18n` offers and fails if any of them comes back `localeDegraded`. Change
+ * this set and that test is what will notice if the two have drifted again.
+ */
+const RENDERABLE = new Set(['th', 'en', 'zh', 'de', 'hi', 'my', 'vi', 'la']);
 
 const FALLBACK = 'th';
 
@@ -118,6 +128,15 @@ const FALLBACK = 'th';
  * Split as digits rather than divided as a number — the same rule `readSatang` follows on
  * the way in, for the same reason: a float in a money path is a rounding decision hiding
  * somewhere between the database and the page.
+ */
+/*
+ * ⚠️ Not `satangField` from `./money`, and not a duplicate of it either.
+ *
+ * `satangField` renders into a *text box*: no currency mark, no grouping, so the value it
+ * writes is the value `readSatang` reads back. This one renders onto a *document*: it has
+ * the ฿ and it groups thousands in the reader's locale, neither of which a field may carry.
+ * They split digits the same way for the same reason, and merging them would break whichever
+ * caller lost its half.
  */
 function money(minor: bigint, locale: string): string {
   const negative = minor < 0n;

@@ -5,6 +5,12 @@ interface QrCodeProps {
   value: string;
   /** Rendered size in px. The matrix is vector, so this only sets the box. */
   size?: number;
+  /**
+   * Overrides the accessible name — `t('qr.alt')` by default, which says "a link to this
+   * configuration" and is wrong for every caller that is not the share sheet. The payment
+   * screen's QR encodes a PromptPay transfer, not a link, and needs its own words.
+   */
+  alt?: string;
 }
 
 const QUIET_ZONE = 4; // modules — the spec's minimum margin, or scanners struggle
@@ -22,7 +28,7 @@ const QUIET_ZONE = 4; // modules — the spec's minimum margin, or scanners stru
  * sheet, and there is no reason for it to sit in the bundle every other visitor
  * downloads.
  */
-export function QrCode({ value, size = 200 }: QrCodeProps) {
+export function QrCode({ value, size = 200, alt }: QrCodeProps) {
   const [matrix, setMatrix] = useState<boolean[][] | null>(null);
   const [failed, setFailed] = useState(false);
   const { t } = useLocale();
@@ -84,7 +90,7 @@ export function QrCode({ value, size = 200 }: QrCodeProps) {
       viewBox={`0 0 ${span} ${span}`}
       shapeRendering="crispEdges"
       role="img"
-      aria-label={t('qr.alt')}
+      aria-label={alt ?? t('qr.alt')}
       className="rounded-xs"
     >
       <rect width={span} height={span} fill="var(--color-chalk)" />

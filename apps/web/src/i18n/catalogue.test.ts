@@ -6,7 +6,7 @@ import { parseMeasure } from '@wewin/core/units';
 import type { UiKey } from './keys';
 import { LOCALES, LOCALE_ENDONYMS, LOCALE_TAGS, SOURCE_LOCALE, type Locale } from './locales';
 import { coverageOf, translatorFor, UI_KEYS } from './translate';
-import { decodeNumerals } from './testing/decode';
+import { decodeNumber, decodeNumerals } from './testing/decode';
 
 /*
  * The app's own prose: that the source catalogue is complete, that a lookup can never
@@ -164,6 +164,30 @@ const SAMPLE_PARAMS = {
   // on a Tuesday.
   at: new Date('2026-03-14T04:00:00Z'),
   name: 'บานเกล็ดปรับระดับได้ 4 ใบ',
+  /*
+   * Payment and slips — plan section 12/13.
+   *
+   * `owedMinor`/`slipMinor` and not `minor`: `minor` is already bound above as
+   * `879_100n` for `price.perPiece`, and an outstanding balance or a slip amount is a
+   * different figure with a different shape of consequence — a param with one name and
+   * two call sites is how this bag would stop meaning what its own comment says it means.
+   *
+   * ⚠️ Both end in `.24`/`.29` on purpose, not a round number. A sample divisible by 100
+   * makes `p.owedMinor % 100n` render `00` whether or not the catalogue entry actually
+   * divides — deleting the whole satang half of `payment.outstandingAmount` and
+   * `payment.history.*` would still produce a non-empty string with no `undefined` in it,
+   * which is everything the sweep below checks. `.29` is not arbitrary either:
+   * `readSatang`'s doc comment in `packages/core/src/money.ts` singles it out as one of
+   * the values `Math.trunc(parseFloat(text) * 100)` gets wrong (`0.29` becomes `28`), so
+   * this sample keeps that exact hazard visible in the one place a reader here is most
+   * likely to reach for a float instead of splitting the string.
+   */
+  owedMinor: 2_824_824n,
+  slipMinor: 1_412_429n,
+  sentAt: new Date('2026-03-14T04:00:00Z'),
+  accountDigits: '1234567890',
+  reason: 'ยอดเงินไม่ตรงกับที่แจ้ง',
+  limitMib: 8,
 } as const;
 
 describe('a lookup always returns a sentence', () => {
@@ -260,6 +284,117 @@ describe('a fallback sentence still carries the reader’s own numbers', () => {
       const { t } = translatorFor(locale);
       const perPiece = t('price.perPiece', { minor: 879_100n });
       expect(perPiece).toContain(formattersFor(locale).baht(879_100n));
+    }
+  });
+});
+
+/**
+ * Fix round 2: `SAMPLE_PARAMS.owedMinor`/`.slipMinor` were changed to end in `.24`/`.29`
+ * rather than a round number, but that change is only half the fix — the sweep in
+ * `describe('a lookup always returns a sentence', …)` above asserts only that the
+ * rendered text is a non-empty string, is not the raw key, and contains neither
+ * `'undefined'` nor `'[object Object]'`. Deleting the `% 100n` half of the inline split
+ * from `payment.outstandingAmount` or any `payment.history.*` entry, in any or all of
+ * the eight catalogues, would still produce a non-empty string containing none of those
+ * — so that sweep would not move, whatever the sample. These two tests are the ones that
+ * would actually fail.
+ */
+describe('the payment page never rounds a customer’s own money to whole baht', () => {
+  /**
+   * Extracts the baht digits and the two-digit satang pad from one rendered entry.
+   *
+   * The money is always the first thing in the template, so cutting at the first `·`
+   * (present in every `payment.history.*` entry, absent from `payment.outstandingAmount`,
+   * which is money and nothing else) isolates it from whatever comes after — which matters
+   * because a German date can itself contain a literal `.` (`14. März 2026`), so "the first
+   * `.` in the whole string" is not safe once a date is in play.
+   */
+  function bahtAndSatang(rendered: string): { readonly baht: string; readonly satang: string } {
+    const separator = rendered.indexOf('·');
+    const money = separator === -1 ? rendered : rendered.slice(0, separator);
+    const dot = money.indexOf('.');
+    expect(dot, `${rendered} (locale money prefix: ${money})`).toBeGreaterThan(0);
+    return { baht: money.slice(0, dot), satang: money.slice(dot + 1, dot + 3) };
+  }
+
+  test('payment.outstandingAmount keeps .24, in every locale', () => {
+    for (const locale of LOCALES) {
+      const rendered = translatorFor(locale).t('payment.outstandingAmount', {
+        owedMinor: 2_824_824n,
+      });
+      const { baht, satang } = bahtAndSatang(rendered);
+
+      // The baht half goes through `f.plain` — Myanmar digits in `my`, ASCII everywhere
+      // else — so it is decoded back through the locale's own alphabet (derived from
+      // `Intl` at test time, exactly as `decodeNumber`'s own header argues for) rather
+      // than compared against a hand-typed literal.
+      expect(decodeNumber(baht, locale), locale).toBe('28248');
+      // The satang pad is deliberately ASCII in *every* locale and must never be
+      // `f.plain`'d — it is a fixed two-digit fraction, not a counted quantity. Comparing
+      // it as a literal string, not decoding it, is what catches the pad being routed
+      // through a formatter by mistake: in `my` that would silently swap `24` for its
+      // Myanmar digits, and a decode step would quietly launder the mistake away.
+      expect(satang, locale).toBe('24');
+    }
+  });
+
+  test('payment.history.submitted/accepted/rejected keep .29 — the reconciliation view, fix round 1', () => {
+    const slipMinor = 1_412_429n;
+    const sentAt = new Date('2026-03-14T04:00:00Z');
+
+    for (const locale of LOCALES) {
+      const { t } = translatorFor(locale);
+      const entries = [
+        t('payment.history.submitted', { slipMinor, sentAt }),
+        t('payment.history.accepted', { slipMinor, sentAt }),
+        t('payment.history.rejected', { slipMinor, reason: 'ยอดเงินไม่ตรงกับที่แจ้ง' }),
+      ];
+
+      for (const rendered of entries) {
+        const { baht, satang } = bahtAndSatang(rendered);
+        expect(decodeNumber(baht, locale), `${locale}: ${rendered}`).toBe('14124');
+        expect(satang, `${locale}: ${rendered}`).toBe('29');
+      }
+    }
+  });
+
+  /**
+   * Fix round 3 — F1: an overpayment is a negative `owedMinor`/`slipMinor` reaching this
+   * exact template (`order_outstanding_thb_minor()` has no floor at zero, and the
+   * slip-review screen's own copy treats an excess as a modelled case, not an error).
+   * BigInt `/` and `%` truncate toward zero rather than floor, so the split these four
+   * entries used before this fix rendered `-150n` as `-1.-50` and `-1n` as `0.-1` — the
+   * minus landing inside the digits instead of in front of the amount.
+   *
+   * `-150n`/`-1n` are the exact figures the finding named, kept rather than swapped for
+   * round numbers so this test pins the reported failure and not a paraphrase of it.
+   * Every locale is checked, per `LOCALES` — not only Thai and Burmese — because the sign
+   * bug lives in the shared split, not in any one catalogue's prose.
+   */
+  test('an overpayment renders the sign in front of the ฿, not truncated into the digits — fix round 3', () => {
+    const owedMinor = -150n;
+    const slipMinor = -1n;
+    const sentAt = new Date('2026-03-14T04:00:00Z');
+
+    for (const locale of LOCALES) {
+      const { t } = translatorFor(locale);
+
+      const outstanding = t('payment.outstandingAmount', { owedMinor });
+      const outstandingSplit = bahtAndSatang(outstanding);
+      expect(decodeNumber(outstandingSplit.baht, locale), `${locale}: ${outstanding}`).toBe('-1');
+      expect(outstandingSplit.satang, `${locale}: ${outstanding}`).toBe('50');
+
+      const entries = [
+        t('payment.history.submitted', { slipMinor, sentAt }),
+        t('payment.history.accepted', { slipMinor, sentAt }),
+        t('payment.history.rejected', { slipMinor, reason: 'ยอดเงินไม่ตรงกับที่แจ้ง' }),
+      ];
+
+      for (const rendered of entries) {
+        const { baht, satang } = bahtAndSatang(rendered);
+        expect(decodeNumber(baht, locale), `${locale}: ${rendered}`).toBe('-0');
+        expect(satang, `${locale}: ${rendered}`).toBe('01');
+      }
     }
   });
 });

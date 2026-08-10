@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { encodeProfile } from '../organisation/encode';
+import { OrganisationRepository } from '../organisation/organisation.repository';
 import { systemScope } from '../rbac';
 import { gone, type LinkedDocumentWire } from './document-link';
 import { OrderRepository } from './order.repository';
@@ -27,14 +29,35 @@ export class DocumentLinkReader {
   constructor(
     private readonly scoped: ScopedOrderRepository,
     private readonly orders: OrderRepository,
+    /**
+     * Fix round 1: the same read `OrdersService.getDocument` makes through the same
+     * repository, for the same reason — `seller` is beside the pinned document and is read
+     * live, on every call, never pinned. See `document-link.module.ts` for why importing
+     * `OrganisationModule` here is safe: it is a plain `@Module`, already imported from two
+     * other places in this graph, and Nest deduplicates a static module by class reference
+     * rather than instantiating it again — there is no `forRoot` here to collide with.
+     */
+    private readonly organisation: OrganisationRepository,
   ) {}
 
   async byLink(orderId: string): Promise<LinkedDocumentWire> {
     const order = await this.scoped.find(systemScope('emailed quotation link'), orderId, 'read');
     if (!order || order.documentId === null) throw gone();
 
-    const document = await this.orders.findDocumentById(order.documentId);
-    if (!document) throw gone();
+    const [document, [profile]] = await Promise.all([
+      this.orders.findDocumentById(order.documentId),
+      this.organisation.profile(),
+    ]);
+    /*
+     * ⚠️ `gone()` for both, on purpose — the class-level rule above ("every refusal is the
+     * same 404") is stricter here than in `OrdersService.getDocument`, because that route is
+     * `RequirePrincipal()`-gated and this one is anonymous. A distinct message for "the
+     * profile row is missing" would be a second, differently-worded 404 an anonymous caller
+     * could use to tell two failure modes apart — the exact oracle this class exists to deny.
+     * Unreachable in practice either way: `organisation_profile_block_delete` forbids the row
+     * ever being gone.
+     */
+    if (!document || profile === undefined) throw gone();
 
     return {
       orderNo: order.orderNo,
@@ -42,6 +65,7 @@ export class DocumentLinkReader {
       contactName: order.contactName,
       submittedAt: order.submittedAt?.toISOString() ?? null,
       document: document.document,
+      seller: encodeProfile(profile),
     };
   }
 }

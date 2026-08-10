@@ -62,6 +62,21 @@ const instantSchema = z.string().datetime({ offset: true });
  * `payerName` and `payerAccountLast4` are kept beside the row and never inside the image,
  * which is plan 7.6's PDPA line: the picture can be destroyed on a retention sweep while
  * the four digits that reconcile a bank statement survive.
+ *
+ * ── `receivedBankAccountId` — which of the company's accounts this transfer names ────
+ *
+ * Optional in the *schema*, because the column it fills predates it (`0027_organisation.sql`)
+ * and a slip a staff member types in from a phone call may have no picker behind it at all.
+ * It is not optional in the one caller this round adds: `apps/web`'s payment screen shows a
+ * picker with no way to submit without choosing one of the accounts it lists, so every slip
+ * that screen produces carries this field. `apps/web/tests/payment.test.ts` pins that the
+ * storefront always sends it — the shape here staying `.optional()` is what makes that pin
+ * meaningful rather than redundant with the type.
+ *
+ * Only a UUID is asserted here. Whether it names an account that exists, and whether that
+ * account is one a customer may currently be shown, is `SlipsService.createSlip`'s job, not
+ * this schema's — the same split `imageHandle`'s signature check makes: shape here, meaning
+ * downstream.
  */
 export const createSlipRequestSchema = z.strictObject({
   imageHandle: z.string().min(1).max(4096),
@@ -74,6 +89,7 @@ export const createSlipRequestSchema = z.strictObject({
     .string()
     .regex(/^[0-9]{4}$/, 'ต้องเป็นเลขสี่หลักท้ายบัญชีเท่านั้น')
     .optional(),
+  receivedBankAccountId: z.string().uuid().optional(),
 });
 
 export type CreateSlipRequestWire = z.infer<typeof createSlipRequestSchema>;
@@ -220,6 +236,19 @@ export interface SlipWire {
   readonly payerVerified: boolean;
   readonly submittedByUserId: string | null;
   readonly reviewedByUserId: string | null;
+  /**
+   * Which of the company's own accounts this transfer names — resolved to what reconciliation
+   * actually reads, not the raw id. The column (`0027_organisation.sql`) used to be write-only:
+   * persisted on every slip a customer submits through the picker, surfaced on no read path at
+   * all. This is that surfacing, for the staff slip-review screen where reconciliation happens.
+   *
+   * `null` covers two cases this wire does not distinguish, because a reviewer acts on them the
+   * same way — read the image instead: a slip written before the column existed, and (in
+   * principle only; the FK is `on delete restrict`) an account since deleted. Not audience-
+   * gated like `submittedByUserId` — this names one of the company's *own* accounts, which a
+   * customer already sees on the picker that produced this slip in the first place.
+   */
+  readonly receivedBankAccount: { readonly bankCode: string; readonly accountName: string } | null;
 }
 
 export interface SlipListWire {

@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 
+import { OrganisationModule } from '../../organisation';
 import { OrderRepository } from '../../orders/order.repository';
 import { OrderScopeModule } from '../../orders/scope';
 import { LedgerModule } from '../ledger';
@@ -42,6 +43,11 @@ export interface SlipsModuleOptions {
  * second instance of a stateless class over the same `@Global` `DRIZZLE` connection, which
  * is a wiring detail with no behaviour attached.
  *
+ * `OrganisationModule`, task 13 fix round 1's addition: `createSlip` checks a customer's
+ * `receivedBankAccountId` against `OrganisationRepository.account()` before it ever reaches
+ * the insert — the same repository `OrdersModule` already imports it for, over `activeAccounts()`.
+ *
+
  * It does **not** import `MediaModule`. That module exports nothing, deliberately, and the
  * one thing wanted from it is a class: `SlipImageStore` constructs its own `ObjectStorage`
  * pointed at a *different, private* bucket. Sharing a provider would be one `useValue` away
@@ -54,20 +60,28 @@ export interface SlipsModuleOptions {
  *
  * ── ⚠️ Wiring ────────────────────────────────────────────────────────────────────
  *
- * **This module still has to be added to `AppModule.forRoot`'s import list**, which is a
- * file this round's split does not put in one agent's hands. Until it is, none of these
- * routes exist in the running process. `OrdersModule` carried the same warning through the
- * whole of 5a and it was true for most of it — which is how a feature came to be tested
- * against an application that did not serve it — so the suites here boot
- * `AppModule.forRoot(...)` **plus this module**, and the day it is wired in Nest
- * deduplicates by class reference and nothing changes.
+ * **This module is imported.** `app.module.ts:21` names `SlipsModule` and `:150` lists
+ * `SlipsModule.forRoot()` in `AppModule.forRoot`'s imports, so these routes exist in the
+ * running process. `OrdersModule` carried a warning through the whole of 5a that this
+ * module's routes did not exist yet, and that was true for most of it — which is how a
+ * feature came to be tested against an application that did not serve it. It is not true
+ * here any more.
+ *
+ * ⚠️ Naming it a *second* time in that list is now a failure, not a redundancy:
+ * `SlipsModule.forRoot()` returns a fresh `DynamicModule` on every call, so Nest cannot
+ * deduplicate the two by reference, and `RouteRegistryService.scan()`
+ * (`src/rbac/route-registry.service.ts`) refuses to boot with *"shares one handler function
+ * with … — an inherited handler cannot carry two access policies"* the moment it finds the
+ * same controller reachable through both. `tests/payments/slips/support/slips-app.ts` used
+ * to add `SlipsModule` by hand, for exactly the reason this note used to give — and now
+ * boots nothing but `AppModule.forRoot(...)`, for exactly the reason this note now gives.
  */
 @Module({})
 export class SlipsModule {
   static forRoot(options: SlipsModuleOptions = {}): DynamicModule {
     return {
       module: SlipsModule,
-      imports: [OrderScopeModule, LedgerModule],
+      imports: [OrderScopeModule, LedgerModule, OrganisationModule],
       controllers: [SlipsController, SlipReviewController, SlipImagesController],
       providers: [
         {

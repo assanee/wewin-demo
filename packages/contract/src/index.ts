@@ -80,6 +80,7 @@ export type {
   OrderDocumentChargeWire,
   OrderDocumentLineWire,
   OrderDocumentOverrideWire,
+  OrderDocumentResponseWire,
   OrderDocumentWire,
   OrderEventListWire,
   OrderEventTypeWire,
@@ -148,6 +149,18 @@ export type {
   ScheduleCloseReasonWire,
   ScheduleTermWire,
 } from './schedule.js';
+
+export type {
+  AvailabilityRequestWire,
+  BankAccountChangeWire,
+  BankAccountCreateRequestWire,
+  BankAccountPatchRequestWire,
+  BankAccountPublicWire,
+  BankAccountWire,
+  OrganisationProfilePutRequestWire,
+  OrganisationProfileWire,
+  PaymentInstructionsWire,
+} from './organisation.js';
 
 export type {
   AdminOptionGroupListWire,

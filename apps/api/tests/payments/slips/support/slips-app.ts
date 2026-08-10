@@ -215,3 +215,47 @@ export async function folds(
     settledThrough: row.through === null ? null : Number(row.through),
   };
 }
+
+/**
+ * A bank account, written directly — task 13 fix round 1.
+ *
+ * `bank_accounts_block_delete` refuses a `DELETE` on this table, so every row this inserts
+ * outlives the test that created it; the caller is expected to pass an account number unique
+ * to the run (the pg suites here already tag orders and users with a random suffix for the
+ * same reason).
+ */
+export async function makeBankAccount(
+  db: Database,
+  input: {
+    readonly bankCode: string;
+    readonly accountNumber: string;
+    readonly accountName: string;
+    readonly isActive: boolean;
+  },
+): Promise<string> {
+  const result = await db.execute<{ id: string }>(sql`
+    insert into bank_accounts (bank_code, account_number, account_name, is_active)
+    values (${input.bankCode}, ${input.accountNumber}, ${input.accountName}, ${input.isActive})
+    returning id
+  `);
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('the bank account could not be created');
+  return row.id;
+}
+
+/**
+ * `payment_slips.received_bank_account_id`, read directly.
+ *
+ * ⚠️ **The raw id, and only the raw id, is not on the wire — F2's fix.** `SlipWire` now
+ * carries `receivedBankAccount` (the account's bank code and name, resolved server-side for
+ * the staff slip-review screen), but never the id itself: a reviewer reconciles against the
+ * name on the account, not against a uuid. Asserting that `createSlip` persisted the *right*
+ * account — as opposed to merely *an* account with the expected code and name — still has to
+ * read this column directly.
+ */
+export async function receivedAccountOf(db: Database, slipId: string): Promise<string | null> {
+  const result = await db.execute<{ id: string | null }>(
+    sql`select received_bank_account_id as id from payment_slips where id = ${slipId}`,
+  );
+  return result.rows[0]?.id ?? null;
+}

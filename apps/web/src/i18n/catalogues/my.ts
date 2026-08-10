@@ -438,6 +438,8 @@ export const my: PartialUiCatalogue = {
   'quotation.degraded':
     'ပုံသေထားသောဘာသာစကားသည် ဤဗားရှင်းတွင် မရရှိနိုင်သဖြင့် ထိုင်းဘာသာဖြင့် ပြသထားသည်။',
   'quotation.contact': 'သို့',
+  'quotation.seller.phone': 'ဖုန်း',
+  'quotation.seller.taxId': 'အခွန် ID',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'ပြသမှု',
@@ -491,4 +493,59 @@ export const my: PartialUiCatalogue = {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'ဤစာမျက်နှာ မတွေ့ပါ',
   'notFound.body': 'လင့်ခ် ပြောင်းလဲသွားနိုင်သည်။ ကုန်ပစ္စည်းစာရင်းမှ စတင်ကြည့်ပါ။',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'ငွေပေးချေမှု အသိပေးရန်',
+  'payment.heading': 'ငွေပေးချေမှု အသိပေးရန်',
+  'payment.loading': 'သင့်ငွေပေးချေမှုအချက်အလက်များ ဖွင့်နေသည်…',
+  'payment.outstanding': 'ကျန်ရှိနေသေးသောပမာဏ',
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
+  'payment.settled': 'ဤအော်ဒါအတွက် ငွေပေးချေမှု ပြီးပါပြီ',
+  'payment.account.legend': 'အောက်ပါဘဏ်အကောင့်များထဲမှ တစ်ခုသို့ လွှဲပါ',
+  'payment.account.copy': (p) => `ဘဏ်အကောင့်နံပါတ် ${p.accountDigits} ကို ကူးရန်`,
+  'payment.account.copied': 'ဘဏ်အကောင့်နံပါတ် ကူးပြီးပါပြီ',
+  'payment.account.qrAlt': 'ထည့်ထားသောပမာဏအတွက် PromptPay QR ကုဒ်',
+  'payment.account.qrHint': 'သင့်ဘဏ်အက်ပ်ဖြင့် စကင်ဖတ်ပါ — ပမာဏကို အလိုအလျောက် ဖြည့်ပေးပါမည်',
+  'payment.account.none':
+    'ငွေလက်ခံရန် ဘဏ်အကောင့် မသတ်မှတ်ရသေးပါ။ ငွေပေးချေမှုအချက်အလက်များအတွက် အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
+  'payment.form.legend': 'ငွေလွှဲပြေစာ တွဲပို့ရန်',
+  'payment.form.image': 'ငွေလွှဲပြေစာဓာတ်ပုံ',
+  'payment.form.imageHint': 'သင့်ဘဏ်အက်ပ်မှ စကရင်ရှော့လည်း ရပါသည်။ 8 MB အထိ။',
+  'payment.form.amount': 'လွှဲထားသောပမာဏ',
+  'payment.form.transferredAt': 'လွှဲသည့် ရက်စွဲနှင့် အချိန်',
+  'payment.form.reference': 'ကိုးကားနံပါတ် (ရွေးချယ်နိုင်)',
+  'payment.form.submit': 'ငွေလွှဲပြေစာ ပို့ရန်',
+  'payment.phase.uploading': 'ဓာတ်ပုံ တင်နေသည်…',
+  'payment.phase.creating': 'ငွေလွှဲပြေစာ သိမ်းနေသည်…',
+  'payment.done':
+    'သင့်ငွေလွှဲပြေစာ ရရှိပါပြီ။ ကျွန်ုပ်တို့အဖွဲ့က စစ်ဆေးပြီး ပြန်လည်အကြောင်းကြားပါမည်။',
+  'payment.history.heading': 'သင်ပို့ခဲ့သော ငွေလွှဲပြေစာများ',
+  'payment.history.empty': 'ငွေလွှဲပြေစာ မပို့ရသေးပါ',
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · လက်မခံပါ — ${p.reason}`;
+  },
+  'payment.problem.noImage': 'ငွေလွှဲပြေစာဓာတ်ပုံ တွဲပို့ပေးပါ။',
+  'payment.problem.imageTooBig': (p, f) =>
+    `ဓာတ်ပုံ ကြီးလွန်းသည် — ${f.plain(p.limitMib)} MB အထိသာ ခွင့်ပြုသည်။`,
+  'payment.problem.badAmount': 'ပမာဏကို ဂဏန်းဖြင့် ဒဿမနှစ်လုံးအထိသာ ရေးပါ။',
+  'payment.problem.badTime': 'လွှဲသည့် ရက်စွဲနှင့် အချိန်ကို ရွေးပေးပါ။',
+  'payment.problem.signInAgain':
+    'သင့်စက်ရှင် သက်တမ်းကုန်သွားပါပြီ။ ထပ်မံ အကောင့်ဝင်ပေးပါ — ဖြည့်ထားသော အချက်အလက်များ ရှိနေပါသေးသည်။',
+  'payment.problem.unreachable': 'ချိတ်ဆက်၍ မရပါ။ ထပ်စမ်းကြည့်ပါ။',
 };

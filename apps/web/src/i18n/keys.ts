@@ -396,6 +396,8 @@ export interface UiParamsByKey {
   'quotation.pinnedNotice': Plain;
   'quotation.degraded': Plain;
   'quotation.contact': Plain;
+  'quotation.seller.phone': Plain;
+  'quotation.seller.taxId': Plain;
 
   /* ---- Display settings — plan 4.1/4.2, 8.2 trap 3 and 10.6 -------------------
    *
@@ -473,6 +475,42 @@ export interface UiParamsByKey {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': Plain;
   'notFound.body': Plain;
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': Plain;
+  'payment.heading': Plain;
+  'payment.loading': Plain;
+  'payment.outstanding': Plain;
+  'payment.outstandingAmount': { owedMinor: bigint };
+  'payment.settled': Plain;
+  'payment.account.legend': Plain;
+  'payment.account.copy': { accountDigits: string };
+  'payment.account.copied': Plain;
+  'payment.account.qrAlt': Plain;
+  'payment.account.qrHint': Plain;
+  /** Shown in place of the picker when `accounts` is empty — nothing to select and nowhere to pay. */
+  'payment.account.none': Plain;
+  'payment.form.legend': Plain;
+  'payment.form.image': Plain;
+  'payment.form.imageHint': Plain;
+  'payment.form.amount': Plain;
+  'payment.form.transferredAt': Plain;
+  'payment.form.reference': Plain;
+  'payment.form.submit': Plain;
+  'payment.phase.uploading': Plain;
+  'payment.phase.creating': Plain;
+  'payment.done': Plain;
+  'payment.history.heading': Plain;
+  'payment.history.empty': Plain;
+  'payment.history.submitted': { slipMinor: bigint; sentAt: Date };
+  'payment.history.accepted': { slipMinor: bigint; sentAt: Date };
+  'payment.history.rejected': { slipMinor: bigint; reason: string };
+  'payment.problem.noImage': Plain;
+  'payment.problem.imageTooBig': { limitMib: number };
+  'payment.problem.badAmount': Plain;
+  'payment.problem.badTime': Plain;
+  'payment.problem.signInAgain': Plain;
+  'payment.problem.unreachable': Plain;
 }
 
 export type UiKey = keyof UiParamsByKey;

@@ -298,6 +298,17 @@ const PARAM_SHAPES = {
   'error.slip.overpayment_mismatch': { acknowledged: 'money', excess: 'money' },
   'error.slip.foot_mismatch': { allocated: 'money', slip: 'money', difference: 'money' },
 
+  /* ── Organisation — src/organisation/ ─────────────────────────────────────── */
+  /**
+   * Not constraint translators — neither trips a database CHECK a customer could reach.
+   * Both are ordinary `AppError.notFound`s for a row this admin surface expects to exist:
+   * a bank account looked up by an id that names nothing, and the one-row
+   * `organisation_profile` that migration 0027 seeds and nothing in this application can
+   * delete, kept here as a defensive answer rather than a `!` that would throw uglier.
+   */
+  'error.organisation.account_missing': {},
+  'error.organisation.profile_missing': {},
+
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},
   'error.stale.catalog_while_editing_quote': {},

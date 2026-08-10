@@ -117,30 +117,29 @@ Expected, and already verified on 2026-08-09:
 
 If any of these disagree, **stop and report**. The rest of this task assumes the database is correct and only the metadata is stale.
 
-- [ ] **Step 2: Show the failure before fixing it**
+- [ ] **Step 2: Generate a snapshot that describes the current schema**
 
 ```bash
-cd packages/db && pnpm db:generate --custom
+cd packages/db && pnpm db:generate
 ```
 
-Expected: it writes `drizzle/0027_<name>.sql` (an empty stub), `drizzle/meta/0027_snapshot.json`, and a `_journal.json` entry. Open the snapshot it wrote and confirm it describes the **current** TypeScript schema, including `admin_events_not_both_subjects`.
+Expected: it writes `drizzle/0027_<generated-name>.sql`, `drizzle/meta/0027_snapshot.json`, and a `_journal.json` entry with `idx: 27`. The SQL will contain the `DROP CONSTRAINT` statements this task exists to eliminate — **that is the failure, made visible.** Read it, confirm it names `admin_events_one_subject`, and record it in the report.
 
-Now delete the stub SQL file it created but **keep** the snapshot and journal entry:
+⚠️ **Do not use `--custom` here.** It does not diff against the TypeScript schema at all — it clones the previous snapshot forward unchanged, so it would carry the stale `admin_events_one_subject` into the new file and fix nothing. Verified against drizzle-kit 0.31.10.
+
+- [ ] **Step 3: Keep the snapshot, discard the rest, and name it after the last real migration**
+
+The snapshot is the only useful artefact: it describes the current TypeScript schema, which is also what the database has. The SQL file and the journal entry must go.
 
 ```bash
-rm packages/db/drizzle/0027_<name>.sql
+rm packages/db/drizzle/0027_<generated-name>.sql
+git checkout packages/db/drizzle/meta/_journal.json
+mv packages/db/drizzle/meta/0027_snapshot.json packages/db/drizzle/meta/0026_snapshot.json
 ```
 
-⚠️ Do not hand-write a second journal entry. `--custom` already wrote one; adding another produces a duplicate `idx`.
+⚠️ **The journal entry must not survive, and this is not a style preference.** `drizzle-orm`'s `readMigrationFiles()` requires every `_journal.json` entry to have a matching `.sql` file, and it runs in the db suite's global setup — a dangling `idx: 27` entry makes all 326 tests fail before one of them executes. Task 5 writes the journal entry and the SQL file together, which is the only order that holds.
 
-- [ ] **Step 3: Rename the generated artefacts to the migration this plan actually adds**
-
-Task 5 writes `0027_organisation.sql`. Rename the journal `tag` and the snapshot file to match:
-
-```bash
-mv packages/db/drizzle/meta/0027_snapshot.json packages/db/drizzle/meta/0027_snapshot.json
-# edit _journal.json: set the idx-27 entry's "tag" to "0027_organisation"
-```
+⚠️ **`0026` and not `0027`.** `drizzle-kit` picks its baseline by globbing `meta/` and taking the highest, not by reading the journal, so the name only has to sort last. `0026` is also the honest name: the snapshot describes the state *after* migration `0026_phone_one_claim`, which is the newest migration that exists. Naming it `0027` would claim a migration that has not been written, and would push Task 5's generated migration to `0028`.
 
 - [ ] **Step 4: Prove the baseline is now clean**
 
@@ -148,7 +147,7 @@ mv packages/db/drizzle/meta/0027_snapshot.json packages/db/drizzle/meta/0027_sna
 cd packages/db && pnpm db:generate
 ```
 
-Expected: **"No schema changes, nothing to migrate"** — because the snapshot now matches the TypeScript schema exactly. If it emits any `DROP CONSTRAINT`, the baseline is still wrong; stop and report.
+Expected: **"No schema changes, nothing to migrate 😴"** — the snapshot matches the TypeScript schema exactly. If it emits any `DROP CONSTRAINT`, the baseline is still wrong; stop and report.
 
 - [ ] **Step 5: Run the database suite**
 
@@ -171,7 +170,15 @@ migrate aborted on the first one, before reaching any new table.
 The live database already agrees with the TypeScript schema on all three
 drifted objects; only meta/ was stale. Verified by querying pg_constraint and
 pg_indexes for admin_events, user_phones and the orders contact-channel check
-before touching anything."
+before touching anything.
+
+The new baseline is named 0026 because that is the newest migration that
+exists. drizzle-kit picks its baseline by globbing meta/ and taking the
+highest, so the name only has to sort last — and claiming a 0027 that nobody
+has written would push the real one to 0028. No journal entry is added:
+readMigrationFiles requires every entry to have a .sql file, and it runs in
+the db suite's global setup, so a dangling entry fails all 326 tests before
+one executes."
 ```
 
 ---
@@ -1197,12 +1204,50 @@ hard-codes, so the first render after this migration is not blank."
 
 `erasure.test.ts` counts rows belonging to the erasure subject. **A table the fixture never seeds counts 0 before and after**, so a `scrub` treatment added without extending the fixture buys a green test that checks nothing. The file records at lines 108-117 that this was proved by deleting a real statement and watching twenty tests stay green.
 
+⚠️ **And the scrub has no implementation yet.** `ERASURE_TREATMENTS` says `scrub` for all three columns, but `erase_user()` in the database does not mention `bank_accounts`, `bank_account_changes` or `organisation_profile` at all — verified by reading `prosrc` from `pg_proc` after Task 5. The coverage gate that passed in Task 5 checks only that every FK to `users` has a *declared* treatment; it does not check that anything happens. So this task writes the behaviour as well as the test that proves it.
+
+The FK is `ON DELETE SET NULL`, which fires only if the user row is deleted — and erasure does not delete the user, it scrubs and closes. So `erase_user()` must null these columns explicitly.
+
 **Files:**
+- Create: `packages/db/drizzle/0028_erase_organisation_actors.sql`
+- Modify: `packages/db/drizzle/meta/_journal.json`
 - Modify: `packages/db/tests/erasure.test.ts` (`createSubject`, ~lines 76-141)
 
 **Interfaces:**
 - Consumes: Task 4's `ERASURE_TREATMENTS` entries, Task 5's tables.
 - Produces: an erasure suite that fails if the scrub is removed.
+
+- [ ] **Step 0: Add the scrub to `erase_user()`, by grafting rather than rewriting**
+
+⚠️ **Dump the live function and edit that. Do not write it from memory or from an older migration.**
+
+```bash
+docker exec wewin-demo-postgres-1 psql -U wewin -d wewin -tAc \
+  "SELECT prosrc FROM pg_proc WHERE proname='erase_user';" > /tmp/erase_user.sql
+```
+
+⚠️ **Two databases, and the tests do not use the one that command names.**
+`packages/db/vitest.config.ts` overrides `DATABASE_URL` for every worker to `<base>/wewin_db_test`.
+`pnpm db:migrate` reads `.env` and targets `wewin`. A migration applied to `wewin` and never to
+`wewin_db_test` leaves the suite testing the old function while the dev database has the new one —
+which looks like a passing test and is not. Confirm with:
+`docker exec wewin-demo-postgres-1 psql -U wewin -d wewin_db_test -tAc "SELECT prosrc ~ 'bank_accounts' FROM pg_proc WHERE proname='erase_user';"`
+
+The live body touches `notifications`, `review_photos`, `user_preferences` and `guests.secret_hash` among others. A version reconstructed from the newest migration alone silently drops whichever statements arrived later — this has already happened once in this repository.
+
+Write `0028_erase_organisation_actors.sql` as `CREATE OR REPLACE FUNCTION erase_user(...)` carrying the dumped body **unchanged**, plus exactly these three statements:
+
+```sql
+  UPDATE bank_accounts SET updated_by_user_id = NULL WHERE updated_by_user_id = p_user_id;
+  UPDATE bank_account_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = p_user_id;
+  UPDATE organisation_profile SET updated_by_user_id = NULL WHERE updated_by_user_id = p_user_id;
+```
+
+⚠️ Use the parameter name the dumped function actually uses; `p_user_id` is a guess until you have read it.
+
+Then **diff the dump against your migration body** and confirm the only difference is those three lines. Put that diff in the report.
+
+Add the `_journal.json` entry (`idx: 28`, tag `0028_erase_organisation_actors`) in the same commit as the `.sql` file — `readMigrationFiles()` requires the pair.
 
 - [ ] **Step 1: Seed the three rows in `createSubject`**
 
@@ -1240,12 +1285,53 @@ Inside `createSubject`, after the existing inserts:
 
 ⚠️ `Date.now()` is fine in a test fixture here — this package's suites are serialised (`maxWorkers: 1`) and the value only needs to be unique against the unique index.
 
+- [ ] **Step 1b: Write the dedicated scrub assertion — seeding alone proves nothing**
+
+⚠️ **`scrub` treatments have no generic check.** The row-count loop covers `delete` treatments only; `erasure.test.ts` says so itself — *"each `scrub` needs its own named test… a second `scrub` treatment added without one would reintroduce this hole silently."* `guests.claimed_by_user_id` has such a test; the three new columns do not. Seeding the fixture without adding an assertion leaves the suite green over a real dangling reference — confirmed by querying `wewin_db_test` and finding `bank_accounts` rows whose `updated_by_user_id` still names an erased user.
+
+Mirror the existing `guests.claimed_by_user_id` test:
+
+```ts
+it('scrubs who changed a bank account, and keeps the change itself', async () => {
+  /*
+   * ⚠️ The row survives and only the name goes. Erasing a member of staff must not erase the
+   * record that a receiving account was changed — that record is the company's own history,
+   * and it is the only thing standing between a changed account number and nobody being able
+   * to say it happened.
+   */
+  const subject = await createSubject();
+  await erase(subject);
+
+  for (const [table, column] of [
+    ['bank_accounts', 'updated_by_user_id'],
+    ['bank_account_changes', 'changed_by_user_id'],
+    ['organisation_profile', 'updated_by_user_id'],
+  ] as const) {
+    const [row] = await db.execute(
+      sql`select count(*)::int as still_named from ${sql.identifier(table)}
+          where ${sql.identifier(column)} = ${subject.userId}`,
+    );
+    expect(row!['still_named'], `${table}.${column} still names the erased user`).toBe(0);
+  }
+
+  // And the rows themselves are still there — scrub, not delete.
+  const [accounts] = await db.execute(sql`select count(*)::int as n from bank_account_changes`);
+  expect(accounts!['n']).toBeGreaterThan(0);
+});
+```
+
+Adapt the query helper to whatever `erasure.test.ts` already uses; do not introduce a second style.
+
 - [ ] **Step 2: Run the erasure suite**
 
 ```bash
 pnpm --filter @wewin/db exec vitest run tests/erasure.test.ts
 ```
-Expected: PASS. The three columns are scrubbed to null and the rows survive.
+Expected: PASS — the three columns are scrubbed to null and the rows survive.
+
+⚠️ If you seed the fixture (Step 1) **before** adding the scrub (Step 0), this fails, and that
+failure is worth seeing once: it is the proof that Step 0 does something. Run it in that order if
+you want the evidence, and record both runs.
 
 - [ ] **Step 3: Mutate to prove the fixture made the test real**
 
@@ -2537,7 +2623,24 @@ Replace the hand-written array with one derived from the same source the storefr
 
 `slips.module.ts` — the comment says the module still has to be added to `AppModule`; it is imported at `app.module.ts:20,149`, and adding it twice fails the boot audit.
 
-- [ ] **Step 5: Gate and commit**
+- [ ] **Step 5: The payment page's empty state**
+
+⚠️ Found during Task 13: `0027_organisation.sql` seeds **no bank accounts at all**, so on a fresh
+database the payment page renders a legend over an empty box and says nothing. A customer who
+reaches it sees a form they cannot use and no reason why.
+
+Do not seed fake bank details to paper over it — inventing account numbers in a migration is worse
+than an empty list. Instead give the empty case a sentence: one new key,
+`payment.account.none`, in all eight catalogues, saying that no receiving account has been set up
+yet and to contact the sales team. Render it in place of the picker when `accounts` is empty, and
+keep the submit control unreachable in that state — there is nowhere for the money to go.
+
+Thai: `'ยังไม่ได้ตั้งค่าบัญชีรับเงิน กรุณาติดต่อทีมขายเพื่อขอช่องทางชำระเงิน'`
+English: `'No receiving account has been set up yet. Please contact the sales team for payment details.'`
+
+The other six follow their own catalogue's conventions, as in Task 12.
+
+- [ ] **Step 6: Gate and commit**
 
 ---
 

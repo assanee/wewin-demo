@@ -437,6 +437,8 @@ export const en: PartialUiCatalogue = {
     'This document was pinned on the day it was confirmed — its figures and its language do not change when it is reopened.',
   'quotation.degraded': 'The pinned language is not available in this release, so it is shown in Thai.',
   'quotation.contact': 'To',
+  'quotation.seller.phone': 'Telephone',
+  'quotation.seller.taxId': 'Tax ID',
 
   /* ---- Display settings ------------------------------------------------------
    *
@@ -494,4 +496,56 @@ export const en: PartialUiCatalogue = {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'Page not found',
   'notFound.body': 'The link may have changed. Try starting from the product list.',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'Notify us of a payment',
+  'payment.heading': 'Notify us of a payment',
+  'payment.loading': 'Opening your payment details…',
+  'payment.outstanding': 'Still owing',
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
+  'payment.settled': 'This order is paid in full',
+  'payment.account.legend': 'Transfer to any one of these accounts',
+  'payment.account.copy': (p) => `Copy account number ${p.accountDigits}`,
+  'payment.account.copied': 'Account number copied',
+  'payment.account.qrAlt': 'PromptPay QR code for the amount entered',
+  'payment.account.qrHint': 'Scan with your banking app — the amount is filled in for you',
+  'payment.account.none':
+    'No receiving account has been set up yet. Please contact the sales team for payment details.',
+  'payment.form.legend': 'Attach the slip',
+  'payment.form.image': 'Photo of the slip',
+  'payment.form.imageHint': 'A screenshot from your banking app is fine. Up to 8 MB.',
+  'payment.form.amount': 'Amount transferred',
+  'payment.form.transferredAt': 'Date and time of the transfer',
+  'payment.form.reference': 'Reference number (optional)',
+  'payment.form.submit': 'Send the slip',
+  'payment.phase.uploading': 'Uploading the photo…',
+  'payment.phase.creating': 'Saving the slip…',
+  'payment.done': 'We have your slip. Our team will check it and get back to you.',
+  'payment.history.heading': 'Slips you have sent',
+  'payment.history.empty': 'No slips sent yet',
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · sent ${f.date(p.sentAt)} · being checked`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · sent ${f.date(p.sentAt)} · accepted`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · not accepted — ${p.reason}`;
+  },
+  'payment.problem.noImage': 'Please attach a photo of the slip.',
+  'payment.problem.imageTooBig': (p, f) => `That photo is too large — up to ${f.plain(p.limitMib)} MB.`,
+  'payment.problem.badAmount': 'Enter the amount as a number with at most two decimal places.',
+  'payment.problem.badTime': 'Please give the date and time of the transfer.',
+  'payment.problem.signInAgain': 'Your session expired. Please sign in again — what you typed is still here.',
+  'payment.problem.unreachable': 'Cannot connect. Please try again.',
 };

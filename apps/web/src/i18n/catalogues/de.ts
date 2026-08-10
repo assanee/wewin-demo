@@ -477,6 +477,8 @@ export const de: PartialUiCatalogue = {
   'quotation.degraded':
     'Die festgeschriebene Sprache ist in dieser Version nicht verfügbar, daher wird das Dokument auf Thai angezeigt.',
   'quotation.contact': 'An',
+  'quotation.seller.phone': 'Telefon',
+  'quotation.seller.taxId': 'Steuernummer',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': 'Darstellung',
@@ -533,4 +535,61 @@ export const de: PartialUiCatalogue = {
   'notFound.title': 'Seite nicht gefunden',
   'notFound.body':
     'Der Link hat sich möglicherweise geändert. Beginnen Sie bei der Produktliste.',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'Zahlung mitteilen',
+  'payment.heading': 'Zahlung mitteilen',
+  'payment.loading': 'Ihre Zahlungsdetails werden geöffnet…',
+  'payment.outstanding': 'Noch offener Betrag',
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
+  'payment.settled': 'Diese Bestellung ist vollständig bezahlt',
+  'payment.account.legend': 'Überweisen Sie auf eines dieser Konten',
+  'payment.account.copy': (p) => `Kontonummer ${p.accountDigits} kopieren`,
+  'payment.account.copied': 'Kontonummer kopiert',
+  'payment.account.qrAlt': 'PromptPay-QR-Code für den eingegebenen Betrag',
+  'payment.account.qrHint':
+    'Mit Ihrer Banking-App scannen — der Betrag wird automatisch eingetragen',
+  'payment.account.none':
+    'Es wurde noch kein Empfangskonto eingerichtet. Bitte wenden Sie sich für die Zahlungsdetails an unser Vertriebsteam.',
+  'payment.form.legend': 'Beleg anhängen',
+  'payment.form.image': 'Foto des Belegs',
+  'payment.form.imageHint': 'Ein Screenshot aus Ihrer Banking-App reicht. Bis zu 8 MB.',
+  'payment.form.amount': 'Überwiesener Betrag',
+  'payment.form.transferredAt': 'Datum und Uhrzeit der Überweisung',
+  'payment.form.reference': 'Referenznummer (optional)',
+  'payment.form.submit': 'Beleg senden',
+  'payment.phase.uploading': 'Foto wird hochgeladen…',
+  'payment.phase.creating': 'Beleg wird gespeichert…',
+  'payment.done':
+    'Wir haben Ihren Beleg erhalten. Unser Team prüft ihn und meldet sich bei Ihnen.',
+  'payment.history.heading': 'Von Ihnen gesendete Belege',
+  'payment.history.empty': 'Noch keine Belege gesendet',
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · wird geprüft`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · akzeptiert`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · nicht akzeptiert — ${p.reason}`;
+  },
+  'payment.problem.noImage': 'Bitte fügen Sie ein Foto des Belegs hinzu.',
+  'payment.problem.imageTooBig': (p, f) =>
+    `Dieses Foto ist zu groß — bis zu ${f.plain(p.limitMib)} MB.`,
+  'payment.problem.badAmount':
+    'Geben Sie den Betrag als Zahl mit höchstens zwei Dezimalstellen ein.',
+  'payment.problem.badTime': 'Bitte geben Sie Datum und Uhrzeit der Überweisung an.',
+  'payment.problem.signInAgain':
+    'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an — Ihre Eingaben sind noch da.',
+  'payment.problem.unreachable': 'Keine Verbindung. Bitte versuchen Sie es erneut.',
 };

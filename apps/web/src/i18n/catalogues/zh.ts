@@ -400,6 +400,8 @@ export const zh: PartialUiCatalogue = {
   'quotation.pinnedNotice': '本文件已于确认当日固定——重新打开时，其金额与语言都不会改变。',
   'quotation.degraded': '固定的语言在本版本中不可用，因此以泰文显示。',
   'quotation.contact': '致',
+  'quotation.seller.phone': '电话',
+  'quotation.seller.taxId': '税号',
 
   /* ---- Display settings ---------------------------------------------------- */
   'settings.nav': '显示',
@@ -451,4 +453,56 @@ export const zh: PartialUiCatalogue = {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': '未找到该页面',
   'notFound.body': '链接可能已更改。请从产品列表重新开始。',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': '通知一笔付款',
+  'payment.heading': '通知一笔付款',
+  'payment.loading': '正在打开付款信息…',
+  'payment.outstanding': '尚欠金额',
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
+  'payment.settled': '此订单已付清',
+  'payment.account.legend': '转账至以下任一账户',
+  'payment.account.copy': (p) => `复制账号 ${p.accountDigits}`,
+  'payment.account.copied': '账号已复制',
+  'payment.account.qrAlt': '对应所填金额的 PromptPay 二维码',
+  'payment.account.qrHint': '用银行 App 扫描——金额会自动填入',
+  'payment.account.none': '尚未设置收款账户，请联系销售团队获取付款方式。',
+  'payment.form.legend': '上传付款凭证',
+  'payment.form.image': '凭证照片',
+  'payment.form.imageHint': '银行 App 的截图即可，不超过 8 MB。',
+  'payment.form.amount': '转账金额',
+  'payment.form.transferredAt': '转账日期与时间',
+  'payment.form.reference': '备注编号（选填）',
+  'payment.form.submit': '提交凭证',
+  'payment.phase.uploading': '正在上传照片…',
+  'payment.phase.creating': '正在保存凭证…',
+  'payment.done': '已收到您的付款凭证，我们的团队会核实后与您联系。',
+  'payment.history.heading': '已提交的付款凭证',
+  'payment.history.empty': '尚未提交过凭证',
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·待审核`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·已确认`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}·未通过——${p.reason}`;
+  },
+  'payment.problem.noImage': '请上传一张凭证照片。',
+  'payment.problem.imageTooBig': (p, f) =>
+    `这张照片太大——请控制在 ${f.plain(p.limitMib)} MB 以内。`,
+  'payment.problem.badAmount': '请输入数字金额，小数位不超过两位。',
+  'payment.problem.badTime': '请填写转账日期与时间。',
+  'payment.problem.signInAgain': '您的登录已过期，请重新登录——已填写的内容仍会保留。',
+  'payment.problem.unreachable': '无法连接，请重试。',
 };

@@ -18,6 +18,13 @@ import type { PlainKey } from '../../i18n/keys';
  *
  * The session goes to `SessionProvider` rather than to the caller, so a header link and a cart
  * gate both learn about it without either asking the API a second time.
+ *
+ * ⚠️ **`initialMode` — a third caller changes the default.** `AccountGate`'s signed-out
+ * branch and this page's own sign-in both want `'register'`, because plan 6 calls the
+ * anonymous visitor the main funnel and a first-time visitor is more often registering than
+ * returning. A session that has merely *expired* — `PaymentIsland`'s trap 5 — is a different
+ * fact about the same form: this customer already has an account, and offering them a blank
+ * registration form first is the wrong door on the one screen where money is on the table.
  */
 
 const PROBLEM_KEYS: Readonly<Record<Exclude<AuthProblem, 'refused'>, PlainKey>> = {
@@ -28,11 +35,15 @@ const PROBLEM_KEYS: Readonly<Record<Exclude<AuthProblem, 'refused'>, PlainKey>> 
   unconfigured: 'account.problem.unconfigured',
 };
 
-export function AccountForm(): ReactElement {
+export function AccountForm({
+  initialMode = 'register',
+}: {
+  readonly initialMode?: 'register' | 'sign-in';
+} = {}): ReactElement {
   const { t } = useLocale();
   const { adopt } = useSession();
 
-  const [mode, setMode] = useState<'register' | 'sign-in'>('register');
+  const [mode, setMode] = useState<'register' | 'sign-in'>(initialMode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [problem, setProblem] = useState<string | null>(null);

@@ -411,6 +411,8 @@ export const th: UiCatalogue = {
     'เอกสารนี้ถูกตรึงไว้ตั้งแต่วันที่ยืนยัน — ตัวเลขและภาษาจะไม่เปลี่ยนเมื่อเปิดซ้ำ',
   'quotation.degraded': 'ภาษาที่ตรึงไว้ไม่รองรับในรุ่นนี้ จึงแสดงเป็นภาษาไทยแทน',
   'quotation.contact': 'เรียน',
+  'quotation.seller.phone': 'โทรศัพท์',
+  'quotation.seller.taxId': 'เลขผู้เสียภาษี',
 
   /* ---- Display settings ------------------------------------------------------ */
   'settings.nav': 'การแสดงผล',
@@ -462,4 +464,62 @@ export const th: UiCatalogue = {
   /* ---- Not found ----------------------------------------------------------- */
   'notFound.title': 'ไม่พบหน้าที่ต้องการ',
   'notFound.body': 'ลิงก์อาจเปลี่ยนไปแล้ว ลองเริ่มจากรายการสินค้า',
+
+  /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.meta.title': 'แจ้งชำระเงิน',
+  'payment.heading': 'แจ้งชำระเงิน',
+  'payment.loading': 'กำลังเปิดข้อมูลการชำระเงิน…',
+  'payment.outstanding': 'ยอดคงค้าง',
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
+  'payment.settled': 'ออเดอร์นี้ชำระครบแล้ว',
+  'payment.account.legend': 'โอนเข้าบัญชีใดบัญชีหนึ่ง',
+  'payment.account.copy': (p) => `คัดลอกเลขบัญชี ${p.accountDigits}`,
+  'payment.account.copied': 'คัดลอกเลขบัญชีแล้ว',
+  'payment.account.qrAlt': 'คิวอาร์โค้ดพร้อมเพย์สำหรับยอดที่กรอกไว้',
+  'payment.account.qrHint': 'สแกนด้วยแอปธนาคาร — จำนวนเงินจะถูกกรอกให้อัตโนมัติ',
+  'payment.account.none': 'ยังไม่ได้ตั้งค่าบัญชีรับเงิน กรุณาติดต่อทีมขายเพื่อขอช่องทางชำระเงิน',
+  'payment.form.legend': 'แนบสลิป',
+  'payment.form.image': 'รูปสลิป',
+  'payment.form.imageHint': 'ถ่ายจากแอปธนาคารได้เลย ไฟล์ไม่เกิน 8 MB',
+  'payment.form.amount': 'จำนวนเงินที่โอน',
+  'payment.form.transferredAt': 'วันและเวลาที่โอน',
+  'payment.form.reference': 'เลขอ้างอิง (ถ้ามี)',
+  'payment.form.submit': 'ส่งสลิป',
+  'payment.phase.uploading': 'กำลังอัปโหลดรูป…',
+  'payment.phase.creating': 'กำลังบันทึกสลิป…',
+  'payment.done': 'ได้รับสลิปแล้ว ทีมงานจะตรวจสอบและแจ้งกลับ',
+  'payment.history.heading': 'สลิปที่ส่งไปแล้ว',
+  'payment.history.empty': 'ยังไม่ได้ส่งสลิป',
+  // Baht and satang split inline here, the same way `payment.outstandingAmount` does —
+  // and *not* `satangField` from `@wewin/core/money`. That helper is ASCII with no
+  // grouping and no currency mark because it writes into a field `readSatang` reads back;
+  // these three are display, not input, so the baht part goes through `f.plain` (a
+  // Burmese reader sees Burmese digits) and only the two-digit fractional part stays
+  // ASCII. The slip history is where a customer checks "did they receive what I sent?" —
+  // rounding it to whole baht here is the exact failure this page exists to avoid.
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รอตรวจสอบ`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รับแล้ว`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ไม่ผ่าน — ${p.reason}`;
+  },
+  'payment.problem.noImage': 'กรุณาแนบรูปสลิป',
+  'payment.problem.imageTooBig': (p, f) => `รูปใหญ่เกินไป — ไม่เกิน ${f.plain(p.limitMib)} MB`,
+  'payment.problem.badAmount': 'กรอกจำนวนเงินเป็นตัวเลข ทศนิยมไม่เกินสองตำแหน่ง',
+  'payment.problem.badTime': 'กรุณาเลือกวันและเวลาที่โอน',
+  'payment.problem.signInAgain': 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง ข้อมูลที่กรอกไว้ยังอยู่',
+  'payment.problem.unreachable': 'เชื่อมต่อไม่ได้ กรุณาลองใหม่',
 };

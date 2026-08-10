@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 
+import { OrganisationModule } from '../organisation';
 import { CustomerLinkController, DocumentLinkController } from './document-link.controller';
 import { DocumentLinkReader } from './document-link.reader';
 import { DocumentLinkService, WEB_BASE_URL } from './document-link';
@@ -44,7 +45,19 @@ export class DocumentLinkModule {
   static forRoot(auth: DynamicModule, webBaseUrl: string | undefined): DynamicModule {
     return {
       module: DocumentLinkModule,
-      imports: [auth, OrderScopeModule],
+      /*
+       * ⭐ Fix round 1: `OrganisationModule` joins the list so `DocumentLinkReader` can put
+       * `seller` on `LinkedDocumentWire`, and it is safe for a reason the `OrdersModule`
+       * paragraph above does not cover — that one is about *this* module being wrapped in a
+       * second `DynamicModule`, which is what doubled the routes. `OrganisationModule` is the
+       * opposite shape: a plain `@Module({...})` with no `forRoot` of its own, already
+       * imported by both `AppModule` and `OrdersModule` today with no ill effect, because Nest
+       * deduplicates a static module by class reference — every importer shares the one
+       * instance rather than causing another registration of `OrganisationController`'s own
+       * routes. There is no cycle either: `OrganisationModule`'s own note says it imports
+       * nothing, so nothing it exports can lead back here.
+       */
+      imports: [auth, OrderScopeModule, OrganisationModule],
       controllers: [DocumentLinkController, CustomerLinkController],
       providers: [
         DocumentLinkService,

@@ -9,10 +9,12 @@ import type {
   QuotePreconditionWire,
   QuoteWire,
 } from '@wewin/contract/quote';
+import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 import type { LengthUnit } from '@wewin/core/units';
 
 import { apiJson } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
+import { decodeProfile } from '@/components/organisation/organisation-api';
 
 import { decodeQuote } from './quote-wire';
 
@@ -354,7 +356,7 @@ export function failureMessage(error: unknown): string {
  * ------------------------------------------------------------------ */
 
 /**
- * ⭐ `GET /orders/:id/document` — the frozen contract terms.
+ * ⭐ `GET /orders/:id/document` — the frozen contract terms, and who is offering them.
  *
  * Not the editable quote. Eight things are pinned at `submit_for_payment` and the locale is
  * one of them, which is what makes a reprint citable (plan 10.6). The editor above reads the
@@ -362,11 +364,29 @@ export function failureMessage(error: unknown): string {
  *
  * ⚠️ 404 when the order has never been submitted, and that is the honest answer rather than
  * an empty document: before submit there is no quotation, there is a cart.
+ *
+ * ⚠️ `document` and `seller` are siblings on the response, and stay siblings here — task
+ * 11b. `document` is the pinned half, passed through exactly as `apps/api` sent it;
+ * `seller` is `organisation_profile`, read live on every call rather than pinned, decoded
+ * with the same `decodeProfile` the organisation screen already trusts rather than a second
+ * hand-rolled reader that could drift from it.
  */
-export const getPinnedDocument = (orderId: string): Promise<Record<string, unknown>> =>
+export interface PinnedDocumentAndSeller {
+  readonly document: Record<string, unknown>;
+  readonly seller: OrganisationProfileWire;
+}
+
+export const getPinnedDocument = (orderId: string): Promise<PinnedDocumentAndSeller> =>
   apiJson(`/orders/${orderId}/document`, (body) => {
     if (typeof body !== 'object' || body === null) throw new TypeError('เอกสาร: ไม่ใช่วัตถุ');
-    return body as Record<string, unknown>;
+    const wrapped = body as Record<string, unknown>;
+
+    const document = wrapped['document'];
+    if (typeof document !== 'object' || document === null) {
+      throw new TypeError('เอกสาร: ไม่มี document');
+    }
+
+    return { document: document as Record<string, unknown>, seller: decodeProfile(wrapped['seller']) };
   });
 
 /* ------------------------------------------------------------------ *

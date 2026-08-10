@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { CatalogModule } from '../catalog/catalog.module';
+import { OrganisationModule } from '../organisation';
 import { AuthorityModule } from '../quotes/authority';
 import { QuotesModule } from '../quotes/quotes.module';
 import { PaymentLifecycleModule } from '../payments/lifecycle';
@@ -62,10 +63,15 @@ import { OrderScopeModule } from './scope';
    * only this way: neither of them imports `OrdersModule`, because a module that could reach
    * `OrdersService` is a module that will eventually move an order's status from an approval
    * handler, and a concession is a fact about authority rather than a transition.
+   *
+   * `OrganisationModule`, task 10's addition: `paymentInstructions` reads
+   * `OrganisationRepository.activeAccounts()` for the accounts to pay into. No cycle risk —
+   * `OrganisationModule` imports nothing itself.
    */
   imports: [
     CatalogModule,
     OrderScopeModule,
+    OrganisationModule,
     PaymentLifecycleModule,
     QuotesModule,
     AuthorityModule,

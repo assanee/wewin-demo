@@ -6,6 +6,7 @@ import type { OrderStatus } from '@wewin/db/schema';
 import { AppError } from '../../common/errors/app-error';
 import { ImageRejected, normaliseImage } from '../../media/image';
 import type { StoredObject } from '../../media/storage/object-storage';
+import { OrganisationRepository } from '../../organisation/organisation.repository';
 import { OrderRepository } from '../../orders/order.repository';
 import { assertActorMayMove } from '../../orders';
 import {
@@ -164,6 +165,13 @@ export class SlipsService {
      * third seam, twice in one phase.
      */
     private readonly ledger: LedgerService,
+    /**
+     * The one place this module checks a `receivedBankAccountId` against — task 13 fix
+     * round 1. `activeAccounts()`/`account()` are the same two queries `OrdersService`
+     * already reads for `GET .../payment-instructions`; nothing new is asked of this
+     * repository, only a second caller for what it already exposes.
+     */
+    private readonly organisation: OrganisationRepository,
     @Inject(SLIP_STORAGE_CONFIG) private readonly config: SlipStorageConfig,
   ) {}
 
@@ -276,6 +284,11 @@ export class SlipsService {
       const transferredAt = new Date(body.transferredAt);
       this.assertTransferPlausible(order, transferredAt);
 
+      const receivedBankAccountId = await this.assertKnownActiveAccount(
+        tx,
+        body.receivedBankAccountId,
+      );
+
       const slipId = await this.slips.insertSlip(tx, {
         orderId: order.id,
         amountThbMinor: thbMinor(body.amountThbMinor),
@@ -284,6 +297,7 @@ export class SlipsService {
         storageKey: claims.claims.storageKey,
         payerName: body.payerName ?? null,
         payerAccountLast4: body.payerAccountLast4 ?? null,
+        receivedBankAccountId,
         /*
          * 🔒 BOTH HALVES OF WHO UPLOADED IT — 5b red team, RT-1.
          *
@@ -998,6 +1012,43 @@ export class SlipsService {
         },
       );
     }
+  }
+
+  /**
+   * `null`, or the id the customer picked — never a UUID this caller merely typed.
+   *
+   * ── Why this checks *active*, and not merely *exists* ────────────────────────────
+   *
+   * `payment_slips_received_bank_account_id_bank_accounts_id_fk` already refuses a UUID that
+   * names no row (`ON DELETE restrict`, so it cannot even go stale under the caller). That
+   * is existence, and existence is not the invariant this column is for. `apps/web`'s picker
+   * offers exactly `GET .../payment-instructions`' `activeAccounts()` — never a retired one —
+   * so the *only* honest values a customer's own request can carry are ids from that same
+   * list. Accepting anything wider would let a customer's request name an account nobody
+   * showed them: an id they read off an old invoice, a retired account still sitting in the
+   * table for the audit trail `bank_account_changes` keeps, or simply a guess. A reviewer
+   * reading `received_bank_account_id` off a slip is meant to trust it as "the destination
+   * this customer was shown and picked" — not "any account that has ever existed" — so this
+   * checks the same predicate the picker itself is built from, inside the same transaction
+   * that is about to write the row, rather than trusting a value that was true when the page
+   * loaded and might not be true a submission later.
+   *
+   * `undefined` (the field was omitted) passes through as `null` without a query — a slip a
+   * staff member keys in from a phone call carries no picker behind it and this checks
+   * nothing to do with the customer flow; see the contract's own note on why the field stays
+   * `.optional()` there while `apps/web` never omits it.
+   */
+  private async assertKnownActiveAccount(tx: Tx, receivedBankAccountId: string | undefined): Promise<string | null> {
+    if (receivedBankAccountId === undefined) return null;
+
+    const [account] = await this.organisation.account(receivedBankAccountId, tx);
+    if (!account || !account.isActive) {
+      throw AppError.badRequest('บัญชีที่เลือกไม่ถูกต้อง หรือปิดรับโอนไปแล้ว กรุณาเลือกใหม่อีกครั้ง', {
+        reason: 'bank_account_not_recognised',
+      });
+    }
+
+    return account.id;
   }
 }
 

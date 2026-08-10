@@ -39,8 +39,13 @@ import { reviewsApiBaseUrl } from '../reviews/api';
  * 🔗 **The seam**, stated so a mismatch is a conversation rather than a blank page:
  *
  *     GET {API}/orders/documents/{token}
- *       → 200 { orderNo, status, contactName, submittedAt, document }
+ *       → 200 { orderNo, status, contactName, submittedAt, document, seller }
  *       → 404 for every refusal, deliberately
+ *
+ * ⚠️ `seller` as of fix round 1 — beside `document`, never inside it, read live from
+ * `organisation_profile` on every call. Fine to serve on this anonymous route for the same
+ * reason `AppFooter` prints the same address with no session at all: it is the company's own
+ * letterhead, not a fact about the customer or the order.
  */
 
 /**
@@ -78,10 +83,45 @@ export function quotationSource(search: string): QuotationSource {
   return UUID.test(orderId) ? { kind: 'owned', orderId } : { kind: 'none' };
 }
 
+/**
+ * Who is offering the quotation — `organisation_profile`, read live rather than pinned.
+ *
+ * ⚠️ Hand-decoded rather than imported from `@wewin/contract/organisation`, for the reason
+ * `lib/reviews/wire.ts` gives at length: this app does not depend on `@wewin/contract` and
+ * a company's address is content, not a UI string (`i18n/keys.ts`'s own rule) — so the
+ * fields below are rendered exactly as the API sent them, in whatever language the company
+ * typed them in.
+ */
+export interface Seller {
+  readonly legalNameTh: string;
+  readonly addressTh: string;
+  readonly taxId: string | null;
+  readonly phone: string;
+}
+
+/**
+ * `null` on a decode failure and, defensively, on a response that has no `seller` key at
+ * all — every current server response carries one (fix round 1 widened both
+ * `GET /orders/documents/:token` and `GET /orders/:id/document`), but a caller a version
+ * behind, or a future endpoint that forgets it, should render a quotation with no letterhead
+ * rather than fail to render at all.
+ */
+function sellerFrom(value: unknown): Seller | null {
+  if (!isRecord(value)) return null;
+
+  const legalNameTh = asString(value['legalNameTh']);
+  const addressTh = asString(value['addressTh']);
+  const phone = asString(value['phone']);
+  if (legalNameTh === null || addressTh === null || phone === null) return null;
+
+  return { legalNameTh, addressTh, phone, taxId: asString(value['taxId']) };
+}
+
 export interface LinkedQuotation {
   readonly orderNo: string | null;
   readonly status: string;
   readonly document: PinnedDocument;
+  readonly seller: Seller | null;
 }
 
 export type QuotationFailure =
@@ -132,6 +172,7 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
         contactName: asString(body['contactName']),
         submittedAt: asString(body['submittedAt']),
       }),
+      seller: sellerFrom(body['seller']),
     };
   } catch {
     return null;
@@ -141,10 +182,13 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
 /**
  * ⚠️ Two endpoints with **two different shapes**, and that is why this is not one fetch.
  *
- * `GET /orders/documents/:token` answers `{orderNo, status, contactName, submittedAt, document}`
- * — assembled by `DocumentLinkReader` precisely because a holder of a link cannot call anything
- * else. `GET /orders/:id/document` answers the bare `OrderDocumentWire`, so the heading fields
- * come from `GET /orders/:id` beside it, which is what the dashboard has always done.
+ * `GET /orders/documents/:token` answers
+ * `{orderNo, status, contactName, submittedAt, document, seller}` — assembled by
+ * `DocumentLinkReader` precisely because a holder of a link cannot call anything else. `GET
+ * /orders/:id/document` answers `{document, seller}` only — the heading fields come from `GET
+ * /orders/:id` beside it instead, which is what the dashboard has always done. `seller` is the
+ * one field both shapes carry the same way: beside the pinned document, never inside it, read
+ * live from `organisation_profile` on every call.
  *
  * ⚠️ The owned path needs a **bearer token**, not merely a cookie. `@RequirePrincipal()` reads
  * a session or a guest cookie, and an order attached to `customer_user_id` is not the guest's
@@ -200,8 +244,11 @@ export async function fetchQuotation(
   if (!order.ok || !document.ok) return { ok: false, reason: 'refused' };
 
   const summary: unknown = await order.json().catch(() => null);
-  const pinned: unknown = await document.json().catch(() => null);
-  if (!isRecord(summary) || !isRecord(pinned)) return { ok: false, reason: 'malformed' };
+  /* ⚠️ `{document, seller}` — `seller` beside the pinned document, never merged into it. */
+  const wrapped: unknown = await document.json().catch(() => null);
+  if (!isRecord(summary) || !isRecord(wrapped) || !isRecord(wrapped['document'])) {
+    return { ok: false, reason: 'malformed' };
+  }
 
   const contact = isRecord(summary['contact']) ? summary['contact'] : {};
   const data = decodeQuotation({
@@ -209,7 +256,8 @@ export async function fetchQuotation(
     status: summary['status'],
     contactName: contact['name'],
     submittedAt: summary['submittedAt'],
-    document: pinned,
+    document: wrapped['document'],
+    seller: wrapped['seller'],
   });
 
   return data === null ? { ok: false, reason: 'malformed' } : { ok: true, data };

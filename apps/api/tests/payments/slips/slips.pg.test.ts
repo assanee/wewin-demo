@@ -37,6 +37,8 @@ import {
   getRaw,
   instalmentIds,
   ledgerKinds,
+  makeBankAccount,
+  receivedAccountOf,
   uploadImage,
   writeThirtySeventy,
   type SlipsApp,
@@ -965,5 +967,125 @@ describeWithPg('payment slips — upload, review, acceptance, rejection', () => 
      * customer to transfer. This one is genuinely waiting, and says so.
      */
     expect(entry?.queueBucket).toBe('awaiting_review');
+  }, 60_000);
+
+  /* ================================================================ *
+   * ⓫ Which account received the money — task 13 fix round 1
+   * ================================================================ */
+
+  it('persists the account a customer names, and stores NULL when none is named', async () => {
+    const order = await orderOf('account-persist');
+    const accountId = await makeBankAccount(db, {
+      bankCode: 'TEST',
+      accountNumber: String(Date.now()),
+      accountName: `slips test account ${tag}`,
+      isActive: true,
+    });
+
+    /*
+     * ⚠️ THE ASSERTION THIS PAIR EXISTS FOR — the coordinator's own words: "optional" is how
+     * this regresses. A refactor that stopped passing the field through `createSlip` would
+     * still return 201 and still pass every existing test; only reading the column back
+     * proves the value actually reached the row rather than being silently dropped.
+     */
+    const named = await createSlip(order.id, 100_00n, customer, {
+      receivedBankAccountId: accountId,
+    });
+    expect(await receivedAccountOf(db, named.id)).toBe(accountId);
+
+    const unnamed = await createSlip(order.id, 100_00n);
+    expect(await receivedAccountOf(db, unnamed.id)).toBeNull();
+  }, 60_000);
+
+  /*
+   * F2 — the column above was write-only: persisted on every slip through the fix round 1
+   * pair above, surfaced on no read path at all. This is that fix — the resolved bank code
+   * and account name, not the raw id, reaching the wire the staff slip-review screen reads.
+   */
+  it('surfaces which account received the money on the wire, honestly when unnamed', async () => {
+    const order = await orderOf('account-surface');
+    const accountId = await makeBankAccount(db, {
+      bankCode: 'TEST',
+      accountNumber: String(Date.now() + 2),
+      accountName: `slips surfaced account ${tag}`,
+      isActive: true,
+    });
+
+    /*
+     * `receivedBankAccount` is not audience-gated — it names one of the company's own
+     * accounts, the same account the customer's own picker offered before this slip existed
+     * — so the create response (the customer's audience) carries it too, not only the staff
+     * screen this finding is about.
+     */
+    const named = await createSlip(order.id, 100_00n, customer, {
+      receivedBankAccountId: accountId,
+    });
+    expect(named.receivedBankAccount).toEqual({
+      bankCode: 'TEST',
+      accountName: `slips surfaced account ${tag}`,
+    });
+
+    /* The staff slip-review screen — where reconciliation actually happens. */
+    const namedReview = await call('GET', `/payments/slips/${named.id}`, { token: reviewer.token });
+    expect(namedReview.status, JSON.stringify(namedReview.body)).toBe(200);
+    expect((namedReview.body as SlipReviewWire).slip.receivedBankAccount).toEqual({
+      bankCode: 'TEST',
+      accountName: `slips surfaced account ${tag}`,
+    });
+
+    /*
+     * An unnamed slip is not a blank the wire papers over with a guess — `receivedBankAccount`
+     * is `null`, on the create response and on the review screen alike, so the dialog can say
+     * so honestly instead of leaving the row empty.
+     */
+    const unnamed = await createSlip(order.id, 100_00n);
+    expect(unnamed.receivedBankAccount).toBeNull();
+
+    const unnamedReview = await call('GET', `/payments/slips/${unnamed.id}`, {
+      token: reviewer.token,
+    });
+    expect(unnamedReview.status, JSON.stringify(unnamedReview.body)).toBe(200);
+    expect((unnamedReview.body as SlipReviewWire).slip.receivedBankAccount).toBeNull();
+  }, 60_000);
+
+  it('refuses an account that is not active, and one that does not exist at all', async () => {
+    const order = await orderOf('account-refuse');
+    const retiredId = await makeBankAccount(db, {
+      bankCode: 'TEST',
+      accountNumber: String(Date.now() + 1),
+      accountName: `slips retired account ${tag}`,
+      isActive: false,
+    });
+
+    /*
+     * ⚠️ The FK (`payment_slips_received_bank_account_id_bank_accounts_id_fk`) alone would
+     * refuse only the second candidate — a uuid that names no row at all. It has nothing to
+     * say about the first: the retired account genuinely exists, so a check that stopped at
+     * "does this row exist" would let this one through. `assertKnownActiveAccount` is the
+     * service-level check that closes the gap the FK leaves open, and this asserts both
+     * halves land on the same refusal rather than one landing here and the other as an
+     * unhandled foreign-key violation.
+     */
+    for (const candidate of [retiredId, randomUUID()]) {
+      const image = await uploadFor(order.id);
+      const refused = await call('POST', `/orders/${order.id}/payment-slips`, {
+        token: customer.token,
+        body: {
+          imageHandle: image.imageHandle,
+          amountThbMinor: encodeThb(100_00n),
+          transferredAt: new Date().toISOString(),
+          receivedBankAccountId: candidate,
+        },
+      });
+
+      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+      expect(refused.body).toMatchObject({
+        error: { details: { reason: 'bank_account_not_recognised' } },
+      });
+    }
+
+    /* And the slip never landed — a refused account name is not a partial slip. */
+    const list = await call('GET', `/orders/${order.id}/payment-slips`, { token: customer.token });
+    expect((list.body as SlipListWire).slips).toHaveLength(0);
   }, 60_000);
 });
