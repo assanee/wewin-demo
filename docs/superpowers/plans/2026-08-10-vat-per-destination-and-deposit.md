@@ -33,6 +33,144 @@ Copied from the spec. Every task's requirements implicitly include this section.
 
 ---
 
+## Verified Repo Facts — read this before any task
+
+The first draft of this plan guessed at these and was wrong about every one. Each line below was
+checked first-hand against the file or the running database. **Where a task's snippet disagrees
+with this section, this section wins.**
+
+**Package entry points.** The root export of `@wewin/db`, `@wewin/contract` and `@wewin/i18n` is
+**types-only** — `{ "types": "./dist/index.d.ts" }` with no runtime condition. Importing a value
+from the root throws `ERR_PACKAGE_PATH_NOT_EXPORTED` at boot. Runtime values come from explicit
+subpaths, and the maps are **hand-maintained with no wildcard**:
+
+```ts
+import type { Database } from '@wewin/db';                          // types: root is fine
+import { taxCountries, taxCountryChanges } from '@wewin/db/schema';  // values: subpath
+import { and, asc, eq } from '@wewin/db/sql';                        // drizzle operators
+import { LOCALES } from '@wewin/i18n/locales';                       // not from '@wewin/i18n'
+import { orderDocumentWireSchema } from '@wewin/contract/order';
+```
+
+**A new contract module needs a new exports entry.** `packages/contract/src/tax.ts` (Task 2) is
+unreachable until `"./tax": "./dist/tax.js"` is added to `packages/contract/package.json`'s
+`exports`. Adding a re-export to `src/index.ts` does **not** make it importable at runtime.
+
+**A filtered test run must use `exec vitest run`, never `test -- <pattern>`.** `pnpm run test --
+<pattern>` hands `--` to vitest, which ignores it *and* the pattern and runs the whole suite —
+exiting 0. Verified: `pnpm --filter @wewin/dashboard test -- navigation` ran 19 files / 221 tests;
+`pnpm --filter @wewin/dashboard exec vitest run navigation` ran 1 file / 9 tests. **Every "run it and
+watch it fail" step in this plan depends on this**: with the wrong form an implementer sees a green
+suite, concludes the new test passes, and never notices it was not collected.
+
+**`apps/api`'s test script type-checks first:** `tsc -p tsconfig.build.json && vitest run`. A
+step that deliberately leaves a type error cannot use `pnpm --filter @wewin/api test` — vitest
+never runs. Use `pnpm --filter @wewin/api exec vitest run <pattern>` when that is the situation.
+
+**There is no DOM or component test infrastructure, deliberately.** Both `apps/web` and
+`apps/dashboard` use `environment: 'node'` with `include: ['tests/**/*.test.ts',
+'src/**/*.test.ts']`, and each config carries a comment explaining that components are
+deliberately not rendered. There is no `@testing-library/*`, no `jsdom`, no `msw` anywhere in the
+repo. **A `.test.tsx` file is not collected and silently never runs.**
+
+Tasks 6, 13 and 15 therefore test in the repo's own idiom, decided by the owner:
+- pure logic and API-module tests as `*.test.ts` under `tests/` or beside the source;
+- `renderToStaticMarkup` from `react-dom/server` where markup genuinely needs asserting;
+- and the browser step each of those tasks already carries, which is where interaction is checked.
+
+Do **not** add a testing library. The configs' comments are a decision, and a tax feature is not
+the place to reverse it.
+
+**`packages/db/tests/support/db.ts` exports** — there is no `withDb`:
+
+```ts
+export const describeDb = describe.skipIf(!url);   // :24
+export async function connect(): Promise<Database>  // :47
+export async function connectPool(): Promise<Pool>  // :70
+export const PG = { … }                             // :83  — error-code constants
+export function errorCode(error: unknown): string | undefined  // :101
+```
+
+Use `const db = await connect();` at the top of each `it`. For a CHECK or trigger violation,
+prefer `packages/db/tests/erasure.test.ts`'s own `expectViolation` (`:58`) and `expectRefusal`
+(`:195`) over a bare `rejects.toThrow`.
+
+**`packages/db/tests/erasure.test.ts` helpers** — there is no `eraseUser`:
+
+```ts
+async function createSubject(db: Database, label: string): Promise<Subject>   // :81 — TWO args
+const erase = (db, userId, requestedBy = null) => …                          // :179
+```
+
+**`erase_user` takes four parameters and the user one is `p_user`:**
+`erase_user(p_user uuid, p_requested_by uuid, p_channel text, p_legal_basis text)`. plpgsql
+resolves identifiers at execution, so a body referring to a name that does not exist applies
+cleanly and then raises on every call.
+
+**Dump it with `pg_get_functiondef`, not `prosrc`.** `pg_proc.prosrc` is only the inner block —
+it begins at `DECLARE` and ends at `END;`, with no parameter list, no `RETURNS`, no `AS $$ … $$`
+and no `LANGUAGE plpgsql`:
+
+```bash
+docker exec wewin-demo-postgres-1 psql -U wewin -d wewin -tAc \
+  "SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = 'erase_user'" > /tmp/erase_user.sql
+```
+
+**`AllowAnonymous` demands a reason:** `export function AllowAnonymous(reason: string)`
+(`apps/api/src/rbac/access.ts:114`). The boot-time route audit prints it. `@AllowAnonymous()`
+with no argument does not compile.
+
+**There is no `harness()` to copy.** `apps/api/tests/organisation/organisation.pg.test.ts` is
+`beforeAll`-scoped closures (`app`, `db`, `reader`, `writer`) calling routes through raw `fetch`.
+Where a task's snippet says `harness()`, **write** one, lifting `makeActor` (`:84`) and the app
+boot helper from `apps/api/tests/support`, and state its return shape in the task's own commit.
+
+**`ScopedOrder` is a hand-written interface with an ownership brand**
+(`apps/api/src/orders/scope/scoped-order.ts:46`), and `ORDER_COLUMNS` in the same file is the
+only column set a scoped load selects. **A new database column does not appear on it.** Any task
+reading `order.destinationCountry` must extend both.
+
+**`payInFullTerms()`** exists at `apps/api/src/payments/schedule/terms.ts:54`, beside
+`depositPercentTerms` (`:71`) and `depositFixedTerms` (`:85`).
+
+**`pinsForSubmit` returns an object, not an array**, and contains a fail-closed check that must
+survive:
+
+```ts
+  async pinsForSubmit(tx: LedgerTx, grandTotalThbMinor: bigint): Promise<{
+    readonly instalments: readonly PlannedInstalment[];
+    readonly scheduledDepositThbMinor: bigint;
+    readonly forfeitPolicyId: string;
+  }>
+```
+
+`effectiveForfeitPolicy(tx)` is consulted inside it and throws when no policy is in force. **Show
+the change as a diff against the existing body; never as a replacement body.**
+
+**`PrintableQuotation` carries formatted strings, not minor units.** `PrintableLine` has
+`netText: string`; `charges` is `{ labelTh: string; amountText: string }[]`. Assert money
+footing against the `PinnedDocument` instead, which does carry minor units —
+`PinnedLine.netMinor` (`packages/core/src/quotation.ts:48`) and `PinnedCharge.amountMinor`
+(`:53`).
+
+**`applyOverrides` has three call sites, not five:** `apps/api/src/quotes/quotes.service.ts:864`,
+`apps/api/src/orders/order-document.ts:266`, and `apps/api/tests/quotes/overrides.test.ts:69`.
+
+**`measureFor` has three callers and `gate` is not one of them.** The chain is
+`measureCashflow` → `measureFor` → { `measure` (`:139`), `assess` (`:247`), `request` (`:407`) },
+and `gate` calls `assess` (`:359`). Two of those entry points are reached from HTTP controllers
+with no submit transaction.
+
+**`OrganisationService.putProfile(actorUserId, input)`** — that name, and the **actor comes
+first** (`apps/api/src/organisation/organisation.service.ts:111`). Its request schema is
+`organisationProfilePutSchema`. There is no `updateProfile`.
+
+**`AppError`'s message and details are separate.** The first argument becomes `Error.message`; a
+`{ reason }` object goes to `details`, which `expect(...).rejects.toThrow(/reason/)` never sees.
+Assert `rejects.toMatchObject({ details: { reason: '…' } })`.
+
+---
+
 ## File Structure
 
 **New files**
@@ -113,11 +251,20 @@ Create `packages/db/tests/tax.pg.test.ts`:
 ```ts
 import { describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { describeDb, withDb } from './support/db';
+import { connect, describeDb, type Database } from './support/db.js';
+
+/*
+ * There is no `withDb` in this repo — the helper is `connect()` (support/db.ts:47). One local
+ * wrapper keeps each `it` a single statement without inventing a shared API that does not exist.
+ */
+const withConnection = async (body: (db: Database) => Promise<void>): Promise<void> => {
+  const db = await connect();
+  await body(db);
+};
 
 describeDb('tax_countries', () => {
   it('seeds exactly Thailand, at the defaults defaults.ts stands in for', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       const rows = await db.execute(sql`
         select code, rate_bp, treatment, prices_include_tax, is_active
         from tax_countries order by code
@@ -129,7 +276,7 @@ describeDb('tax_countries', () => {
   });
 
   it('refuses a rate above 100 per cent, which core would happily compute', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       await expect(
         db.execute(sql`
           insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
@@ -140,7 +287,7 @@ describeDb('tax_countries', () => {
   });
 
   it('refuses a treatment outside the four', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       await expect(
         db.execute(sql`
           insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
@@ -151,7 +298,7 @@ describeDb('tax_countries', () => {
   });
 
   it('refuses a lower-case or three-letter code', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       await expect(
         db.execute(sql`
           insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
@@ -162,7 +309,7 @@ describeDb('tax_countries', () => {
   });
 
   it('cannot be deleted — withdrawal is is_active, per the standing project rule', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       await expect(db.execute(sql`delete from tax_countries where code = 'TH'`)).rejects.toThrow(
         /deactivate it instead of deleting it/u,
       );
@@ -170,7 +317,7 @@ describeDb('tax_countries', () => {
   });
 
   it('records history that cannot be edited or un-recorded', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       await db.execute(sql`
         insert into tax_country_changes (tax_country_code, after)
         values ('TH', '{"rateBp":700}'::jsonb)
@@ -185,7 +332,7 @@ describeDb('tax_countries', () => {
 
 describeDb('organisation_profile.deposit_bp', () => {
   it('starts at payment in full, and the column carries no DEFAULT', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       const value = await db.execute(sql`select deposit_bp from organisation_profile where id = 1`);
       expect(value.rows[0]).toStrictEqual({ deposit_bp: 10000 });
 
@@ -198,7 +345,7 @@ describeDb('organisation_profile.deposit_bp', () => {
   });
 
   it('refuses zero, because depositPercentTerms refuses zero', async () => {
-    await withDb(async (db) => {
+    await withConnection(async (db) => {
       await expect(
         db.execute(sql`update organisation_profile set deposit_bp = 0 where id = 1`),
       ).rejects.toThrow(/organisation_profile_deposit_in_range/u);
@@ -207,12 +354,12 @@ describeDb('organisation_profile.deposit_bp', () => {
 });
 ```
 
-> **Note on the harness:** copy the exact `describeDb` / `withDb` import path and usage from `packages/db/tests/erasure.test.ts` — do not invent them. If the helpers there are named differently, follow that file, not this snippet.
+> **On the helpers:** `packages/db/tests/support/db.ts` exports `describeDb` (`:24`), `connect()` (`:47`), `PG` (`:83`) and `errorCode()` (`:101`). There is **no `withDb`**. For the CHECK and trigger assertions above, prefer `expectViolation` (`packages/db/tests/erasure.test.ts:58`) and `expectRefusal` (`:195`) over a bare `rejects.toThrow` — they assert on the Postgres error code as well as the message, so a rule that starts failing for a different reason is not silently accepted.
 
 - [ ] **Step 2: Run the test and watch it fail for the right reason**
 
 ```bash
-pnpm --filter @wewin/db test -- tax.pg.test.ts
+pnpm --filter @wewin/db exec vitest run tax.pg.test.ts
 ```
 
 Expected: FAIL with `relation "tax_countries" does not exist`. If it fails with a missing-helper import error instead, fix the import (Step 1's note) and re-run until the failure is the missing relation.
@@ -309,6 +456,12 @@ In `packages/db/src/schema/organisation.ts`, add to the `organisationProfile` co
    */
   depositBp: smallint('deposit_bp').notNull(),
 ```
+
+⚠️ **`.notNull()` with no `.default()` makes the field required in Drizzle's insert type.** Any
+existing code that inserts an `organisationProfile` row — the seed, a test fixture, a bootstrap
+path — stops compiling until it supplies `depositBp`. Grep for `organisationProfile` inserts before
+Step 7 and fix each one to pass `10_000`, in the same commit. This is the intended trade: the
+alternative is a column default, which `defaults.ts:12-15` forbids for exactly this number.
 
 and to its constraint list:
 
@@ -538,15 +691,15 @@ Dump the current body first — the function must be carried verbatim, not recon
 
 ```bash
 docker exec wewin-demo-postgres-1 psql -U wewin -d wewin -tAc \
-  "SELECT prosrc FROM pg_proc WHERE proname = 'erase_user'" > /tmp/erase_user.sql
+  "SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = 'erase_user'" > /tmp/erase_user.sql
 wc -l /tmp/erase_user.sql
 ```
 
-Create `packages/db/drizzle/0030_erase_tax_actors.sql` as `CREATE OR REPLACE FUNCTION erase_user(...)` carrying that body **unchanged**, plus one new block before its final `RETURN`:
+Create `packages/db/drizzle/0030_erase_tax_actors.sql` as `CREATE OR REPLACE FUNCTION erase_user(...)` carrying that definition **unchanged** — all four parameters (`p_user`, `p_requested_by`, `p_channel`, `p_legal_basis`), the `RETURNS`, the `AS $$` wrapper and `LANGUAGE plpgsql` included, plus one new block before its final `RETURN`:
 
 ```sql
   -- ── tax and profile actors ────────────────────────────────────────────────
-  UPDATE tax_countries SET updated_by_user_id = NULL WHERE updated_by_user_id = target_user_id;
+  UPDATE tax_countries SET updated_by_user_id = NULL WHERE updated_by_user_id = p_user;
 
   -- ⚠️ These two tables are append-only. `session_replication_role = replica` is the
   -- sanctioned bypass (0022_mfa_guards.sql), and it is TRANSACTION-scoped, not statement-
@@ -555,8 +708,8 @@ Create `packages/db/drizzle/0030_erase_tax_actors.sql` as `CREATE OR REPLACE FUN
   -- value written is a literal NULL. That is a property of these statements, not of the
   -- bypass.
   SET LOCAL session_replication_role = replica;
-  UPDATE tax_country_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = target_user_id;
-  UPDATE organisation_profile_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = target_user_id;
+  UPDATE tax_country_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = p_user;
+  UPDATE organisation_profile_changes SET changed_by_user_id = NULL WHERE changed_by_user_id = p_user;
   SET LOCAL session_replication_role = origin;
 ```
 
@@ -576,9 +729,9 @@ Add rows to `createSubject` writing the subject's id into all three columns, the
 
 ```ts
 it('scrubs the staff actor from a tax country, keeping the policy', async () => {
-  await withDb(async (db) => {
-    const subject = await createSubject(db);
-    await eraseUser(db, subject.id);
+  await withConnection(async (db) => {
+    const subject = await createSubject(db, `p2-${tag}`);
+    await erase(db, subject.id);
 
     const rows = await db.execute(sql`
       select code, rate_bp, updated_by_user_id from tax_countries where code = 'TH'
@@ -588,10 +741,10 @@ it('scrubs the staff actor from a tax country, keeping the policy', async () => 
 });
 
 it('scrubs the actor from tax history without deleting the history', async () => {
-  await withDb(async (db) => {
-    const subject = await createSubject(db);
+  await withConnection(async (db) => {
+    const subject = await createSubject(db, `p2-${tag}`);
     const before = await db.execute(sql`select count(*)::int as n from tax_country_changes`);
-    await eraseUser(db, subject.id);
+    await erase(db, subject.id);
     const after = await db.execute(sql`
       select count(*)::int as n, count(changed_by_user_id)::int as actors from tax_country_changes
     `);
@@ -600,10 +753,10 @@ it('scrubs the actor from tax history without deleting the history', async () =>
 });
 
 it('scrubs the actor from profile history without deleting the history', async () => {
-  await withDb(async (db) => {
-    const subject = await createSubject(db);
+  await withConnection(async (db) => {
+    const subject = await createSubject(db, `p2-${tag}`);
     const before = await db.execute(sql`select count(*)::int as n from organisation_profile_changes`);
-    await eraseUser(db, subject.id);
+    await erase(db, subject.id);
     const after = await db.execute(sql`
       select count(*)::int as n, count(changed_by_user_id)::int as actors
       from organisation_profile_changes
@@ -613,14 +766,14 @@ it('scrubs the actor from profile history without deleting the history', async (
 });
 ```
 
-Use the file's own `createSubject` / `eraseUser` helpers with their real signatures — read them rather than trusting these calls.
+The helpers are `createSubject(db, label)` (`:81`, **two arguments**) and `erase(db, userId, requestedBy = null)` (`:179`) — there is no `eraseUser`. `tag` is the file's existing per-run suffix at `:53`.
 
 - [ ] **Step 11: Mutation-test the scrubs, because nothing else will**
 
 Comment out the `UPDATE tax_country_changes …` line in `0030`, re-migrate the test database, and re-run. The second test must go **red**. If it stays green, `createSubject` is not writing that column and the test proves nothing — fix the fixture, not the assertion. Restore the line afterwards.
 
 ```bash
-pnpm --filter @wewin/db test -- erasure.test.ts
+pnpm --filter @wewin/db exec vitest run erasure.test.ts
 ```
 
 - [ ] **Step 12: Migrate the dev database and confirm the live function**
@@ -664,7 +817,7 @@ placeholder business number, so 0029 writes 10000 into the row instead."
   - `TAX_TREATMENTS_WIRE`, `DESTINATION_TAX_BASES = ['inclusive','exclusive'] as const`
   - `taxCountryWireSchema` / `TaxCountryWire` — `{ code, nameTh, rateBp, treatment, pricesIncludeTax, isActive, sortOrder, updatedAt }`
   - `taxCountryCreateSchema`, `taxCountryPatchSchema`, `taxCountryAvailabilitySchema`
-  - `taxCountryChangeWireSchema` / `TaxCountryChangeWire` — `{ id, changedAt, changedByUserName, before, after }`
+  - `settingChangeWireSchema` / `SettingChangeWire` — `{ id, changedAt, changedByUserId, before, after }`, used by both change logs
   - `destinationWireSchema` / `DestinationWire` — `{ code, nameTh }`, the public read's shape
   - `OrderDocumentWire.destinationCountry?: string`, `OrderDocumentWire.taxBasis?: 'inclusive' | 'exclusive'`
 
@@ -717,7 +870,7 @@ describe('the pinned document carries a destination without a version bump', () 
 - [ ] **Step 2: Run it and watch the first test fail on the assertion, not on the parse**
 
 ```bash
-pnpm --filter @wewin/contract test -- destination
+pnpm --filter @wewin/contract exec vitest run destination
 ```
 
 Expected: the second and third tests PASS already; the **first** fails with `expected 'SG', got undefined`. That failure *is* the silent strip, reproduced. If the first test errors on `parsed.success === false`, `legacyDocument()` is incomplete — fix it before continuing.
@@ -807,14 +960,21 @@ export type TaxCountryPatchRequest = z.infer<typeof taxCountryPatchSchema>;
 export const taxCountryAvailabilitySchema = z.strictObject({ isActive: z.boolean() });
 export type TaxCountryAvailabilityRequest = z.infer<typeof taxCountryAvailabilitySchema>;
 
-export const taxCountryChangeWireSchema = z.strictObject({
+/**
+ * One shape for both change logs, tax-country and profile.
+ *
+ * `changedByUserId`, not a name: nothing in this feature joins `users`, and P1's
+ * `bank_account_changes` reader puts the id on the wire for the same reason. A name would be a
+ * second query and a second thing to keep true after erasure scrubs the actor to NULL.
+ */
+export const settingChangeWireSchema = z.strictObject({
   id: z.string(),
   changedAt: z.string(),
-  changedByUserName: z.string().nullable(),
+  changedByUserId: z.string().nullable(),
   before: z.unknown().nullable(),
   after: z.unknown(),
 });
-export type TaxCountryChangeWire = z.infer<typeof taxCountryChangeWireSchema>;
+export type SettingChangeWire = z.infer<typeof settingChangeWireSchema>;
 
 /**
  * What an anonymous storefront caller may know: the places we sell to, by name.
@@ -827,7 +987,17 @@ export const destinationWireSchema = z.strictObject({ code, nameTh: z.string().m
 export type DestinationWire = z.infer<typeof destinationWireSchema>;
 ```
 
-Export `./tax` from `packages/contract/src/index.ts`.
+Then make it reachable at run time. `packages/contract`'s `exports` map is hand-maintained with
+no wildcard and its root is types-only, so add:
+
+```json
+    "./tax": "./dist/tax.js",
+```
+
+beside `"./order"` in `packages/contract/package.json`. **Adding a re-export to `src/index.ts` does
+not make it importable** — every consumer in Tasks 5, 6, 9 and 13 imports from
+`@wewin/contract/tax`, and without the map entry each throws `ERR_PACKAGE_PATH_NOT_EXPORTED` at
+boot.
 
 - [ ] **Step 5: Verify the tests pass and the types hold**
 
@@ -873,7 +1043,7 @@ but not the schema is stripped on every read, forever, silently."
   - `TaxCountryService.create(body: TaxCountryCreateRequest, userId: string): Promise<TaxCountryWire>`
   - `TaxCountryService.patch(code: string, body: TaxCountryPatchRequest, userId: string): Promise<TaxCountryWire>`
   - `TaxCountryService.setAvailability(code: string, isActive: boolean, userId: string): Promise<TaxCountryWire>`
-  - `TaxCountryService.changes(code: string): Promise<TaxCountryChangeWire[]>`
+  - `TaxCountryService.changes(code: string): Promise<SettingChangeWire[]>` — ascending by `changedAt`
 
 Read `apps/api/src/organisation/organisation.service.ts:31-40` and `:70-90`, and `organisation.repository.ts:78-84`, before writing a line. This task is that pattern applied to a second table; do not invent a second pattern.
 
@@ -904,7 +1074,10 @@ describe('tax country writes', () => {
       service.patch('TH', { rateBp: 900 }, actor.id),
     ]);
 
-    const entries = (await service.changes('TH')).slice().reverse(); // oldest first
+    /* `changes()` orders by `changedAt` ASC — oldest first — so do NOT reverse it. Entry 1's
+       `before` must equal entry 0's `after`; on a reversed array that comparison is backwards and
+       passes for the wrong reason. */
+    const entries = await service.changes('TH');
     expect(entries).toHaveLength(2);
     expect((entries[1]?.before as { rateBp: number }).rateBp).toBe(
       (entries[0]?.after as { rateBp: number }).rateBp,
@@ -943,12 +1116,12 @@ describe('tax country writes', () => {
 });
 ```
 
-`harness()` builds the module and an actor holding `organisation.write`. Copy it from `apps/api/tests/organisation/organisation.pg.test.ts` — including how it mints permissions via `makeActor` at `:126-127`.
+**`harness()` does not exist yet — write it.** `apps/api/tests/organisation/organisation.pg.test.ts` is `beforeAll`-scoped closures (`app`, `db`, `reader`, `writer`) calling routes through raw `fetch`; there is no reusable helper to copy. Lift `makeActor` (`:84`) and the app-boot helper from `apps/api/tests/support`, and have `harness()` return `{ service, repository, actor, db }` so the assertions above read as written. State its shape in this task's commit message so Task 5 can reuse it rather than write a second one.
 
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/api test -- tax-country
+pnpm --filter @wewin/api exec vitest run tax-country
 ```
 
 Expected: FAIL, `Cannot find module '../../src/organisation/tax-country.service'`.
@@ -1036,7 +1209,7 @@ The shape, which every method follows:
 - [ ] **Step 5: Run the tests**
 
 ```bash
-pnpm --filter @wewin/api test -- tax-country
+pnpm --filter @wewin/api exec vitest run tax-country
 ```
 
 Expected: all five PASS.
@@ -1048,7 +1221,7 @@ Remove `.for('update')` from `lockCountry` and re-run. **The contiguity test mus
 - [ ] **Step 7: Typecheck and commit**
 
 ```bash
-pnpm typecheck && pnpm --filter @wewin/api test -- tax-country organisation
+pnpm typecheck && pnpm --filter @wewin/api exec vitest run tax-country organisation
 git add apps/api/src/organisation apps/api/tests/organisation
 git commit -m "feat(api): tax-country reads and writes, with locked pre-image and history
 
@@ -1062,16 +1235,17 @@ removing the lock and watching contiguity break."
 ### Task 4: The deposit percentage joins the profile, with history
 
 **Files:**
-- Modify: `apps/api/src/organisation/organisation.service.ts` (`updateProfile`, around `:111-121`)
+- Modify: `apps/api/src/organisation/organisation.service.ts` (`putProfile` at `:111`)
 - Modify: `apps/api/src/organisation/organisation.repository.ts` (a `lockProfile` beside `lockAccount` at `:80-82`)
-- Modify: `packages/contract/src/organisation.ts` (profile wire + update schema)
+- Modify: `packages/contract/src/organisation.ts` (`organisationProfilePutSchema` and the profile wire)
+- Modify: `apps/api/src/organisation/encode.ts` (`encodeProfile`, so `depositBp` reaches the wire)
 - Test: `apps/api/tests/organisation/organisation.pg.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `organisationProfile.depositBp`, `organisationProfileChanges` (Task 1).
-- Produces: `OrganisationProfileWire.depositBp: number`; `organisationProfileUpdateSchema` accepts `depositBp`; `OrganisationRepository.lockProfile(tx)`; `OrganisationService.updateProfile` writes a history row.
+- Produces: `OrganisationProfileWire.depositBp: number`; `organisationProfilePutSchema` accepts `depositBp`; `OrganisationRepository.lockProfile(tx)`; `OrganisationService.putProfile` writes a history row.
 
-`updateProfile` today is a plain UPDATE with no history (`organisation.service.ts:111-121`). This task converts it to the locked-pre-image-plus-history shape, which is what D4 bought: the deposit percentage is the line that decides what counts as a concession, so moving it must leave a trace.
+`putProfile(actorUserId, input)` — that name, and the actor first — is today a plain UPDATE with no history (`organisation.service.ts:111-121`). This task converts it to the locked-pre-image-plus-history shape, which is what D4 bought: the deposit percentage is the line that decides what counts as a concession, so moving it must leave a trace.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1079,7 +1253,7 @@ removing the lock and watching contiguity break."
 it('records a profile change, before and after', async () => {
   const { service, actor } = await harness();
 
-  await service.updateProfile({ depositBp: 3000 }, actor.id);
+  await service.putProfile(actor.id, { depositBp: 3000 });
   const [entry] = await service.profileChanges();
 
   expect((entry?.before as { depositBp: number }).depositBp).toBe(10_000);
@@ -1088,18 +1262,19 @@ it('records a profile change, before and after', async () => {
 
 it('refuses a deposit of zero at the database, not at submit', async () => {
   const { service, actor } = await harness();
-  await expect(service.updateProfile({ depositBp: 0 }, actor.id)).rejects.toThrow();
+  await expect(service.putProfile(actor.id, { depositBp: 0 })).rejects.toThrow();
 });
 
 it('keeps profile history contiguous under concurrent updates', async () => {
   const { service, actor } = await harness();
 
   await Promise.all([
-    service.updateProfile({ depositBp: 3000 }, actor.id),
-    service.updateProfile({ depositBp: 5000 }, actor.id),
+    service.putProfile(actor.id, { depositBp: 3000 }),
+    service.putProfile(actor.id, { depositBp: 5000 }),
   ]);
 
-  const entries = (await service.profileChanges()).slice().reverse();
+  /* Ascending, like `changes()` — see Task 3. Do not reverse. */
+  const entries = await service.profileChanges();
   expect(entries).toHaveLength(2);
   expect((entries[1]?.before as { depositBp: number }).depositBp).toBe(
     (entries[0]?.after as { depositBp: number }).depositBp,
@@ -1110,7 +1285,7 @@ it('keeps profile history contiguous under concurrent updates', async () => {
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/api test -- organisation
+pnpm --filter @wewin/api exec vitest run organisation
 ```
 
 Expected: FAIL — `service.profileChanges is not a function`.
@@ -1135,12 +1310,12 @@ On the update schema make it `.optional()` like its siblings, so a caller editin
   }
 ```
 
-`updateProfile` becomes one transaction: `lockProfile` → UPDATE → INSERT into `organisationProfileChanges` with `before`/`after` snapshots of every business field (`legalNameTh`, `legalNameEn`, `addressTh`, `addressEn`, `taxId`, `phone`, `email`, `depositBp`). Add `profileChanges()` returning the rows newest-first, mapped to the same `TaxCountryChangeWire` shape Task 2 defined — reuse that type rather than declaring a second identical one.
+`putProfile` becomes one transaction: `lockProfile` → UPDATE → INSERT into `organisationProfileChanges` with `before`/`after` snapshots of every business field (`legalNameTh`, `legalNameEn`, `addressTh`, `addressEn`, `taxId`, `phone`, `email`, `depositBp`). Add `profileChanges()` returning the rows **oldest-first (`asc` on `changedAt`)**, matching `TaxCountryRepository.changes` so both readers behave alike, mapped to the `SettingChangeWire` shape Task 2 defined.
 
 - [ ] **Step 5: Run the tests, then mutation-test the lock**
 
 ```bash
-pnpm --filter @wewin/api test -- organisation
+pnpm --filter @wewin/api exec vitest run organisation
 ```
 
 All three PASS. Then remove `.for('update')` from `lockProfile`: the contiguity test must go **red**. Restore it.
@@ -1164,6 +1339,7 @@ is no longer untraceable."
 **Files:**
 - Modify: `apps/api/src/organisation/organisation.controller.ts` (after `:113`, inside the existing `@Controller('admin/organisation')`)
 - Create: `apps/api/src/organisation/destinations.controller.ts` (the public read — a separate controller because the path must not be under `/admin`)
+- Modify: `apps/api/src/organisation/organisation.module.ts` — **register `DestinationsController`** in `controllers`, beside `OrganisationController`. A Nest controller that is not listed in a module is never routed and `GET /destinations` simply 404s; nothing else in this task would reveal that.
 - Modify: `apps/api/tests/admin/route-permissions.test.ts` (`ADMIN_ROUTE_PERMISSIONS`, `:137-143`)
 - Modify: `apps/api/tests/rbac/route-audit.test.ts` (`:293-295`, `:389`, `:398`, `:470-471`)
 - Test: `apps/api/tests/organisation/tax-country-routes.pg.test.ts` (new)
@@ -1218,7 +1394,7 @@ it('refuses a patch that changes nothing', async () => {
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/api test -- tax-country-routes
+pnpm --filter @wewin/api exec vitest run tax-country-routes
 ```
 
 Expected: 404s where 200s and 403s are asserted.
@@ -1242,7 +1418,8 @@ export class DestinationsController {
   constructor(private readonly taxCountries: TaxCountryService) {}
 
   @Get()
-  @AllowAnonymous()
+  /* The reason is mandatory and the boot-time route audit prints it. */
+  @AllowAnonymous('a customer must choose a destination before an order exists')
   @contractVersion()
   async list(): Promise<DestinationWire[]> {
     const rows = await this.taxCountries.list(true);
@@ -1251,7 +1428,7 @@ export class DestinationsController {
 }
 ```
 
-Use whatever the repo's real anonymous-access decorator is called — find it by grepping the storefront's existing public controllers (`apps/api/src/orders/*.controller.ts` serves anonymous quotation reads). Do **not** invent `@AllowAnonymous` if the repo spells it differently.
+The decorator is `AllowAnonymous(reason: string)` from `apps/api/src/rbac/access.ts:114` — re-exported from `../rbac`. The `reason` argument is **mandatory**: `@AllowAnonymous()` does not compile, and the boot-time route audit prints the reason for every anonymous route.
 
 - [ ] **Step 4: Update both exhaustive route tables**
 
@@ -1287,7 +1464,7 @@ admin route table's prefix selector stays honest."
 - Create: `apps/dashboard/src/components/organisation/tax-countries.tsx`
 - Modify: `apps/dashboard/src/components/organisation/organisation-screen.tsx` (render it; add the deposit field to `ProfileForm`)
 - Modify: `apps/dashboard/src/components/organisation/organisation-api.ts` (the four new calls)
-- Test: `apps/dashboard/tests/organisation/tax-countries.test.tsx` (new)
+- Test: `apps/dashboard/src/components/organisation/tax-country-fields.test.ts` (new, beside the module)
 
 **Interfaces:**
 - Consumes: the six routes (Task 5), `TaxCountryWire` / `TaxCountryCreateRequest` / `TaxCountryPatchRequest` (Task 2).
@@ -1299,43 +1476,73 @@ Follow `organisation-screen.tsx` exactly: `'use client'`, a per-section discrimi
 
 - [ ] **Step 1: Write the failing tests**
 
-```tsx
-it('shows the seeded country and its basis in words, not a boolean', async () => {
-  renderWithSession(<TaxCountriesSection />, { permissions: ['organisation.read'] });
+**`.test.ts`, and no testing library.** This repo has no DOM environment, no
+`@testing-library/*` and no `msw`, and `apps/dashboard/vitest.config.ts` says in a comment that
+components are deliberately not rendered (see Verified Repo Facts). A `.test.tsx` file is not even
+collected. So the logic worth asserting is extracted into pure functions and tested directly —
+which is better design here anyway, because a percentage codec is not a rendering concern.
 
-  expect(await screen.findByText('ไทย')).toBeInTheDocument();
-  expect(screen.getByText('7%')).toBeInTheDocument();
-  expect(screen.getByText('ยังไม่รวมภาษี')).toBeInTheDocument();
-});
+Create `apps/dashboard/src/components/organisation/tax-country-fields.ts` with the pure parts and
+its test **beside it** as `tax-country-fields.test.ts` — `include` covers `src/**/*.test.ts` and
+nine dashboard modules already do this. The gating predicate follows
+`apps/dashboard/tests/navigation.test.ts`'s treatment of `visibleNavigation` and
+`principal.test.ts`'s of `can`:
 
-it('hides every write control from a reader', async () => {
-  renderWithSession(<TaxCountriesSection />, { permissions: ['organisation.read'] });
+```ts
+import { describe, expect, it } from 'vitest';
+import { basisLabelTh, rateField, readRateBp } from '@/components/organisation/tax-country-fields';
 
-  await screen.findByText('ไทย');
-  expect(screen.queryByRole('button', { name: /เพิ่มประเทศ/u })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /บันทึก/u })).not.toBeInTheDocument();
-});
+describe('the rate edits as a percentage and stores basis points', () => {
+  it('round-trips whole and fractional rates', () => {
+    expect(rateField(700)).toBe('7');
+    expect(rateField(750)).toBe('7.5');
+    expect(rateField(0)).toBe('0');
+    expect(readRateBp('7')).toBe(700);
+    expect(readRateBp('7.5')).toBe(750);
+  });
 
-it('surfaces a rejected save without losing what was typed', async () => {
-  /* The API refuses 20000 bp. The form must show the problem and keep the value, because a
-     form that clears itself on failure makes the user retype work they already did. */
-  renderWithSession(<TaxCountriesSection />, { permissions: ['organisation.read', 'organisation.write'] });
+  it('refuses what the API would refuse, before a request is sent', () => {
+    /* The CHECK is 0..10 000 bp. A form that posts 200% and shows the server's error is worse
+       than one that never sends it. */
+    expect(readRateBp('200')).toBeNull();
+    expect(readRateBp('-1')).toBeNull();
+    expect(readRateBp('')).toBeNull();
+    expect(readRateBp('abc')).toBeNull();
+  });
 
-  await userEvent.clear(await screen.findByLabelText(/อัตราภาษี/u));
-  await userEvent.type(screen.getByLabelText(/อัตราภาษี/u), '200');
-  await userEvent.click(screen.getByRole('button', { name: /บันทึก/u }));
-
-  expect(await screen.findByRole('alert')).toBeInTheDocument();
-  expect(screen.getByLabelText(/อัตราภาษี/u)).toHaveValue('200');
+  it('names the basis rather than printing a boolean', () => {
+    expect(basisLabelTh(true)).toBe('รวมภาษีแล้ว');
+    expect(basisLabelTh(false)).toBe('ยังไม่รวมภาษี');
+  });
 });
 ```
 
-Copy `renderWithSession` from the existing dashboard test that renders `OrganisationScreen`; if none exists, copy the closest session-providing helper and note which file you took it from.
+And one markup assertion for the permission gate, via `renderToStaticMarkup` — which needs no DOM:
+
+```ts
+it('shows a reader no save control', () => {
+  const markup = renderToStaticMarkup(
+    createElement(SessionProvider, { permissions: ['organisation.read'] },
+      createElement(TaxCountriesSection, { initial: [thailand()] })),
+  );
+
+  expect(markup).toContain('ไทย');
+  expect(markup).not.toContain('บันทึก');
+});
+```
+
+Read `apps/dashboard/src/lib/auth/` for the real session-provider export and the shape it takes.
+If `TaxCountriesSection` cannot accept its rows as a prop, give it one — a component that can be
+rendered with data supplied is testable without a network layer, which is the whole reason this
+works in a node environment.
+
+**The "rejected save keeps what was typed" behaviour is checked in the browser (Step 5), not
+here.** It needs typing and clicking, and this repo has no DOM to do that in.
 
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/dashboard test -- tax-countries
+pnpm --filter @wewin/dashboard exec vitest run tax-countries
 ```
 
 - [ ] **Step 3: Build the section**
@@ -1440,7 +1647,11 @@ it('refuses a code that never existed rather than falling back to Thai VAT', asy
   /* tax_countries_block_delete means a row that once existed still exists, so an unknown code
      is a client bug or a tampered request. A silent fallback would compute Thai tax on a
      foreign sale and pin it, permanently, with nothing recording that a fallback happened. */
-  await expect(service.resolveDestination('XX')).rejects.toThrow(/unknown_destination_country/u);
+  /* `toMatchObject`, not `toThrow`. `AppError` sets `Error.message` from its first argument only;
+     a `{ reason }` object goes to `details`, which a message regex never sees. */
+  await expect(service.resolveDestination('XX')).rejects.toMatchObject({
+    details: { reason: 'unknown_destination_country' },
+  });
 });
 
 it('falls back to the default rule when the order names no destination', async () => {
@@ -1457,7 +1668,7 @@ it('falls back to the default rule when the order names no destination', async (
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/api test -- destination-tax
+pnpm --filter @wewin/api exec vitest run destination-tax
 ```
 
 - [ ] **Step 3: Implement it**
@@ -1481,7 +1692,7 @@ pnpm --filter @wewin/api test -- destination-tax
   }
 ```
 
-Add `byCode(code, tx?)` to the repository — a plain `eq` select with no `is_active` filter, which is the whole point. `AppError.validationFailed`'s real signature is in `apps/api/src/errors/app-error.ts`; match it, and add the message key beside its siblings.
+Add `byCode(code, tx?)` to the repository — a plain `eq` select with no `is_active` filter, which is the whole point. `AppError.validationFailed`'s real signature and location: grep for `class AppError` — it is under `apps/api/src/common/errors/`, not `apps/api/src/errors/`. Match the signature you find, and add the message key beside its siblings. Remember that the first argument becomes `Error.message` and the object becomes `details`.
 
 - [ ] **Step 4: Amend the `vat.ts` header — this is a deliverable, not a comment tidy**
 
@@ -1500,7 +1711,7 @@ Keep clause 1 (`grandMinor` always includes VAT) exactly as it is — it remains
 - [ ] **Step 5: Run, typecheck, commit**
 
 ```bash
-pnpm typecheck && pnpm --filter @wewin/api test -- destination-tax
+pnpm typecheck && pnpm --filter @wewin/api exec vitest run destination-tax
 git add apps/api/src/organisation packages/core/src/vat.ts apps/api/tests/organisation
 git commit -m "feat(api): resolveDestination, and vat.ts's header amended to match
 
@@ -1519,7 +1730,15 @@ settings, and TaxRule still carries two fields."
 - Modify: `packages/db/src/schema/order.ts`, `packages/db/drizzle/meta/_journal.json`
 - Modify: `packages/contract/src/order.ts` (`orderContactRequestSchema` `:622-632`, `OrderContactRequestWire`)
 - Modify: `apps/api/src/orders/orders.service.ts` (the `applySubmission` call at `:776`, fields at `:780-790`)
+- Modify: `apps/api/src/orders/scope/scoped-order.ts` — `ScopedOrder` (`:55-104`, beside `contactLocale`) **and** `ORDER_COLUMNS` (`:107-129`, beside `contactLocale: orders.contactLocale`)
+- Modify: `apps/api/src/orders/order.repository.ts` — `applySubmission`'s input type (`:418-433`, beside `readonly contactLocale: string`) **and** its `.set({…})` literal (`:437-462`, beside `contactLocale: input.contactLocale`)
 - Test: `apps/api/tests/orders/destination-submit.pg.test.ts` (new)
+
+**Two files a database column does not reach on its own.** `ScopedOrder` is a hand-written
+interface carrying an ownership brand, and `ORDER_COLUMNS` is the only column set a scoped load
+selects — so `order.destinationCountry` is `TS2339` until both are extended — and if forced through, `undefined` at run time. Task 9 reads it too. `OrderRow` is derived from `ScopedOrder` by `Omit`, so it needs no separate edit. Separately, `applySubmission`'s input is a closed object type and its UPDATE writes only
+the columns named in `.set({…})`: adding the key at the call site alone is an excess-property
+error, and even if it compiled nothing would be written.
 
 **Interfaces:**
 - Consumes: nothing from Task 7 yet — this task only *stores* the code; Task 9 consumes it.
@@ -1558,7 +1777,7 @@ it('refuses a lower-case code at the contract, not at the database', async () =>
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/api test -- destination-submit
+pnpm --filter @wewin/api exec vitest run destination-submit
 ```
 
 - [ ] **Step 3: Migration 0031**
@@ -1691,7 +1910,7 @@ it('pins nothing new when the order names no destination, and still uses the def
 - [ ] **Step 2: Run and watch the first test fail on the rate, not on a crash**
 
 ```bash
-pnpm --filter @wewin/api test -- destination-pinning
+pnpm --filter @wewin/api exec vitest run destination-pinning
 ```
 
 Expected: FAIL with `expected 900, got 700`. **That specific failure is the point** — it is the whole feature, absent. If it fails some other way, fix the harness first.
@@ -1760,7 +1979,7 @@ Inject `TaxCountryService` into `OrdersService` and export it from `Organisation
 - [ ] **Step 6: Run the tests, then mutation-test the pin**
 
 ```bash
-pnpm --filter @wewin/api test -- destination-pinning
+pnpm --filter @wewin/api exec vitest run destination-pinning
 ```
 
 All three PASS. Then revert `:747` to `DEFAULT_VAT_RULE.rateBp` and re-run: the first test must go **red** on the column while the JSON still says 900. That divergence — columns and document disagreeing — is exactly what `orders_totals_match_document` does *not* check, so the test is the only guard. Restore it.
@@ -1795,6 +2014,7 @@ and there deliberately is no destination column."
 **Files:**
 - Modify: `apps/api/src/quotes/overrides.ts` (`ApplyOverridesInput` `:166-175`; `:224`; `:256` comment; `:268`)
 - Modify: `apps/api/src/orders/order-document.ts` (`:266` — the `applyOverrides` call inside the builder)
+- Modify: `apps/api/tests/quotes/overrides.test.ts` (`:69` — its local `apply` helper gains `basis: 'exclusive'`, preserving every existing assertion)
 - Test: `apps/api/tests/quotes/inclusive-basis.test.ts` (new — a unit test, no database needed)
 
 **Interfaces:**
@@ -1868,7 +2088,7 @@ describe('inclusive basis', () => {
 - [ ] **Step 2: Run and watch two of the three fail**
 
 ```bash
-pnpm --filter @wewin/api test -- inclusive-basis
+pnpm --filter @wewin/api exec vitest run inclusive-basis
 ```
 
 Expected: the `exclusive` test PASSES (nothing changed for it); the other two FAIL — the first on `netThbMinor`, the third on the baseline. If TypeScript refuses the `basis` property, that is the same signal; add the field in Step 3 and re-run to see the value failures.
@@ -1916,13 +2136,13 @@ At `order-document.ts:266`, the `applyOverrides` call inside the builder gains `
 pnpm typecheck
 ```
 
-Expected: **five type errors** in `apps/api/src/quotes/quotes.service.ts`, one per `this.effective(...)` call, all saying `basis` is missing. That is correct and intended: the field is required so the compiler names every caller. **Do not** add a default to silence them — Task 11 is next and fixes them properly.
+Expected: **two type errors** — `apps/api/src/quotes/quotes.service.ts:864` (the `applyOverrides` literal inside `effective()`) and `apps/api/tests/quotes/overrides.test.ts:69` (its local `apply` helper). `applyOverrides` has exactly three call sites and this task edits the third (`order-document.ts:266`) itself. The count is two, not five: `effective()`'s own five *callers* are unaffected until Task 11 changes its signature. That is correct and intended: the field is required so the compiler names every caller. **Do not** add a default to silence them — Task 11 is next and fixes them properly.
 
 ```bash
-pnpm --filter @wewin/api test -- inclusive-basis
+pnpm --filter @wewin/api exec vitest run inclusive-basis
 ```
 
-All three PASS.
+All three PASS. **`exec vitest run`, not `test`** — `@wewin/api`'s `test` script is `tsc && vitest run`, so with a type error outstanding the suite would never be reached.
 
 - [ ] **Step 7: Commit**
 
@@ -1937,7 +2157,8 @@ Also corrects :256's comment, which claimed the baseline is what a concession is
 measured from — it is not; measureMargin derives sources from override rows and
 never sees it. Its only consumer is encode.ts:96, a display field.
 
-pnpm typecheck now names five callers in quotes.service.ts. That is deliberate."
+pnpm typecheck now names two sites: quotes.service.ts:864 and the overrides test's
+apply helper. That is deliberate; Task 11 fixes them."
 ```
 
 ---
@@ -1945,8 +2166,17 @@ pnpm typecheck now names five callers in quotes.service.ts. That is deliberate."
 ### Task 11: The sales quote screen agrees with the document — five call sites
 
 **Files:**
-- Modify: `apps/api/src/quotes/quotes.service.ts` (`effective()` at `:864-871`; callers at `:143`, `:210`, `:812`, `:978`, `:1088`)
+- Modify: `apps/api/src/quotes/quotes.service.ts` (`effective()` at `:864-871`; callers at `:143`, `:210`, `:812`, `:978`, `:1088`; **and the `encodeQuote` calls at `:164`, `:826`, `:890`**)
 - Test: `apps/api/tests/quotes/inclusive-quote-screen.pg.test.ts` (new)
+
+**Switching the money is not enough — the rate the dashboard *prints* is separate.** `encodeQuote`
+receives `vat: DEFAULT_VAT_RULE` at `:164`, `:826` and `:890`. Left alone, an inclusive 900 bp
+order returns money computed at 9% while the screen prints "VAT 7%". Pass `destination.rule` at
+all three, and assert the rate as well as the totals:
+
+```ts
+  expect(onScreen.money.vat.rateBp).toBe(900);
+```
 
 **Interfaces:**
 - Consumes: `ApplyOverridesInput.basis` (Task 10); `resolveDestination` (Task 7).
@@ -1988,7 +2218,7 @@ it('still agrees for a destination that is exclusive', async () => {
 - [ ] **Step 2: Run and watch the inclusive one fail**
 
 ```bash
-pnpm --filter @wewin/api test -- inclusive-quote-screen
+pnpm --filter @wewin/api exec vitest run inclusive-quote-screen
 ```
 
 Expected: the exclusive test PASSES; the inclusive one FAILS with the screen showing `3 270 000` against a document of `3 000 000` — the divergence, reproduced.
@@ -2013,7 +2243,15 @@ Expected: the exclusive test PASSES; the inclusive one FAILS with the screen sho
   }
 ```
 
-Each of the five callers already has the order (or its id) in scope. Resolve once per request, at the top of the method that owns the transaction, and pass the same `DestinationTax` down — do **not** call `resolveDestination` five times in one request. Where a caller has only the order id, read `destination_country` alongside the lines it is already fetching rather than adding a second round trip.
+The five callers are not peers: `:143` (`getQuote`), `:812` (`mutate`) and `:978` (`baselineFor`)
+are inside public entry points that own their own transaction, while `:210` and `:1088` are reached
+from within them. So resolve **once per entry point**, at the top, and pass the same
+`DestinationTax` down — never call `resolveDestination` five times in one request.
+
+Read each of the five in the file before editing and confirm which group it is in; if one turns out
+to be a third case with no order in scope, stop and report it rather than threading a parameter
+through a method that has no business knowing about destinations. `destination_country` should come
+back with the lines that call site is already fetching, not from a second round trip.
 
 - [ ] **Step 4: Run the whole quotes suite**
 
@@ -2055,7 +2293,41 @@ inclusive — the exact divergence order-document.ts:254 exists to prevent."
 
 **Read spec §5.3 F–I.** Four groups of edits, and the count matters because an earlier draft of the spec called this "one omitted argument".
 
-**F. Read the number once, in the caller that owns the transaction.** `OrdersService.submit` reads `depositBp` inside the submit transaction and passes it to both consumers. It is read there and not inside `apps/api/src/quotes/authority` because that module's header records that it deliberately imports neither `OrdersModule` nor `ScheduleModule`; a settings read is not a reason to break that.
+**F. Two consumers, and they cannot be fed the same way.** An earlier draft of this plan said
+"read it once in the caller that owns the transaction" and passed it to both. That works for the
+schedule and **not** for the concession measurement, because the measurement is not reached only
+from submit:
+
+```
+measureCashflow ← measureFor ← { measure (:139), assess (:247), request (:407) }
+                                        ↑
+                                    gate (:359, via assess)
+```
+
+`measure` and `request` are reached from HTTP controllers with no submit transaction and no
+deposit in scope. Threading a required `floorBp` down from every entry point would push a settings
+concern into two controllers.
+
+So: **the schedule gets the value passed in; the authority module gets a narrow port injected.**
+
+```ts
+/** One method, declared where it is needed. apps/api/src/quotes/authority/deposit-policy.port.ts */
+export const DEPOSIT_POLICY = Symbol('DEPOSIT_POLICY');
+
+export interface DepositPolicyPort {
+  /** Basis points of the grand total that must be gated before production. */
+  depositBp(tx?: AuthorityTx): Promise<number>;
+}
+```
+
+`AuthorityService` injects it and calls it inside `measureFor`, so all three entry points are
+served without any of them knowing about it. `OrganisationModule` provides the implementation.
+This does not break the module's header rule — that rule is about not coupling to the Orders and
+Schedule *domains*; a one-method port the module declares itself is the standard way to keep that
+true while still reading a setting.
+
+`OrdersService.submit` still reads `depositBp` directly for the schedule (G below), because it
+already owns that transaction.
 
 **G. At 10 000 bp the terms must stay what they are today.** `depositPercentTerms(10_000)` returns **two** rows — a gating `percent` row plus a `remainder` due `0n` — where submit produces one now. `apps/api/tests/payments/lifecycle/lifecycle.pg.test.ts:188` asserts `expect(rows).toHaveLength(1)`. That test **stays green**; it is not edited.
 
@@ -2113,7 +2385,7 @@ it('still measures a real concession below policy', async () => {
 - [ ] **Step 2: Run and watch the second, third and fourth fail**
 
 ```bash
-pnpm --filter @wewin/api test -- deposit-policy
+pnpm --filter @wewin/api exec vitest run deposit-policy
 ```
 
 Expected: the first PASSES (nothing has changed yet); the rest FAIL — the fourth on `measure` being 2-arity.
@@ -2131,22 +2403,64 @@ export function measureCashflow(
 }
 ```
 
-Required, not defaulted — a default is how this silently returns to 10 000 bp. Thread it through `measureFor(order, tx, floorBp)` (`authority.service.ts:142`) to both calls at `:178-179`, and through `gate()` from its caller.
+Required, not defaulted — a default is how this silently returns to 10 000 bp.
+
+`measureFor` (`authority.service.ts:142`) then reads the floor from the injected port rather than
+taking it as a parameter:
+
+```ts
+  private async measureFor(order: OrderFacts, tx?: AuthorityTx): Promise<DocumentConcessions> {
+    /* From the port, not from a parameter. `measure` (:139), `assess` (:247) and `request`
+       (:407) all reach here, and two of them come from HTTP controllers with no deposit in
+       scope — passing it down from every entry point would put a settings read in a
+       controller. */
+    const floorBp = await this.depositPolicy.depositBp(tx);
+    /* … */
+    measureCashflow(grandTotal, instalments, floorBp)
+```
+
+**Its signature does not change**, which is why the three callers and `gate` (`:359`, via
+`assess`) need no edits at all. Both `measureCashflow` calls inside it — `:178-179`, one of which
+is the `measureCashflow(0n, [])` empty case — pass `floorBp`.
 
 - [ ] **Step 4: `pinsForSubmit` gains the deposit and selects terms**
 
+**A diff against the existing body, not a replacement body.** `pinsForSubmit` returns
+`{ instalments, scheduledDepositThbMinor, forfeitPolicyId }`, and it consults
+`effectiveForfeitPolicy(tx)` and throws when no policy is in force — a fail-closed check with its
+own long comment. Replacing the body would delete it.
+
+Add the parameter:
+
 ```ts
-  async pinsForSubmit(tx: Tx, grandTotalThbMinor: bigint, depositBp: number) {
-    /* At payment in full, keep the terms submit has always produced. depositPercentTerms(10 000)
-       is not wrong, it is just different: a gating percent row plus a remainder due 0n, where
-       submit produces one row. Changing the default configuration's behaviour is not part of
-       making the number configurable. */
-    const terms = depositBp === 10_000 ? payInFullTerms() : depositPercentTerms(depositBp);
-    return this.schedule.plan(grandTotalThbMinor, terms);
-  }
+  async pinsForSubmit(
+    tx: LedgerTx,
+    grandTotalThbMinor: bigint,
+    depositBp: number,
+  ): Promise<{ /* …unchanged… */ }> {
 ```
 
-Use the real name of the existing pay-in-full terms factory — read `apps/api/src/payments/schedule/terms.ts` and use what is there. Then `orders.service.ts:774` supplies `depositBp`, read once per F.
+and change exactly one line inside it:
+
+```ts
+-   const instalments = this.schedule.plan(grandTotalThbMinor);
++   /* At payment in full, keep the terms submit has always produced. depositPercentTerms(10 000)
++      is not wrong, just different — a gating percent row plus a remainder due 0n, where submit
++      produces one row — and changing the default configuration's behaviour is not part of making
++      the number configurable. */
++   const instalments = this.schedule.plan(
++     grandTotalThbMinor,
++     depositBp === 10_000 ? payInFullTerms() : depositPercentTerms(depositBp),
++   );
+```
+
+`payInFullTerms()` and `depositPercentTerms()` are at `apps/api/src/payments/schedule/terms.ts:54`
+and `:71`. Everything below that line — including the `effectiveForfeitPolicy` check and the
+returned object — stays exactly as it is. Then `orders.service.ts:774` supplies `depositBp`.
+
+Check `SchedulePlanner.plan`'s current signature before assuming it takes a second argument; if it
+does not, add `terms` as an optional second parameter defaulting to today's behaviour, and say so
+in the commit.
 
 - [ ] **Step 5: Correct the prose and mark the dead constant**
 
@@ -2220,7 +2534,7 @@ lifecycle.pg.test.ts:188 on a feature nobody switched on."
 - Modify: `apps/web/src/lib/quote/prefillContact.ts`
 - Modify: `packages/contract/src/order.ts` (`OrderContactWire` at `:346`)
 - Modify: `apps/api/src/orders/…` (the order encoder and the repository's column selection)
-- Test: `apps/web/tests/quote/destination-select.test.tsx` (new); extend the existing `prefillContact` test
+- Test: `apps/web/tests/quote/destinations.test.ts` (new); extend `apps/web/tests/quote-prefill.test.ts`
 
 **Interfaces:**
 - Consumes: `GET /destinations` → `DestinationWire[]` (Task 5); `orders.destinationCountry` (Task 8).
@@ -2230,39 +2544,86 @@ lifecycle.pg.test.ts:188 on a feature nobody switched on."
 
 - [ ] **Step 1: Write the failing tests**
 
-```tsx
-it('offers only the destinations the company actually sells to, Thailand first', async () => {
-  server.use(json('/destinations', [{ code: 'TH', nameTh: 'ไทย' }, { code: 'SG', nameTh: 'สิงคโปร์' }]));
-  render(<RequestQuotationForm />);
+**`.test.ts`, `fetch` stubbed with `vi.spyOn`, no msw.** There is no msw in this repo and no DOM
+environment (see Verified Repo Facts). The three behaviours worth pinning are all reachable without
+one: the fetcher's fallback, the prefill merge, and the rendered option list.
 
-  const select = await screen.findByLabelText(/ประเทศปลายทาง/u);
-  expect(select).toHaveValue('TH');
-  expect(screen.getByRole('option', { name: 'สิงคโปร์' })).toBeInTheDocument();
+```ts
+import { describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createElement } from 'react';
+import { fetchDestinations } from '@/lib/quote/destinations';
+
+/* `vi.stubGlobal`, the idiom apps/web/tests/reviews.test.ts:385-410 already uses for exactly
+   this — including its 502 and malformed-body cases. */
+const respond = (body: unknown, status = 200) =>
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+    ),
+  );
+
+describe('the destinations read', () => {
+  it('returns what the API published, in the order it published it', async () => {
+    respond([{ code: 'TH', nameTh: 'ไทย' }, { code: 'SG', nameTh: 'สิงคโปร์' }]);
+
+    /* Server-side order is `sort_order`; the browser must not re-sort it. */
+    expect(await fetchDestinations()).toStrictEqual([
+      { code: 'TH', nameTh: 'ไทย' },
+      { code: 'SG', nameTh: 'สิงคโปร์' },
+    ]);
+  });
+
+  it('degrades to Thailand alone when the read fails, rather than throwing', async () => {
+    /* A settings endpoint being down must not stop somebody asking for a price. */
+    respond({}, 503);
+
+    expect(await fetchDestinations()).toStrictEqual([{ code: 'TH', nameTh: 'ไทย' }]);
+  });
 });
 
-it('pre-fills the destination a returning customer used last time', async () => {
-  server.use(json('/destinations', [{ code: 'TH', nameTh: 'ไทย' }, { code: 'SG', nameTh: 'สิงคโปร์' }]));
-  render(<RequestQuotationForm prefill={{ email: 'a@b.co', destinationCountry: 'SG' }} />);
+describe('the select', () => {
+  it('defaults to Thailand and lists every option it was given', () => {
+    const markup = renderToStaticMarkup(
+      createElement(DestinationSelect, {
+        options: [{ code: 'TH', nameTh: 'ไทย' }, { code: 'SG', nameTh: 'สิงคโปร์' }],
+        value: 'TH',
+        onChange: () => {},
+      }),
+    );
 
-  expect(await screen.findByLabelText(/ประเทศปลายทาง/u)).toHaveValue('SG');
-});
+    expect(markup).toContain('สิงคโปร์');
+    expect(markup).toMatch(/value="TH"[^>]*selected/u);
+  });
 
-it('still submits when the destinations read fails', async () => {
-  /* A configuration endpoint being down must not stop somebody asking for a price. The
-     select degrades to Thailand only; it does not block the form. */
-  server.use(error('/destinations', 503));
-  render(<RequestQuotationForm />);
+  it('starts on the destination a returning customer used last time', () => {
+    const markup = renderToStaticMarkup(
+      createElement(DestinationSelect, { options: [thailand(), singapore()], value: 'SG', onChange: () => {} }),
+    );
 
-  expect(await screen.findByRole('button', { name: /ขอใบเสนอราคา/u })).toBeEnabled();
+    expect(markup).toMatch(/value="SG"[^>]*selected/u);
+  });
 });
 ```
 
-Use the storefront's real MSW helpers — copy them from `apps/web/tests/` rather than the `json` / `error` shorthands above, which are illustrative.
+`DestinationSelect` therefore takes `options`, `value` and `onChange` as props and does **no
+fetching of its own** — the fetch lives in `RequestQuotationForm`, which is what makes both halves
+testable without a network layer or a DOM.
+
+Extend `apps/web/tests/quote-prefill.test.ts`, which already states the principle this task
+follows — the decisions "live in pure functions (`resolveContactPrefill`, `fieldsToApply`) and are
+tested here with no network at all". Both exist: `apps/web/src/lib/quote/prefillContact.ts:73` and
+`:107`. Add `destinationCountry` to each and assert it survives the decode, that a prefilled value
+beats the `TH` default, and that `newestSubmittedOrder()` still picks by greatest `submittedAt`.
+
+**That the form still submits when the read fails is checked in the browser (Step 6).** It needs a
+click.
 
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-pnpm --filter @wewin/web test -- destination-select
+pnpm --filter @wewin/web exec vitest run destination-select
 ```
 
 - [ ] **Step 3: Extend `OrderContactWire` and the read path**
@@ -2334,15 +2695,35 @@ every returning customer. Followed locale, which already makes this round trip."
 ```ts
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { LOCALES } from '@wewin/i18n';
+/* Not from '@wewin/i18n' — that root is types-only and the import would throw at run time. */
+import { LOCALES } from '@wewin/i18n/locales';
+
+/**
+ * Any digit seven, in any script these catalogues use, followed by a per-cent sign.
+ *
+ * `my.ts:43` writes `VAT ၇%` with U+107F, the Burmese seven. A regex matching only ASCII `7`
+ * passes that file while the claim is still there — the vacuous-green failure this suite exists
+ * to prevent. `de.ts` writes `7 %` with a space before the sign, which is the German
+ * convention, so the space is optional rather than absent.
+ */
+const RATE_CLAIM = /[7๗၇७७७７]\s*%/u;
+
+/** Entry lines only, so a translator note explaining a convention is not treated as a claim. */
+const entryLines = (source: string) =>
+  source.split('\n').filter((line) => /^\s*'[a-z]/iu.test(line.trimStart()) || /':\s/u.test(line));
 
 describe('the storefront makes no VAT-rate claim', () => {
   it('has no catalogue entry naming a rate, in any locale', () => {
     for (const locale of LOCALES) {
-      const source = readFileSync(`apps/web/src/i18n/catalogues/${locale}.ts`, 'utf8');
-      /* A rate baked into a prerendered page is a claim that goes stale the first time an
-         admin edits tax_countries, and nothing would fail. */
-      expect(source, locale).not.toMatch(/7\s*%|7%|７%/u);
+      /* Relative to the vitest root, which for apps/web is the app directory — not the repo
+         root. Check `apps/web/vitest.config.ts`'s `root` before trusting a bare path. */
+      const source = readFileSync(`src/i18n/catalogues/${locale}.ts`, 'utf8');
+
+      /* A rate baked into a prerendered page is a claim that goes stale the first time an admin
+         edits tax_countries, and nothing would fail. */
+      for (const line of entryLines(source)) {
+        expect(line, `${locale}: ${line.trim()}`).not.toMatch(RATE_CLAIM);
+      }
     }
   });
 
@@ -2367,12 +2748,20 @@ describe('the storefront makes no VAT-rate claim', () => {
 });
 ```
 
-The rate regex must tolerate the Thai, Latin and full-width forms — `zh.ts` writes `7%` and `my.ts` may use its own digits. Run it against the current tree first and confirm it finds today's occurrences, or it is not testing anything.
+**Run it against the current tree first and confirm it finds today's occurrences in all eight
+files, `my.ts` included.** A regex that misses one locale gives that locale a green test with the
+claim still in it.
+
+`de.ts:20`'s translator note — *"MwSt., not VAT. 7 % with a non-breaking space before the sign,
+which is the German…"* — is **deliberately left alone**, which is why the assertion runs over entry
+lines rather than the whole file. The note documents a convention that still governs any other
+percentage German copy might carry; deleting it to satisfy a regex would be the test dictating the
+source.
 
 - [ ] **Step 2: Run and watch it fail with a list of real hits**
 
 ```bash
-pnpm --filter @wewin/web test -- vat-claims
+pnpm --filter @wewin/web exec vitest run vat-claims
 ```
 
 Expected: FAIL naming every locale. Read the list — it is your work queue.
@@ -2406,8 +2795,11 @@ Then each of the other seven, keeping that locale's own unit conventions and dro
 - [ ] **Step 6: Confirm nothing else claimed a rate**
 
 ```bash
-grep -rn "7%\|ไม่รวม\|exclud" apps/web/src | grep -v test
+grep -rn "7 *%\|၇%\|ไม่รวม\|exclud\|zzgl\|不含\|chưa bao gồm\|शामिल नहीं\|ບໍ່ລວມ" apps/web/src | grep -v test
 ```
+
+Every locale writes the claim in its own words, so an ASCII-only grep would report success while
+five catalogues still carried it.
 
 Expected: no VAT claim remains. `AppFooter` is on only three of the ten storefront page routes (`footer-routes.ts:32-34`, gated at `AppShell.tsx:88`), which is exactly why `QuoteScreen` and `ConfiguratorIsland` carried their own copies — this grep is what proves all of them are gone.
 
@@ -2450,7 +2842,7 @@ HTML. Harmless while nobody could change it; false the first time an admin does.
 - Modify: `apps/web/src/components/quotation/QuotationIsland.tsx` (`:272`)
 - Modify: `apps/dashboard/src/components/quotes/quotation-sheet.tsx` (`:302`)
 - Modify: `apps/web/src/i18n/keys.ts` + all eight catalogues (`quotation.vatIncluded`)
-- Test: `packages/core/tests/quotation.test.ts` (extend), `apps/web/tests/quotation/inclusive-layout.test.tsx` (new)
+- Test: `packages/core/tests/quotation.test.ts` (extend), `apps/web/tests/quotation/inclusive-layout.test.ts` (new — `.ts`, not `.tsx`)
 
 **Interfaces:**
 - Consumes: `document.destinationCountry`, `document.taxBasis` (Task 9).
@@ -2481,46 +2873,79 @@ it('reads a basis from the document and defaults to exclusive for older ones', (
   expect(pinnedDocumentFrom(doc, context).destinationCountry).toBeNull();
 });
 
-it('reports that VAT is included, and the lines still sum to the grand total', () => {
-  const printable = printableQuotation(
-    pinnedDocumentFrom(
-      { ...doc, taxBasis: 'inclusive', netThbMinor: '2752294', vatThbMinor: '247706', grandTotalThbMinor: '3000000' },
-      context,
+it('reports that VAT is included', () => {
+  const pinned = pinnedDocumentFrom(
+    { ...doc, taxBasis: 'inclusive', netThbMinor: '2752294', vatThbMinor: '247706', grandTotalThbMinor: '3000000' },
+    context,
+  );
+
+  expect(printableQuotation(pinned).vatIsIncluded).toBe(true);
+});
+
+it('foots: lines and charges together equal the grand total under an inclusive basis', () => {
+  /* Asserted on the PinnedDocument, NOT the PrintableQuotation. `PrintableLine` carries
+     `netText: string` and `charges` is `{ labelTh, amountText }` — formatted strings, no minor
+     units. The minor units live on `PinnedLine.netMinor`
+     (packages/core/src/quotation.ts:48) and `PinnedCharge.amountMinor` (:53). */
+  const pinned = pinnedDocumentFrom(
+    { ...doc, taxBasis: 'inclusive', netThbMinor: '2752294', vatThbMinor: '247706', grandTotalThbMinor: '3000000' },
+    context,
+  );
+
+  /* Both arrays. `lines` and `charges` are separate in the document
+     (packages/contract/src/order.ts:313-314) and under inclusive the grand total is the sum of
+     both, so a lines-only assertion is false for any quote carrying a charge. */
+  const lineSum = pinned.lines.reduce((total, line) => total + line.netMinor, 0n);
+  const chargeSum = pinned.charges.reduce((total, charge) => total + charge.amountMinor, 0n);
+
+  expect(lineSum + chargeSum).toBe(pinned.grandTotalThbMinor);
+  expect(pinned.netThbMinor + pinned.vatThbMinor).toBe(pinned.grandTotalThbMinor);
+});
+```
+
+The `doc` fixture **must include at least one charge row**, or the footing assertion proves nothing
+about the case that can break.
+
+And a markup test — **`.test.ts`, not `.test.tsx`**, and `renderToStaticMarkup` rather than a
+testing library, because this repo has no DOM environment and deliberately so (see Verified Repo
+Facts). `react-dom/server` needs no DOM, so this runs under `environment: 'node'` as it stands:
+
+```ts
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createElement } from 'react';
+
+const markupFor = (basis: 'inclusive' | 'exclusive') =>
+  renderToStaticMarkup(
+    createElement(
+      LocaleProvider,
+      { locale: 'th' },
+      createElement(QuotationIsland, { quotation: quotationFixture(basis) }),
     ),
   );
 
-  expect(printable.vatIsIncluded).toBe(true);
-
-  /* Lines AND charges — they are two separate arrays in the document
-     (packages/contract/src/order.ts:313-314), and under inclusive the grand total is the sum
-     of both. A lines-only assertion is false for any quote carrying a charge. */
-  const lineSum = printable.lines.reduce((total, line) => total + line.netMinor, 0n);
-  const chargeSum = printable.charges.reduce((total, charge) => total + charge.amountMinor, 0n);
-  expect(lineSum + chargeSum).toBe(3_000_000n);
-});
-```
-
-The `doc` fixture **must include at least one charge row**, or the second assertion proves nothing about the case that can break.
-
-```tsx
-it('tells the customer the price already contains the tax', async () => {
-  render(<QuotationIsland quotation={inclusiveQuotation()} />);
-
-  expect(await screen.findByText(/รวมอยู่ในราคาแล้ว/u)).toBeInTheDocument();
+it('tells the customer when the price already contains the tax', () => {
+  expect(markupFor('inclusive')).toContain('รวมอยู่ในราคาแล้ว');
 });
 
 it('says nothing extra for an exclusive quotation', () => {
-  render(<QuotationIsland quotation={exclusiveQuotation()} />);
-
-  expect(screen.queryByText(/รวมอยู่ในราคาแล้ว/u)).not.toBeInTheDocument();
+  expect(markupFor('exclusive')).not.toContain('รวมอยู่ในราคาแล้ว');
 });
 ```
+
+Use the storefront's real locale-context provider and its real export name — read
+`apps/web/src/state/localeContext.tsx`. If `QuotationIsland` needs more context than the locale
+(a quote context, a unit preference), wrap those too; if the wrapping becomes unwieldy that is a
+signal to assert on `printableQuotation` alone and rely on Step 7's browser check for the markup.
+
+**Interaction is not tested here.** Clicking and typing need a DOM this repo does not provide;
+Step 7's browser pass is where that is checked, which is why it is a required step and not a
+suggestion.
 
 - [ ] **Step 2: Run and watch them fail**
 
 ```bash
-pnpm --filter @wewin/core test -- quotation
-pnpm --filter @wewin/web test -- inclusive-layout
+pnpm --filter @wewin/core exec vitest run quotation
+pnpm --filter @wewin/web exec vitest run inclusive-layout
 ```
 
 - [ ] **Step 3: Extend `PinnedDocument` and read both fields leniently**
@@ -2631,13 +3056,13 @@ Run against the spec with fresh eyes. Findings and their resolutions are recorde
 
 **2. Placeholder scan**
 
-No `TBD`, no "add error handling", no "similar to Task N". Three places intentionally say *read the real thing rather than trust this snippet* — the `describeDb`/`withDb` import in Task 1, `harness()` in Tasks 3 and 5, and the MSW helpers in Task 13. That is not a placeholder: inventing a fixture API that does not exist is the failure mode those notes prevent, and each names the exact file to copy from.
+No `TBD`, no "add error handling", no "similar to Task N". Three places intentionally say *read the real thing rather than trust this snippet* — the `connect()` helper in Task 1, `harness()` in Task 3 (which Task 5 then reuses), and the locale-context provider in Task 15. That is not a placeholder: inventing a fixture API that does not exist is the failure mode those notes prevent, and each names the exact file to copy from.
 
 **3. Type consistency**
 
 - `DestinationTax` — defined in Task 7, consumed with the same three fields in 9 and 11. ✓
 - `basis` vs `taxBasis`: `ApplyOverridesInput.basis` (Task 10) and `PriceOrderParams.taxBasis` / the document field `taxBasis` (Tasks 9, 15). **Deliberately different**: the input is a parameter, the document field is a record. Task 10 Step 5 wires one to the other explicitly (`basis: params.taxBasis`) so the mismatch cannot be silent.
-- `TaxCountryChangeWire` is declared once in Task 2 and reused by Task 4 rather than re-declared. ✓
+- `SettingChangeWire` is declared once in Task 2 and reused by Task 4 rather than re-declared. ✓
 - `measureCashflow(grandTotalThbMinor, instalments, floorBp)` in Task 12 matches `cashflowConcessionMinor`'s existing third parameter name. ✓
 - `summary.area` — renamed in Task 14, and no other task references `summary.areaAndVat`. ✓
 - `pinsForSubmit(tx, grandTotalThbMinor, depositBp)` — Task 12 defines it; only `orders.service.ts:774` calls it. ✓
