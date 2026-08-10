@@ -125,6 +125,17 @@ export interface PriceOrderParams {
   readonly catalog: ReadonlyMap<string, CatalogEntry>;
   readonly vat: TaxRule;
   /**
+   * The destination this price was quoted for, or `null` when the order names none.
+   *
+   * Travels inside the document rather than as a pinned column, because the customer's
+   * printed page is rendered from the document (`packages/core/src/quotation.ts:315`,
+   * `pinnedDocumentFrom`) and has to know which layout to use. It cannot ask `tax_countries`:
+   * that table is mutable, and a quotation prints what was quoted.
+   */
+  readonly destinationCountry: string | null;
+  /** Which of `fromNet` / `fromGrand` ran. A record of a completed computation. */
+  readonly taxBasis: 'inclusive' | 'exclusive';
+  /**
    * The language the customer was reading when they agreed to this — plan 10.6.
    *
    * A `string` and not a `SupportedLocale`, because the value arrives from a request body
@@ -346,6 +357,21 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
     pinnedLocale: pinnedLocaleOf(params.locale),
     pinnedCoreVersion: params.coreVersion,
     vat: { rateBp: params.vat.rateBp, treatment: params.vat.treatment },
+    /*
+     * ⭐ WHERE THE GOODS ARE GOING, AND WHICH ARITHMETIC RAN — inside the document, not beside it.
+     *
+     * `OrderRepository.pinDocument` takes the built document plus the pinned *columns*, and
+     * there deliberately is no destination column, so this literal is the only place either
+     * value can reach storage. It is also the right place: `documentHash` is computed over
+     * everything here, so a quotation reprinted against a different country would be a
+     * different hash — which is the property that makes a pin worth anything.
+     *
+     * Omitted entirely when absent rather than written as `null`: the field is optional in
+     * `orderDocumentWireSchema`, and an explicit null would make every legacy document
+     * distinguishable from a new one for no reason anybody needs.
+     */
+    ...(params.destinationCountry === null ? {} : { destinationCountry: params.destinationCountry }),
+    ...(params.destinationCountry === null ? {} : { taxBasis: params.taxBasis }),
     lines: frozenLines,
     charges: frozenCharges,
     documentOverride:

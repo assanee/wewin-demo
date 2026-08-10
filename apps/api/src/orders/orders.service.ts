@@ -20,15 +20,18 @@ import { message } from '../i18n';
 import { CatalogRepository } from '../catalog/catalog.repository';
 import { encodeAccountPublic, encodeProfile } from '../organisation/encode';
 import { OrganisationRepository } from '../organisation/organisation.repository';
+import { TaxCountryService } from '../organisation/tax-country.service';
 import { PaymentLifecycleService } from '../payments/lifecycle';
 import { AuthorityService } from '../quotes/authority';
 import { QuotesService } from '../quotes/quotes.service';
 import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
-import {
-  DEFAULT_LOCALE,
-  DEFAULT_VAT_RULE,
-  MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT,
-} from './defaults';
+/*
+ * `DEFAULT_VAT_RULE` is deliberately no longer imported here. Every rate this file pins now
+ * comes from `TaxCountryService.resolveDestination`, which returns the default itself when an
+ * order names no destination — one fallback, in the place that owns the question, rather than
+ * a second copy of it inside the submit.
+ */
+import { DEFAULT_LOCALE, MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT } from './defaults';
 import {
   encodeChangeRequest,
   encodeDocumentResponse,
@@ -133,6 +136,20 @@ export class OrdersService {
      * than in this service.
      */
     private readonly organisation: OrganisationRepository,
+    /**
+     * ⭐ Where the goods are going, turned into the tax rule the document is priced with.
+     *
+     * One call site: the first statement of `submit` that needs a rate, before
+     * `priceOrderDocument`. This service never reads `tax_countries` itself and never decides
+     * what a code means — `resolveDestination` is the single place a destination becomes a
+     * rate, a treatment and a basis (spec §3), which is what stops a second interpretation of
+     * "withdrawn" or "unknown" growing here.
+     *
+     * Injectable only because `OrganisationModule` exports it. It did not until this task, and
+     * the failure mode is the good one: a missing export is a "cannot resolve dependencies"
+     * error at boot, not a silent fallback at runtime.
+     */
+    private readonly taxCountries: TaxCountryService,
     @Inject(ENV) private readonly env: Env,
     /**
      * What happens to money when this order moves — 5b's closing seam.
@@ -712,13 +729,50 @@ export class OrdersService {
 
     const { document } = await this.quotes.assertSubmittable(tx, order);
 
+    /*
+     * ⭐ THE DESTINATION BECOMES A TAX RULE HERE, AND BEFORE THE PRICING THAT USES IT.
+     *
+     * Resolution comes before pricing, and therefore before the order row that records the
+     * country is written by `applySubmission` below. The document is priced a few lines down
+     * and pinned after that; a resolution placed after either of those would pin a document
+     * that never saw it. The expression is `body.contact.destinationCountry ??
+     * order.destinationCountry` — the identical `??` the write itself uses, so the country the
+     * document is priced for and the country the row records are one decision read twice, not
+     * two decisions that could differ.
+     *
+     * `tx`, not a bare call: this read has to see the same snapshot as everything else in the
+     * submit, and a second connection could resolve against a rate a concurrent
+     * `PATCH /admin/organisation/tax-countries/:code` had already committed halfway through
+     * pinning. `TaxCountryRepository.byCode` threads it through `executor(tx) ?? this.db`.
+     *
+     * ⚠️ The argument is load-bearing and **nothing in any suite fails without it** — the pins
+     * are identical either way, because the only difference is *which connection* read the row.
+     * So it was measured instead: `select pg_backend_pid(), txid_current()` run on this `tx`
+     * and again inside `byCode` on whatever `executor(tx)` returned. With `tx` passed, both
+     * report the same backend and the same transaction id (pid 96517, xid 1629137). With the
+     * argument dropped, they diverge on every run (pid 96581/96580, xid 1629191/1629192) —
+     * a second pooled connection in a transaction of its own, which is the read that could see
+     * a rate this one never agreed to.
+     *
+     * A code naming no row is refused with `reason: 'unknown_destination_country'` rather than
+     * quietly falling back to `DEFAULT_VAT_RULE` — see `TaxCountryService.resolveDestination`.
+     * A *withdrawn* country resolves normally, on purpose: `is_active` governs what a new
+     * customer is offered, not whether a cart already carrying it may still be submitted.
+     */
+    const destination = await this.taxCountries.resolveDestination(
+      body.contact.destinationCountry ?? order.destinationCountry,
+      tx,
+    );
+
     const priced = priceOrderDocument({
       lines: document.lines,
       charges: document.charges,
       overrides: document.overrides,
       leadTimeDays: document.leadTimeDays,
       catalog: await this.catalogIndex(),
-      vat: DEFAULT_VAT_RULE,
+      vat: destination.rule,
+      destinationCountry: destination.code,
+      taxBasis: destination.basis,
       locale: body.contact.locale ?? order.contactLocale,
       coreVersion: this.env.SERVICE_VERSION,
       revision: (await this.orders.latestRevision(tx, order.id)) + 1,
@@ -744,8 +798,17 @@ export class OrdersService {
       document: priced.document,
       documentHash: priced.documentHash,
       pinnedCoreVersion: this.env.SERVICE_VERSION,
-      pinnedVatRateBp: DEFAULT_VAT_RULE.rateBp,
-      pinnedVatTreatment: DEFAULT_VAT_RULE.treatment,
+      /*
+       * ⚠️ From the resolution, and from the same object the document was priced with.
+       *
+       * `orders_totals_match_document()` foots the *totals* and never looks at the rate, so a
+       * column saying 700 beside a document saying 900 passes every constraint in the database
+       * — and the two are read by different screens. `destination.rule` is the one source both
+       * halves come from; mutation-tested by reverting this line to `DEFAULT_VAT_RULE.rateBp`
+       * and watching `destination-pinning.pg.test.ts` go red on the column alone.
+       */
+      pinnedVatRateBp: destination.rule.rateBp,
+      pinnedVatTreatment: destination.rule.treatment,
       pinnedLocale: priced.document.pinnedLocale,
       netThbMinor: priced.netThbMinor,
       vatThbMinor: priced.vatThbMinor,

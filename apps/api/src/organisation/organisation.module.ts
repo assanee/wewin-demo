@@ -18,9 +18,17 @@ import { TaxCountryService } from './tax-country.service';
  *
  * `OrganisationRepository` is exported for task 10: `OrdersModule` reads `activeAccounts()`
  * through it rather than opening a second query over `bank_accounts`, the same reason
- * `CatalogModule` exports its repository for `orders` and `quotes` to share. `TaxCountryService`
- * and `TaxCountryRepository` are provided but not exported — nothing outside this module reads
- * a tax country yet.
+ * `CatalogModule` exports its repository for `orders` and `quotes` to share.
+ *
+ * `TaxCountryService` is exported for the same reason and by the same rule: `OrdersService`
+ * resolves the destination inside the submit transaction, and `resolveDestination` is the one
+ * place a destination code becomes a rate, a treatment and a basis. A second reader over
+ * `tax_countries` in `orders` would be a second answer to "what does a withdrawn country
+ * mean", which is exactly the question that file spends a page settling.
+ *
+ * `TaxCountryRepository` stays unexported. It is the statement layer under that decision, and
+ * a caller holding it could run `byCode` and interpret the row itself — which is the thing the
+ * export above exists to prevent.
  *
  * `DestinationsController` is registered here beside `OrganisationController` — two
  * controllers, one module — because a Nest controller absent from a module's `controllers`
@@ -35,6 +43,6 @@ import { TaxCountryService } from './tax-country.service';
     TaxCountryService,
     TaxCountryRepository,
   ],
-  exports: [OrganisationRepository],
+  exports: [OrganisationRepository, TaxCountryService],
 })
 export class OrganisationModule {}
