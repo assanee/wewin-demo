@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 
 import type { QuoteLine } from '@wewin/core';
 
@@ -11,6 +11,7 @@ import {
   submitQuote,
   type ContactProblem,
 } from '../../lib/quote/submit';
+import { fetchContactPrefill, fieldsToApply } from '../../lib/quote/prefillContact';
 import type { Session } from '../../lib/auth/account';
 import { useLocale } from '../../state/localeContext';
 import { SubmittedNotice } from './SubmittedNotice';
@@ -39,6 +40,15 @@ import type { PlainKey } from '../../i18n/keys';
  * — the one built two phases ago. This screen then offers the same link directly, because a
  * customer who has just pressed a button should not have to go and look in their inbox, and a
  * customer who gave only a telephone number will not find one there at all.
+ *
+ * ── ⚠️ The three fields pre-fill themselves, quietly ──────────────────────────
+ *
+ * A returning customer has already told this company their name, number and address — on a
+ * prior order, or at worst at registration. `../../lib/quote/prefillContact` goes and asks,
+ * over the network, after the form is already on screen and usable. Because that answer can
+ * arrive after somebody has started typing, `touchedRef` below remembers which fields a
+ * finger has already reached — see `fieldsToApply` for the rule that keeps a slow network
+ * response from overwriting a fast typist.
  */
 
 /**
@@ -82,6 +92,41 @@ export function RequestQuotationForm({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+
+  /*
+   * ⚠️ A ref, not state. Nothing here needs to trigger a render — it only needs to be
+   * *current* the moment the pre-fill's network round trip finishes, which a `useState`
+   * closure captured at mount would not be: this object is mutated in place by each field's
+   * `onChange`, so the effect below always reads what actually happened, not what was true
+   * when it started listening.
+   */
+  const touchedRef = useRef({ name: false, phone: false, email: false });
+
+  /*
+   * ⭐ Pre-filled once, from whichever the customer told us most recently — see the module
+   * note on `prefillContact` for the two sources and the precedence between them.
+   *
+   * ⚠️ Never surfaces a failure. `fetchContactPrefill` resolves to `null` for every problem
+   * it can have — no API configured, unreachable, a customer with nothing on file — and a
+   * `null` here does exactly nothing: the form stays exactly as usable as it was before this
+   * effect ever ran.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchContactPrefill(session.accessToken).then((prefill) => {
+      if (cancelled || prefill === null) return;
+
+      const toApply = fieldsToApply(touchedRef.current, prefill);
+      if (toApply.name !== undefined) setName(toApply.name);
+      if (toApply.phone !== undefined) setPhone(toApply.phone);
+      if (toApply.email !== undefined) setEmail(toApply.email);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session.accessToken]);
 
   const send = useCallback(async () => {
     const contact = contactToWire({ name, email, phone }, locale);
@@ -163,7 +208,10 @@ export function RequestQuotationForm({
             className="w-full border border-line bg-panel-2 px-3 py-2 text-body text-chalk"
             value={name}
             placeholder={t('submit.namePlaceholder')}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              touchedRef.current.name = true;
+              setName(event.target.value);
+            }}
             disabled={busy}
             autoComplete="name"
           />
@@ -181,7 +229,10 @@ export function RequestQuotationForm({
             inputMode="tel"
             value={phone}
             placeholder="081-234-5678"
-            onChange={(event) => setPhone(event.target.value)}
+            onChange={(event) => {
+              touchedRef.current.phone = true;
+              setPhone(event.target.value);
+            }}
             disabled={busy}
             autoComplete="tel"
           />
@@ -192,7 +243,10 @@ export function RequestQuotationForm({
             className="w-full border border-line bg-panel-2 px-3 py-2 text-body text-chalk"
             type="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              touchedRef.current.email = true;
+              setEmail(event.target.value);
+            }}
             disabled={busy}
             autoComplete="email"
           />

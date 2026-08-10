@@ -55,8 +55,17 @@ const files = (directory: string): string[] =>
  * `user_phones_primary_is_verified` would refuse the row if it tried. The collision it must
  * handle is answered by the unique index rather than by a lookup, which is why it needs no
  * SELECT — see its own comment on why a check-then-insert would be a race.
+ *
+ * `account/account.repository.ts` — reads unverified claims too, for a different and safe
+ * reason: `listPhones` is keyed by `userId`, never by `number`, and that `userId` comes from
+ * the caller's own verified access token, the same as every other query in that file. It
+ * cannot be pointed at a phone number to find whoever claimed it — there is no number in its
+ * input at all — so it is not the second reader ⓶ warns about. It exists so `GET /me/account`
+ * can show somebody their own number back, which is showing a claim to the person who made
+ * it, not attaching one to a stranger who found it.
  */
 const READERS: readonly string[] = [
+  'account/account.repository.ts',
   'auth/password/password.repository.ts',
   'auth/password/registration.service.ts',
 ];
@@ -96,7 +105,16 @@ describe('⭐ a telephone number is a way in, not an authority', () => {
       return /userPhones\.verifiedAt/u.test(source) ? [] : [relative(path)];
     });
 
-    expect(unfiltered).toStrictEqual(['auth/password/password.repository.ts']);
+    /*
+     * Two now, not one — see `READERS` above for why `account.repository.ts` earns the
+     * second slot: it is keyed by `userId`, never by `number`, so it cannot be the reader
+     * ⓶ warns about. Both stay named explicitly rather than counted, so a *third* unfiltered
+     * query still turns this red.
+     */
+    expect(unfiltered).toStrictEqual([
+      'account/account.repository.ts',
+      'auth/password/password.repository.ts',
+    ]);
   });
 
   it('⭐ password reset never accepts a telephone number', () => {
