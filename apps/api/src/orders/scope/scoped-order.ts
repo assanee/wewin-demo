@@ -66,6 +66,8 @@ export interface ScopedOrder {
   readonly contactName: string | null;
   readonly contactPhone: string | null;
   readonly contactLocale: string;
+  /** Chosen by the customer at submit; null on every cart and every order that predates it. */
+  readonly destinationCountry: string | null;
 
   readonly supersedesOrderId: string | null;
 
@@ -115,6 +117,7 @@ export const ORDER_COLUMNS = {
   contactName: orders.contactName,
   contactPhone: orders.contactPhone,
   contactLocale: orders.contactLocale,
+  destinationCountry: orders.destinationCountry,
   supersedesOrderId: orders.supersedesOrderId,
   frozenAt: orders.frozenAt,
   submittedAt: orders.submittedAt,

@@ -426,6 +426,8 @@ export class OrderRepository {
       readonly contactName: string | null;
       readonly contactPhone: string | null;
       readonly contactLocale: string;
+      /** Chosen by the customer at submit, or carried over from a cart that already had one. */
+      readonly destinationCountry: string | null;
       readonly netThbMinor: bigint;
       readonly vatThbMinor: bigint;
       readonly grandTotalThbMinor: bigint;
@@ -454,6 +456,7 @@ export class OrderRepository {
         contactName: input.contactName,
         contactPhone: input.contactPhone,
         contactLocale: input.contactLocale,
+        destinationCountry: input.destinationCountry,
         netThbMinor: input.netThbMinor,
         vatThbMinor: input.vatThbMinor,
         grandTotalThbMinor: input.grandTotalThbMinor,

@@ -788,6 +788,8 @@ export class OrdersService {
       contactEmail: body.contact.email ?? order.contactEmail,
       contactName: body.contact.name ?? order.contactName,
       contactPhone: body.contact.phone ?? order.contactPhone,
+      /* Same `??` shape as the three contact fields above: a submit naming no destination must not erase one the cart already had. */
+      destinationCountry: body.contact.destinationCountry ?? order.destinationCountry,
       contactLocale: priced.document.pinnedLocale,
       netThbMinor: priced.netThbMinor,
       vatThbMinor: priced.vatThbMinor,

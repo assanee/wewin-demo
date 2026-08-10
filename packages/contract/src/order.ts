@@ -478,6 +478,8 @@ export interface OrderContactRequestWire {
   readonly name?: string | undefined;
   readonly phone?: string | undefined;
   readonly locale?: string | undefined;
+  /** Where the order is going. Optional: a submit that names none carries over the cart's own. */
+  readonly destinationCountry?: string | undefined;
 }
 
 export interface CreateOrderRequestWire {
@@ -644,6 +646,7 @@ export const orderContactRequestSchema: z.ZodType<OrderContactRequestWire> = z
     name: z.string().trim().min(1).max(200).optional(),
     phone: phoneSchema.optional(),
     locale: localeSchema.optional(),
+    destinationCountry: z.string().regex(/^[A-Z]{2}$/u).optional(),
   })
   .refine((contact) => contact.email !== undefined || contact.phone !== undefined, {
     message: 'a submitted order needs an email address or a telephone number',
