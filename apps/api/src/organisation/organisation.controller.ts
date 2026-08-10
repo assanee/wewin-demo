@@ -13,6 +13,16 @@ import {
   type OrganisationProfilePutRequestWire,
   type OrganisationProfileWire,
 } from '@wewin/contract/organisation';
+import {
+  taxCountryAvailabilitySchema,
+  taxCountryCreateSchema,
+  taxCountryPatchSchema,
+  type SettingChangeWire,
+  type TaxCountryAvailabilityRequest,
+  type TaxCountryCreateRequest,
+  type TaxCountryPatchRequest,
+  type TaxCountryWire,
+} from '@wewin/contract/tax';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
 import { AppError } from '../common/errors/app-error';
@@ -21,12 +31,14 @@ import { CurrentScope, RequirePermissions, type Scope } from '../rbac';
 import { encodeAccount, encodeChange, encodeProfile } from './encode';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
+import { TaxCountryService } from './tax-country.service';
 
 const contractVersion = (): MethodDecorator =>
   Header(CONTRACT_VERSION_HEADER, String(CONTRACT_VERSION));
 
 /**
- * The company's own profile and the bank accounts it is paid into.
+ * The company's own profile, the bank accounts it is paid into, and the destinations it
+ * sells to.
  *
  *     GET   /admin/organisation
  *     PUT   /admin/organisation
@@ -35,19 +47,36 @@ const contractVersion = (): MethodDecorator =>
  *     PATCH /admin/organisation/bank-accounts/:id
  *     PUT   /admin/organisation/bank-accounts/:id/availability
  *     GET   /admin/organisation/bank-accounts/:id/changes
+ *     GET   /admin/organisation/tax-countries
+ *     POST  /admin/organisation/tax-countries
+ *     PATCH /admin/organisation/tax-countries/:code
+ *     PUT   /admin/organisation/tax-countries/:code/availability
+ *     GET   /admin/organisation/tax-countries/:code/changes
  *
- * `availability` is its own route rather than a field `patchAccount` also accepts, the same
- * shape decision `option-catalog.controller.ts` makes for stock: it is the one write here a
- * client must never be able to smuggle in beside an unrelated edit, and `bankAccountPatchSchema`
- * enforces that by refusing the field outright. `OrganisationService.setAvailability` reuses
- * the patch path with a cast rather than a second write, so a deactivation is recorded in
- * `bank_account_changes` exactly like any other change — see that file.
+ * `availability` is its own route rather than a field `patchAccount`/`patchTaxCountry` also
+ * accepts, the same shape decision `option-catalog.controller.ts` makes for stock: it is the
+ * one write here a client must never be able to smuggle in beside an unrelated edit, and
+ * `bankAccountPatchSchema`/`taxCountryPatchSchema` enforce that by refusing the field outright.
+ * `OrganisationService.setAvailability`/`TaxCountryService.setAvailability` both reuse their
+ * own patch path with a cast rather than a second write, so a deactivation is recorded in
+ * `bank_account_changes`/`tax_country_changes` exactly like any other change — see those files.
+ *
+ * The five tax-country routes reuse `organisation.read`/`organisation.write` rather than a
+ * new permission pair: tax settings are company settings, the same authority as the bank
+ * accounts beside them. `TaxCountryService` already wraps its own writes in
+ * `withTranslatedOrganisationErrors` (`pg-errors.ts`), so these handlers call it and return —
+ * a second `try`/`catch` here would only re-wrap an already-translated `AppError`.
+ *
+ * The public, anonymous read a storefront needs before an order exists — `GET /destinations`
+ * — is deliberately not here: see `destinations.controller.ts` for why it cannot share this
+ * controller's `/admin` prefix.
  */
 @Controller('admin/organisation')
 export class OrganisationController {
   constructor(
     private readonly organisation: OrganisationService,
     private readonly repository: OrganisationRepository,
+    private readonly taxCountries: TaxCountryService,
   ) {}
 
   @Get()
@@ -118,6 +147,63 @@ export class OrganisationController {
   ): Promise<{ readonly changes: readonly BankAccountChangeWire[] }> {
     const rows = await this.repository.changes(id);
     return { changes: rows.map(encodeChange) };
+  }
+
+  /*
+   * ── Tax countries ────────────────────────────────────────────────────────────
+   *
+   * Bare arrays, not `{ countries: [...] }` / `{ changes: [...] }` wrappers like the bank-
+   * account routes above: `TaxCountryService.list`/`.changes` already return exactly
+   * `TaxCountryWire[]` / `SettingChangeWire[]`, and wrapping them here would be an envelope
+   * this task's interface never asked for.
+   */
+
+  @Get('tax-countries')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async listTaxCountries(): Promise<TaxCountryWire[]> {
+    // `false`: the admin list shows every destination, active or withdrawn.
+    return this.taxCountries.list(false);
+  }
+
+  @Post('tax-countries')
+  @HttpCode(201)
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async createTaxCountry(
+    @CurrentScope() scope: Scope,
+    @Body(new ZodBodyPipe(taxCountryCreateSchema)) body: TaxCountryCreateRequest,
+  ): Promise<TaxCountryWire> {
+    return this.taxCountries.create(body, userIdOf(scope));
+  }
+
+  @Patch('tax-countries/:code')
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async patchTaxCountry(
+    @CurrentScope() scope: Scope,
+    @Param('code') code: string,
+    @Body(new ZodBodyPipe(taxCountryPatchSchema)) body: TaxCountryPatchRequest,
+  ): Promise<TaxCountryWire> {
+    return this.taxCountries.patch(code, body, userIdOf(scope));
+  }
+
+  @Put('tax-countries/:code/availability')
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async setTaxCountryAvailability(
+    @CurrentScope() scope: Scope,
+    @Param('code') code: string,
+    @Body(new ZodBodyPipe(taxCountryAvailabilitySchema)) body: TaxCountryAvailabilityRequest,
+  ): Promise<TaxCountryWire> {
+    return this.taxCountries.setAvailability(code, body.isActive, userIdOf(scope));
+  }
+
+  @Get('tax-countries/:code/changes')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async taxCountryChanges(@Param('code') code: string): Promise<SettingChangeWire[]> {
+    return this.taxCountries.changes(code);
   }
 }
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { DestinationsController } from './destinations.controller';
 import { OrganisationController } from './organisation.controller';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
@@ -7,8 +8,8 @@ import { TaxCountryRepository } from './tax-country.repository';
 import { TaxCountryService } from './tax-country.service';
 
 /**
- * The company's own settings: its profile, the bank accounts it is paid into, and — from
- * this task on — the destinations it sells to and the tax each one attracts.
+ * The company's own settings: its profile, the bank accounts it is paid into, and the
+ * destinations it sells to and the tax each one attracts.
  *
  * No `forRoot` — nothing here needs configuration. It imports nothing else, the same as
  * `AdminModule`: `DatabaseModule` is `@Global`, so `DRIZZLE` is already in scope, and
@@ -18,11 +19,16 @@ import { TaxCountryService } from './tax-country.service';
  * `OrganisationRepository` is exported for task 10: `OrdersModule` reads `activeAccounts()`
  * through it rather than opening a second query over `bank_accounts`, the same reason
  * `CatalogModule` exports its repository for `orders` and `quotes` to share. `TaxCountryService`
- * and `TaxCountryRepository` are provided but not exported — this task's brief asks only for
- * that, and nothing outside this module reads a tax country yet.
+ * and `TaxCountryRepository` are provided but not exported — nothing outside this module reads
+ * a tax country yet.
+ *
+ * `DestinationsController` is registered here beside `OrganisationController` — two
+ * controllers, one module — because a Nest controller absent from a module's `controllers`
+ * array is never routed: leaving it off would make `GET /destinations` a silent 404, and
+ * nothing else in this module would reveal that.
  */
 @Module({
-  controllers: [OrganisationController],
+  controllers: [OrganisationController, DestinationsController],
   providers: [
     OrganisationService,
     OrganisationRepository,

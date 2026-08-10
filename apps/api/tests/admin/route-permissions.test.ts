@@ -141,6 +141,19 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['PATCH /admin/organisation/bank-accounts/:id', ['organisation.write']],
   ['PUT /admin/organisation/bank-accounts/:id/availability', ['organisation.write']],
   ['GET /admin/organisation/bank-accounts/:id/changes', ['organisation.read']],
+  /*
+   * Tax countries, the same split: `organisation.read` for looking, `organisation.write`
+   * for editing — including the availability route, for the identical reason a bank-account
+   * deactivation is `PUT` with `organisation.write` rather than a `DELETE` (`tax_countries_
+   * block_delete` refuses one anyway). `GET /destinations` is deliberately not in this
+   * table — it is not under `/admin`, which is exactly why it is public: see
+   * `destinations.controller.ts`.
+   */
+  ['GET /admin/organisation/tax-countries', ['organisation.read']],
+  ['POST /admin/organisation/tax-countries', ['organisation.write']],
+  ['PATCH /admin/organisation/tax-countries/:code', ['organisation.write']],
+  ['PUT /admin/organisation/tax-countries/:code/availability', ['organisation.write']],
+  ['GET /admin/organisation/tax-countries/:code/changes', ['organisation.read']],
 ]);
 
 const codesOf = (record: RouteRecord): readonly string[] =>
