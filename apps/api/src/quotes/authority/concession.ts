@@ -380,15 +380,27 @@ export function measureMargin(input: MarginInput): DimensionMeasurement {
  * All this adds is the shape the ceiling comparison needs, and one source row so that the
  * approver's inbox can say what the schedule actually gates.
  *
- * The floor it measures against is plan 13's documented default (`GATE_COVERAGE_BP_DEFAULT`,
- * payment in full) and **the owner has not answered it**. The consequence is stated where it
- * bites, in `authority.service.ts`.
+ * ── ⚠️ `floorBp` IS REQUIRED, AND A DEFAULT HERE WOULD BE THE BUG ────────────────
+ *
+ * The floor used to be plan 13's placeholder — `GATE_COVERAGE_BP_DEFAULT`, payment in full,
+ * reached through `cashflowConcessionMinor`'s own default parameter — and the owner had not
+ * answered it. They have now: it is `organisation_profile.deposit_bp`, one row, editable from the
+ * admin screen, and `authority.service.ts` reads it through `DepositPolicyPort` on every
+ * measurement.
+ *
+ * A default value on this parameter would be how the setting silently stops being read. A caller
+ * that forgot to pass it would measure against 10 000 bp, every configured deposit below payment
+ * in full would measure as a concession, and — with `authority_limits` empty, which is how this
+ * ships — fail-closed would refuse an approval it cannot grant and roll back the submit. That
+ * failure is invisible in a diff and total in production, so the parameter is required and
+ * omitting it is `TS2554: Expected 3 arguments, but got 2`.
  */
 export function measureCashflow(
   grandTotalThbMinor: bigint,
   instalments: readonly PlannedInstalment[],
+  floorBp: number,
 ): DimensionMeasurement {
-  const concession = cashflowConcessionMinor(grandTotalThbMinor, instalments);
+  const concession = cashflowConcessionMinor(grandTotalThbMinor, instalments, floorBp);
 
   return {
     dimension: 'cashflow',

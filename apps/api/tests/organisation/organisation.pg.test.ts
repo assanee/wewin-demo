@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
-import { eq } from '@wewin/db/sql';
+import { eq, sql as sqlTag } from '@wewin/db/sql';
 import { bankAccountChanges, groupPermissions, groups, userGroups, users } from '@wewin/db/schema';
 
 import { AccessTokenService } from '../../src/auth/session/access-token';
@@ -379,6 +379,37 @@ describeWithPg('the organisation module against Postgres', () => {
 describeWithPg('the profile, and its history', () => {
   const base = createPgHarness(url ?? '');
   afterAll(base.closeOpened);
+
+  /**
+   * ⚠️ **Put `deposit_bp` back, because it is no longer an inert column.**
+   *
+   * Every test below writes it and none of them used to have to undo that: nothing read the
+   * value, so leaving the singleton at 3 000 or 5 000 bp changed nothing for the suites that run
+   * afterwards. It is read now — `OrdersService.submit` plans the payment schedule from it and
+   * `AuthorityService` measures the `cashflow` floor against it — so the last write in this file
+   * silently reshaped every order submitted for the rest of the run. Measured, not guessed:
+   * `tests/orders/lifecycle.pg.test.ts:223` failed with `expected 739584n to be 1479168n` (a 50%
+   * deposit pinned where the assertion wants the whole total) and `refunds.pg.test.ts` failed 37
+   * times on `instalment … is due 739584 but 1479168 is allocated to it`, purely because this
+   * block happened to run first.
+   *
+   * `vitest.config.ts` runs one fork, one file at a time precisely so that "a suite that restores
+   * what it changed can actually be relied on to have finished doing it". This is that.
+   *
+   * Its own pool, rather than a hook ordered against `closeOpened`: `afterAll` ordering inside one
+   * suite is a Vitest configuration detail (`sequence.hooks`), and a restore that silently stops
+   * running because the default changed would put the leak straight back.
+   */
+  afterAll(async () => {
+    const restorePool = createPool(url ?? '');
+    try {
+      await createDatabase(restorePool).execute(
+        sqlTag`update organisation_profile set deposit_bp = 10000 where id = 1`,
+      );
+    } finally {
+      await restorePool.end();
+    }
+  });
 
   const harness = async () => {
     const { app, actor, db } = await base.harness();

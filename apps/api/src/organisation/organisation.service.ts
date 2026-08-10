@@ -17,7 +17,7 @@ import type { SettingChangeWire } from '@wewin/contract/tax';
 
 import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
-import { OrganisationRepository } from './organisation.repository';
+import { OrganisationRepository, type Tx } from './organisation.repository';
 
 /**
  * The fields the history records for a bank account. Ordering and timestamps are not changes
@@ -199,6 +199,27 @@ export class OrganisationService {
 
       return after!;
     });
+  }
+
+  /**
+   * The company's deposit percentage — `DepositPolicyPort`, and the only reader of that column.
+   *
+   * ⚠️ **One definition, two consumers, and they must not be allowed to disagree.** The submit
+   * plans the payment schedule from this number (`PaymentLifecycleService.pinsForSubmit`) and the
+   * approvals module measures the `cashflow` floor against it (`AuthorityService.measureFor`).
+   * A schedule that gates 30% judged against a floor of 100% is a 70% concession, fail-closed
+   * refuses an approval it cannot grant, and the whole submit rolls back — so a second read of
+   * this column that interpreted a missing row differently would be plan 7.13's ฿12,902 seam in a
+   * new column. Both consumers arrive here.
+   *
+   * A missing profile row throws rather than defaulting to payment in full. It is the singleton
+   * `id = 1` seeded by migration `0029`, so its absence is not a configuration state — and a
+   * silent 10 000 bp would be a submit that quietly ignores the company's policy.
+   */
+  async depositBp(tx?: Tx): Promise<number> {
+    const [row] = await this.repository.profile(tx);
+    if (row === undefined) throw AppError.notFound(message('error.organisation.profile_missing'));
+    return row.depositBp;
   }
 
   /** Oldest first — matches `TaxCountryService.changes`/`TaxCountryRepository.changes`, so both history readers behave alike. */

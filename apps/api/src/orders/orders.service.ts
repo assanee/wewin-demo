@@ -23,6 +23,8 @@ import { OrganisationRepository } from '../organisation/organisation.repository'
 import { TaxCountryService } from '../organisation/tax-country.service';
 import { PaymentLifecycleService } from '../payments/lifecycle';
 import { AuthorityService } from '../quotes/authority';
+/* The port file and not the barrel — see `organisation.module.ts` on the require cycle. */
+import { DEPOSIT_POLICY, type DepositPolicyPort } from '../quotes/authority/deposit-policy.port';
 import { QuotesService } from '../quotes/quotes.service';
 import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
 /*
@@ -186,6 +188,18 @@ export class OrdersService {
      * a concession smaller than the document grants.
      */
     private readonly authority: AuthorityService,
+    /**
+     * The company's deposit percentage — one method, one number, and no way to write anything.
+     *
+     * One call site: `submit`, immediately before `pinsForSubmit`. It is the *same* provider
+     * `AuthorityService` injects to measure the `cashflow` floor, which is the point — a submit
+     * that planned its schedule from one reading of `organisation_profile.deposit_bp` while the
+     * gate judged it against another would be plan 7.13's ฿12,902 seam reopened in a new column.
+     *
+     * The token rather than `OrganisationService`: that class also holds `putProfile`, and an
+     * order handler able to rewrite the company's profile is a capability nothing here needs.
+     */
+    @Inject(DEPOSIT_POLICY) private readonly depositPolicy: DepositPolicyPort,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -886,8 +900,23 @@ export class OrdersService {
      * statement that stamps `submitted_at` (`orders_submitted_shape`), and the instalment rows
      * must be written after it because `assert_order_schedule()` foots them against the total
      * on the row. One evaluation, used twice, and no arithmetic in this file.
+     *
+     * ── ⭐ AND THE SHARE COMES FROM THE COMPANY'S OWN SETTING ────────────────────
+     *
+     * `organisation_profile.deposit_bp`, read here — inside this transaction, through the same
+     * one-method port `AuthorityService` measures the `cashflow` floor with, so the schedule this
+     * submit writes and the floor the gate judges it against are one number rather than two.
+     * They were two for a whole round: the schedule was planned `payInFullTerms()`
+     * unconditionally while the floor was a module constant at 10 000 bp, and the day somebody
+     * used the admin screen the setting would have changed nothing at all.
+     *
+     * `tx`, for the reason the destination resolution a page above gives at length: it does not
+     * buy snapshot consistency at READ COMMITTED, and it does buy one connection, a read that
+     * sees what this transaction has already written, and the only version still correct if the
+     * isolation level is ever raised.
      */
-    const pins = await this.payments.pinsForSubmit(tx, priced.grandTotalThbMinor);
+    const depositBp = await this.depositPolicy.depositBp(tx);
+    const pins = await this.payments.pinsForSubmit(tx, priced.grandTotalThbMinor, depositBp);
 
     await this.orders.applySubmission(tx, {
       orderId: order.id,

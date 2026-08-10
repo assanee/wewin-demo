@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { TaxRule } from '@wewin/core/vat';
 import { APPROVAL_DIMENSIONS, type ApprovalDimension } from '@wewin/db/schema';
 
@@ -6,6 +6,7 @@ import { AppError } from '../../common/errors/app-error';
 import { DEFAULT_VAT_RULE } from '../../orders/defaults';
 import { GATE_COVERAGE_BP_DEFAULT } from '../../payments/schedule';
 import type { Scope } from '../../rbac';
+import { DEPOSIT_POLICY, type DepositPolicyPort } from './deposit-policy.port';
 import {
   ConcessionIntegrityError,
   measureCashflow,
@@ -62,14 +63,22 @@ import {
  *    Same call the refund module made about `payments.refund_other_account`, for the same
  *    reason.
  *
- * 2. **The cashflow floor is plan 13's placeholder, and it collides with plan 13's smoke
- *    path.** `GATE_COVERAGE_BP_DEFAULT` is 10,000 bp — payment in full — so a 30% deposit is a
- *    70% `cashflow` concession. Plan 13's smoke path says *"มัดจำ 30%"* and must run with no
- *    approval. Both cannot be true once a route exists that can author a 30% schedule. Today
- *    the smoke path passes because the only schedule author is the pay-in-full preset, and
- *    `authority.pg.test.ts` asserts exactly that — a real submitted order needs no approval and
- *    no authority row. **The owner has to set the floor**; until then, authoring a deposit
- *    below payment-in-full will demand an approval that fail-closed cannot grant.
+ * 2. ~~**The cashflow floor is plan 13's placeholder, and it collides with plan 13's smoke
+ *    path.**~~ Closed. The floor was `GATE_COVERAGE_BP_DEFAULT` — 10,000 bp, payment in full —
+ *    so a 30% deposit measured as a 70% `cashflow` concession, while plan 13's smoke path says
+ *    *"มัดจำ 30%"* and must run with no approval. Both could not be true. **The owner has now set
+ *    the floor**: it is `organisation_profile.deposit_bp`, read on every measurement through
+ *    `DepositPolicyPort` and applied to the submit's schedule by the same value, so the two are
+ *    one setting rather than two opinions.
+ *
+ *    ⚠️ The consequence, stated in both directions, because the old sentence said only one of
+ *    them and was half wrong the moment the setting became live: a deposit **at** policy is not
+ *    a concession at all — the schedule gates exactly what the floor requires, the measurement
+ *    is ฿0.00 and no approval is asked for. A deposit **below** policy still is one, and with
+ *    `authority_limits` empty — which is how this ships, and what plan 13 documents — it will
+ *    demand an approval that fail-closed cannot grant. Authoring a schedule below the company's
+ *    own policy is the company extending credit (plan 7.10); needing somebody's authority for
+ *    that is the feature, and there is no route that can author one yet.
  *
  * 3. ~~**Nothing here can tell whether an approval was needed *at the time*.**~~ Closed:
  *    `approvals.decided_ceiling_thb_minor` records the decider's own ceiling at the moment they
@@ -114,7 +123,18 @@ export interface AuthorityAssessment {
 
 @Injectable()
 export class AuthorityService {
-  constructor(private readonly repository: AuthorityRepository) {}
+  constructor(
+    private readonly repository: AuthorityRepository,
+    /**
+     * The company's deposit percentage — the `cashflow` floor, and nothing else.
+     *
+     * One method, read-only, declared by this module in `deposit-policy.port.ts` and implemented
+     * by `OrganisationModule`. See that file for why the floor arrives this way rather than as a
+     * parameter on `measureFor`: two of its three callers are HTTP controllers with no deposit in
+     * scope, and threading it from them would put a settings read into a controller.
+     */
+    @Inject(DEPOSIT_POLICY) private readonly depositPolicy: DepositPolicyPort,
+  ) {}
 
   /* ---------------------------------------------------------------- *
    * Measuring
@@ -140,6 +160,22 @@ export class AuthorityService {
   }
 
   private async measureFor(order: OrderFacts, tx?: AuthorityTx): Promise<DocumentConcessions> {
+    /*
+     * ⭐ The floor, from the port rather than from a parameter — and its absence from this
+     * signature is the design, not an omission.
+     *
+     * `measure`, `assess` and `request` all reach here, and two of them come from HTTP
+     * controllers with no submit transaction and no deposit in scope. A required `floorBp`
+     * threaded down from every entry point would put a settings read into two controllers and
+     * change `gate`'s neighbours for a value only one of them could ever supply. So this method's
+     * signature does not change, and neither do its three callers.
+     *
+     * `tx` is forwarded: the submit path passes one, and a gate that measured the floor on a
+     * different connection from the one it is about to commit would be reading a setting the
+     * transaction cannot see.
+     */
+    const floorBp = await this.depositPolicy.depositBp(tx);
+
     const [lines, overrides, instalments] = await Promise.all([
       this.repository.liveLines(order.id, tx),
       this.repository.liveOverrides(order.id, tx),
@@ -175,8 +211,8 @@ export class AuthorityService {
     const grandTotal = order.grandTotalThbMinor;
     const cashflow =
       grandTotal === null
-        ? measureCashflow(0n, [])
-        : measureCashflow(grandTotal, instalments);
+        ? measureCashflow(0n, [], floorBp)
+        : measureCashflow(grandTotal, instalments, floorBp);
 
     return { margin, cashflow };
   }
@@ -611,7 +647,21 @@ export class AuthorityService {
 /** The two dimensions, for a caller that wants to iterate them without re-declaring the list. */
 export const AUTHORITY_DIMENSIONS: readonly ApprovalDimension[] = APPROVAL_DIMENSIONS;
 
-/** The floor the `cashflow` dimension is measured against — plan 13's placeholder, re-exported so a reader can find it. */
+/**
+ * ⚠️ **NOT the floor. Nothing reads this, and editing it changes no behaviour.**
+ *
+ * It was a re-export of plan 13's placeholder, put here "so a reader can find it" — and a reader
+ * who finds it now finds a constant that no code path consults. `grep` says so: this module's own
+ * `measureFor` reads `DepositPolicyPort.depositBp()`, and `cashflowConcessionMinor`'s remaining
+ * default parameter (`payments/schedule/plan.ts`) is the only other place 10 000 bp still appears
+ * as a floor — reachable from `plan.test.ts` and from nowhere in `src`.
+ *
+ * It is kept rather than deleted because it names plan 13's documented default and the
+ * `payments/schedule` constant it forwards is still the seed value of the column. But somebody
+ * looking for "where do I change the deposit floor?" must not stop here: a module constant cannot
+ * hold a per-row database value, and the answer is `organisation_profile.deposit_bp`, written
+ * from the admin profile screen and read on every measurement.
+ */
 export const CASHFLOW_FLOOR_BP_DEFAULT = GATE_COVERAGE_BP_DEFAULT;
 
 /**

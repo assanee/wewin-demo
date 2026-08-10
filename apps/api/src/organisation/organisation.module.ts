@@ -1,5 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Module, type Provider } from '@nestjs/common';
 
+/*
+ * ⚠️ The port file, never `../quotes/authority` — the barrel re-exports `AuthorityModule`, which
+ * imports this module, and a CommonJS require cycle through it hands `@Module`'s decorator an
+ * `undefined` class at evaluation time. `deposit-policy.port.ts` imports one *type* and nothing
+ * else, so this specifier has no runtime edge.
+ */
+import { DEPOSIT_POLICY, type DepositPolicyPort } from '../quotes/authority/deposit-policy.port';
 import { DestinationsController } from './destinations.controller';
 import { OrganisationController } from './organisation.controller';
 import { OrganisationRepository } from './organisation.repository';
@@ -34,7 +41,32 @@ import { TaxCountryService } from './tax-country.service';
  * controllers, one module — because a Nest controller absent from a module's `controllers`
  * array is never routed: leaving it off would make `GET /destinations` a silent 404, and
  * nothing else in this module would reveal that.
+ *
+ * ── `DEPOSIT_POLICY`, and why the *token* is exported and not the service ────────
+ *
+ * The company's deposit percentage governs two things that live nowhere near this module: the
+ * payment schedule a submit plans, and the `cashflow` floor the approvals module measures
+ * against. Both need to read one column; neither may be given the ability to *write* the
+ * company's profile. So what leaves this module is the one-method read-only interface the
+ * authority module declares — `OrganisationService` itself stays unexported, exactly as
+ * `TaxCountryRepository` does and for the same reason: a caller holding the service could call
+ * `putProfile`.
  */
+
+/**
+ * `OrganisationService` as `DepositPolicyPort`, checked at compile time.
+ *
+ * A `useExisting` provider would wire the same object with **no** type relationship between the
+ * class and the interface — the token is a `symbol` and Nest checks nothing — so the day
+ * `depositBp` is renamed the failure would be a runtime `is not a function` inside a submit
+ * transaction. The `useFactory` return annotation is what turns that into a compile error.
+ */
+const depositPolicyProvider: Provider = {
+  provide: DEPOSIT_POLICY,
+  inject: [OrganisationService],
+  useFactory: (organisation: OrganisationService): DepositPolicyPort => organisation,
+};
+
 @Module({
   controllers: [OrganisationController, DestinationsController],
   providers: [
@@ -42,7 +74,8 @@ import { TaxCountryService } from './tax-country.service';
     OrganisationRepository,
     TaxCountryService,
     TaxCountryRepository,
+    depositPolicyProvider,
   ],
-  exports: [OrganisationRepository, TaxCountryService],
+  exports: [OrganisationRepository, TaxCountryService, DEPOSIT_POLICY],
 })
 export class OrganisationModule {}
