@@ -525,6 +525,8 @@ export const hi: PartialUiCatalogue = {
   'payment.account.copied': 'खाता नंबर कॉपी हो गया',
   'payment.account.qrAlt': 'भरी गई राशि के लिए प्रॉम्प्टपे क्यूआर कोड',
   'payment.account.qrHint': 'अपने बैंकिंग ऐप से स्कैन कीजिए — राशि खुद भर जाएगी',
+  'payment.account.none':
+    'अभी तक कोई प्राप्तकर्ता बैंक खाता सेट नहीं किया गया है। कृपया भुगतान विवरण के लिए सेल्स टीम से संपर्क कीजिए।',
   'payment.form.legend': 'स्लिप जोड़ें',
   'payment.form.image': 'स्लिप की फ़ोटो',
   'payment.form.imageHint': 'अपने बैंकिंग ऐप का स्क्रीनशॉट भी चलेगा। अधिकतम 8 MB.',

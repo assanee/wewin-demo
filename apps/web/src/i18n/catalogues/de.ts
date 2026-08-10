@@ -550,6 +550,8 @@ export const de: PartialUiCatalogue = {
   'payment.account.qrAlt': 'PromptPay-QR-Code für den eingegebenen Betrag',
   'payment.account.qrHint':
     'Mit Ihrer Banking-App scannen — der Betrag wird automatisch eingetragen',
+  'payment.account.none':
+    'Es wurde noch kein Empfangskonto eingerichtet. Bitte wenden Sie sich für die Zahlungsdetails an unser Vertriebsteam.',
   'payment.form.legend': 'Beleg anhängen',
   'payment.form.image': 'Foto des Belegs',
   'payment.form.imageHint': 'Ein Screenshot aus Ihrer Banking-App reicht. Bis zu 8 MB.',

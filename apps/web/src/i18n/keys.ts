@@ -488,6 +488,8 @@ export interface UiParamsByKey {
   'payment.account.copied': Plain;
   'payment.account.qrAlt': Plain;
   'payment.account.qrHint': Plain;
+  /** Shown in place of the picker when `accounts` is empty — nothing to select and nowhere to pay. */
+  'payment.account.none': Plain;
   'payment.form.legend': Plain;
   'payment.form.image': Plain;
   'payment.form.imageHint': Plain;

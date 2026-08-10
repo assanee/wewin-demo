@@ -509,6 +509,8 @@ export const en: PartialUiCatalogue = {
   'payment.account.copied': 'Account number copied',
   'payment.account.qrAlt': 'PromptPay QR code for the amount entered',
   'payment.account.qrHint': 'Scan with your banking app — the amount is filled in for you',
+  'payment.account.none':
+    'No receiving account has been set up yet. Please contact the sales team for payment details.',
   'payment.form.legend': 'Attach the slip',
   'payment.form.image': 'Photo of the slip',
   'payment.form.imageHint': 'A screenshot from your banking app is fine. Up to 8 MB.',

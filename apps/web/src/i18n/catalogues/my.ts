@@ -507,6 +507,8 @@ export const my: PartialUiCatalogue = {
   'payment.account.copied': 'ဘဏ်အကောင့်နံပါတ် ကူးပြီးပါပြီ',
   'payment.account.qrAlt': 'ထည့်ထားသောပမာဏအတွက် PromptPay QR ကုဒ်',
   'payment.account.qrHint': 'သင့်ဘဏ်အက်ပ်ဖြင့် စကင်ဖတ်ပါ — ပမာဏကို အလိုအလျောက် ဖြည့်ပေးပါမည်',
+  'payment.account.none':
+    'ငွေလက်ခံရန် ဘဏ်အကောင့် မသတ်မှတ်ရသေးပါ။ ငွေပေးချေမှုအချက်အလက်များအတွက် အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
   'payment.form.legend': 'ငွေလွှဲပြေစာ တွဲပို့ရန်',
   'payment.form.image': 'ငွေလွှဲပြေစာဓာတ်ပုံ',
   'payment.form.imageHint': 'သင့်ဘဏ်အက်ပ်မှ စကရင်ရှော့လည်း ရပါသည်။ 8 MB အထိ။',

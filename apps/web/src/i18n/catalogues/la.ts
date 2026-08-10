@@ -493,6 +493,8 @@ export const la: PartialUiCatalogue = {
   'payment.account.copied': 'ສຳເນົາເລກບັນຊີແລ້ວ',
   'payment.account.qrAlt': 'QR ໂຄດ PromptPay ສຳລັບຍອດທີ່ປ້ອນໄວ້',
   'payment.account.qrHint': 'ສະແກນດ້ວຍແອັບທະນາຄານ — ຍອດຈະຖືກປ້ອນໃຫ້ອັດຕະໂນມັດ',
+  'payment.account.none':
+    'ຍັງບໍ່ໄດ້ຕັ້ງຄ່າບັນຊີຮັບເງິນ. ກະລຸນາຕິດຕໍ່ທີມຂາຍເພື່ອຂໍຂໍ້ມູນການຊຳລະເງິນ.',
   'payment.form.legend': 'ແນບສະລິບ',
   'payment.form.image': 'ຮູບສະລິບ',
   'payment.form.imageHint': 'ຖ່າຍຈາກແອັບທະນາຄານກໍ່ໄດ້. ຂະໜາດຮູບບໍ່ເກີນ 8 MB.',

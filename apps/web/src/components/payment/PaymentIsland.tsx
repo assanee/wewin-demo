@@ -339,6 +339,15 @@ function PaymentForOrder({
 
       {settled ? (
         <p className="border border-line bg-panel-2 p-3 text-small text-chalk">{t('payment.settled')}</p>
+      ) : data.accounts.length === 0 ? (
+        /*
+         * ⚠️ No accounts, no picker, no form. `0027_organisation.sql` seeds no bank accounts
+         * at all, so a fresh database reaches this on every order — a legend over an empty
+         * box, explaining nothing, was what shipped before this. `SlipForm` (and its submit
+         * button) is not rendered at all in this branch: there is nowhere for the money to
+         * go, so the control that would send it is unreachable rather than merely disabled.
+         */
+        <p className="border border-line bg-panel-2 p-3 text-small text-chalk">{t('payment.account.none')}</p>
       ) : (
         <>
           <AccountPicker

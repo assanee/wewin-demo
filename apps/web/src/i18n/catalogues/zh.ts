@@ -467,6 +467,7 @@ export const zh: PartialUiCatalogue = {
   'payment.account.copied': '账号已复制',
   'payment.account.qrAlt': '对应所填金额的 PromptPay 二维码',
   'payment.account.qrHint': '用银行 App 扫描——金额会自动填入',
+  'payment.account.none': '尚未设置收款账户，请联系销售团队获取付款方式。',
   'payment.form.legend': '上传付款凭证',
   'payment.form.image': '凭证照片',
   'payment.form.imageHint': '银行 App 的截图即可，不超过 8 MB。',

@@ -509,6 +509,8 @@ export const vi: PartialUiCatalogue = {
   'payment.account.copied': 'Đã sao chép số tài khoản',
   'payment.account.qrAlt': 'Mã QR PromptPay cho số tiền đã nhập',
   'payment.account.qrHint': 'Quét bằng ứng dụng ngân hàng của bạn — số tiền sẽ được điền sẵn',
+  'payment.account.none':
+    'Chưa có tài khoản nhận tiền nào được thiết lập. Vui lòng liên hệ bộ phận kinh doanh để biết thông tin thanh toán.',
   'payment.form.legend': 'Đính kèm biên nhận chuyển khoản',
   'payment.form.image': 'Ảnh biên nhận',
   'payment.form.imageHint': 'Ảnh chụp màn hình từ ứng dụng ngân hàng cũng được. Tối đa 8 MB.',

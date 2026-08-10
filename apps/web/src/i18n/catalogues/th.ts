@@ -477,6 +477,7 @@ export const th: UiCatalogue = {
   'payment.account.copied': 'คัดลอกเลขบัญชีแล้ว',
   'payment.account.qrAlt': 'คิวอาร์โค้ดพร้อมเพย์สำหรับยอดที่กรอกไว้',
   'payment.account.qrHint': 'สแกนด้วยแอปธนาคาร — จำนวนเงินจะถูกกรอกให้อัตโนมัติ',
+  'payment.account.none': 'ยังไม่ได้ตั้งค่าบัญชีรับเงิน กรุณาติดต่อทีมขายเพื่อขอช่องทางชำระเงิน',
   'payment.form.legend': 'แนบสลิป',
   'payment.form.image': 'รูปสลิป',
   'payment.form.imageHint': 'ถ่ายจากแอปธนาคารได้เลย ไฟล์ไม่เกิน 8 MB',
