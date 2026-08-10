@@ -11,6 +11,9 @@ import {
   rateField,
   readRateBp,
   taxCountryChangedFields,
+  taxCountryCreateFormErrors,
+  taxCountryCreateFormReady,
+  taxCountryCreateRequest,
   taxCountryFormErrors,
   taxCountryFormReady,
   taxCountryPatchRequest,
@@ -135,6 +138,74 @@ describe('taxCountryFormErrors and taxCountryFormReady', () => {
   });
 });
 
+describe('taxCountryCreateFormErrors and taxCountryCreateFormReady — code added on top', () => {
+  const VALID = {
+    code: 'sg',
+    nameTh: 'สิงคโปร์',
+    ratePercent: '9',
+    treatment: 'standard',
+    pricesIncludeTax: true,
+  };
+
+  it('accepts a well-shaped create form, lower-case code and all', () => {
+    expect(taxCountryCreateFormErrors(VALID)).toEqual({});
+    expect(taxCountryCreateFormReady(VALID)).toBe(true);
+  });
+
+  it('never reports a merely-empty code as an error — required lives in Ready, same as name/rate', () => {
+    expect(taxCountryCreateFormErrors({ ...VALID, code: '' })).toEqual({});
+    expect(taxCountryCreateFormReady({ ...VALID, code: '' })).toBe(false);
+  });
+
+  it.each([
+    ['three letters', 'sgp'],
+    ['a digit', 's1'],
+    ['one letter', 's'],
+  ])('refuses a code shaped wrong: %s', (_why, code) => {
+    expect(taxCountryCreateFormErrors({ ...VALID, code }).code).toBeDefined();
+    expect(taxCountryCreateFormReady({ ...VALID, code })).toBe(false);
+  });
+
+  it('still inherits the shared rate-range check', () => {
+    expect(taxCountryCreateFormErrors({ ...VALID, ratePercent: '200' }).ratePercent).toBeDefined();
+    expect(taxCountryCreateFormReady({ ...VALID, ratePercent: '200' })).toBe(false);
+  });
+});
+
+describe('taxCountryCreateRequest', () => {
+  it('upper-cases the code and trims the name', () => {
+    const request = taxCountryCreateRequest({
+      code: 'sg',
+      nameTh: '  สิงคโปร์  ',
+      ratePercent: '9',
+      treatment: 'standard',
+      pricesIncludeTax: true,
+    });
+    expect(request.code).toBe('SG');
+    expect(request.nameTh).toBe('สิงคโปร์');
+    expect(request.rateBp).toBe(900);
+    expect(request.pricesIncludeTax).toBe(true);
+  });
+
+  it('applies the same treatment/rate guard a create as an edit — the likeliest place to hit the 409', () => {
+    /*
+     * ⭐ A fresh row with `zero_rated` picked and a rate still sitting in the box from before
+     * it was disabled is exactly the shape `tax_countries_rate_matches_treatment` exists to
+     * refuse — more likely on a create, where the box starts blank and a person may type the
+     * rate before touching the treatment picker at all.
+     */
+    const request = taxCountryCreateRequest({
+      code: 'vn',
+      nameTh: 'เวียดนาม',
+      ratePercent: '10',
+      treatment: 'zero_rated',
+      pricesIncludeTax: false,
+    });
+    expect(request.rateBp).toBe(0);
+    expect(request.treatment).toBe('zero_rated');
+  });
+});
+
 describe('fieldsFromTaxCountry — the dual of taxCountryPatchRequest', () => {
   it('reads a loaded row into editable fields', () => {
     const country: TaxCountryWire = {
@@ -225,26 +296,30 @@ describe('TaxCountriesSection — the permission gate', () => {
    * "if it cannot accept its rows as a prop, give it one" holds: `state` carries the rows.
    *
    * The word checked is `แก้ไข` (the Pencil edit button) rather than the sample's `บันทึก`
-   * (Save) — this section has no create flow (see `tax-countries.tsx`'s header) and its Save
-   * button lives inside a dialog that only mounts once a click opens it, so `บันทึก` would be
-   * absent from a closed dialog either way and would not actually exercise the gate.
+   * (Save) — this section's Save button lives inside a dialog that only mounts once a click
+   * opens it (`TaxCountryDialog`, in `./tax-country-dialog`), so `บันทึก` would be absent from
+   * a closed dialog for a reader *and* a writer alike and would not actually exercise the
+   * gate. `เพิ่มประเทศ` (the add button) is checked directly instead, since it renders inline
+   * in the card header rather than inside a dialog.
    */
-  it('shows a reader the row but no edit control', () => {
+  it('shows a reader the row but no edit, withdraw or add control', () => {
     const markup = renderToStaticMarkup(
       createElement(TaxCountriesSection, { state, editable: false, onChanged: noop }),
     );
     expect(markup).toContain('ไทย');
     expect(markup).not.toContain('แก้ไข');
     expect(markup).not.toContain('ปิดใช้งาน');
+    expect(markup).not.toContain('เพิ่มประเทศ');
   });
 
-  it('shows a write-permitted staff member the edit and withdraw controls', () => {
+  it('shows a write-permitted staff member the add, edit and withdraw controls', () => {
     const markup = renderToStaticMarkup(
       createElement(TaxCountriesSection, { state, editable: true, onChanged: noop }),
     );
     expect(markup).toContain('ไทย');
     expect(markup).toContain('แก้ไข');
     expect(markup).toContain('ปิดใช้งาน');
+    expect(markup).toContain('เพิ่มประเทศ');
   });
 
   it('shows the history control to a reader too — GET .../changes only needs organisation.read', () => {

@@ -1,4 +1,9 @@
-import { TAX_TREATMENTS_WIRE, type TaxCountryPatchRequest, type TaxCountryWire } from '@wewin/contract/tax';
+import {
+  TAX_TREATMENTS_WIRE,
+  type TaxCountryCreateRequest,
+  type TaxCountryPatchRequest,
+  type TaxCountryWire,
+} from '@wewin/contract/tax';
 
 import type { SelectFieldOption } from '@/components/products/form-field';
 import { vatLabelTh } from '@/components/quotes/quote-alerts';
@@ -160,6 +165,64 @@ export function fieldsFromTaxCountry(country: TaxCountryWire): TaxCountryFields 
     ratePercent: rateField(country.rateBp),
     treatment: country.treatment,
     pricesIncludeTax: country.pricesIncludeTax,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Creating a destination — everything the edit form has, plus `code`.
+ *
+ * ⚠️ **A typo in `code` is permanent.** It is the primary key, an ISO 3166-1 alpha-2 pair,
+ * and `tax_countries_block_delete` refuses a DELETE unconditionally — the only way to retire
+ * a row, mistyped or not, is `isActive: false` (`setTaxCountryAvailability`), which leaves it
+ * in this table, dimmed, for ever. `bank_accounts` carries the identical shape (no delete
+ * route either, only the same availability flag) and `BankAccountDialog` still uses a plain
+ * validated text input with no extra confirmation step for creating one — I follow that
+ * precedent here rather than inventing a type-twice or an "are you sure" gate, because the
+ * *mechanism* of the mistake and its remedy are identical to the bank-account case that
+ * precedent already covers. What is different is who sees the consequence: a stray bank
+ * account is invisible to a customer, while a stray tax-country code is a row `GET
+ * /destinations` would show in the storefront's picker the moment somebody switches it on —
+ * so `TaxCountryDialog`'s create mode adds an explicit sentence naming that consequence next
+ * to the field, rather than a structurally different control for what is mechanically the
+ * same risk.
+ * ------------------------------------------------------------------ */
+
+export interface TaxCountryCreateFields extends TaxCountryFields {
+  readonly code: string;
+}
+
+export interface TaxCountryCreateFormErrors extends TaxCountryFormErrors {
+  readonly code?: string;
+}
+
+/** ISO 3166-1 alpha-2 — mirrors `taxCountryCreateSchema`'s own `code` shape exactly. */
+const COUNTRY_CODE = /^[A-Z]{2}$/u;
+
+export function taxCountryCreateFormErrors(fields: TaxCountryCreateFields): TaxCountryCreateFormErrors {
+  const errors: Record<string, string> = { ...taxCountryFormErrors(fields) };
+
+  const code = fields.code.trim().toUpperCase();
+  if (code !== '' && !COUNTRY_CODE.test(code)) {
+    errors['code'] = 'รหัสประเทศเป็นตัวอักษร A-Z สองตัวตามมาตรฐาน ISO 3166-1 เช่น SG, VN';
+  }
+
+  return errors;
+}
+
+export function taxCountryCreateFormReady(fields: TaxCountryCreateFields): boolean {
+  return COUNTRY_CODE.test(fields.code.trim().toUpperCase()) && taxCountryFormReady(fields);
+}
+
+/** Called only once `taxCountryCreateFormErrors` has come back empty. */
+export function taxCountryCreateRequest(fields: TaxCountryCreateFields): TaxCountryCreateRequest {
+  const rateBp = rateEditable(fields.treatment) ? readRateBp(fields.ratePercent) ?? 0 : 0;
+
+  return {
+    code: fields.code.trim().toUpperCase(),
+    nameTh: fields.nameTh.trim(),
+    rateBp,
+    treatment: fields.treatment as TaxCountryCreateRequest['treatment'],
+    pricesIncludeTax: fields.pricesIncludeTax,
   };
 }
 

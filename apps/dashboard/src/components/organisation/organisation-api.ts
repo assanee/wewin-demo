@@ -12,6 +12,7 @@ import type {
 import {
   TAX_TREATMENTS_WIRE,
   type TaxCountryAvailabilityRequest,
+  type TaxCountryCreateRequest,
   type TaxCountryPatchRequest,
   type TaxCountryWire,
 } from '@wewin/contract/tax';
@@ -42,11 +43,18 @@ import { apiJson } from '@/lib/api/client';
  * `listTaxCountries` reads the admin's own read (Task 5): active *and* withdrawn rows, code
  * and everything the row carries, so the table below can render a withdrawn destination dimmed
  * rather than missing — the same choice `listBankAccounts` makes for retired accounts.
- * `createTaxCountry` is deliberately not wired here: `0029_tax_countries.sql` seeds Thailand
- * "and only Thailand" — "a foreign rate is a tax registration somebody has to actually hold —
- * seeding one would put an unverified number where it looks verified" — so a new destination
- * is not a form a staff member fills in from this screen. The four calls below are read, edit,
- * withdraw/restore, and history — the ones `TaxCountriesSection` actually has a control for.
+ *
+ * ⚠️ **`createTaxCountry` is wired, on purpose, and it was nearly left out.** `0029_tax_
+ * countries.sql`'s seed comment says Thailand is seeded alone because "a foreign rate is a tax
+ * registration somebody has to actually hold — seeding one would put an unverified number
+ * where it looks verified", and the migration itself only seeds Thailand — but its *own*
+ * banner comment finishes the thought: destinations are added "deliberately, only for
+ * destinations somebody entered on purpose. Nothing here seeds a foreign rate." Not seeding a
+ * rate and refusing to let anyone enter one are different decisions; the second would make
+ * `taxCountryCreateSchema` (Task 2) and `POST tax-countries` (Task 5, tested) permanently
+ * unreachable from the one screen that could call them, and would leave the storefront's
+ * destination picker (Task 13) with exactly one option forever. The five calls below are
+ * read, create, edit, withdraw/restore, and history.
  */
 
 function asObject(input: unknown, what: string): Record<string, unknown> {
@@ -301,6 +309,10 @@ export const setBankAccountAvailability = (id: string, isActive: boolean): Promi
     decodeBankAccount,
     withBody('PUT', { isActive } satisfies AvailabilityRequestWire),
   );
+
+/** `@HttpCode(201)` on the server; `apiJson` does not distinguish 200 from 201, both are `response.ok`. */
+export const createTaxCountry = (request: TaxCountryCreateRequest): Promise<TaxCountryWire> =>
+  apiJson('/admin/organisation/tax-countries', decodeTaxCountry, withBody('POST', request));
 
 export const patchTaxCountry = (
   code: string,
