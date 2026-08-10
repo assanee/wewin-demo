@@ -214,6 +214,7 @@ export const TH: Catalogue = {
   /* ── Organisation ────────────────────────────────────────────────────────── */
   'error.organisation.account_missing': 'ไม่พบบัญชีธนาคารรายการนี้',
   'error.organisation.profile_missing': 'ไม่พบข้อมูลบริษัท',
+  'error.tax_country.missing': 'ไม่พบประเทศปลายทางรายการนี้',
 
   /* ── Staleness ───────────────────────────────────────────────────────────── */
   /*

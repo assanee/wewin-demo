@@ -308,6 +308,8 @@ const PARAM_SHAPES = {
    */
   'error.organisation.account_missing': {},
   'error.organisation.profile_missing': {},
+  /** The same shape as the two above, for the tax-country row a PATCH or availability write names. */
+  'error.tax_country.missing': {},
 
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},
