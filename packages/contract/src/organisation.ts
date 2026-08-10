@@ -44,6 +44,8 @@ export const organisationProfilePutSchema = z.strictObject({
   taxId: z.string().regex(/^[0-9]{13}$/u, 'เลขผู้เสียภาษี 13 หลัก').nullable().optional(),
   phone: z.string().trim().min(1).max(60),
   email: z.string().email().max(320).nullable().optional(),
+  /** Basis points of the grand total due before production may start. 10 000 is payment in full. */
+  depositBp: z.int().min(1).max(10_000).optional(),
 });
 
 export type BankAccountCreateRequestWire = z.infer<typeof bankAccountCreateSchema>;
@@ -70,6 +72,7 @@ export interface OrganisationProfileWire {
   readonly taxId: string | null;
   readonly phone: string;
   readonly email: string | null;
+  readonly depositBp: number;
   readonly updatedAt: string;
 }
 

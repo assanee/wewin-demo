@@ -68,6 +68,7 @@ export function decodeProfile(input: unknown): OrganisationProfileWire {
     taxId: nullableStr(row, 'taxId', 'organisation profile'),
     phone: str(row, 'phone', 'organisation profile'),
     email: nullableStr(row, 'email', 'organisation profile'),
+    depositBp: num(row, 'depositBp', 'organisation profile'),
     updatedAt: str(row, 'updatedAt', 'organisation profile'),
   };
 }

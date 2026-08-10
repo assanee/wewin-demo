@@ -1,17 +1,10 @@
-import { randomUUID } from 'node:crypto';
-
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
-import { seedCatalog } from '@wewin/db/seed';
-import { provisionTestDatabase } from '@wewin/db/test-database';
-import { users } from '@wewin/db/schema';
+import type { Database } from '@wewin/db/client';
 
-import { PG_POOL } from '../../src/database/database.tokens';
 import { TaxCountryRepository } from '../../src/organisation/tax-country.repository';
 import { TaxCountryService } from '../../src/organisation/tax-country.service';
-import { bootApp, testEnv, type BootedApp } from '../support/app';
-import { TEST_DATABASE_NAME } from '../test-db';
+import { createPgHarness } from '../support/pg-harness';
 
 /**
  * `TaxCountryService` and `TaxCountryRepository` against a real Postgres.
@@ -24,33 +17,22 @@ import { TEST_DATABASE_NAME } from '../test-db';
  *
  * ── Why `harness()` provisions a fresh database on every call ────────────────────────────
  *
- * `organisation.pg.test.ts` boots one app in `beforeAll` and shares it across every test in
- * the file, because each test there creates its *own* fresh bank account — there is no
- * singleton row to collide over. This file cannot do that: `TH` is the one row migration
- * 0029 seeds, `tax_countries_block_delete` refuses to let anything delete it, and
- * `tax_country_changes_append_only` refuses to let anything delete or edit a history row
+ * `organisation.pg.test.ts`'s bank-account describe boots one app in `beforeAll` and shares it
+ * across every test in that block, because each test there creates its *own* fresh bank
+ * account — there is no singleton row to collide over. This file cannot do that: `TH` is the
+ * one row migration 0029 seeds, `tax_countries_block_delete` refuses to let anything delete it,
+ * and `tax_country_changes_append_only` refuses to let anything delete or edit a history row
  * either. Every test below asserts an *absolute* count of TH's history (0, 1, 2 rows), and
- * that assertion is only meaningful against a database nothing earlier in the run has
- * touched.
+ * that assertion is only meaningful against a database nothing earlier in the run has touched.
  *
- * So `harness()` re-provisions `TEST_DATABASE_NAME` — drop, create, migrate, same as
- * `globalSetup.ts` does once for the whole run — before booting a fresh app on top of it.
- * That also gives Step 6's concurrency test genuine concurrency for free: the `service` it
- * returns is backed by that call's own connection pool (`DATABASE_POOL_MAX` defaults to 10),
- * so two `Promise.all`-ed `patch` calls run on two separate pooled connections rather than
- * sharing one that would serialise them and prove nothing.
- *
- * ⚠️ `provisionTestDatabase` alone is not enough when this file runs as part of the *whole*
- * suite rather than filtered on its own: `globalSetup.ts` also runs `seedCatalog` once, and
- * suites elsewhere (`reviews.pg.test.ts`, `authority.pg.test.ts`, `refunds.pg.test.ts`, …) read
- * that catalogue in their own `beforeAll`. Vitest does not order test files alphabetically and
- * this file's five re-provisions run mid-suite, so leaving the catalogue empty after any of
- * them would strand every file that happens to run later — confirmed by running the whole
- * `apps/api` suite once without the `seedCatalog` call below: 8 files failed with "no
- * published product with a measurement to order", none of them anything this task touched.
- * Re-seeding after every provision (the same pairing `globalSetup.ts` and
- * `tests/support/reseed.ts` both use) leaves the database exactly as `globalSetup` would have,
- * so this file is safe to run standalone (`vitest run tax-country`) or inside a full run.
+ * `createPgHarness` (`tests/support/pg-harness.ts`) does the actual provisioning — drop,
+ * create, migrate, re-seed, boot a fresh app, pre-warm its pool — because Task 4's profile-
+ * history suite in `organisation.pg.test.ts` needs the identical dance for `organisation_profile`'s
+ * own singleton row and its own append-only history table, and the reasoning for every step of
+ * it (why re-provision, why re-seed, why pre-warm) does not change between the two tables.
+ * `harness()` below is a thin wrapper that resolves this module's own two services from the
+ * generic `{ app, actor, db }` the shared handle returns — every existing call site keeps its
+ * `{ service, repository, actor, db }` shape unchanged.
  *
  * Skipped, not failed, without a database.
  */
@@ -66,15 +48,7 @@ interface Harness {
 }
 
 describeWithPg('the tax-country module against Postgres', () => {
-  let opened: { readonly app: BootedApp; readonly pool: Pool } | undefined;
-
-  const closeOpened = async (): Promise<void> => {
-    const current = opened;
-    opened = undefined;
-    if (current === undefined) return;
-    await current.app.close();
-    await current.pool.end();
-  };
+  const base = createPgHarness(url ?? '');
 
   /**
    * Return shape is fixed on purpose: `{ service, repository, actor, db }`. Task 5 reuses this
@@ -82,55 +56,16 @@ describeWithPg('the tax-country module against Postgres', () => {
    * `actor.id` (not `actor.userId`) is what every call site below passes as the acting user.
    */
   const harness = async (): Promise<Harness> => {
-    await closeOpened();
-    await provisionTestDatabase(url ?? '', TEST_DATABASE_NAME);
-
-    const pool = createPool(url ?? '');
-    const db = createDatabase(pool);
-    // Restore the catalogue every provision, not only migrations — see the file header above.
-    await seedCatalog(db);
-
-    const app = await bootApp(testEnv({ DATABASE_URL: url ?? '' }));
-    opened = { app, pool };
-
-    const [user] = await db
-      .insert(users)
-      .values({ displayName: `tax country probe (${randomUUID().slice(0, 8)})` })
-      .returning({ id: users.id });
-    if (!user) throw new Error('fixture insert returned nothing');
-
-    /*
-     * ⚠️ Pre-warm the app's own pool with a few already-connected, idle clients before handing
-     * the service back.
-     *
-     * Without this, Step 6's concurrency test never actually raced, even with the row lock
-     * removed — confirmed by instrumenting both `patch()` calls with timestamps. `pg-pool`'s
-     * `connect()` hands out an *idle* client almost instantly, but opens a *new* one through a
-     * real TCP handshake, and it only takes the fast path once at least one idle client already
-     * exists. On a brand-new pool, two `connect()` calls issued "at once" both take the
-     * synchronous `newClient()` path and genuinely overlap — but the moment exactly one idle
-     * client exists (e.g. after the fixture insert above touches a *different* pool, or after
-     * any earlier query on this one), the next two `connect()` calls stop being symmetric: the
-     * first grabs the idle client and can finish its whole transaction in well under a
-     * millisecond, while the second is still mid-handshake — so it always reads the *already
-     * committed* row instead of the stale one, and a contiguity assertion cannot tell a locked
-     * pre-image from an unlocked one. Warming several idle clients up front removes that bias:
-     * every `connect()` in the test below takes the fast, symmetric path, and the two
-     * transactions overlap on their SQL alone, which is what the lock is actually for.
-     */
-    const appPool = app.app.get<Pool>(PG_POOL);
-    const warm = await Promise.all([appPool.connect(), appPool.connect(), appPool.connect()]);
-    warm.forEach((client) => client.release());
-
+    const { app, actor, db } = await base.harness();
     return {
       service: app.app.get(TaxCountryService),
       repository: app.app.get(TaxCountryRepository),
-      actor: { id: user.id },
+      actor,
       db,
     };
   };
 
-  afterAll(closeOpened);
+  afterAll(base.closeOpened);
 
   describe('tax country writes', () => {
     it('records a change with the previous values in `before`', async () => {

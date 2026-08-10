@@ -17,6 +17,7 @@ const PROFILE = {
   taxId: '1234567890123',
   phone: '021234567',
   email: null,
+  depositBp: 10_000,
   updatedAt: '2026-08-09T10:00:00.000Z',
 };
 

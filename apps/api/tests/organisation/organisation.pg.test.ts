@@ -11,7 +11,9 @@ import { parseEnv } from '../../src/config/env';
 import type { PermissionCode } from '../../src/rbac';
 import { encodeAccountPublic } from '../../src/organisation/encode';
 import { OrganisationRepository } from '../../src/organisation/organisation.repository';
+import { OrganisationService } from '../../src/organisation/organisation.service';
 import { bootApp, type BootedApp } from '../support/app';
+import { createPgHarness } from '../support/pg-harness';
 import { waitForBlockedBackend } from '../orders/scope/support/fixtures';
 
 /**
@@ -347,5 +349,104 @@ describeWithPg('the organisation module against Postgres', () => {
       const rows = await historyRows(id);
       expect(rows).toHaveLength(1);
     });
+  });
+});
+
+/* ---------------------------------------------------------------- *
+ * The profile's own history — organisation_profile_changes (Task 4)
+ * ---------------------------------------------------------------- */
+
+/**
+ * `OrganisationService.putProfile` and its history, against a real Postgres.
+ *
+ * A sibling top-level `describeWithPg`, not a `describe` nested inside the block above:
+ * `organisation_profile` is a singleton row (`id = 1`) that `organisation_profile_block_delete`
+ * refuses to let anything remove, exactly like `tax_countries`' `TH` row in
+ * `tax-country.pg.test.ts`, and every test below asserts an *absolute* count of its history (0,
+ * 1, 2 rows) — meaningful only against a database nothing earlier in the run has touched. The
+ * block above shares one `app`/`pool` across every test in it for the opposite reason: each of
+ * *those* tests creates its own fresh bank account, so there is no singleton to collide over.
+ *
+ * Sibling rather than nested matters for a second reason: `createPgHarness`'s `harness()` drops
+ * and recreates the whole test database (`provisionTestDatabase`, `DROP DATABASE … WITH
+ * (FORCE)`), which terminates *any* connection still open on it — including the block above's
+ * own `pool`, had its tests still been running. Vitest runs sibling `describe` blocks in
+ * declaration order, each one's `afterAll` completing before the next one's `beforeAll` starts,
+ * so by the time this block's first `harness()` call provisions, the block above has already
+ * closed its `pool` in its own `afterAll` — there is never a second live connection for `WITH
+ * (FORCE)` to terminate out from under a still-running test.
+ */
+describeWithPg('the profile, and its history', () => {
+  const base = createPgHarness(url ?? '');
+  afterAll(base.closeOpened);
+
+  const harness = async () => {
+    const { app, actor, db } = await base.harness();
+    return {
+      service: app.app.get(OrganisationService),
+      repository: app.app.get(OrganisationRepository),
+      actor,
+      db,
+    };
+  };
+
+  /**
+   * `organisationProfilePutSchema` requires `legalNameTh`, `addressTh` and `phone` on every
+   * PUT — unlike `legalNameEn`/`addressEn`/`taxId`/`email`/`depositBp`, none of the three is
+   * `.optional()`. Calling `putProfile` directly (as every test below does, bypassing the HTTP
+   * body pipe on purpose) still has to satisfy that same TypeScript type, so a depositBp-only
+   * edit reads the three off the row currently on disk rather than guessing or hardcoding the
+   * seed.
+   */
+  const currentCore = async (repository: OrganisationRepository) => {
+    const [row] = await repository.profile();
+    if (!row) throw new Error('fixture missing: organisation_profile has no row');
+    return { legalNameTh: row.legalNameTh, addressTh: row.addressTh, phone: row.phone };
+  };
+
+  it('records a profile change, before and after', async () => {
+    const { service, repository, actor } = await harness();
+    const core = await currentCore(repository);
+
+    await service.putProfile(actor.id, { ...core, depositBp: 3000 });
+    const [entry] = await service.profileChanges();
+
+    expect((entry?.before as { depositBp: number } | null)?.depositBp).toBe(10_000);
+    expect((entry?.after as { depositBp: number })?.depositBp).toBe(3_000);
+  });
+
+  it('refuses a deposit of zero at the database, not at submit', async () => {
+    const { service, repository, actor } = await harness();
+    const core = await currentCore(repository);
+
+    // Bypasses `organisationProfilePutSchema`'s own `z.int().min(1)` on purpose — the point is
+    // that `organisation_profile_deposit_in_range` (migration 0029) refuses it too, so a value
+    // that somehow got past validation is still refused rather than silently written.
+    await expect(service.putProfile(actor.id, { ...core, depositBp: 0 })).rejects.toThrow();
+    expect(await service.profileChanges()).toHaveLength(0);
+  });
+
+  /**
+   * `lockProfile`'s `FOR UPDATE`, proved rather than assumed. Mutation-tested against the
+   * pre-fix shape — `lockProfile` reading through a plain, unlocked `.select()` instead of
+   * `.for('update')` — and confirmed red: see `task-4-report.md` for the exact run.
+   */
+  it('keeps profile history contiguous under concurrent updates', async () => {
+    const { service, repository, actor } = await harness();
+    const core = await currentCore(repository);
+
+    await Promise.all([
+      service.putProfile(actor.id, { ...core, depositBp: 3000 }),
+      service.putProfile(actor.id, { ...core, depositBp: 5000 }),
+    ]);
+
+    /* Ascending, like `changes()` — see Task 3. Do not reverse: entry 1's `before` must equal
+       entry 0's `after`, and on a reversed array that comparison is backwards and passes for
+       the wrong reason. */
+    const entries = await service.profileChanges();
+    expect(entries).toHaveLength(2);
+    expect((entries[1]?.before as { depositBp: number }).depositBp).toBe(
+      (entries[0]?.after as { depositBp: number }).depositBp,
+    );
   });
 });
