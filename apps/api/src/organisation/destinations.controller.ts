@@ -25,8 +25,8 @@ export class DestinationsController {
   /* The reason is mandatory and the boot-time route audit prints it. */
   @AllowAnonymous('a customer must choose a destination before an order exists')
   @contractVersion()
-  async list(): Promise<DestinationWire[]> {
+  async list(): Promise<{ readonly destinations: readonly DestinationWire[] }> {
     const rows = await this.taxCountries.list(true);
-    return rows.map((row) => ({ code: row.code, nameTh: row.nameTh }));
+    return { destinations: rows.map((row) => ({ code: row.code, nameTh: row.nameTh })) };
   }
 }

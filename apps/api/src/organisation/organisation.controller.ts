@@ -152,18 +152,26 @@ export class OrganisationController {
   /*
    * ── Tax countries ────────────────────────────────────────────────────────────
    *
-   * Bare arrays, not `{ countries: [...] }` / `{ changes: [...] }` wrappers like the bank-
-   * account routes above: `TaxCountryService.list`/`.changes` already return exactly
-   * `TaxCountryWire[]` / `SettingChangeWire[]`, and wrapping them here would be an envelope
-   * this task's interface never asked for.
+   * Wrapped, like every other list-returning GET in this file and everywhere else in
+   * `apps/api/src` (`{ accounts }`, `{ changes }`, `{ products }`, `{ categories }`,
+   * `{ users }`, `{ groups }`, …) — a bare array here would have been the one exception, not
+   * a shape this task's brief actually asked for; its own Files list is silent on envelope
+   * shape and the illustrative `toHaveLength(1)` in its Step-1 sample doesn't decide it either
+   * way. `taxCountries`, not the shorter `countries` a strict parallel to `accounts` (dropping
+   * `bank`/`tax` the way `bank-accounts` drops to `accounts`) would suggest: `bank`/`account`
+   * already carries an unambiguous domain shorthand throughout this file (`accounts()`,
+   * `createAccount()`, …), and there is no equivalent shorthand for "tax country" anywhere in
+   * this codebase — `countries` alone would read as every country, not the configured subset
+   * with a tax policy attached.
    */
 
   @Get('tax-countries')
   @contractVersion()
   @RequirePermissions('organisation.read')
-  async listTaxCountries(): Promise<TaxCountryWire[]> {
+  async listTaxCountries(): Promise<{ readonly taxCountries: readonly TaxCountryWire[] }> {
     // `false`: the admin list shows every destination, active or withdrawn.
-    return this.taxCountries.list(false);
+    const rows = await this.taxCountries.list(false);
+    return { taxCountries: rows };
   }
 
   @Post('tax-countries')
@@ -202,8 +210,11 @@ export class OrganisationController {
   @Get('tax-countries/:code/changes')
   @contractVersion()
   @RequirePermissions('organisation.read')
-  async taxCountryChanges(@Param('code') code: string): Promise<SettingChangeWire[]> {
-    return this.taxCountries.changes(code);
+  async taxCountryChanges(
+    @Param('code') code: string,
+  ): Promise<{ readonly changes: readonly SettingChangeWire[] }> {
+    const rows = await this.taxCountries.changes(code);
+    return { changes: rows };
   }
 }
 

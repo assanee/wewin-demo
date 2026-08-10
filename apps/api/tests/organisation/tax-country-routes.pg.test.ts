@@ -211,15 +211,16 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
    * ---------------------------------------------------------------- */
 
   describe('the admin routes', () => {
-    it('lists every destination — active or withdrawn — as a bare array', async () => {
+    it('lists every destination — active or withdrawn — wrapped in `taxCountries`', async () => {
       const { asAdmin, service, actor } = await harness();
 
       await service.setAvailability('TH', false, actor.id);
 
       const listed = await asAdmin('GET', '/admin/organisation/tax-countries');
       expect(listed.status).toBe(200);
-      expect(listed.body).toHaveLength(1);
-      const [th] = listed.body as { readonly code: string; readonly isActive: boolean }[];
+      const body = listed.body as { readonly taxCountries: readonly { readonly code: string; readonly isActive: boolean }[] };
+      expect(body.taxCountries).toHaveLength(1);
+      const [th] = body.taxCountries;
       expect(th?.code).toBe('TH');
       expect(th?.isActive).toBe(false);
     });
@@ -239,7 +240,9 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
 
       const changes = await asAdmin('GET', '/admin/organisation/tax-countries/SG/changes');
       expect(changes.status).toBe(200);
-      const entries = changes.body as { readonly before: unknown; readonly after: unknown }[];
+      const { changes: entries } = changes.body as {
+        readonly changes: readonly { readonly before: unknown; readonly after: unknown }[];
+      };
       expect(entries).toHaveLength(1);
       expect(entries[0]?.before).toBeNull();
       expect(entries[0]?.after).toMatchObject({ code: 'SG', rateBp: 900 });
@@ -259,7 +262,9 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
       expect(patched.body).toMatchObject({ code: 'TH', rateBp: 800 });
 
       const changes = await asAdmin('GET', '/admin/organisation/tax-countries/TH/changes');
-      const entries = changes.body as { readonly before: unknown; readonly after: unknown }[];
+      const { changes: entries } = changes.body as {
+        readonly changes: readonly { readonly before: unknown; readonly after: unknown }[];
+      };
       expect(entries).toHaveLength(1);
       expect(entries[0]?.before).toMatchObject({ rateBp: 700 });
       expect(entries[0]?.after).toMatchObject({ rateBp: 800 });
@@ -275,7 +280,9 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
       expect(withdrawn.body).toMatchObject({ isActive: false });
 
       const changes = await asAdmin('GET', '/admin/organisation/tax-countries/TH/changes');
-      const entries = changes.body as { readonly before: unknown; readonly after: unknown }[];
+      const { changes: entries } = changes.body as {
+        readonly changes: readonly { readonly before: unknown; readonly after: unknown }[];
+      };
       expect(entries).toHaveLength(1);
       expect(entries[0]?.before).toMatchObject({ isActive: true });
       expect(entries[0]?.after).toMatchObject({ isActive: false });
@@ -289,7 +296,9 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
 
       const changes = await asAdmin('GET', '/admin/organisation/tax-countries/TH/changes');
       expect(changes.status).toBe(200);
-      const entries = changes.body as { readonly before: { readonly rateBp: number } }[];
+      const { changes: entries } = changes.body as {
+        readonly changes: readonly { readonly before: { readonly rateBp: number } }[];
+      };
       expect(entries).toHaveLength(2);
       expect(entries[0]?.before.rateBp).toBe(700);
       expect(entries[1]?.before.rateBp).toBe(800);
@@ -382,10 +391,11 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
 
       const response = await call('GET', '/destinations');
       expect(response.status).toBe(200);
-      expect(response.body).toStrictEqual([{ code: 'TH', nameTh: 'ไทย' }]);
+      expect(response.body).toStrictEqual({ destinations: [{ code: 'TH', nameTh: 'ไทย' }] });
 
       /* Tax policy is not published. A caller with no order learns where we sell, nothing
-         more. */
+         more. Checked against the whole envelope, not just the array inside it — wrapping
+         must not create a second place for a rate or treatment to hide. */
       expect(JSON.stringify(response.body)).not.toMatch(/rateBp|treatment|pricesIncludeTax/u);
     });
 
@@ -396,11 +406,12 @@ describeWithPg('tax-country routes and the public destinations read, against Pos
 
       const publicList = await call('GET', '/destinations');
       expect(publicList.status).toBe(200);
-      expect(publicList.body).toStrictEqual([]);
+      expect(publicList.body).toStrictEqual({ destinations: [] });
 
       const adminList = await asAdmin('GET', '/admin/organisation/tax-countries');
       expect(adminList.status).toBe(200);
-      expect(adminList.body).toHaveLength(1);
+      const { taxCountries } = adminList.body as { readonly taxCountries: readonly unknown[] };
+      expect(taxCountries).toHaveLength(1);
     });
   });
 });
