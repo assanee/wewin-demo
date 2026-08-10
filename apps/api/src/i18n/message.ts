@@ -311,6 +311,20 @@ const PARAM_SHAPES = {
   /** The same shape as the two above, for the tax-country row a PATCH or availability write names. */
   'error.tax_country.missing': {},
 
+  /*
+   * ── Tax-country constraints — src/organisation/pg-errors.ts ────────────────
+   *
+   * Unlike the two keys just above, these three *are* constraint translators — the note there
+   * stopped being true the moment Task 1 added `tax_countries_rate_matches_treatment`. See
+   * `pg-errors.ts` for exactly which of the table's CHECKs are reachable through a validated
+   * body and which are not.
+   */
+  'error.tax_country.duplicate': {},
+  'error.tax_country.code_taken': {},
+  'error.tax_country.name_blank': {},
+  'error.tax_country.rate_treatment_conflict': {},
+  'error.tax_country.check_failed': {},
+
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},
   'error.stale.catalog_while_editing_quote': {},

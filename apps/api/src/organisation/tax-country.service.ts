@@ -12,6 +12,7 @@ import type {
 
 import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
+import { withTranslatedOrganisationErrors } from './pg-errors';
 import { TaxCountryRepository } from './tax-country.repository';
 
 /**
@@ -88,6 +89,12 @@ const encodeChange = (row: {
  * `patch` and `create` return `TaxCountryWire` directly rather than a raw row for the
  * controller to encode — the one deliberate difference from `OrganisationService`, which
  * this brief's interface list states outright rather than leaving to convention.
+ *
+ * ⚠️ Both writes are also wrapped in `withTranslatedOrganisationErrors` — see `pg-errors.ts`.
+ * A body that validates cleanly against Task 2's zod schemas can still trip
+ * `tax_countries_rate_matches_treatment`, `tax_countries_name_says_something` or the primary
+ * key, and without translation each of those would reach the caller as a raw
+ * `DrizzleQueryError`: a 500 plus a production alert for something a client did on purpose.
  */
 @Injectable()
 export class TaxCountryService {
@@ -99,73 +106,86 @@ export class TaxCountryService {
   }
 
   async create(body: TaxCountryCreateRequest, userId: string): Promise<TaxCountryWire> {
-    return this.repository.transaction(async (tx) => {
-      const [created] = await tx
-        .insert(taxCountries)
-        .values({ ...body, updatedByUserId: userId })
-        .returning();
+    return withTranslatedOrganisationErrors(() =>
+      this.repository.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(taxCountries)
+          .values({ ...body, updatedByUserId: userId })
+          .returning();
 
-      /*
-       * ⚠️ Same transaction as the write, not a follow-up — see the class comment. A history
-       * row that can be skipped is a history somebody skips.
-       *
-       * `changedAt: clock_timestamp()`, not the column's own `defaultNow()` — see the note on
-       * `patch`'s insert below for why the default is the wrong clock for this table.
-       */
-      await tx.insert(taxCountryChanges).values({
-        taxCountryCode: created!.code,
-        changedByUserId: userId,
-        changedAt: sql`clock_timestamp()`,
-        before: null,
-        after: snapshot(created!),
-      });
+        /*
+         * ⚠️ Same transaction as the write, not a follow-up — see the class comment. A history
+         * row that can be skipped is a history somebody skips.
+         *
+         * `changedAt: clock_timestamp()`, not the column's own `defaultNow()` — see the note on
+         * `patch`'s insert below for why the default is the wrong clock for this table.
+         */
+        await tx.insert(taxCountryChanges).values({
+          taxCountryCode: created!.code,
+          changedByUserId: userId,
+          changedAt: sql`clock_timestamp()`,
+          before: null,
+          after: snapshot(created!),
+        });
 
-      return wire(created!);
-    });
+        return wire(created!);
+      }),
+    );
   }
 
   async patch(code: string, body: TaxCountryPatchRequest, userId: string): Promise<TaxCountryWire> {
-    return this.repository.transaction(async (tx) => {
-      /*
-       * ⚠️ Locked, not a plain read. Two PATCHes on the same country can otherwise race under
-       * READ COMMITTED: each reads the pre-image before the other's write commits, so both
-       * compute a `before` off the same stale row and the resulting history chain no longer
-       * has entry N's `before` equal to entry N−1's `after` — see `lockCountry`.
-       */
-      const [before] = await this.repository.lockCountry(code, tx);
-      if (before === undefined) throw AppError.notFound(message('error.tax_country.missing'));
+    return withTranslatedOrganisationErrors(() =>
+      this.repository.transaction(async (tx) => {
+        /*
+         * ⚠️ Locked, not a plain read. Two PATCHes on the same country can otherwise race under
+         * READ COMMITTED: each reads the pre-image before the other's write commits, so both
+         * compute a `before` off the same stale row and the resulting history chain no longer
+         * has entry N's `before` equal to entry N−1's `after` — see `lockCountry`.
+         */
+        const [before] = await this.repository.lockCountry(code, tx);
+        if (before === undefined) throw AppError.notFound(message('error.tax_country.missing'));
 
-      const [after] = await tx
-        .update(taxCountries)
-        .set({ ...body, updatedByUserId: userId, updatedAt: new Date() })
-        .where(eq(taxCountries.code, code))
-        .returning();
+        const [after] = await tx
+          .update(taxCountries)
+          .set({ ...body, updatedByUserId: userId, updatedAt: new Date() })
+          .where(eq(taxCountries.code, code))
+          .returning();
 
-      /*
-       * ⚠️ `changedAt: clock_timestamp()`, not the column's `defaultNow()`. `now()` — what
-       * `defaultNow()` calls — is `transaction_timestamp()`: fixed at BEGIN and frozen for the
-       * whole transaction (confirmed by experiment: `select now()` before and after a
-       * `pg_sleep` inside one transaction returns the identical instant). Two concurrent
-       * `patch()` calls both open their transaction before either reaches `lockCountry`, so the
-       * one `FOR UPDATE` blocks can easily have the *earlier* `now()` despite committing
-       * *second* — which reorders `changes()` (sorted by `changedAt` ASC) relative to actual
-       * commit order and breaks exactly the contiguity this table exists to prove. Verified by
-       * mutation-testing the other direction: with the lock restored and this column left on
-       * its default, the concurrency test in `tax-country.pg.test.ts` failed 5 of 8 runs.
-       * `clock_timestamp()` reads the real wall clock at the moment this INSERT executes —
-       * after `lockCountry` has already waited out any earlier holder of the row — so it
-       * reflects commit order instead of BEGIN order.
-       */
-      await tx.insert(taxCountryChanges).values({
-        taxCountryCode: code,
-        changedByUserId: userId,
-        changedAt: sql`clock_timestamp()`,
-        before: snapshot(before),
-        after: snapshot(after!),
-      });
+        /*
+         * ⚠️ `changedAt: clock_timestamp()`, not the column's `defaultNow()`. `now()` — what
+         * `defaultNow()` calls — is `transaction_timestamp()`: fixed at BEGIN and frozen for the
+         * whole transaction (confirmed by experiment: `select now()` before and after a
+         * `pg_sleep` inside one transaction returns the identical instant). Two concurrent
+         * `patch()` calls both open their transaction before either reaches `lockCountry`, so the
+         * one `FOR UPDATE` blocks can easily have the *earlier* `now()` despite committing
+         * *second* — which reorders `changes()` (sorted by `changedAt` ASC) relative to actual
+         * commit order and breaks exactly the contiguity this table exists to prove. Verified by
+         * mutation-testing the other direction: with the lock restored and this column left on
+         * its default, the concurrency test in `tax-country.pg.test.ts` failed at a *rate* rather
+         * than a fixed count — anywhere from 1 to 5 of 8 runs across separate sessions, which is
+         * the expected shape for a race that depends on exactly how the two transactions happen
+         * to interleave, not a number to pin. `clock_timestamp()` reads the real wall clock at the
+         * moment this INSERT executes — after `lockCountry` has already waited out any earlier
+         * holder of the row — so it reflects commit order instead of BEGIN order.
+         *
+         * ⚠️ `clock_timestamp()` alone orders nothing — it is a value, not a lock. What actually
+         * guarantees entry N's `before` equals entry N−1's `after` is that this `INSERT` runs
+         * inside the *same transaction* as `lockCountry`'s row lock, after that lock has already
+         * forced any earlier writer to commit first. A `clock_timestamp()` read outside that
+         * transaction, or a lock that let go before this statement, would let two inserts land in
+         * an order the wall clock cannot fix after the fact.
+         */
+        await tx.insert(taxCountryChanges).values({
+          taxCountryCode: code,
+          changedByUserId: userId,
+          changedAt: sql`clock_timestamp()`,
+          before: snapshot(before),
+          after: snapshot(after!),
+        });
 
-      return wire(after!);
-    });
+        return wire(after!);
+      }),
+    );
   }
 
   /**

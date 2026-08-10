@@ -194,4 +194,77 @@ describeWithPg('the tax-country module against Postgres', () => {
       expect(await service.list(true)).toHaveLength(0);
     });
   });
+
+  /*
+   * ── Constraint translation: fix round 1 ──────────────────────────────────────────────────
+   *
+   * The finding: a body that validates cleanly against Task 2's zod schemas can still trip a
+   * database CHECK or the primary key, and without `pg-errors.ts` each of those reached the
+   * caller as a raw `DrizzleQueryError` — a 500 for something a client did on purpose. Every
+   * test below asserts the *translated* `AppError` — its `code` and `details`, never the raw
+   * SQLSTATE — and that the write's own transaction rolled back with no history row, which is
+   * as much the contract as the status code.
+   */
+  describe('constraint translation, not a raw 500', () => {
+    it('patch on a code that does not exist is a 404, not a 500 — the one path to error.tax_country.missing', async () => {
+      const { service, actor } = await harness();
+
+      await expect(service.patch('ZZ', { rateBp: 800 }, actor.id)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+        serverMessage: { key: 'error.tax_country.missing' },
+      });
+      expect(await service.changes('ZZ')).toHaveLength(0);
+    });
+
+    it('patching treatment on a nonzero-rate country is a 409 naming the constraint, not a 500', async () => {
+      const { service, actor } = await harness();
+
+      // TH seeds at rate_bp 700 — zero-rating it without clearing the rate is exactly the
+      // reviewer's probe, and exactly the mistake a real admin will make.
+      await expect(service.patch('TH', { treatment: 'zero_rated' }, actor.id)).rejects.toMatchObject({
+        code: 'CONFLICT',
+        status: 409,
+        details: { constraint: 'tax_countries_rate_matches_treatment' },
+        serverMessage: { key: 'error.tax_country.rate_treatment_conflict' },
+      });
+      expect(await service.changes('TH')).toHaveLength(0);
+    });
+
+    it('creating a country with a code already in use is a 409 naming the primary key, not a 500', async () => {
+      const { service, actor } = await harness();
+
+      await expect(
+        service.create(
+          { code: 'TH', nameTh: 'ไทย (ซ้ำ)', rateBp: 0, treatment: 'standard', pricesIncludeTax: true },
+          actor.id,
+        ),
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        status: 409,
+        details: { constraint: 'tax_countries_pkey' },
+        serverMessage: { key: 'error.tax_country.code_taken' },
+      });
+      expect(await service.changes('TH')).toHaveLength(0);
+    });
+
+    it('creating a country with a whitespace-only name is a 422 naming the constraint, not a 500', async () => {
+      const { service, actor } = await harness();
+
+      // zod's `nameTh: z.string().min(1)` counts the raw string — three spaces has length 3
+      // and passes it — while the database's `length(btrim(name_th)) > 0` does not.
+      await expect(
+        service.create(
+          { code: 'ZZ', nameTh: '   ', rateBp: 0, treatment: 'standard', pricesIncludeTax: true },
+          actor.id,
+        ),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        status: 422,
+        details: { constraint: 'tax_countries_name_says_something' },
+        serverMessage: { key: 'error.tax_country.name_blank' },
+      });
+      expect(await service.changes('ZZ')).toHaveLength(0);
+    });
+  });
 });

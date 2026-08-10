@@ -216,6 +216,19 @@ export const TH: Catalogue = {
   'error.organisation.profile_missing': 'ไม่พบข้อมูลบริษัท',
   'error.tax_country.missing': 'ไม่พบประเทศปลายทางรายการนี้',
 
+  /* ── Tax-country constraints ────────────────────────────────────────────── */
+  'error.tax_country.duplicate': 'มีประเทศปลายทางที่ใช้โค้ดนี้อยู่แล้ว',
+  'error.tax_country.code_taken': 'มีประเทศปลายทางที่ใช้โค้ดนี้อยู่แล้ว',
+  'error.tax_country.name_blank': 'ชื่อประเทศปลายทางต้องไม่เป็นค่าว่างหรือมีแต่ช่องว่าง',
+  /*
+   * ⭐ The one a real admin will actually hit: zero-rating (or exempting, or marking
+   * out-of-scope) a destination without also clearing its rate to 0. The message says what to
+   * do, not just what failed — see `pg-errors.ts` for why this is answered as a conflict.
+   */
+  'error.tax_country.rate_treatment_conflict':
+    'ประเภทภาษีที่ไม่ใช่ standard ต้องมีอัตราภาษีเป็น 0 เสมอ — กรุณาล้างอัตราภาษีในคำขอเดียวกันด้วย',
+  'error.tax_country.check_failed': 'ข้อมูลไม่ผ่านเงื่อนไขของประเทศปลายทาง',
+
   /* ── Staleness ───────────────────────────────────────────────────────────── */
   /*
    * Two catalogue-stale sentences and not one. `…กำลังเลือก` is said to a customer in the
