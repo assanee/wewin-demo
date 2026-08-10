@@ -31,6 +31,7 @@ describeDb('the organisation profile is one row, and Postgres is what says so', 
         legalNameTh: 'บริษัท ทดสอบ จำกัด',
         addressTh: '1 ถนนทดสอบ',
         phone: '+6621234567',
+        depositBp: 10_000,
       }),
       PG.checkViolation,
     );

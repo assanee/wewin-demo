@@ -15,9 +15,12 @@ import {
   orderEvents,
   orders,
   organisationProfile,
+  organisationProfileChanges,
   passwordCredentials,
   providerIdentities,
   sessions,
+  taxCountries,
+  taxCountryChanges,
   userEmails,
   userErasureRequests,
   userGroups,
@@ -169,6 +172,29 @@ async function createSubject(db: Database, label: string): Promise<Subject> {
     .update(organisationProfile)
     .set({ updatedByUserId: user.id })
     .where(eq(organisationProfile.id, 1));
+
+  /*
+   * Same shape as the bank-account trio above, so the `scrub` coverage for the tax and
+   * profile-history actors is not vacuous either. `tax_countries` is a singleton-per-code
+   * table already seeded with 'TH' (0029), so it is updated in place, exactly like
+   * `organisation_profile` above; the two `*_changes` tables are append-only, so each subject
+   * gets its own new row, exactly like `bank_account_changes` above.
+   */
+  await db
+    .update(taxCountries)
+    .set({ updatedByUserId: user.id })
+    .where(eq(taxCountries.code, 'TH'));
+
+  await db.insert(taxCountryChanges).values({
+    taxCountryCode: 'TH',
+    changedByUserId: user.id,
+    after: { rateBp: 700 },
+  });
+
+  await db.insert(organisationProfileChanges).values({
+    changedByUserId: user.id,
+    after: { depositBp: 10_000 },
+  });
 
   return { userId: user.id, address, sessionId: session.id, bankAccountId: account!.id };
 }
@@ -825,6 +851,71 @@ describeDb('the specification that replaced the cascades', () => {
       .where(eq(organisationProfile.id, 1));
     expect(profile, 'organisation_profile is declared scrub and the row is gone, not scrubbed').toBeDefined();
     expect(profile?.updatedBy, 'organisation_profile.updated_by_user_id still names the erased user').toBeNull();
+  });
+
+  /**
+   * The three tax and profile-history `scrub`s — phase 10 (VAT per destination), and none of
+   * them were checked by anything until now, for the same reason the three above were not:
+   * the generic coverage loop skips every treatment except `delete`, so a `scrub` with no
+   * named test passes vacuously. See `createSubject`'s own writes to these three columns.
+   *
+   * Mutation: comment out any one of the three new `UPDATE ... SET ... = NULL WHERE ... =
+   * p_user` statements 0030 adds to `erase_user()` and exactly one of the three tests below
+   * goes red.
+   */
+  it('scrubs the staff actor from a tax country, keeping the policy', async () => {
+    const db = await connect();
+    const subject = await createSubject(db, `p2-${tag}`);
+    await close(db, subject.userId);
+    await erase(db, subject.userId);
+
+    const rows = await db.execute(sql`
+      select code, rate_bp, updated_by_user_id from tax_countries where code = 'TH'
+    `);
+    expect(rows.rows[0]).toStrictEqual({ code: 'TH', rate_bp: 700, updated_by_user_id: null });
+  });
+
+  /*
+   * ⚠️ Scoped to this subject's own row, not to the whole table.
+   *
+   * The brief this was drafted from counted `changed_by_user_id IS NOT NULL` over the entire
+   * table and asserted zero. That cannot pass here: unlike `bank_account_changes` (scoped to
+   * one `bankAccountId`), `tax_country_changes` has no per-subject key, this suite runs many
+   * subjects serially in one file, and `createSubject` writes a row for every one of them —
+   * most of which this test never erases. So by the time this test runs, other subjects'
+   * rows already carry a live `changed_by_user_id`, and the table-wide count is never zero.
+   * Scoping both the row-count and the actor-count to `subject.userId` is what makes the
+   * assertion about *this* erasure rather than about every subject that ran before it.
+   */
+  it('scrubs the actor from tax history without deleting the history', async () => {
+    const db = await connect();
+    const subject = await createSubject(db, `p2-${tag}`);
+    const before = await db.execute(sql`select count(*)::int as n from tax_country_changes`);
+    await close(db, subject.userId);
+    await erase(db, subject.userId);
+    const after = await db.execute(sql`select count(*)::int as n from tax_country_changes`);
+    expect(after.rows[0]?.n, 'a row vanished — scrub deleted instead of nulling').toBe(before.rows[0]?.n);
+
+    const mine = await db.execute(sql`
+      select count(*)::int as n from tax_country_changes where changed_by_user_id = ${subject.userId}::uuid
+    `);
+    expect(mine.rows[0]?.n, 'this subject still names the erased user in tax_country_changes').toBe(0);
+  });
+
+  it('scrubs the actor from profile history without deleting the history', async () => {
+    const db = await connect();
+    const subject = await createSubject(db, `p2-${tag}`);
+    const before = await db.execute(sql`select count(*)::int as n from organisation_profile_changes`);
+    await close(db, subject.userId);
+    await erase(db, subject.userId);
+    const after = await db.execute(sql`select count(*)::int as n from organisation_profile_changes`);
+    expect(after.rows[0]?.n, 'a row vanished — scrub deleted instead of nulling').toBe(before.rows[0]?.n);
+
+    const mine = await db.execute(sql`
+      select count(*)::int as n from organisation_profile_changes
+      where changed_by_user_id = ${subject.userId}::uuid
+    `);
+    expect(mine.rows[0]?.n, 'this subject still names the erased user in organisation_profile_changes').toBe(0);
   });
 });
 
