@@ -57,14 +57,32 @@ export function crc16ccitt(input: string): string {
  * Read a stored `promptpay_id`, which the CHECK constraint has already limited to ten or
  * thirteen digits. Returns `null` rather than throwing, so a bad row shows the account
  * without a QR instead of taking the page down.
+ *
+ * ⚠️ **Ten digits is refused unless the first is `0` — `accountValue` is not the place that
+ * decides this.** Every Thai mobile number is ten digits starting with `0` (the numbering
+ * plan's `06`/`08`/`09` prefixes); a ten-digit id that does not is not a mobile number missing
+ * a formality, it is not a mobile number, full stop. `bank_accounts_promptpay_shape` only
+ * checks `^([0-9]{10}|[0-9]{13})$`, so `1812345678` reaches this function looking exactly like
+ * a real one, and there is no second form for `accountValue` to detect and handle — accepting
+ * it here would mean *guessing* which nine digits to keep, and a QR built on a guess is this
+ * module's stated worst case: well-formed, scans fine, moves money to a number nobody asked
+ * for. Refusing it is the same choice `accountValue`'s slice already assumed and this is where
+ * that assumption gets checked, rather than trusted.
  */
 export function promptPayTarget(id: string): PromptPayTarget | null {
-  if (/^[0-9]{10}$/u.test(id)) return { kind: 'mobile', digits: id };
+  if (/^0[0-9]{9}$/u.test(id)) return { kind: 'mobile', digits: id };
   if (/^[0-9]{13}$/u.test(id)) return { kind: 'taxId', digits: id };
   return null;
 }
 
-/** A mobile number as EMVCo wants it: country code, no leading zero, padded to thirteen. */
+/**
+ * A mobile number as EMVCo wants it: country code, no leading zero, padded to thirteen.
+ *
+ * The `slice(1)` is safe only because `promptPayTarget` already refused any `mobile` target
+ * whose first digit is not `0` — this function trusts that refusal rather than re-checking it,
+ * the same division of labour `field()` and `promptPayPayload` keep everywhere else in this
+ * module (shape checked once, on the way in).
+ */
 function accountValue(target: PromptPayTarget): string {
   if (target.kind === 'taxId') return target.digits;
   return `0066${target.digits.slice(1)}`;

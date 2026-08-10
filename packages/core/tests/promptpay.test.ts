@@ -34,6 +34,18 @@ describe('reading a PromptPay identifier', () => {
       expect(promptPayTarget(bad), `"${bad}" was accepted`).toBeNull();
     }
   });
+
+  /**
+   * F3 — `bank_accounts_promptpay_shape` only enforces `^([0-9]{10}|[0-9]{13})$`, so a
+   * ten-digit id that does not start with `0` reaches this function looking exactly like a
+   * mobile number. `accountValue`'s `slice(1)` assumed a leading zero it never checked, which
+   * silently drops the wrong digit and points the QR at a different number — well-formed,
+   * scans fine, wrong destination. `1812345678` is the finding's own example: the database
+   * accepts it today, and this is the point that must not.
+   */
+  it('refuses a ten-digit id that does not start with 0, rather than mis-slicing it as a mobile number', () => {
+    expect(promptPayTarget('1812345678'), '"1812345678" was accepted').toBeNull();
+  });
 });
 
 describe('the payload', () => {
