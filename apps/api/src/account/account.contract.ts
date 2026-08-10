@@ -21,10 +21,23 @@ export interface MySessionWire {
   readonly current: boolean;
 }
 
+/**
+ * One telephone number this account has claimed.
+ *
+ * ⚠️ Unlike an email, being listed here is not proof of anything — see the repository's
+ * comment on `listPhones` for why an unverified claim is still returned, and never
+ * `isPrimary` unless a member of staff has vouched for it.
+ */
+export interface PhoneWire {
+  readonly number: string;
+  readonly isPrimary: boolean;
+}
+
 export interface AccountWire {
   readonly userId: string;
   readonly displayName: string | null;
   readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
+  readonly phones: readonly PhoneWire[];
   readonly hasPassword: boolean;
   readonly providers: readonly LinkedProviderWire[];
   readonly sessions: readonly MySessionWire[];

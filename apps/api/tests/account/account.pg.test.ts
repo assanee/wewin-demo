@@ -131,6 +131,28 @@ describeWithPg('my own account', () => {
     expect((( await overview(actor)).body as { emails: unknown[] }).emails).toHaveLength(0);
   });
 
+  it('⭐ shows a phone even though nobody has verified it', async () => {
+    /*
+     * The opposite rule from the address above, and deliberately so: `RegistrationService`
+     * leaves every self-registered number with `verified_at` null, so filtering to verified
+     * rows the way `emails` does would answer "no phone" for almost every customer who ever
+     * signs up the only way this storefront offers. `isPrimary` stays false here for the
+     * same reason — the schema refuses it any other way for an unverified row.
+     */
+    const { actor } = await person('phone', { password: true });
+    await db.execute(sql`
+      insert into user_phones (user_id, number) values (${actor.userId}::uuid, '+66811111111')
+    `);
+
+    const body = (await overview(actor)).body as { phones: { number: string; isPrimary: boolean }[] };
+    expect(body.phones).toEqual([{ number: '+66811111111', isPrimary: false }]);
+  });
+
+  it('answers no phones for an account that never claimed one', async () => {
+    const { actor } = await person('nophone', { password: true });
+    expect((( await overview(actor)).body as { phones: unknown[] }).phones).toEqual([]);
+  });
+
   it('refuses a caller with no session at all', async () => {
     expect((await call('GET', '/me/account', {})).status).toBe(401);
   });

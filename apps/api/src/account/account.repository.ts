@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db/client';
-import { and, eq, sql } from '@wewin/db/sql';
-import { passwordCredentials, providerIdentities, userEmails, users } from '@wewin/db/schema';
+import { and, asc, desc, eq, sql } from '@wewin/db/sql';
+import { passwordCredentials, providerIdentities, userEmails, userPhones, users } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../database/database.tokens';
-import type { AccountWire, LinkedProviderWire, MySessionWire } from './account.contract';
+import type { AccountWire, LinkedProviderWire, MySessionWire, PhoneWire } from './account.contract';
 
 @Injectable()
 export class AccountRepository {
@@ -24,7 +24,7 @@ export class AccountRepository {
       .limit(1);
     if (user === undefined) return undefined;
 
-    const [emails, providers, sessions, hasPassword] = await Promise.all([
+    const [emails, providers, sessions, hasPassword, phones] = await Promise.all([
       this.db
         .select({ address: userEmails.address, isPrimary: userEmails.isPrimary })
         .from(userEmails)
@@ -34,18 +34,43 @@ export class AccountRepository {
       this.listProviders(userId),
       this.listSessions(userId, currentSessionId),
       this.hasPassword(userId),
+      this.listPhones(userId),
     ]);
 
     return {
       userId: user.id,
       displayName: user.displayName,
       emails,
+      phones,
       hasPassword,
       providers,
       sessions,
       /* Filled in by the service, which owns the rule. */
       waysIn: 0,
     };
+  }
+
+  /**
+   * Every telephone number this account has claimed — verified or not.
+   *
+   * ⚠️ **Not filtered to verified rows, unlike `emails` above.** `RegistrationService` leaves
+   * every self-registered number with `verified_at` null — it is a claim, proved later (if
+   * ever) by a member of staff on the phone — so a verified-only filter would answer "no
+   * phone" for almost every customer who signed up the only way this storefront offers.
+   * Showing an unverified email would misrepresent a proof that does not exist; showing an
+   * unverified phone here is just showing somebody their own number back.
+   *
+   * `isPrimary` is carried through rather than assumed true for a single row: the schema's
+   * `user_phones_primary_is_verified` check makes it false for exactly the unverified numbers
+   * this method exists to surface, so a caller after "the" number should not read it as a
+   * signal of anything.
+   */
+  async listPhones(userId: string): Promise<readonly PhoneWire[]> {
+    return this.db
+      .select({ number: userPhones.number, isPrimary: userPhones.isPrimary })
+      .from(userPhones)
+      .where(eq(userPhones.userId, userId))
+      .orderBy(desc(userPhones.isPrimary), asc(userPhones.createdAt));
   }
 
   async listProviders(userId: string): Promise<readonly LinkedProviderWire[]> {
