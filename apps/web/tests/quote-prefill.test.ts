@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchContactPrefill,
   fieldsToApply,
+  newestSubmittedOrder,
   resolveContactPrefill,
 } from '../src/lib/quote/prefillContact';
 
@@ -98,6 +99,50 @@ describe('⭐ a field the customer has already typed into is never overwritten',
   });
 });
 
+describe('⭐ the newest order is the one most recently submitted, not most recently touched', () => {
+  /*
+   * `GET /orders` sorts `updatedAt desc`, and `moveStatus()` bumps `updatedAt` on any later
+   * staff status change without touching the frozen contact columns. So the list's own order
+   * is not a safe proxy for "which contact is newest" — these fix that at the position that
+   * matters, before a network is ever involved.
+   */
+
+  it('picks the greatest `submittedAt`, even when it is not the first row', () => {
+    // The exact shape a stale-touch bug produces: the *older* submission sits first because
+    // staff touched it since, and the *newer* submission — the one with the corrected
+    // contact — sits second.
+    const list = [
+      { id: 'order-old-touched', submittedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'order-new-submitted', submittedAt: '2026-06-01T00:00:00.000Z' },
+    ];
+
+    expect(newestSubmittedOrder(list)?.id).toBe('order-new-submitted');
+  });
+
+  it('is order-independent — the same answer however the rows are arranged', () => {
+    const newer = { id: 'newer', submittedAt: '2026-06-01T00:00:00.000Z' };
+    const older = { id: 'older', submittedAt: '2026-01-01T00:00:00.000Z' };
+
+    expect(newestSubmittedOrder([newer, older])?.id).toBe('newer');
+    expect(newestSubmittedOrder([older, newer])?.id).toBe('newer');
+  });
+
+  it('skips drafts entirely, whatever position they sit in', () => {
+    const list = [
+      { id: 'draft', submittedAt: null },
+      { id: 'submitted', submittedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+
+    expect(newestSubmittedOrder(list)?.id).toBe('submitted');
+  });
+
+  it('is null when nothing has been submitted, or the list itself is null', () => {
+    expect(newestSubmittedOrder([{ id: 'draft', submittedAt: null }])).toBeNull();
+    expect(newestSubmittedOrder([])).toBeNull();
+    expect(newestSubmittedOrder(null)).toBeNull();
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * The network — where failure has to become nothing, not an error
  * ------------------------------------------------------------------ */
@@ -142,6 +187,38 @@ describe('the fetch: degrades to nothing rather than to a throw', () => {
     expect(prefill).toEqual({ name: 'สมหญิง ใจดี', phone: '+66811111111', email: 'somying@example.test' });
     // Never opened the draft's detail — there was nothing there worth a third call.
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('⭐ prefers the more recently submitted order over the more recently touched one', async () => {
+    // The reviewer's scenario, over the network: a customer submits order A, then submits
+    // order B with a corrected phone. Staff later move A to a new status, which bumps its
+    // `updatedAt` and puts it first in `GET /orders` — but never touches its frozen contact.
+    // The pre-fill must still come from B, the one the customer told us about more recently.
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (url.endsWith('/orders?limit=50')) {
+        return jsonResponse({
+          orders: [
+            // First in the list — touched most recently by staff, submitted longest ago.
+            { id: 'order-a-old-number', submittedAt: '2026-01-01T00:00:00.000Z' },
+            // Second in the list — submitted more recently, with the corrected number.
+            { id: 'order-b-new-number', submittedAt: '2026-06-01T00:00:00.000Z' },
+          ],
+        });
+      }
+      if (url.endsWith('/orders/order-b-new-number')) {
+        return jsonResponse({
+          contact: { name: 'สมหญิง ใจดี', phone: '+66822222222', email: null, locale: 'th' },
+        });
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const prefill = await fetchContactPrefill('token-abc');
+
+    expect(prefill).toEqual({ name: 'สมหญิง ใจดี', phone: '+66822222222', email: '' });
+    // Never even opened the older, list-first order's detail.
+    expect(fetchSpy).not.toHaveBeenCalledWith(expect.stringContaining('order-a-old-number'), expect.anything());
   });
 
   it('falls back to the account when the order list has nothing submitted', async () => {

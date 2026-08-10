@@ -12,10 +12,12 @@ import { reviewsApiBaseUrl } from '../reviews/api';
  *
  * ── Two sources, and a strict order between them ─────────────────────────────
  *
- * **The most recent order wins.** `GET /orders` is ownership-scoped and already used by
- * `MyQuotations` for the same list; its rows carry no contact, so the newest *submitted* one
- * is opened with `GET /orders/:id` to read it. That is what the customer most recently told
- * us, in their own words, for a real quotation.
+ * **The most recent order wins** — most recently *submitted*, never most recently touched.
+ * `GET /orders` is ownership-scoped and already used by `MyQuotations` for the same list; its
+ * rows carry no contact, so the order with the greatest `submittedAt` is opened with
+ * `GET /orders/:id` to read it (see `newestSubmittedOrder` for why that is not simply the
+ * list's own order). That is what the customer most recently told us, in their own words,
+ * for a real quotation.
  *
  * **The account is the fallback**, read only when there is no prior order at all. It has no
  * name — `displayName` is never set by phone registration, and this module does not invent
@@ -119,14 +121,52 @@ export function fieldsToApply(
  * The network — every failure here becomes `null`, never a throw
  * ------------------------------------------------------------------ */
 
-/** `{ orders: [{ id, submittedAt }] }` — only what is needed to find the newest submitted one. */
-function decodeOrderList(body: unknown): readonly { readonly id: string; readonly submittedAt: string | null }[] | null {
+/** One row of `GET /orders` — only what is needed to find the newest submitted one. */
+export interface OrderListRow {
+  readonly id: string;
+  readonly submittedAt: string | null;
+}
+
+/** `{ orders: [{ id, submittedAt }] }` — `OrderSummaryWire`, restated. */
+function decodeOrderList(body: unknown): readonly OrderListRow[] | null {
   if (!isRecord(body) || !Array.isArray(body['orders'])) return null;
 
   return body['orders'].flatMap((raw) => {
     if (!isRecord(raw) || typeof raw['id'] !== 'string') return [];
     return [{ id: raw['id'], submittedAt: asString(raw['submittedAt']) }];
   });
+}
+
+/**
+ * ⭐ The row with the greatest `submittedAt`, or `null` when nothing has been submitted.
+ *
+ * ⚠️ **Not `list.find(…)` — position in the list means something else.** `GET /orders` is
+ * sorted `updatedAt desc` (`scoped-order.repository.ts`), and `moveStatus()`
+ * (`order.repository.ts`) bumps `updatedAt` on *any* later staff status change —
+ * `production_confirmed`, a bounce, anything — while `contactName`/`contactPhone`/
+ * `contactEmail` are frozen at submit and never rewritten. So the first submitted row in that
+ * list order can be an *older* quotation that staff simply looked at more recently, and its
+ * contact can already be stale: the customer may have submitted a *second*, more recent order
+ * with a corrected number in between.
+ *
+ * Pre-filling from that stale row would hand back exactly the value the customer already
+ * went to the trouble of correcting — the opposite of what this feature is for. Sorting
+ * explicitly on `submittedAt` is what makes this "the last thing the customer told us" rather
+ * than "the order somebody at the company touched most recently". Do not simplify this back
+ * to a scan of the list's own order — `moveStatus` is exactly why that would be wrong again.
+ */
+export function newestSubmittedOrder(list: readonly OrderListRow[] | null): OrderListRow | null {
+  if (list === null) return null;
+
+  let best: { readonly id: string; readonly submittedAt: string } | null = null;
+  for (const row of list) {
+    if (row.submittedAt === null) continue;
+    if (best === null || Date.parse(row.submittedAt) > Date.parse(best.submittedAt)) {
+      best = { id: row.id, submittedAt: row.submittedAt };
+    }
+  }
+
+  return best;
 }
 
 /** `{ contact: { name, phone, email } }` off `GET /orders/:id` — `OrderContactWire`, restated. */
@@ -170,18 +210,19 @@ async function getJson(url: string, accessToken: string): Promise<unknown> {
 }
 
 /**
- * The newest *submitted* order's contact, or `null` for "no such order" and for any failure
- * along the way — the two calls the module note describes.
+ * The most recently *submitted* order's contact, or `null` for "no such order" and for any
+ * failure along the way — the two calls the module note describes.
  *
  * ⚠️ `limit=50`, mirroring `MyQuotations`, and not `limit=1`. `GET /orders` sorts by
  * `updatedAt`, so the single newest row can be an untouched draft cart with no contact at
- * all; scanning further down for the newest row that was actually submitted is what makes
- * this the customer's last *quotation* rather than their last click.
+ * all — and, per `newestSubmittedOrder`, the first *submitted* row in that order is not
+ * reliably the right one either. `submittedAt` is sorted explicitly, in this module, rather
+ * than trusted from the list's position.
  */
 async function fetchLastOrderContact(base: string, accessToken: string): Promise<OrderContactRaw | null> {
   const list = decodeOrderList(await getJson(`${base}/orders?limit=50`, accessToken));
-  const newest = list?.find((row) => row.submittedAt !== null);
-  if (newest === undefined) return null;
+  const newest = newestSubmittedOrder(list);
+  if (newest === null) return null;
 
   return decodeOrderContact(await getJson(`${base}/orders/${newest.id}`, accessToken));
 }
