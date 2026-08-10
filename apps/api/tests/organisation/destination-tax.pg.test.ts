@@ -25,6 +25,11 @@ import { createPgHarness } from '../support/pg-harness';
  * `beforeAll`: `TH` is migration 0029's one seeded, undeletable row, and `service.create`
  * below adds a second (`SG`) that has to start from a known, empty slate too.
  *
+ * ⚠️ `undefined` is spelled out at every call below rather than omitted. `tx` became a
+ * *required* `Tx | undefined` in fix round 1 of Task 9 — see that method's own note. These four
+ * cases genuinely have no transaction; `OrdersService.submit` genuinely does, and the point of
+ * the change is that neither can be the accident of a missing argument.
+ *
  * Skipped, not failed, without a database.
  */
 
@@ -53,7 +58,7 @@ describeWithPg('resolveDestination against Postgres', () => {
       actor.id,
     );
 
-    expect(await service.resolveDestination('SG')).toStrictEqual({
+    expect(await service.resolveDestination('SG', undefined)).toStrictEqual({
       code: 'SG',
       rule: { rateBp: 900, treatment: 'standard' },
       basis: 'inclusive',
@@ -68,7 +73,7 @@ describeWithPg('resolveDestination against Postgres', () => {
        Refusing here would turn a routine withdrawal into a customer-facing outage — and would
        make omitting the foreign key (spec §4.4) pointless, since the constraint violation would
        just have been relabelled a validation error. */
-    expect(await service.resolveDestination('TH')).toStrictEqual({
+    expect(await service.resolveDestination('TH', undefined)).toStrictEqual({
       code: 'TH',
       rule: { rateBp: 700, treatment: 'standard' },
       basis: 'exclusive',
@@ -83,7 +88,7 @@ describeWithPg('resolveDestination against Postgres', () => {
        foreign sale and pin it, permanently, with nothing recording that a fallback happened. */
     /* `toMatchObject`, not `toThrow`. `AppError` sets `Error.message` from its first argument only;
        a `{ reason }` object goes to `details`, which a message regex never sees. */
-    await expect(service.resolveDestination('XX')).rejects.toMatchObject({
+    await expect(service.resolveDestination('XX', undefined)).rejects.toMatchObject({
       details: { reason: 'unknown_destination_country' },
     });
   });
@@ -91,7 +96,7 @@ describeWithPg('resolveDestination against Postgres', () => {
   it('falls back to the default rule when the order names no destination', async () => {
     const { service } = await harness();
 
-    expect(await service.resolveDestination(null)).toStrictEqual({
+    expect(await service.resolveDestination(null, undefined)).toStrictEqual({
       code: null,
       rule: DEFAULT_VAT_RULE,
       basis: 'exclusive',

@@ -325,6 +325,22 @@ export class OrdersService {
         contactName: body.contact?.name ?? null,
         contactPhone: body.contact?.phone ?? null,
         contactLocale: body.contact?.locale ?? DEFAULT_LOCALE,
+        /*
+         * ⚠️ Forwarded, where it used to be dropped on the floor.
+         *
+         * `createOrderRequestSchema` reuses `orderContactRequestSchema`, so a `POST /orders`
+         * carrying `contact.destinationCountry` validated and answered 201 while this method
+         * never passed the value on. That was cosmetic for exactly as long as nothing read the
+         * column. It stopped being cosmetic when `submit` began pricing from it: a draft
+         * created with `SG` and submitted without repeating the country resolved `null`, priced
+         * at Thai 7%, and pinned a document that disagreed with its own order row.
+         *
+         * The country is *not* validated here. `resolveDestination` is the one place a code
+         * becomes a rule, and it runs at submit — refusing an unknown code at create would put
+         * a second interpretation of `tax_countries` on the anonymous cart-creation path, and
+         * would refuse a cart for a country the company is about to add.
+         */
+        destinationCountry: body.contact?.destinationCountry ?? null,
         actorKind: actor.actorKind,
         actorUserId: actor.actorUserId,
         actorGuestId: actor.actorGuestId,
@@ -523,6 +539,13 @@ export class OrdersService {
           contactName: order.contactName,
           contactPhone: order.contactPhone,
           contactLocale: order.contactLocale,
+          /*
+           * Carried forward with the other five, and for the same reason they are: the
+           * successor is the *same sale* re-quoted after the freeze. A successor that lost the
+           * destination would silently re-price a Singapore order at Thai 7% — and would do it
+           * on the one path where the customer is being asked to approve a new number.
+           */
+          destinationCountry: order.destinationCountry,
           actorKind: actor.actorKind,
           actorUserId: actor.actorUserId,
           actorGuestId: actor.actorGuestId,
@@ -740,19 +763,31 @@ export class OrdersService {
      * document is priced for and the country the row records are one decision read twice, not
      * two decisions that could differ.
      *
-     * `tx`, not a bare call: this read has to see the same snapshot as everything else in the
-     * submit, and a second connection could resolve against a rate a concurrent
-     * `PATCH /admin/organisation/tax-countries/:code` had already committed halfway through
-     * pinning. `TaxCountryRepository.byCode` threads it through `executor(tx) ?? this.db`.
+     * `tx`, not a bare call. `TaxCountryRepository.byCode` threads it through
+     * `executor(tx) ?? this.db`, and it was *measured* to arrive: `select pg_backend_pid(),
+     * txid_current()` run on this `tx` and again inside `byCode` reports the same backend and
+     * the same transaction id (pid 96517, xid 1629137); with the argument dropped they diverge
+     * every run (pid 96581/96580, xid 1629191/1629192) — a second pooled connection in a
+     * transaction of its own.
      *
-     * ⚠️ The argument is load-bearing and **nothing in any suite fails without it** — the pins
-     * are identical either way, because the only difference is *which connection* read the row.
-     * So it was measured instead: `select pg_backend_pid(), txid_current()` run on this `tx`
-     * and again inside `byCode` on whatever `executor(tx)` returned. With `tx` passed, both
-     * report the same backend and the same transaction id (pid 96517, xid 1629137). With the
-     * argument dropped, they diverge on every run (pid 96581/96580, xid 1629191/1629192) —
-     * a second pooled connection in a transaction of its own, which is the read that could see
-     * a rate this one never agreed to.
+     * ⚠️ **What that does and does not buy, stated honestly**, because the first version of
+     * this comment claimed a concurrency guarantee it does not have. This database runs at
+     * READ COMMITTED (verified: `show transaction_isolation` → `read committed`), where every
+     * *statement* takes a fresh snapshot — so a rate committed by a concurrent
+     * `PATCH /admin/organisation/tax-countries/:code` is equally visible to a read on this
+     * transaction and to one on another connection. Threading `tx` does **not** make this read
+     * snapshot-consistent with the pin today.
+     *
+     * What it buys is: one connection instead of two for the same work; a read that sees
+     * whatever this transaction has already written, which is the property that keeps holding
+     * as `submit` grows; and the only version of this call that is still correct if the
+     * isolation level is ever raised to REPEATABLE READ, where a separate connection would
+     * definitively be reading a different instant from the document it is about to freeze.
+     *
+     * ⚠️ **No runtime test can fail on any of that**, which is why the parameter is a required
+     * `Tx | undefined` on `resolveDestination` rather than an optional one — dropping it is
+     * `TS2554: Expected 2 arguments, but got 1`. A one-connection pool does not distinguish
+     * them either; that was measured too, and the reason is one line below.
      *
      * A code naming no row is refused with `reason: 'unknown_destination_country'` rather than
      * quietly falling back to `DEFAULT_VAT_RULE` — see `TaxCountryService.resolveDestination`.
@@ -769,6 +804,13 @@ export class OrdersService {
       charges: document.charges,
       overrides: document.overrides,
       leadTimeDays: document.leadTimeDays,
+      /*
+       * ⚠️ This takes a **second pooled connection while the transaction holds a first**:
+       * `CatalogRepository.findAll()` reads `this.db` and has no `tx` parameter at all. It
+       * predates this task and is left alone here, but it is why a `max: 1` pool cannot be used
+       * to prove the `tx` above arrives — the submit needs two connections either way — and it
+       * is worth knowing before anybody sizes a pool by counting transactions.
+       */
       catalog: await this.catalogIndex(),
       vat: destination.rule,
       destinationCountry: destination.code,

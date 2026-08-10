@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { eq } from '@wewin/db/sql';
-import { orderDocuments } from '@wewin/db/schema';
+import { orderDocuments, orders } from '@wewin/db/schema';
 import { products } from '@wewin/core/fixtures';
 import type { Product } from '@wewin/core';
 import { encodeUm } from '@wewin/contract/measure';
@@ -67,6 +67,21 @@ interface Harness {
   readonly submit: (body: {
     readonly contact: Record<string, unknown>;
   }) => Promise<{ readonly orderId: string }>;
+  /** `POST /orders`, so the create path's own handling of the field is the thing under test. */
+  readonly createDraft: (body: unknown) => Promise<{ readonly orderId: string }>;
+  /** Submit an order that already exists, rather than one this helper just made. */
+  readonly submitExisting: (
+    orderId: string,
+    body: { readonly contact: Record<string, unknown> },
+  ) => Promise<void>;
+  /**
+   * A destination on the cart, written the way Task 8's suite writes one — directly, because
+   * before this round there was no supported write path ahead of submit. There is one now
+   * (`POST /orders`), and `createDraft` above is how the tests that are about *that* get one;
+   * this stays for the case that is only about what the pin reads.
+   */
+  readonly setDestination: (orderId: string, code: string) => Promise<void>;
+  readonly destinationOf: (orderId: string) => Promise<string | null>;
   readonly admin: { readonly id: string };
   readonly taxCountries: TaxCountryService;
   /** Straight out of Postgres: the pinned columns and the stored JSON, side by side. */
@@ -102,6 +117,33 @@ describeWithPg('the destination, pinned into the document and its columns', () =
         expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
 
         return { orderId: draft.id };
+      },
+
+      createDraft: async (body) => {
+        const created = await call('POST', '/orders', { token: customer.token, body });
+        expect(created.status, JSON.stringify(created.body)).toBe(201);
+        return { orderId: (created.body as OrderWire).id };
+      },
+
+      submitExisting: async (orderId, body) => {
+        const submitted = await call('POST', `/orders/${orderId}/transitions/awaiting_payment`, {
+          token: customer.token,
+          body: { ...body, lines: [line] },
+        });
+        expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
+      },
+
+      setDestination: async (orderId, code) => {
+        await db.update(orders).set({ destinationCountry: code }).where(eq(orders.id, orderId));
+      },
+
+      destinationOf: async (orderId) => {
+        const [row] = await db
+          .select({ destinationCountry: orders.destinationCountry })
+          .from(orders)
+          .where(eq(orders.id, orderId));
+        if (!row) throw new Error(`no order ${orderId}`);
+        return row.destinationCountry;
       },
 
       documentRow: async (orderId) => {
@@ -160,6 +202,68 @@ describeWithPg('the destination, pinned into the document and its columns', () =
     const decoded = await readDocument(orderId);
     expect(decoded.destinationCountry).toBe('SG');
     expect(decoded.taxBasis).toBe('inclusive');
+  }, 60_000);
+
+  /**
+   * ⭐ The other half of the `??`, and the half no test reached until fix round 1.
+   *
+   * `orders.service.ts` resolves `body.contact.destinationCountry ?? order.destinationCountry`.
+   * The three tests above only ever exercise the left operand — so replacing the whole
+   * expression with `?? null` left **137 files / 1563 tests green**, while a cart that already
+   * carried `SG` priced and pinned at `DEFAULT_VAT_RULE`: no `destinationCountry` on the
+   * document, 700 bp on the column, and `applySubmission` writing `'SG'` onto the order row
+   * regardless. Row says Singapore, document says Thailand at 7%, and nothing compares them.
+   *
+   * Task 8 proved the *write* reads the cart. This proves the *pin* does.
+   */
+  it('prices from the destination the cart already carried, when the submit does not repeat it', async () => {
+    const { admin, taxCountries, createDraft, submitExisting, documentRow, setDestination } =
+      await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+
+    const { orderId } = await createDraft({});
+    await setDestination(orderId, 'SG');
+
+    /* No `destinationCountry` in the body — the country can only come off the order row. */
+    await submitExisting(orderId, { contact: { email: 'a@b.co' } });
+    const row = await documentRow(orderId);
+
+    expect(row.pinnedVatRateBp).toBe(900);
+    expect(row.document.destinationCountry).toBe('SG');
+    expect(row.document.taxBasis).toBe('inclusive');
+  }, 60_000);
+
+  /**
+   * ⭐ `POST /orders` accepted the field and threw it away.
+   *
+   * `createOrderRequestSchema` reuses `orderContactRequestSchema`, which declares
+   * `destinationCountry`, so this body has always validated and answered 201 — and
+   * `OrdersService.createDraft` never forwarded the value. Cosmetic while nothing read the
+   * column; a wrong tax rate the moment the submit started pricing from it, because the
+   * customer who chose their country on the first screen and did not repeat it on the last
+   * got Thai VAT on a Singapore sale.
+   */
+  it('keeps a destination given at create, and prices from it without being told twice', async () => {
+    const { admin, taxCountries, createDraft, submitExisting, destinationOf, documentRow } =
+      await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+
+    const { orderId } = await createDraft({
+      contact: { email: 'a@b.co', destinationCountry: 'SG' },
+    });
+
+    /* Persisted by `POST /orders` itself — before any submit has run. */
+    expect(await destinationOf(orderId)).toBe('SG');
+
+    await submitExisting(orderId, { contact: { email: 'a@b.co' } });
+
+    expect((await documentRow(orderId)).pinnedVatRateBp).toBe(900);
   }, 60_000);
 
   it('pins nothing new when the order names no destination, and still uses the default rule', async () => {

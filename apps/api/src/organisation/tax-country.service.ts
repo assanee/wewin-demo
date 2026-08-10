@@ -254,8 +254,24 @@ export class TaxCountryService {
    * compute Thai tax on a foreign sale and pin it to the document permanently, with nothing
    * recording that a fallback happened — so this refuses instead, with a `reason` a caller can
    * branch on in `details` (`AppError`'s first argument becomes `Error.message`, not this).
+   *
+   * ── ⚠️ `tx` is REQUIRED, and may be `undefined` — that is not the same thing ──────
+   *
+   * It was `tx?: Tx` until fix round 1 of Task 9, and the optionality was a hole nothing could
+   * catch. `OrdersService.submit` has to resolve inside its own transaction, but dropping the
+   * argument changes **nothing observable**: the pins are identical, the row read is the same,
+   * and it was measured that a one-connection pool cannot tell the two apart either — the
+   * submit's peak demand is two connections either way, because `catalogIndex()` takes a
+   * second one regardless (`orders.service.ts`, `CatalogRepository.findAll()` has no `tx`
+   * parameter at all). No runtime test can fail on it, so the compiler is made to instead:
+   * `Tx | undefined` as a *required* parameter means a caller that drops it is
+   * "Expected 2 arguments, but got 1", and a caller that means it says `undefined` out loud.
+   *
+   * Same discipline as `TaxCountryRepository.lockCountry(code, tx)`, which has always required
+   * one. `list` and `changes` keep their optional `tx?`: a plain admin GET genuinely has no
+   * transaction, and nothing about their correctness depends on which connection they use.
    */
-  async resolveDestination(code: string | null, tx?: Tx): Promise<DestinationTax> {
+  async resolveDestination(code: string | null, tx: Tx | undefined): Promise<DestinationTax> {
     if (code === null) return { code: null, rule: DEFAULT_VAT_RULE, basis: 'exclusive' };
 
     const [row] = await this.repository.byCode(code, tx);
