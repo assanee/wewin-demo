@@ -750,10 +750,19 @@ export class OrdersService {
 
     if (body.lines !== undefined) await this.quotes.adoptCart(tx, order, body.lines);
 
-    const { document } = await this.quotes.assertSubmittable(tx, order);
-
     /*
-     * ⭐ THE DESTINATION BECOMES A TAX RULE HERE, AND BEFORE THE PRICING THAT USES IT.
+     * ⭐ THE DESTINATION BECOMES A TAX RULE HERE, AND BEFORE EVERYTHING THAT USES IT.
+     *
+     * ⚠️ It moved **above** `assertSubmittable`, which is not cosmetic. That gate recomputes
+     * the whole quote — `applyOverrides`, the coherence refusals, and the re-verification of a
+     * `grand_total` promise's stored baseline — and every one of those is now basis-dependent.
+     * Resolving afterwards and handing the result only to `priceOrderDocument` would have the
+     * submit *approve* one document and *pin* a different one, on a code path whose entire
+     * purpose is that those two are the same document.
+     *
+     * One resolution for the whole request, passed to both. `QuotesService` never resolves for
+     * itself here, which is what makes "the figure the gate approved" and "the figure that got
+     * frozen" the same arithmetic over the same row rather than two reads of a mutable table.
      *
      * Resolution comes before pricing, and therefore before the order row that records the
      * country is written by `applySubmission` below. The document is priced a few lines down
@@ -798,6 +807,8 @@ export class OrdersService {
       body.contact.destinationCountry ?? order.destinationCountry,
       tx,
     );
+
+    const { document } = await this.quotes.assertSubmittable(tx, order, destination);
 
     const priced = priceOrderDocument({
       lines: document.lines,
