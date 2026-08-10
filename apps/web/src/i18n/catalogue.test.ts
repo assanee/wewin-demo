@@ -357,6 +357,46 @@ describe('the payment page never rounds a customer’s own money to whole baht',
       }
     }
   });
+
+  /**
+   * Fix round 3 — F1: an overpayment is a negative `owedMinor`/`slipMinor` reaching this
+   * exact template (`order_outstanding_thb_minor()` has no floor at zero, and the
+   * slip-review screen's own copy treats an excess as a modelled case, not an error).
+   * BigInt `/` and `%` truncate toward zero rather than floor, so the split these four
+   * entries used before this fix rendered `-150n` as `-1.-50` and `-1n` as `0.-1` — the
+   * minus landing inside the digits instead of in front of the amount.
+   *
+   * `-150n`/`-1n` are the exact figures the finding named, kept rather than swapped for
+   * round numbers so this test pins the reported failure and not a paraphrase of it.
+   * Every locale is checked, per `LOCALES` — not only Thai and Burmese — because the sign
+   * bug lives in the shared split, not in any one catalogue's prose.
+   */
+  test('an overpayment renders the sign in front of the ฿, not truncated into the digits — fix round 3', () => {
+    const owedMinor = -150n;
+    const slipMinor = -1n;
+    const sentAt = new Date('2026-03-14T04:00:00Z');
+
+    for (const locale of LOCALES) {
+      const { t } = translatorFor(locale);
+
+      const outstanding = t('payment.outstandingAmount', { owedMinor });
+      const outstandingSplit = bahtAndSatang(outstanding);
+      expect(decodeNumber(outstandingSplit.baht, locale), `${locale}: ${outstanding}`).toBe('-1');
+      expect(outstandingSplit.satang, `${locale}: ${outstanding}`).toBe('50');
+
+      const entries = [
+        t('payment.history.submitted', { slipMinor, sentAt }),
+        t('payment.history.accepted', { slipMinor, sentAt }),
+        t('payment.history.rejected', { slipMinor, reason: 'ยอดเงินไม่ตรงกับที่แจ้ง' }),
+      ];
+
+      for (const rendered of entries) {
+        const { baht, satang } = bahtAndSatang(rendered);
+        expect(decodeNumber(baht, locale), `${locale}: ${rendered}`).toBe('-0');
+        expect(satang, `${locale}: ${rendered}`).toBe('01');
+      }
+    }
+  });
 });
 
 describe('the two complete catalogues disagree where they must', () => {

@@ -485,8 +485,11 @@ export const la: PartialUiCatalogue = {
   'payment.heading': 'ແຈ້ງການຊຳລະເງິນ',
   'payment.loading': 'ກຳລັງເປີດຂໍ້ມູນການຊຳລະເງິນ…',
   'payment.outstanding': 'ຍອດຄ້າງຈ່າຍ',
-  'payment.outstandingAmount': (p, f) =>
-    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
   'payment.settled': 'ອໍເດີນີ້ຊຳລະຄົບແລ້ວ',
   'payment.account.legend': 'ໂອນເຂົ້າບັນຊີໃດບັນຊີໜຶ່ງ',
   'payment.account.copy': (p) => `ສຳເນົາເລກບັນຊີ ${p.accountDigits}`,
@@ -507,12 +510,21 @@ export const la: PartialUiCatalogue = {
   'payment.done': 'ໄດ້ຮັບສະລິບແລ້ວ. ທີມງານຈະກວດສອບ ແລະ ແຈ້ງກັບຄືນ.',
   'payment.history.heading': 'ສະລິບທີ່ສົ່ງໄປແລ້ວ',
   'payment.history.empty': 'ຍັງບໍ່ໄດ້ສົ່ງສະລິບ',
-  'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ສົ່ງເມື່ອ ${f.date(p.sentAt)} · ລໍຖ້າກວດສອບ`,
-  'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ສົ່ງເມື່ອ ${f.date(p.sentAt)} · ຮັບແລ້ວ`,
-  'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ບໍ່ຜ່ານ — ${p.reason}`,
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ສົ່ງເມື່ອ ${f.date(p.sentAt)} · ລໍຖ້າກວດສອບ`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ສົ່ງເມື່ອ ${f.date(p.sentAt)} · ຮັບແລ້ວ`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ບໍ່ຜ່ານ — ${p.reason}`;
+  },
   'payment.problem.noImage': 'ກະລຸນາແນບຮູບສະລິບ.',
   'payment.problem.imageTooBig': (p, f) =>
     `ຮູບໃຫຍ່ເກີນໄປ — ບໍ່ເກີນ ${f.plain(p.limitMib)} MB.`,

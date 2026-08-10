@@ -541,8 +541,11 @@ export const de: PartialUiCatalogue = {
   'payment.heading': 'Zahlung mitteilen',
   'payment.loading': 'Ihre Zahlungsdetails werden geöffnet…',
   'payment.outstanding': 'Noch offener Betrag',
-  'payment.outstandingAmount': (p, f) =>
-    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
   'payment.settled': 'Diese Bestellung ist vollständig bezahlt',
   'payment.account.legend': 'Überweisen Sie auf eines dieser Konten',
   'payment.account.copy': (p) => `Kontonummer ${p.accountDigits} kopieren`,
@@ -565,12 +568,21 @@ export const de: PartialUiCatalogue = {
     'Wir haben Ihren Beleg erhalten. Unser Team prüft ihn und meldet sich bei Ihnen.',
   'payment.history.heading': 'Von Ihnen gesendete Belege',
   'payment.history.empty': 'Noch keine Belege gesendet',
-  'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · wird geprüft`,
-  'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · akzeptiert`,
-  'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · nicht akzeptiert — ${p.reason}`,
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · wird geprüft`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · gesendet am ${f.date(p.sentAt)} · akzeptiert`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · nicht akzeptiert — ${p.reason}`;
+  },
   'payment.problem.noImage': 'Bitte fügen Sie ein Foto des Belegs hinzu.',
   'payment.problem.imageTooBig': (p, f) =>
     `Dieses Foto ist zu groß — bis zu ${f.plain(p.limitMib)} MB.`,

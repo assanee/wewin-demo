@@ -470,7 +470,11 @@ export const th: UiCatalogue = {
   'payment.heading': 'แจ้งชำระเงิน',
   'payment.loading': 'กำลังเปิดข้อมูลการชำระเงิน…',
   'payment.outstanding': 'ยอดคงค้าง',
-  'payment.outstandingAmount': (p, f) => `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
   'payment.settled': 'ออเดอร์นี้ชำระครบแล้ว',
   'payment.account.legend': 'โอนเข้าบัญชีใดบัญชีหนึ่ง',
   'payment.account.copy': (p) => `คัดลอกเลขบัญชี ${p.accountDigits}`,
@@ -497,12 +501,21 @@ export const th: UiCatalogue = {
   // Burmese reader sees Burmese digits) and only the two-digit fractional part stays
   // ASCII. The slip history is where a customer checks "did they receive what I sent?" —
   // rounding it to whole baht here is the exact failure this page exists to avoid.
-  'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รอตรวจสอบ`,
-  'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รับแล้ว`,
-  'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ไม่ผ่าน — ${p.reason}`,
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รอตรวจสอบ`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ส่งเมื่อ ${f.date(p.sentAt)} · รับแล้ว`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ไม่ผ่าน — ${p.reason}`;
+  },
   'payment.problem.noImage': 'กรุณาแนบรูปสลิป',
   'payment.problem.imageTooBig': (p, f) => `รูปใหญ่เกินไป — ไม่เกิน ${f.plain(p.limitMib)} MB`,
   'payment.problem.badAmount': 'กรอกจำนวนเงินเป็นตัวเลข ทศนิยมไม่เกินสองตำแหน่ง',

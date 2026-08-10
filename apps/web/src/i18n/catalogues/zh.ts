@@ -459,8 +459,11 @@ export const zh: PartialUiCatalogue = {
   'payment.heading': '通知一笔付款',
   'payment.loading': '正在打开付款信息…',
   'payment.outstanding': '尚欠金额',
-  'payment.outstandingAmount': (p, f) =>
-    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
   'payment.settled': '此订单已付清',
   'payment.account.legend': '转账至以下任一账户',
   'payment.account.copy': (p) => `复制账号 ${p.accountDigits}`,
@@ -480,12 +483,21 @@ export const zh: PartialUiCatalogue = {
   'payment.done': '已收到您的付款凭证，我们的团队会核实后与您联系。',
   'payment.history.heading': '已提交的付款凭证',
   'payment.history.empty': '尚未提交过凭证',
-  'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·待审核`,
-  'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·已确认`,
-  'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')}·未通过——${p.reason}`,
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·待审核`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}·${f.date(p.sentAt)}提交·已确认`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}·未通过——${p.reason}`;
+  },
   'payment.problem.noImage': '请上传一张凭证照片。',
   'payment.problem.imageTooBig': (p, f) =>
     `这张照片太大——请控制在 ${f.plain(p.limitMib)} MB 以内。`,

@@ -499,8 +499,11 @@ export const my: PartialUiCatalogue = {
   'payment.heading': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.loading': 'သင့်ငွေပေးချေမှုအချက်အလက်များ ဖွင့်နေသည်…',
   'payment.outstanding': 'ကျန်ရှိနေသေးသောပမာဏ',
-  'payment.outstandingAmount': (p, f) =>
-    `฿${f.plain(p.owedMinor / 100n)}.${String(p.owedMinor % 100n).padStart(2, '0')}`,
+  'payment.outstandingAmount': (p, f) => {
+    const negative = p.owedMinor < 0n;
+    const magnitude = negative ? -p.owedMinor : p.owedMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
+  },
   'payment.settled': 'ဤအော်ဒါအတွက် ငွေပေးချေမှု ပြီးပါပြီ',
   'payment.account.legend': 'အောက်ပါဘဏ်အကောင့်များထဲမှ တစ်ခုသို့ လွှဲပါ',
   'payment.account.copy': (p) => `ဘဏ်အကောင့်နံပါတ် ${p.accountDigits} ကို ကူးရန်`,
@@ -522,12 +525,21 @@ export const my: PartialUiCatalogue = {
     'သင့်ငွေလွှဲပြေစာ ရရှိပါပြီ။ ကျွန်ုပ်တို့အဖွဲ့က စစ်ဆေးပြီး ပြန်လည်အကြောင်းကြားပါမည်။',
   'payment.history.heading': 'သင်ပို့ခဲ့သော ငွေလွှဲပြေစာများ',
   'payment.history.empty': 'ငွေလွှဲပြေစာ မပို့ရသေးပါ',
-  'payment.history.submitted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`,
-  'payment.history.accepted': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`,
-  'payment.history.rejected': (p, f) =>
-    `฿${f.plain(p.slipMinor / 100n)}.${String(p.slipMinor % 100n).padStart(2, '0')} · လက်မခံပါ — ${p.reason}`,
+  'payment.history.submitted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`;
+  },
+  'payment.history.accepted': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`;
+  },
+  'payment.history.rejected': (p, f) => {
+    const negative = p.slipMinor < 0n;
+    const magnitude = negative ? -p.slipMinor : p.slipMinor;
+    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · လက်မခံပါ — ${p.reason}`;
+  },
   'payment.problem.noImage': 'ငွေလွှဲပြေစာဓာတ်ပုံ တွဲပို့ပေးပါ။',
   'payment.problem.imageTooBig': (p, f) =>
     `ဓာတ်ပုံ ကြီးလွန်းသည် — ${f.plain(p.limitMib)} MB အထိသာ ခွင့်ပြုသည်။`,
