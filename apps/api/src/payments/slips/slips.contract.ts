@@ -236,6 +236,19 @@ export interface SlipWire {
   readonly payerVerified: boolean;
   readonly submittedByUserId: string | null;
   readonly reviewedByUserId: string | null;
+  /**
+   * Which of the company's own accounts this transfer names — resolved to what reconciliation
+   * actually reads, not the raw id. The column (`0027_organisation.sql`) used to be write-only:
+   * persisted on every slip a customer submits through the picker, surfaced on no read path at
+   * all. This is that surfacing, for the staff slip-review screen where reconciliation happens.
+   *
+   * `null` covers two cases this wire does not distinguish, because a reviewer acts on them the
+   * same way — read the image instead: a slip written before the column existed, and (in
+   * principle only; the FK is `on delete restrict`) an account since deleted. Not audience-
+   * gated like `submittedByUserId` — this names one of the company's *own* accounts, which a
+   * customer already sees on the picker that produced this slip in the first place.
+   */
+  readonly receivedBankAccount: { readonly bankCode: string; readonly accountName: string } | null;
 }
 
 export interface SlipListWire {

@@ -246,9 +246,12 @@ export async function makeBankAccount(
 /**
  * `payment_slips.received_bank_account_id`, read directly.
  *
- * Not on the wire — `SlipWire` does not carry it (see `slips.contract.ts`'s own note on why
- * this task did not add it there) — so the only way to observe what `createSlip` actually
- * wrote is to read the column itself.
+ * ⚠️ **The raw id, and only the raw id, is not on the wire — F2's fix.** `SlipWire` now
+ * carries `receivedBankAccount` (the account's bank code and name, resolved server-side for
+ * the staff slip-review screen), but never the id itself: a reviewer reconciles against the
+ * name on the account, not against a uuid. Asserting that `createSlip` persisted the *right*
+ * account — as opposed to merely *an* account with the expected code and name — still has to
+ * read this column directly.
  */
 export async function receivedAccountOf(db: Database, slipId: string): Promise<string | null> {
   const result = await db.execute<{ id: string | null }>(

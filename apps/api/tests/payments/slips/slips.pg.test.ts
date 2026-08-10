@@ -997,6 +997,57 @@ describeWithPg('payment slips — upload, review, acceptance, rejection', () => 
     expect(await receivedAccountOf(db, unnamed.id)).toBeNull();
   }, 60_000);
 
+  /*
+   * F2 — the column above was write-only: persisted on every slip through the fix round 1
+   * pair above, surfaced on no read path at all. This is that fix — the resolved bank code
+   * and account name, not the raw id, reaching the wire the staff slip-review screen reads.
+   */
+  it('surfaces which account received the money on the wire, honestly when unnamed', async () => {
+    const order = await orderOf('account-surface');
+    const accountId = await makeBankAccount(db, {
+      bankCode: 'TEST',
+      accountNumber: String(Date.now() + 2),
+      accountName: `slips surfaced account ${tag}`,
+      isActive: true,
+    });
+
+    /*
+     * `receivedBankAccount` is not audience-gated — it names one of the company's own
+     * accounts, the same account the customer's own picker offered before this slip existed
+     * — so the create response (the customer's audience) carries it too, not only the staff
+     * screen this finding is about.
+     */
+    const named = await createSlip(order.id, 100_00n, customer, {
+      receivedBankAccountId: accountId,
+    });
+    expect(named.receivedBankAccount).toEqual({
+      bankCode: 'TEST',
+      accountName: `slips surfaced account ${tag}`,
+    });
+
+    /* The staff slip-review screen — where reconciliation actually happens. */
+    const namedReview = await call('GET', `/payments/slips/${named.id}`, { token: reviewer.token });
+    expect(namedReview.status, JSON.stringify(namedReview.body)).toBe(200);
+    expect((namedReview.body as SlipReviewWire).slip.receivedBankAccount).toEqual({
+      bankCode: 'TEST',
+      accountName: `slips surfaced account ${tag}`,
+    });
+
+    /*
+     * An unnamed slip is not a blank the wire papers over with a guess — `receivedBankAccount`
+     * is `null`, on the create response and on the review screen alike, so the dialog can say
+     * so honestly instead of leaving the row empty.
+     */
+    const unnamed = await createSlip(order.id, 100_00n);
+    expect(unnamed.receivedBankAccount).toBeNull();
+
+    const unnamedReview = await call('GET', `/payments/slips/${unnamed.id}`, {
+      token: reviewer.token,
+    });
+    expect(unnamedReview.status, JSON.stringify(unnamedReview.body)).toBe(200);
+    expect((unnamedReview.body as SlipReviewWire).slip.receivedBankAccount).toBeNull();
+  }, 60_000);
+
   it('refuses an account that is not active, and one that does not exist at all', async () => {
     const order = await orderOf('account-refuse');
     const retiredId = await makeBankAccount(db, {

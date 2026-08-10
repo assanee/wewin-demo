@@ -183,6 +183,19 @@ export function SlipReviewDialog({
                   แจ้งว่าโอนเมื่อ {at(review.slip.transferredAt)}
                   {review.slip.bankReference === null ? '' : ` · อ้างอิง ${review.slip.bankReference}`}
                 </p>
+                {/*
+                 * F2's fix: `received_bank_account_id` used to be write-only — persisted on
+                 * every slip a customer submits through the picker, surfaced on no read path
+                 * at all. This is the reconciliation screen the column exists for, so the
+                 * `null` case (a slip from before the column, or an account since deleted) is
+                 * said out loud rather than left blank — an older slip genuinely does not know.
+                 */}
+                <p className="text-muted-foreground mt-1 text-xs">
+                  เข้าบัญชี{' '}
+                  {review.slip.receivedBankAccount === null
+                    ? 'ไม่ทราบ — สลิปนี้บันทึกไว้ก่อนมีข้อมูลนี้'
+                    : `${review.slip.receivedBankAccount.bankCode} · ${review.slip.receivedBankAccount.accountName}`}
+                </p>
               </div>
 
               <div className="border-border rounded-lg border p-4">

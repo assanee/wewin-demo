@@ -3,6 +3,7 @@ import type { Database } from '@wewin/db';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
 import { and, asc, eq, inArray, sql } from '@wewin/db/sql';
 import {
+  bankAccounts,
   orderInstalments,
   orders,
   paymentSlips,
@@ -86,6 +87,19 @@ export interface SlipRow {
   readonly payerVerifiedByUserId: string | null;
   readonly payerVerifiedAt: Date | null;
   readonly createdAt: Date;
+  /**
+   * Which of the company's accounts received this transfer — F2's fix.
+   *
+   * Nullable for the reason `0027_organisation.sql` gives: no slip existed when the column
+   * was added, so a slip from before it is genuinely ignorant of its own destination account,
+   * not merely uninterested in stating it. `receivedBankAccountCode`/`Name` are `null` in that
+   * same case and whenever the account has since been deleted — `on delete restrict` on the FK
+   * makes the second case unreachable in practice, but the left join costs nothing to make it
+   * safe anyway.
+   */
+  readonly receivedBankAccountId: string | null;
+  readonly receivedBankAccountCode: string | null;
+  readonly receivedBankAccountName: string | null;
 }
 
 export interface AllocationRow {
@@ -143,7 +157,28 @@ const SLIP_COLUMNS = {
   payerVerifiedByUserId: paymentSlips.payerVerifiedByUserId,
   payerVerifiedAt: paymentSlips.payerVerifiedAt,
   createdAt: paymentSlips.createdAt,
+  receivedBankAccountId: paymentSlips.receivedBankAccountId,
+  /*
+   * From the left-joined account, not from `paymentSlips` — see `RECEIVING_ACCOUNT_JOIN`.
+   * Both are `null` on a slip that predates the column and on the (practically unreachable,
+   * `on delete restrict`-guarded) case of a deleted account, and the service renders that
+   * honestly rather than treating it as blank.
+   */
+  receivedBankAccountCode: bankAccounts.bankCode,
+  receivedBankAccountName: bankAccounts.accountName,
 } as const;
+
+/**
+ * The join every `SLIP_COLUMNS` read applies, so `receivedBankAccountCode`/`Name` are never
+ * selected without it — inlined at each call site rather than wrapped in a helper, because
+ * drizzle's query builder narrows its own return type on every chained call and a generic
+ * wrapper around `.leftJoin` cannot describe that narrowing without erasing it.
+ *
+ * `leftJoin`, not `innerJoin`: a slip with no receiving account on file — either because it
+ * predates the column or, in principle, because the account was later removed — is still a
+ * slip, and an inner join would silently drop it from every list.
+ */
+const RECEIVING_ACCOUNT_JOIN = [bankAccounts, eq(bankAccounts.id, paymentSlips.receivedBankAccountId)] as const;
 
 @Injectable()
 export class SlipsRepository {
@@ -174,6 +209,7 @@ export class SlipsRepository {
     const [row] = await this.executor(tx)
       .select(SLIP_COLUMNS)
       .from(paymentSlips)
+      .leftJoin(...RECEIVING_ACCOUNT_JOIN)
       .where(eq(paymentSlips.id, slipId))
       .limit(1);
     return row;
@@ -188,14 +224,20 @@ export class SlipsRepository {
    * `WHERE status = 'submitted'`, which is a compare-and-set and reports zero rows to a
    * caller that lost — and behind that, `payment_slips_guard_write()`, which refuses any
    * change to a slip that has left `submitted` whoever is asking.
+   *
+   * `FOR UPDATE OF payment_slips`, not a bare `for('update')`, once the receiving-account
+   * join is here: Postgres refuses `FOR UPDATE` outright on the nullable side of an outer
+   * join, and an unqualified lock clause tries to lock every table the query touches —
+   * `bank_accounts` included. Naming the table keeps the lock exactly where trap 6 needs it.
    */
   async lockSlip(tx: Tx, slipId: string): Promise<SlipRow | undefined> {
     const [row] = await tx
       .select(SLIP_COLUMNS)
       .from(paymentSlips)
+      .leftJoin(...RECEIVING_ACCOUNT_JOIN)
       .where(eq(paymentSlips.id, slipId))
       .limit(1)
-      .for('update');
+      .for('update', { of: paymentSlips });
     return row;
   }
 
@@ -218,6 +260,7 @@ export class SlipsRepository {
     return this.executor(tx)
       .select(SLIP_COLUMNS)
       .from(paymentSlips)
+      .leftJoin(...RECEIVING_ACCOUNT_JOIN)
       .where(eq(paymentSlips.orderId, orderId))
       .orderBy(asc(paymentSlips.transferredAt), asc(paymentSlips.id));
   }
@@ -240,6 +283,7 @@ export class SlipsRepository {
       })
       .from(paymentSlips)
       .innerJoin(orders, eq(orders.id, paymentSlips.orderId))
+      .leftJoin(...RECEIVING_ACCOUNT_JOIN)
       .where(eq(paymentSlips.status, 'submitted'))
       .orderBy(asc(paymentSlips.transferredAt), asc(paymentSlips.id))
       .limit(limit);
