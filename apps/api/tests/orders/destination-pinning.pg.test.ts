@@ -82,6 +82,8 @@ interface Harness {
    */
   readonly setDestination: (orderId: string, code: string) => Promise<void>;
   readonly destinationOf: (orderId: string) => Promise<string | null>;
+  /** A staff transition — `production_confirmed`, `redesign`, `superseded`. Asserts 200. */
+  readonly staffMove: (orderId: string, toStatus: string, body?: unknown) => Promise<OrderWire>;
   readonly admin: { readonly id: string };
   readonly taxCountries: TaxCountryService;
   /** Straight out of Postgres: the pinned columns and the stored JSON, side by side. */
@@ -98,6 +100,12 @@ describeWithPg('the destination, pinned into the document and its columns', () =
     const call = client(app.baseUrl);
 
     const customer = await makeActor(db, app, 'destination pinning customer', []);
+    /* Only the supersede case needs one: `production_confirmed`, `redesign` and `superseded`
+       are all staff moves, and a customer token gets 404 on every one of them. */
+    const staff = await makeActor(db, app, 'destination pinning staff', [
+      'orders.read',
+      'orders.write',
+    ]);
     const line = await liveLine(call);
 
     return {
@@ -135,6 +143,15 @@ describeWithPg('the destination, pinned into the document and its columns', () =
 
       setDestination: async (orderId, code) => {
         await db.update(orders).set({ destinationCountry: code }).where(eq(orders.id, orderId));
+      },
+
+      staffMove: async (orderId, toStatus, body = {}) => {
+        const moved = await call('POST', `/orders/${orderId}/transitions/${toStatus}`, {
+          token: staff.token,
+          body,
+        });
+        expect(moved.status, `${toStatus}: ${JSON.stringify(moved.body)}`).toBe(200);
+        return moved.body as OrderWire;
       },
 
       destinationOf: async (orderId) => {
@@ -264,6 +281,65 @@ describeWithPg('the destination, pinned into the document and its columns', () =
     await submitExisting(orderId, { contact: { email: 'a@b.co' } });
 
     expect((await documentRow(orderId)).pinnedVatRateBp).toBe(900);
+  }, 60_000);
+
+  /**
+   * ⭐ A post-freeze re-quote is the *same sale*, so it is the same country.
+   *
+   * `OrdersService`'s `supersede` branch builds the successor with `createDraft`, copying the
+   * five contact fields off the predecessor. The destination joins them — and until fix round 1
+   * it did not, because `orders.destination_country` was written only at submit and the
+   * successor is created before it has one. A successor that lost the country would resolve
+   * `null`, price at Thai 7% and pin 700 bp, **on the one path whose entire purpose is to put a
+   * new number in front of a customer for approval**.
+   *
+   * ── Why this asserts the pinned rate and not just the column ──────────────────────
+   *
+   * `traps.pg.test.ts`'s TRAP 7 already reads `contact_email` off the successor with raw SQL,
+   * and extending it by one column would prove the copy *happened*. It would not prove the copy
+   * *matters* — that a successor priced afterwards charges 900 rather than 700 — which is the
+   * actual claim, and the one a reader of this file is entitled to see proved. `OrderWire` does
+   * not expose `destinationCountry`, so the successor's own pinned document is the observation.
+   *
+   * ── Why here rather than in `traps.pg.test.ts` ────────────────────────────────────
+   *
+   * TRAP 7 is about the supersede *mechanism* — that a successor exists, points back, and is
+   * not a cancellation. This is about what the pin reads, which is this file's subject and
+   * where the tax-country fixtures and `documentRow` already live. The destination story is
+   * split by *what is being proved*, one file each: `destination-tax` resolves a code,
+   * `destination-submit` stores it, this one pins it.
+   */
+  it('carries the destination onto a supersede successor, so the re-quote prices the same country', async () => {
+    const { admin, taxCountries, createDraft, submitExisting, documentRow, staffMove } =
+      await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+
+    const { orderId } = await createDraft({
+      contact: { email: 'a@b.co', destinationCountry: 'SG' },
+    });
+    await submitExisting(orderId, { contact: { email: 'a@b.co' } });
+    expect((await documentRow(orderId)).pinnedVatRateBp, 'the predecessor').toBe(900);
+
+    /* The only route to `superseded`: freeze it, redesign it, then replace it. */
+    await staffMove(orderId, 'production_confirmed');
+    await staffMove(orderId, 'redesign', { reason: 'ส่วนต่างสูงเกินกว่าจะรับไว้เอง' });
+    const superseded = await staffMove(orderId, 'superseded', {
+      reason: 'ออกใบใหม่ให้ลูกค้าอนุมัติ',
+    });
+
+    const successorId = superseded.supersededByOrderId;
+    expect(successorId, 'no successor was created').not.toBeNull();
+
+    /* Submitted naming no country, exactly as a customer approving a replacement would: the
+       destination can only have come from the predecessor, through `createDraft`. */
+    await submitExisting(successorId ?? '', { contact: { email: 'a@b.co' } });
+    const successorDocument = await documentRow(successorId ?? '');
+
+    expect(successorDocument.pinnedVatRateBp, 'the successor').toBe(900);
+    expect(successorDocument.document.destinationCountry).toBe('SG');
   }, 60_000);
 
   it('pins nothing new when the order names no destination, and still uses the default rule', async () => {
