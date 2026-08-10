@@ -163,6 +163,16 @@ export type {
 } from './organisation.js';
 
 export type {
+  DestinationTaxBasis,
+  DestinationWire,
+  SettingChangeWire,
+  TaxCountryAvailabilityRequest,
+  TaxCountryCreateRequest,
+  TaxCountryPatchRequest,
+  TaxCountryWire,
+} from './tax.js';
+
+export type {
   AdminOptionGroupListWire,
   AdminOptionGroupWire,
   AdminOptionValueWire,

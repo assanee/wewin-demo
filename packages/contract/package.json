@@ -16,6 +16,7 @@
     "./message": "./dist/message.js",
     "./admin": "./dist/admin.js",
     "./order": "./dist/order.js",
+    "./tax": "./dist/tax.js",
     "./quote": "./dist/quote.js",
     "./review": "./dist/review.js",
     "./schedule": "./dist/schedule.js",

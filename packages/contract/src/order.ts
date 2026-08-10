@@ -8,6 +8,7 @@ import { priceBreakdownWireSchema, priceRequestWireSchema, type PriceBreakdownWi
 import { catalogRefShape, type CatalogRef } from './catalog.js';
 import { lengthWireSchema, type LengthWire } from './measure.js';
 import type { OrganisationProfileWire } from './organisation.js';
+import { DESTINATION_TAX_BASES } from './tax.js';
 
 /**
  * The order lifecycle on the wire — phase 5a.
@@ -248,6 +249,22 @@ export interface OrderDocumentWire {
   readonly grandTotalThbMinor: MoneyWire<'THB'>;
   /** How many days the customer was promised. Plan 7.9(ค) makes it an anchor; this pins it. */
   readonly leadTimeDays: number;
+  /**
+   * Where the goods are going, frozen at submit, and absent on every document issued before
+   * this field existed.
+   *
+   * Optional is what keeps the 21 already-issued quotations readable: `documentSchemaVersion`
+   * is a bare `z.literal` with no v1/v2 union reader, and a parse failure is a 503 for staff
+   * and customer alike (`apps/api/src/orders/order.repository.ts:722-729`).
+   */
+  readonly destinationCountry?: string | undefined;
+  /**
+   * Which arithmetic ran, recorded because the printed page needs it and cannot ask.
+   *
+   * The renderer picks a layout from this. It cannot read `tax_countries` instead: that table
+   * is mutable, and a quotation must print what was quoted, not what is policy today.
+   */
+  readonly taxBasis?: (typeof DESTINATION_TAX_BASES)[number] | undefined;
 }
 
 /**
@@ -310,6 +327,8 @@ export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
     rateBp: z.int().min(0).max(10_000),
     treatment: z.literal(VAT_TREATMENTS_WIRE),
   }),
+  destinationCountry: z.string().regex(/^[A-Z]{2}$/u).optional(),
+  taxBasis: z.enum(DESTINATION_TAX_BASES).optional(),
   lines: z.array(orderDocumentLineWireSchema),
   charges: z.array(orderDocumentChargeWireSchema),
   documentOverride: orderDocumentOverrideWireSchema.nullable(),
