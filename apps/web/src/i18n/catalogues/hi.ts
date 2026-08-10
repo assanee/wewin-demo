@@ -413,6 +413,7 @@ export const hi: PartialUiCatalogue = {
   'submit.email': 'ईमेल',
   'submit.phone': 'फ़ोन',
   'submit.channelHint': 'दोनों में से कम से कम एक — अकेला फ़ोन नंबर भी चलेगा।',
+  'submit.destination': 'गंतव्य देश',
   'submit.action': 'कोटेशन मँगाएँ',
   'submit.sending': 'कोटेशन जारी हो रहा है…',
   'submit.problem.nameMissing': 'कृपया संपर्क का नाम दीजिए।',
@@ -420,6 +421,7 @@ export const hi: PartialUiCatalogue = {
   'submit.problem.badPhone':
     'यह फ़ोन नंबर पढ़ा नहीं जा सका — जैसे 081-234-5678।',
   'submit.problem.badEmail': 'यह ईमेल पता पढ़ा नहीं जा सका।',
+  'submit.problem.badDestination': 'कृपया गंतव्य फिर से चुनें — पिछला विकल्प अब सूची में नहीं है।',
   'submit.problem.unreachable': 'जुड़ नहीं पा रहे। कृपया फिर कोशिश कीजिए।',
   'submit.problem.unconfigured':
     'अभी अनुरोध नहीं लिए जा सकते। कृपया बिक्री टीम से संपर्क कीजिए।',

@@ -395,6 +395,7 @@ export const vi: PartialUiCatalogue = {
   'submit.email': 'Email',
   'submit.phone': 'Điện thoại',
   'submit.channelHint': 'Ít nhất một trong hai — chỉ số điện thoại cũng được.',
+  'submit.destination': 'Điểm đến',
   'submit.action': 'Yêu cầu báo giá',
   'submit.sending': 'Đang phát hành báo giá…',
   'submit.problem.nameMissing': 'Xin cho biết tên người liên hệ.',
@@ -402,6 +403,7 @@ export const vi: PartialUiCatalogue = {
   'submit.problem.badPhone':
     'Không đọc được số điện thoại này — ví dụ 081-234-5678.',
   'submit.problem.badEmail': 'Không đọc được địa chỉ email này.',
+  'submit.problem.badDestination': 'Xin chọn lại điểm đến — lựa chọn trước đó không còn trong danh sách.',
   'submit.problem.unreachable': 'Không kết nối được. Xin thử lại.',
   'submit.problem.unconfigured':
     'Hiện chưa tiếp nhận yêu cầu. Xin liên hệ bộ phận kinh doanh.',

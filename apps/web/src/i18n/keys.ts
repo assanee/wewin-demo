@@ -360,12 +360,14 @@ export interface UiParamsByKey {
   'submit.email': Plain;
   'submit.phone': Plain;
   'submit.channelHint': Plain;
+  'submit.destination': Plain;
   'submit.action': Plain;
   'submit.sending': Plain;
   'submit.problem.nameMissing': Plain;
   'submit.problem.noChannel': Plain;
   'submit.problem.badPhone': Plain;
   'submit.problem.badEmail': Plain;
+  'submit.problem.badDestination': Plain;
   'submit.problem.unreachable': Plain;
   'submit.problem.unconfigured': Plain;
   'submit.problem.unavailable': Plain;

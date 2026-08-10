@@ -396,12 +396,15 @@ export const my: PartialUiCatalogue = {
   'submit.email': 'အီးမေးလ်',
   'submit.phone': 'ဖုန်း',
   'submit.channelHint': 'နှစ်ခုအနက် အနည်းဆုံးတစ်ခု — ဖုန်းနံပါတ်တစ်ခုတည်းလည်း ရပါသည်။',
+  'submit.destination': 'ပန်းတိုင်နိုင်ငံ',
   'submit.action': 'စျေးနှုန်းစာရွက် တောင်းခံရန်',
   'submit.sending': 'စျေးနှုန်းစာရွက် ထုတ်နေသည်…',
   'submit.problem.nameMissing': 'ဆက်သွယ်ရန်အမည်ကို ထည့်ပါ။',
   'submit.problem.noChannel': 'အီးမေးလ်လိပ်စာ သို့မဟုတ် ဖုန်းနံပါတ်ကို ထည့်ပါ။',
   'submit.problem.badPhone': 'ဤဖုန်းနံပါတ်ကို မဖတ်နိုင်ပါ — ဥပမာ 081-234-5678။',
   'submit.problem.badEmail': 'ဤအီးမေးလ်လိပ်စာကို မဖတ်နိုင်ပါ။',
+  'submit.problem.badDestination':
+    'ကျေးဇူးပြု၍ ပန်းတိုင်ကို ပြန်ရွေးပါ — ယခင်ရွေးချယ်မှုသည် စာရင်းတွင် မရှိတော့ပါ။',
   'submit.problem.unreachable': 'ချိတ်ဆက်၍မရပါ။ ထပ်ကြိုးစားပါ။',
   'submit.problem.unconfigured':
     'ယခု တောင်းဆိုချက်များ လက်မခံနိုင်ပါ။ အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',

@@ -433,6 +433,7 @@ export const de: PartialUiCatalogue = {
   'submit.phone': 'Telefon',
   'submit.channelHint':
     'Mindestens eines von beiden — eine Telefonnummer allein genügt.',
+  'submit.destination': 'Zielland',
   'submit.action': 'Angebot anfordern',
   'submit.sending': 'Angebot wird erstellt…',
   'submit.problem.nameMissing': 'Bitte geben Sie einen Ansprechpartner an.',
@@ -441,6 +442,8 @@ export const de: PartialUiCatalogue = {
   'submit.problem.badPhone':
     'Diese Telefonnummer ist nicht lesbar — z. B. 081-234-5678.',
   'submit.problem.badEmail': 'Diese E-Mail-Adresse ist nicht lesbar.',
+  'submit.problem.badDestination':
+    'Bitte wählen Sie das Zielland erneut aus — die vorherige Wahl steht nicht mehr zur Verfügung.',
   'submit.problem.unreachable': 'Keine Verbindung. Bitte versuchen Sie es erneut.',
   'submit.problem.unconfigured':
     'Anfragen können derzeit nicht entgegengenommen werden. Bitte wenden Sie sich an den Vertrieb.',

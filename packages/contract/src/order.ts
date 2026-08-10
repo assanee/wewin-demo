@@ -367,6 +367,16 @@ export interface OrderContactWire {
   readonly name: string | null;
   readonly phone: string | null;
   readonly locale: string;
+  /**
+   * Where this order is going, or `null` on a cart that predates the field and every order
+   * before a destination was ever chosen.
+   *
+   * ⭐ Carried beside `locale` deliberately — the two make the identical round trip through
+   * `GET /orders/:id` (`encode.ts`'s `contact` object, off `ScopedOrder.destinationCountry`),
+   * and the storefront's pre-fill (`prefillContact.ts`) follows `locale` to find every place
+   * this field had to be added too.
+   */
+  readonly destinationCountry: string | null;
 }
 
 export interface OrderMoneyWire {

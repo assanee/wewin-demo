@@ -111,6 +111,8 @@ export interface ContactDraft {
   readonly name: string;
   readonly email: string;
   readonly phone: string;
+  /** The picker's own value — always present, defaulting to `'TH'`. See `DestinationSelect`. */
+  readonly destinationCountry: string;
 }
 
 export interface ContactWire {
@@ -118,6 +120,8 @@ export interface ContactWire {
   readonly email?: string | undefined;
   readonly phone?: string | undefined;
   readonly locale: string;
+  /** `OrderContactRequestWire.destinationCountry`, restated — sent on every submit. */
+  readonly destinationCountry: string;
 }
 
 /**
@@ -162,6 +166,10 @@ export function contactToWire(
       ...(normalised === null ? {} : { phone: normalised }),
       /* The language the customer is reading in — pinned on the document at submit (plan 10.6). */
       locale,
+      /* Where the order is going — the picker's value, sent every time rather than left to fall
+       * back to whatever the cart already carried, so what the customer sees on screen is what
+       * gets pinned. */
+      destinationCountry: draft.destinationCountry,
     },
   };
 }

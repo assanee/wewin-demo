@@ -20,12 +20,24 @@ import {
  * So the two decisions live in pure functions (`resolveContactPrefill`, `fieldsToApply`) and
  * are tested here with no network at all — and only the last describe block, where a failure
  * has to become "nothing", touches a mocked `fetch`.
+ *
+ * ⭐ `destinationCountry` is the sixth hop (Task 13). It rides the identical either/or as
+ * `name`/`phone`/`email`, with one difference worth stating up front: there is no "nothing to
+ * offer" empty string for a destination, so its sentinel is `'TH'` — the form's own default —
+ * rather than `''`. Every fixture below that used to omit it now carries `'TH'` unless the test
+ * is specifically about a non-Thai value, which keeps every pre-existing assertion's shape
+ * exactly what it already asserted.
  */
 
 describe('⭐ the last order wins over the account', () => {
   it('uses the order’s contact when both a prior order and an account exist', () => {
     const result = resolveContactPrefill(
-      { name: 'สมหญิง ใจดี', phone: '+66811111111', email: 'somying@example.test' },
+      {
+        name: 'สมหญิง ใจดี',
+        phone: '+66811111111',
+        email: 'somying@example.test',
+        destinationCountry: 'SG',
+      },
       { phone: '+66899999999', email: 'account-fallback@example.test' },
     );
 
@@ -33,6 +45,7 @@ describe('⭐ the last order wins over the account', () => {
       name: 'สมหญิง ใจดี',
       phone: '+66811111111',
       email: 'somying@example.test',
+      destinationCountry: 'SG',
     });
   });
 
@@ -40,12 +53,15 @@ describe('⭐ the last order wins over the account', () => {
     // ⚠️ Either/or, not a merge — see the module note on why a channel the order left
     // blank stays blank rather than being patched from the fallback.
     const result = resolveContactPrefill(
-      { name: 'สมหญิง ใจดี', phone: null, email: 'somying@example.test' },
+      { name: 'สมหญิง ใจดี', phone: null, email: 'somying@example.test', destinationCountry: null },
       { phone: '+66899999999', email: 'account-fallback@example.test' },
     );
 
     expect(result.phone).toBe('');
     expect(result.email).toBe('somying@example.test');
+    // `destinationCountry: null` is a cart that predates the field, or one that never chose —
+    // either way it resolves to the form's own default, not to an empty value of its own.
+    expect(result.destinationCountry).toBe('TH');
   });
 
   it('falls back to the account when there is no prior order at all', () => {
@@ -54,7 +70,12 @@ describe('⭐ the last order wins over the account', () => {
       email: 'account@example.test',
     });
 
-    expect(result).toEqual({ name: '', phone: '+66899999999', email: 'account@example.test' });
+    expect(result).toEqual({
+      name: '',
+      phone: '+66899999999',
+      email: 'account@example.test',
+      destinationCountry: 'TH',
+    });
   });
 
   it('⚠️ never invents a name from the account — only a prior order gives one', () => {
@@ -64,38 +85,95 @@ describe('⭐ the last order wins over the account', () => {
     expect(result.name).toBe('');
   });
 
+  it('⭐ never invents a destination from the account either — only a prior order gives one', () => {
+    // An account carries no destination at all: the field simply is not on `AccountContactRaw`.
+    // The account path always answers `TH`, whatever the order path would have said.
+    const result = resolveContactPrefill(null, { phone: '+66899999999', email: null });
+    expect(result.destinationCountry).toBe('TH');
+  });
+
   it('is empty when neither source has anything', () => {
-    expect(resolveContactPrefill(null, null)).toEqual({ name: '', phone: '', email: '' });
+    expect(resolveContactPrefill(null, null)).toEqual({
+      name: '',
+      phone: '',
+      email: '',
+      destinationCountry: 'TH',
+    });
+  });
+
+  it('⭐ a prefilled destination beats the TH default', () => {
+    const result = resolveContactPrefill(
+      { name: 'สมหญิง ใจดี', phone: '+66811111111', email: null, destinationCountry: 'SG' },
+      null,
+    );
+
+    expect(result.destinationCountry).toBe('SG');
   });
 });
 
 describe('⭐ a field the customer has already typed into is never overwritten', () => {
-  const prefill = { name: 'สมหญิง ใจดี', phone: '+66811111111', email: 'somying@example.test' };
+  const prefill = {
+    name: 'สมหญิง ใจดี',
+    phone: '+66811111111',
+    email: 'somying@example.test',
+    /* `TH` here on purpose: it is the sentinel that means "nothing to offer" for a
+     * destination, exactly as `''` means it for the other three fields below — so these
+     * touched/untouched cases read the same as they always did. */
+    destinationCountry: 'TH',
+  };
 
   it('omits every touched field from what should be applied', () => {
-    const toApply = fieldsToApply({ name: true, phone: false, email: false }, prefill);
+    const toApply = fieldsToApply(
+      { name: true, phone: false, email: false, destinationCountry: false },
+      prefill,
+    );
 
     expect(toApply).not.toHaveProperty('name');
     expect(toApply).toEqual({ phone: '+66811111111', email: 'somying@example.test' });
   });
 
   it('applies nothing at all once every field has been touched', () => {
-    expect(fieldsToApply({ name: true, phone: true, email: true }, prefill)).toEqual({});
+    expect(
+      fieldsToApply({ name: true, phone: true, email: true, destinationCountry: true }, prefill),
+    ).toEqual({});
   });
 
   it('applies every field when nothing has been touched yet', () => {
-    expect(fieldsToApply({ name: false, phone: false, email: false }, prefill)).toEqual(prefill);
+    // `destinationCountry` is excepted: `prefill.destinationCountry` is `'TH'` here, the
+    // sentinel for "nothing to offer" — see the fixture's own comment — so it is correctly
+    // never applied, touched or not. The dedicated test below covers the case where it is.
+    expect(
+      fieldsToApply({ name: false, phone: false, email: false, destinationCountry: false }, prefill),
+    ).toEqual({ name: prefill.name, phone: prefill.phone, email: prefill.email });
   });
 
   it('never applies an empty answer over an untouched field either', () => {
     // Untouched does not mean "anything goes" — a source with nothing to say for a field
     // must not blank out whatever placeholder or prior value is already showing.
     const toApply = fieldsToApply(
-      { name: false, phone: false, email: false },
-      { name: '', phone: '+66811111111', email: '' },
+      { name: false, phone: false, email: false, destinationCountry: false },
+      { name: '', phone: '+66811111111', email: '', destinationCountry: 'TH' },
     );
 
     expect(toApply).toEqual({ phone: '+66811111111' });
+  });
+
+  it('⭐ a prefilled destination beats the TH default, the same way a real phone beats an empty one', () => {
+    const toApply = fieldsToApply(
+      { name: true, phone: true, email: true, destinationCountry: false },
+      { name: '', phone: '', email: '', destinationCountry: 'SG' },
+    );
+
+    expect(toApply).toEqual({ destinationCountry: 'SG' });
+  });
+
+  it('⚠️ a touched destination is never overwritten, however different the prefill is', () => {
+    const toApply = fieldsToApply(
+      { name: true, phone: true, email: true, destinationCountry: true },
+      { name: '', phone: '', email: '', destinationCountry: 'SG' },
+    );
+
+    expect(toApply).not.toHaveProperty('destinationCountry');
   });
 });
 
@@ -104,7 +182,10 @@ describe('⭐ the newest order is the one most recently submitted, not most rece
    * `GET /orders` sorts `updatedAt desc`, and `moveStatus()` bumps `updatedAt` on any later
    * staff status change without touching the frozen contact columns. So the list's own order
    * is not a safe proxy for "which contact is newest" — these fix that at the position that
-   * matters, before a network is ever involved.
+   * matters, before a network is ever involved. `destinationCountry` is frozen at submit
+   * exactly the same way the other contact fields are, so this rule protects it too, even
+   * though none of these fixtures carry a contact at all — `newestSubmittedOrder` only ever
+   * sees `{id, submittedAt}`.
    */
 
   it('picks the greatest `submittedAt`, even when it is not the first row', () => {
@@ -175,7 +256,13 @@ describe('the fetch: degrades to nothing rather than to a throw', () => {
       }
       if (url.endsWith('/orders/order-2')) {
         return jsonResponse({
-          contact: { name: 'สมหญิง ใจดี', phone: '+66811111111', email: 'somying@example.test', locale: 'th' },
+          contact: {
+            name: 'สมหญิง ใจดี',
+            phone: '+66811111111',
+            email: 'somying@example.test',
+            locale: 'th',
+            destinationCountry: 'SG',
+          },
         });
       }
       throw new Error(`unexpected url: ${url}`);
@@ -184,7 +271,14 @@ describe('the fetch: degrades to nothing rather than to a throw', () => {
 
     const prefill = await fetchContactPrefill('token-abc');
 
-    expect(prefill).toEqual({ name: 'สมหญิง ใจดี', phone: '+66811111111', email: 'somying@example.test' });
+    // ⭐ `destinationCountry` survives the whole decode, off the exact same response body
+    // `locale` already made this round trip through.
+    expect(prefill).toEqual({
+      name: 'สมหญิง ใจดี',
+      phone: '+66811111111',
+      email: 'somying@example.test',
+      destinationCountry: 'SG',
+    });
     // Never opened the draft's detail — there was nothing there worth a third call.
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
@@ -207,7 +301,13 @@ describe('the fetch: degrades to nothing rather than to a throw', () => {
       }
       if (url.endsWith('/orders/order-b-new-number')) {
         return jsonResponse({
-          contact: { name: 'สมหญิง ใจดี', phone: '+66822222222', email: null, locale: 'th' },
+          contact: {
+            name: 'สมหญิง ใจดี',
+            phone: '+66822222222',
+            email: null,
+            locale: 'th',
+            destinationCountry: null,
+          },
         });
       }
       throw new Error(`unexpected url: ${url}`);
@@ -216,7 +316,12 @@ describe('the fetch: degrades to nothing rather than to a throw', () => {
 
     const prefill = await fetchContactPrefill('token-abc');
 
-    expect(prefill).toEqual({ name: 'สมหญิง ใจดี', phone: '+66822222222', email: '' });
+    expect(prefill).toEqual({
+      name: 'สมหญิง ใจดี',
+      phone: '+66822222222',
+      email: '',
+      destinationCountry: 'TH',
+    });
     // Never even opened the older, list-first order's detail.
     expect(fetchSpy).not.toHaveBeenCalledWith(expect.stringContaining('order-a-old-number'), expect.anything());
   });
@@ -240,6 +345,7 @@ describe('the fetch: degrades to nothing rather than to a throw', () => {
       name: '',
       phone: '+66899999999',
       email: '',
+      destinationCountry: 'TH',
     });
   });
 
