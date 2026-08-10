@@ -30,6 +30,31 @@ import { reviewsApiBaseUrl } from '../reviews/api';
  * storefront-side check against the list actually on screen: not a foreign key, and not a second
  * opinion about which countries are valid — only "was this one of the options this customer was
  * shown just now".
+ *
+ * ── ⚠️ "Not yet on the list" is not "not on the list" — a review-round finding ────
+ *
+ * The guard above answers a question that only makes sense once the read has actually settled.
+ * A first cut of this module let the caller reach for `isKnownDestination` against whatever
+ * options state happened to hold at the moment `send()` ran — and the pre-fill effect and this
+ * module's own fetch are two independent, unsequenced requests. Hold `GET /destinations` open
+ * while a returning customer's fast pre-fill sets `destinationCountry` to `'SG'`, and the
+ * component's options were still sitting at their initial value: indistinguishable, by content
+ * alone, from "the read failed and degraded to Thailand". The guard fired, told the customer to
+ * choose again, and the only option visibly on screen was Thailand — so a customer who did
+ * exactly what the banner asked would submit at the wrong destination and the wrong VAT rate.
+ *
+ * `DestinationsRead` names the third state explicitly rather than inferring it from content:
+ * `loading` (the request is in flight — the guard must not fire, because there is nothing yet
+ * to check against), `ready` (a real list came back), `failed` (it did not, and the options are
+ * the same Thailand-only degrade as always). `destinationIsSubmittable` is the guard, now a
+ * function of that state rather than of a bare options array — `isKnownDestination` still does
+ * the actual list check and stays exported, because `ready` and `failed` both still need it.
+ *
+ * The alternative — sequencing the destinations fetch ahead of the pre-fill, so options are
+ * never in an ambiguous state when a destination might already be set — was rejected: it would
+ * slow the common path (an ordinary customer with nothing to pre-fill) to close a window that
+ * affects only a returning customer whose pre-fill lands before a settings read most requests
+ * finish in milliseconds.
  */
 
 /** `DestinationWire` (`@wewin/contract/tax`), restated — `code` and `nameTh`, nothing else. */
@@ -44,14 +69,22 @@ export const THAILAND_ONLY: readonly Destination[] = [{ code: 'TH', nameTh: 'ไ
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** Whether the read actually reached a real list, without collapsing that into its result. */
+interface RawRead {
+  readonly ok: boolean;
+  readonly options: readonly Destination[];
+}
+
 /**
  * `{ destinations: [{code, nameTh}] }` off `GET /destinations` — active rows, `sort_order` as
- * the API applied it. Never re-sorted here, and never resolves to an empty list: a fetch that
- * cannot be read as that shape degrades to `THAILAND_ONLY` exactly as a network failure does.
+ * the API applied it, never re-sorted here. `ok: false` on every failure — no API configured,
+ * unreachable, a bad status, a body this bundle cannot read, or an empty list — paired with
+ * `THAILAND_ONLY` either way, so a caller that only wants *something to render* never has to
+ * branch on `ok` at all.
  */
-export async function fetchDestinations(): Promise<readonly Destination[]> {
+async function readRaw(): Promise<RawRead> {
   const base = reviewsApiBaseUrl();
-  if (base === null) return THAILAND_ONLY;
+  if (base === null) return { ok: false, options: THAILAND_ONLY };
 
   try {
     const response = await fetch(`${base}/destinations`, {
@@ -63,10 +96,10 @@ export async function fetchDestinations(): Promise<readonly Destination[]> {
        */
       cache: 'no-store',
     });
-    if (!response.ok) return THAILAND_ONLY;
+    if (!response.ok) return { ok: false, options: THAILAND_ONLY };
 
     const body: unknown = await response.json();
-    if (!isRecord(body) || !Array.isArray(body['destinations'])) return THAILAND_ONLY;
+    if (!isRecord(body) || !Array.isArray(body['destinations'])) return { ok: false, options: THAILAND_ONLY };
 
     const destinations = body['destinations'].flatMap((raw) => {
       if (!isRecord(raw) || typeof raw['code'] !== 'string' || typeof raw['nameTh'] !== 'string') {
@@ -75,10 +108,40 @@ export async function fetchDestinations(): Promise<readonly Destination[]> {
       return [{ code: raw['code'], nameTh: raw['nameTh'] }];
     });
 
-    return destinations.length > 0 ? destinations : THAILAND_ONLY;
+    return destinations.length > 0 ? { ok: true, options: destinations } : { ok: false, options: THAILAND_ONLY };
   } catch {
-    return THAILAND_ONLY;
+    return { ok: false, options: THAILAND_ONLY };
   }
+}
+
+/**
+ * `readRaw`, with `ok` collapsed away — every failure already carries `THAILAND_ONLY`, so a
+ * caller that only renders a list (never guards a submit against it) never needs to ask which
+ * happened. Kept for exactly that caller and for the tests that already pin its shape.
+ */
+export async function fetchDestinations(): Promise<readonly Destination[]> {
+  return (await readRaw()).options;
+}
+
+/**
+ * Where the destinations read stands, as a state a guard can act on — not inferred from the
+ * content of an options array, which cannot tell "nothing has come back yet" apart from "the
+ * read failed and this is the degrade". See the module note for the bug this shape replaced.
+ */
+export type DestinationsRead =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly options: readonly Destination[] }
+  | { readonly kind: 'failed'; readonly options: readonly Destination[] };
+
+/**
+ * The same read as `fetchDestinations`, without collapsing success and failure into the same
+ * shape. Never itself resolves to `{kind: 'loading'}` — that is the caller's own state before
+ * this promise settles, which is the whole point: the caller decides what "still waiting" means
+ * to it, this module only ever reports what actually came back.
+ */
+export async function readDestinations(): Promise<Exclude<DestinationsRead, { readonly kind: 'loading' }>> {
+  const { ok, options } = await readRaw();
+  return ok ? { kind: 'ready', options } : { kind: 'failed', options };
 }
 
 /**
@@ -89,4 +152,18 @@ export async function fetchDestinations(): Promise<readonly Destination[]> {
  */
 export function isKnownDestination(code: string, options: readonly Destination[]): boolean {
   return options.some((option) => option.code === code);
+}
+
+/**
+ * ⭐ May `code` be submitted, given where the destinations read currently stands?
+ *
+ * The guard, restated as a function of `DestinationsRead` rather than of a bare options array —
+ * see the module note. `loading` always answers yes: there is nothing yet to check against, and
+ * refusing on incomplete information is exactly the bug this function exists to close. `ready`
+ * and `failed` both defer to `isKnownDestination`, unchanged — the Thailand-only degrade is not
+ * an exemption from the guard, only from what the guard has to work with.
+ */
+export function destinationIsSubmittable(code: string, state: DestinationsRead): boolean {
+  if (state.kind === 'loading') return true;
+  return isKnownDestination(code, state.options);
 }

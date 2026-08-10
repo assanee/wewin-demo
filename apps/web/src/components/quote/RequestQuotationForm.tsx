@@ -12,7 +12,12 @@ import {
   type ContactProblem,
 } from '../../lib/quote/submit';
 import { fetchContactPrefill, fieldsToApply } from '../../lib/quote/prefillContact';
-import { fetchDestinations, isKnownDestination, THAILAND_ONLY, type Destination } from '../../lib/quote/destinations';
+import {
+  destinationIsSubmittable,
+  readDestinations,
+  THAILAND_ONLY,
+  type DestinationsRead,
+} from '../../lib/quote/destinations';
 import type { Session } from '../../lib/auth/account';
 import { useLocale } from '../../state/localeContext';
 import { DestinationSelect } from './DestinationSelect';
@@ -59,11 +64,22 @@ import type { PlainKey } from '../../i18n/keys';
  * for independently: a customer must be able to open the picker before this form has ever heard
  * back from `GET /orders`, and a slow or unreachable pre-fill must not hold the picker's
  * options hostage. On failure it degrades to Thailand alone, same as the picker's own default,
- * so this form is exactly as submittable as it was before either fetch ran. `isKnownDestination`
+ * so this form is exactly as submittable as it was before either fetch ran. `destinationIsSubmittable`
  * is a last check before submit: a value this app did not itself select — most likely a
  * destination pre-filled from a prior order that has since been withdrawn — is refused here
  * rather than reaching the API, where Task 9 found the refusal otherwise lands far from the
  * mistake.
+ *
+ * ⚠️ **`destinationsRead` is a tri-state, not an options array — a review-round finding.** The
+ * destinations fetch and the pre-fill fetch are unsequenced, so a returning customer's fast
+ * pre-fill can set `destinationCountry` to a real, valid code *before* this form has heard back
+ * from `GET /destinations` at all. An options array cannot tell that apart from "the read
+ * failed and degraded to Thailand" — both look like `[TH]` — and a guard reading only the array
+ * would refuse a perfectly good selection, with a banner telling the customer to pick again from
+ * the one option visibly on screen: Thailand. Wrong destination, wrong VAT, and the customer did
+ * exactly what the form told them to. `destinationsRead.kind === 'loading'` is what lets the
+ * guard tell "nothing to check against yet" apart from "checked, and this is the answer" — see
+ * `destinations.ts`'s module note for the full account.
  */
 
 /**
@@ -109,8 +125,9 @@ export function RequestQuotationForm({
   const [phone, setPhone] = useState('');
   /* `TH` — `DestinationSelect`'s own default, and `ContactPrefill`'s "nothing to offer" value. */
   const [destinationCountry, setDestinationCountry] = useState('TH');
-  /* `THAILAND_ONLY` until the real list arrives, and again forever if that fetch fails. */
-  const [destinationOptions, setDestinationOptions] = useState<readonly Destination[]>(THAILAND_ONLY);
+  /* `loading` until `readDestinations` settles — see the module note above on why this is a
+   * tri-state rather than an options array the guard would otherwise have to infer from. */
+  const [destinationsRead, setDestinationsRead] = useState<DestinationsRead>({ kind: 'loading' });
 
   /*
    * ⚠️ A ref, not state. Nothing here needs to trigger a render — it only needs to be
@@ -149,17 +166,19 @@ export function RequestQuotationForm({
   }, [session.accessToken]);
 
   /*
-   * ⭐ The options `DestinationSelect` renders — asked for once, independently of the pre-fill
-   * above. `fetchDestinations` never rejects and never resolves to an empty list: a failed read
-   * degrades to Thailand alone, which is also this state's own initial value, so a slow or
-   * broken settings endpoint costs this form nothing — it stays exactly as submittable as it
-   * was before this effect ran.
+   * ⭐ What `DestinationSelect` renders and the guard checks against — asked for once,
+   * independently of the pre-fill above. `readDestinations` never rejects: it always settles to
+   * `ready` (a real list) or `failed` (degraded to Thailand alone, exactly this state's own
+   * initial rendering value), so a slow or broken settings endpoint costs this form nothing — it
+   * stays exactly as submittable as it was before this effect ran. Until it settles, state stays
+   * `loading`, which is what keeps `destinationIsSubmittable` from refusing a pre-filled value
+   * this fetch simply hasn't confirmed yet.
    */
   useEffect(() => {
     let cancelled = false;
 
-    void fetchDestinations().then((options) => {
-      if (!cancelled) setDestinationOptions(options);
+    void readDestinations().then((result) => {
+      if (!cancelled) setDestinationsRead(result);
     });
 
     return () => {
@@ -174,8 +193,13 @@ export function RequestQuotationForm({
      * the API — far from the mistake. This is the storefront-side check against the list this
      * customer was actually shown just now: it catches a destination pre-filled from a prior
      * order that has since been withdrawn, before a network round trip is spent on it.
+     *
+     * ⚠️ `destinationIsSubmittable`, not `isKnownDestination` directly — see the module note on
+     * `destinationsRead`. While the destinations read is still `loading`, this always answers
+     * yes: there is no confirmed list yet to refuse a value against, and refusing anyway is
+     * exactly the false refusal a review round caught live.
      */
-    if (!isKnownDestination(destinationCountry, destinationOptions)) {
+    if (!destinationIsSubmittable(destinationCountry, destinationsRead)) {
       setPhase({ kind: 'failed', message: t('submit.problem.badDestination') });
       return;
     }
@@ -238,7 +262,7 @@ export function RequestQuotationForm({
     onSubmitted?.({ orderId: result.orderId, orderNo: result.orderNo });
   }, [
     destinationCountry,
-    destinationOptions,
+    destinationsRead,
     email,
     lines,
     locale,
@@ -317,7 +341,9 @@ export function RequestQuotationForm({
         <p className="text-caption text-chalk-3">{t('submit.channelHint')}</p>
 
         <DestinationSelect
-          options={destinationOptions}
+          /* `THAILAND_ONLY` while `loading` too — the picker has to show something, and this is
+           * exactly what `destinationsRead`'s own `failed` degrade renders. */
+          options={destinationsRead.kind === 'loading' ? THAILAND_ONLY : destinationsRead.options}
           value={destinationCountry}
           onChange={(code) => {
             touchedRef.current.destinationCountry = true;

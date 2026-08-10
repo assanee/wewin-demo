@@ -21,9 +21,13 @@ import {
 } from './support/lifecycle-app';
 
 /**
- * Task 8: `orders.destination_country` — stored at submit, read nowhere yet (Task 9 reads it).
+ * Task 8: `orders.destination_country` — stored at submit. Task 9 reads it into the *pinned
+ * document* (`destination-pinning.pg.test.ts`, a fact frozen forever at submit); Task 13 reads
+ * it a second way, off the *order itself*, in `GET /orders/:id`'s `contact.destinationCountry`
+ * — a fact that stays live so a returning customer's next quotation can pre-fill from it. The
+ * last test below is that second read, proved independently of the first.
  *
- * Three properties, over real HTTP against a real Postgres:
+ * Four properties, over real HTTP against a real Postgres:
  *
  *   1. a code the customer sends at submit is stored;
  *   2. the store is `body.contact.destinationCountry ?? order.destinationCountry`, the same
@@ -31,6 +35,10 @@ import {
  *      not erase one the cart already had;
  *   3. a lower-case code is refused by `orderContactRequestSchema`'s regex before it ever
  *      reaches the database's own `orders_destination_country_shape` CHECK.
+ *   4. `GET /orders/:id`'s own `contact.destinationCountry` — `encode.ts`'s `encodeOrder`,
+ *      not `order.repository.ts`'s document decoder — reads the *same* column back, mapped
+ *      correctly rather than merely present (Task 13's compile-time guard proves the field
+ *      cannot be dropped from the encoder; it says nothing about what it is mapped *from*).
  *
  * ── Why `setDestination` writes the column directly ───────────────────────────────
  *
@@ -115,6 +123,17 @@ describeWithPg('orders.destination_country, chosen at submit', () => {
     return row.destinationCountry;
   };
 
+  /**
+   * The column, read the way `RequestQuotationForm`'s pre-fill actually reads it — over HTTP,
+   * through `encode.ts`, off `GET /orders/:id` — rather than straight out of Postgres the way
+   * `destinationOf` above does. The two must agree; this test is what checks that they do.
+   */
+  const contactDestinationOf = async (orderId: string): Promise<string | null> => {
+    const read = await call('GET', `/orders/${orderId}`, { token: customerA.token });
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    return (read.body as OrderWire).contact.destinationCountry;
+  };
+
   /* ---------------------------------------------------------------- *
    * The three properties
    * ---------------------------------------------------------------- */
@@ -126,6 +145,35 @@ describeWithPg('orders.destination_country, chosen at submit', () => {
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
 
     expect(await destinationOf(orderId)).toBe('TH');
+  });
+
+  /**
+   * ⭐ Task 13's read, proved independently of Task 8's write and Task 9's pin.
+   *
+   * `OrderContactWire.destinationCountry` is required, so `encode.ts` cannot *omit* the field —
+   * that much the compiler already guards (dropping the line is TS2741). What it does not guard
+   * is whether the value is mapped from the *right* column. A plausible-looking wrong mapping —
+   * e.g. keying off `contactLocale` instead of reading `destinationCountry` straight — would
+   * still satisfy the type and would still pass every other test in this repository, because
+   * nothing before this one ever read `GET /orders/:id`'s own `contact.destinationCountry`; the
+   * existing destination-pinning suite only ever checks the *document's* copy of the field.
+   *
+   * The submit below deliberately sends no `locale`, so `contactLocale` lands on `DEFAULT_LOCALE`
+   * (`'th'`) — the exact branch a `contactLocale === 'th' ? null : destinationCountry`-shaped
+   * bug would get wrong, and the one under which a correct mapping and that particular wrong one
+   * diverge.
+   */
+  it('⭐ reaches GET /orders/:id’s own contact — not only the pinned document — mapped from the right column', async () => {
+    const { submit, orderId } = await cart();
+
+    const submitted = await submit({
+      contact: { email: `dest-readback-${tag}@probe.invalid`, destinationCountry: 'TH' },
+    });
+    expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
+
+    /* Both readers must agree: the raw column, and `encode.ts`'s HTTP-facing copy of it. */
+    expect(await destinationOf(orderId)).toBe('TH');
+    expect(await contactDestinationOf(orderId)).toBe('TH');
   });
 
   it('does not erase a destination the cart already had', async () => {
