@@ -45,6 +45,18 @@ export class TaxCountryRepository {
   }
 
   /**
+   * The one row this code names, active or withdrawn alike.
+   *
+   * ⚠️ No `is_active` filter, which is the whole point: `TaxCountryService.resolveDestination`
+   * reads a withdrawn country exactly like an active one. `is_active` governs which
+   * destinations a *new* customer is offered, never whether an order that already named this
+   * one is still valid.
+   */
+  byCode(code: string, tx?: Tx) {
+    return this.executor(tx).select().from(taxCountries).where(eq(taxCountries.code, code)).limit(1);
+  }
+
+  /**
    * The same row, locked, inside a transaction the caller opened.
    *
    * ⚠️ `.for('update')`, and the lock is the whole reason this method exists. An unlocked

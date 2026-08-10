@@ -310,6 +310,13 @@ const PARAM_SHAPES = {
   'error.organisation.profile_missing': {},
   /** The same shape as the two above, for the tax-country row a PATCH or availability write names. */
   'error.tax_country.missing': {},
+  /**
+   * Not a constraint translator either — thrown by `TaxCountryService.resolveDestination`
+   * (`packages/core/src/vat.ts`'s amended header explains why the destination decides the
+   * basis) for a code that names no row at all. Never thrown for a withdrawn
+   * (`isActive: false`) country, which resolves normally — see that method's own comment.
+   */
+  'error.tax_country.unknown_destination': {},
 
   /*
    * ── Tax-country constraints — src/organisation/pg-errors.ts ────────────────

@@ -12,8 +12,11 @@ import { divRoundHalfUp } from './money.js';
  *
  * Everything downstream — instalments, deposit percentages, forfeits, refunds —
  * refers to `grandMinor` and nothing else. `vatMinor` is derived, never entered.
- * Inclusive-versus-exclusive stops being a property of the data and becomes a
- * property of the keyboard the number arrived from.
+ * Inclusive-versus-exclusive is a property of the destination's settings — one row per
+ * country in `tax_countries`, editable only by a holder of `organisation.write`, and never a
+ * field on a quote. `TaxRule` still carries exactly a rate and a treatment, so no code path
+ * can vary the basis per line or per quotation; the caller reads the destination and picks
+ * `fromNet` or `fromGrand`. What a salesperson cannot do is still the point.
  */
 
 export const TAX_TREATMENTS = ['standard', 'zero_rated', 'exempt', 'out_of_scope'] as const;

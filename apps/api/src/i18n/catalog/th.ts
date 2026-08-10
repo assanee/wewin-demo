@@ -215,6 +215,8 @@ export const TH: Catalogue = {
   'error.organisation.account_missing': 'ไม่พบบัญชีธนาคารรายการนี้',
   'error.organisation.profile_missing': 'ไม่พบข้อมูลบริษัท',
   'error.tax_country.missing': 'ไม่พบประเทศปลายทางรายการนี้',
+  'error.tax_country.unknown_destination':
+    'ไม่พบประเทศปลายทางตามรหัสที่ระบุในคำสั่งซื้อนี้ — กรุณาตรวจสอบรหัสประเทศ',
 
   /* ── Tax-country constraints ────────────────────────────────────────────── */
   'error.tax_country.duplicate': 'มีประเทศปลายทางที่ใช้โค้ดนี้อยู่แล้ว',

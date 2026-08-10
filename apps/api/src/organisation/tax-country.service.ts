@@ -4,16 +4,19 @@ import { Injectable } from '@nestjs/common';
 import { eq, sql } from '@wewin/db/sql';
 import { taxCountries, taxCountryChanges } from '@wewin/db/schema';
 import type {
+  DestinationTaxBasis,
   SettingChangeWire,
   TaxCountryCreateRequest,
   TaxCountryPatchRequest,
   TaxCountryWire,
 } from '@wewin/contract/tax';
+import type { TaxRule, TaxTreatment } from '@wewin/core/vat';
 
 import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
+import { DEFAULT_VAT_RULE } from '../orders/defaults';
 import { withTranslatedOrganisationErrors } from './pg-errors';
-import { TaxCountryRepository } from './tax-country.repository';
+import { TaxCountryRepository, type Tx } from './tax-country.repository';
 
 /**
  * The fields the history records. Ordering and timestamps are not changes worth keeping.
@@ -62,6 +65,22 @@ const wire = (row: TaxCountryRow): TaxCountryWire => ({
   sortOrder: row.sortOrder,
   updatedAt: row.updatedAt.toISOString(),
 });
+
+/**
+ * A destination code, resolved to what it charges — the one place a code becomes a tax rule
+ * (spec §3), returned by `resolveDestination` below.
+ *
+ * `basis` is deliberately not on `TaxRule`: see the amended header of `packages/core/src/
+ * vat.ts`. `TaxRule` still carries exactly a rate and a treatment, so no code path can vary
+ * the basis per line or per quotation — the caller reads `basis` off this envelope and picks
+ * `fromNet` or `fromGrand` itself.
+ */
+export interface DestinationTax {
+  /** `null` when the order names no destination. */
+  readonly code: string | null;
+  readonly rule: TaxRule;
+  readonly basis: DestinationTaxBasis;
+}
 
 const encodeChange = (row: {
   readonly id: string;
@@ -209,5 +228,47 @@ export class TaxCountryService {
   async changes(code: string): Promise<SettingChangeWire[]> {
     const rows = await this.repository.changes(code);
     return rows.map(encodeChange);
+  }
+
+  /**
+   * The one place a destination code becomes a tax rule (spec §3). Four cases (spec §5.1):
+   *
+   * | Order names | Row               | Result                          |
+   * |-------------|-------------------|----------------------------------|
+   * | `'SG'`      | exists, active    | that row                        |
+   * | `'SG'`      | exists, inactive  | that row, resolved normally     |
+   * | `'XX'`      | none              | refused, `unknown_destination_country` |
+   * | `null`      | —                 | `DEFAULT_VAT_RULE`, `exclusive`, `code: null` |
+   *
+   * ⚠️ `isActive` is deliberately not read here — `byCode` carries no such filter. It governs
+   * which destinations a *new* customer is offered (`list(true)`, the storefront's
+   * destinations read), not whether an order that already named this one is still valid.
+   * Refusing a withdrawn country would turn a routine withdrawal into a customer-facing
+   * outage, and would make the missing foreign key on `orders.destination_country` (spec
+   * §4.4) pointless — the constraint violation it would otherwise be would just have been
+   * relabelled a validation error.
+   *
+   * A code that never had a row is a different failure, not the same one loosened.
+   * `tax_countries_block_delete` means a row that once existed still exists, so an unknown
+   * code is a client bug or a tampered request. Falling back to `DEFAULT_VAT_RULE` here would
+   * compute Thai tax on a foreign sale and pin it to the document permanently, with nothing
+   * recording that a fallback happened — so this refuses instead, with a `reason` a caller can
+   * branch on in `details` (`AppError`'s first argument becomes `Error.message`, not this).
+   */
+  async resolveDestination(code: string | null, tx?: Tx): Promise<DestinationTax> {
+    if (code === null) return { code: null, rule: DEFAULT_VAT_RULE, basis: 'exclusive' };
+
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+      });
+    }
+
+    return {
+      code: row.code,
+      rule: { rateBp: row.rateBp, treatment: row.treatment as TaxTreatment },
+      basis: row.pricesIncludeTax ? 'inclusive' : 'exclusive',
+    };
   }
 }
