@@ -158,6 +158,45 @@ describeWithPg('the organisation module against Postgres', () => {
       expect(reread.body?.['phone']).toBe(phone);
     });
 
+    /**
+     * ⭐ The history route, which did not exist until task 12's review found the table had a
+     * writer and no reader.
+     *
+     * `putProfile` has recorded every field of this row since D4, `bank_account_changes` and
+     * `tax_country_changes` each had a `GET …/changes` beside them, and this one had nothing —
+     * so *"who changed the company's settings?"* was answerable only from `psql`. It matters
+     * because `deposit_bp` on this row is now the `cashflow` approval floor.
+     *
+     * Asserted against the **last** entry rather than a length: the table is a permanently-seeded
+     * singleton's history, this block shares one database with everything before it in the run,
+     * and an absolute count here would be a test about file ordering. The profile-history block
+     * further down re-provisions and owns the counting assertions.
+     */
+    it('serves the profile history oldest-first, to organisation.read and nobody else', async () => {
+      const before = await asReader('GET', '/admin/organisation');
+      const phone = `+66${randomInt(100_000_000, 999_999_999)}`;
+
+      await asWriter('PUT', '/admin/organisation', {
+        legalNameTh: String(before.body?.['legalNameTh']),
+        addressTh: String(before.body?.['addressTh']),
+        phone,
+      });
+
+      const seen = await asReader('GET', '/admin/organisation/changes');
+      expect(seen.status).toBe(200);
+
+      const changes = seen.body?.['changes'] as readonly Record<string, unknown>[];
+      expect(Array.isArray(changes)).toBe(true);
+
+      /* Oldest first, like both siblings — so the write just made is the *last* row. */
+      const newest = changes.at(-1);
+      expect((newest?.['after'] as { phone?: string } | undefined)?.phone).toBe(phone);
+      expect(newest?.['changedByUserId']).toBe(writer.userId);
+
+      /* And it is behind the same permission as its siblings, not accidentally public. */
+      expect((await call('GET', '/admin/organisation/changes')).status).toBe(401);
+    });
+
     it('refuses a reader who tries to edit it, and an anonymous caller entirely', async () => {
       const asAnonymous = await call('GET', '/admin/organisation');
       expect(asAnonymous.status).toBe(401);

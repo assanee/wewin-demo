@@ -48,6 +48,18 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     globalSetup: ['tests/globalSetup.ts'],
+    /*
+     * The other half of the shared-database problem, and the half `globalSetup` cannot solve.
+     *
+     * `globalSetup` guarantees every *run* starts from a freshly migrated and seeded database.
+     * It says nothing about what one file leaves behind for the next one **inside** a run, and a
+     * few tables here hold a permanently-seeded singleton that nothing can delete. This registers
+     * one `afterAll` in every file that checks those rows are still seeded — so a suite that
+     * changes `organisation_profile.deposit_bp` or `tax_countries.TH` and forgets to restore it
+     * fails by name, instead of a file forty places later failing for a reason that is not its
+     * own. See `tests/setup/seeded-singletons.ts` for the two runs that motivated it.
+     */
+    setupFiles: ['tests/setup/seeded-singletons.ts'],
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
     fileParallelism: false,

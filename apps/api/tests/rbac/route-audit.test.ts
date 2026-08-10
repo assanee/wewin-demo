@@ -304,6 +304,15 @@ describe('boot-time route audit', () => {
       'GET /admin/organisation [permissions]',
       'GET /admin/organisation/bank-accounts [permissions]',
       'GET /admin/organisation/bank-accounts/:id/changes [permissions]',
+      /*
+       * ⭐ The company profile's own history, and the reason it arrived a task late than its two
+       * siblings: `organisation_profile_changes` had a writer and no reader at all. It matters now
+       * because `deposit_bp` on that row became the `cashflow` approval floor — so
+       * `organisation.write`, which used to govern letterhead and bank accounts, now moves what
+       * counts as a concession needing approval, and this is the only surface that can say who
+       * did.
+       */
+      'GET /admin/organisation/changes [permissions]',
       'GET /admin/organisation/tax-countries [permissions]',
       'GET /admin/organisation/tax-countries/:code/changes [permissions]',
 

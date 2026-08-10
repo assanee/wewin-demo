@@ -208,9 +208,17 @@ export class OrganisationService {
    * plans the payment schedule from this number (`PaymentLifecycleService.pinsForSubmit`) and the
    * approvals module measures the `cashflow` floor against it (`AuthorityService.measureFor`).
    * A schedule that gates 30% judged against a floor of 100% is a 70% concession, fail-closed
-   * refuses an approval it cannot grant, and the whole submit rolls back — so a second read of
-   * this column that interpreted a missing row differently would be plan 7.13's ฿12,902 seam in a
-   * new column. Both consumers arrive here.
+   * refuses an approval it cannot grant, and the whole submit rolls back — so a second reader of
+   * this column, with its own opinion about a missing row or its own default, would be plan
+   * 7.13's ฿12,902 seam in a new column. Both consumers arrive at this method.
+   *
+   * ⚠️ **One method is not one read, and the first version of this note said "both consumers
+   * arrive here" in a way that implied it was.** A submit calls this twice — once for the
+   * schedule, once inside `gate` — and this is a plain unlocked `SELECT` at READ COMMITTED, where
+   * each statement takes its own snapshot. A `putProfile` committing between the two is seen by
+   * the second and not the first. The window, its one harmful direction, and why a `FOR SHARE`
+   * was written and then rejected are set out at the call site in `orders.service.ts`; what
+   * belongs here is only that this method does **not** promise the two reads agree.
    *
    * A missing profile row throws rather than defaulting to payment in full. It is the singleton
    * `id = 1` seeded by migration `0029`, so its absence is not a configuration state — and a

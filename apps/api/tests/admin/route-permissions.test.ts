@@ -136,6 +136,13 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
    */
   ['GET /admin/organisation', ['organisation.read']],
   ['PUT /admin/organisation', ['organisation.write']],
+  /*
+   * ⭐ `organisation.read`, matching its two `…/changes` siblings, and worth one sentence of its
+   * own: the profile carries `deposit_bp`, which is the `cashflow` approval floor, so
+   * `organisation.write` now moves what counts as a concession needing approval. This is the only
+   * route that can say who moved it — the table had a writer and no reader until task 12's review.
+   */
+  ['GET /admin/organisation/changes', ['organisation.read']],
   ['GET /admin/organisation/bank-accounts', ['organisation.read']],
   ['POST /admin/organisation/bank-accounts', ['organisation.write']],
   ['PATCH /admin/organisation/bank-accounts/:id', ['organisation.write']],

@@ -6,12 +6,6 @@ import { sql } from '@wewin/db/sql';
 import type { OrderLineRequestWire, OrderStatusWire, OrderWire } from '@wewin/contract/order';
 
 import {
-  cashflowConcessionMinor,
-  depositPercentTerms,
-  planSchedule,
-  type PlannedInstalment,
-} from '../../src/payments/schedule';
-import {
   bootPaymentsApp,
   client,
   liveLine,
@@ -46,15 +40,29 @@ import {
  * `percent` row for the whole total plus a `remainder` due ฿0.00 — but it is two rows where
  * submit has always produced one, and `lifecycle/lifecycle.pg.test.ts:188` asserts exactly one.
  * A feature nobody switched on must not reshape the schedule of every order in the system.
+ *
+ * ── Two tests, and it was four ───────────────────────────────────────────────────
+ *
+ * Two were removed in review rather than kept for symmetry with the brief that asked for them.
+ *
+ * *"still measures a real concession below policy"* called `cashflowConcessionMinor` directly with
+ * an explicit floor — arithmetic in `payments/schedule` that this task did not touch, reached
+ * without passing through `measureCashflow`, which is the function that changed. Both mutations
+ * left it green. The same property, routed through the changed code, is
+ * `tests/quotes/authority/concession.test.ts`'s *"concedes nothing when the floor is the
+ * company's own 30 per cent"*, and that one does redden. A pure assertion paying a Postgres
+ * suite's boot cost to be undetectable was worth deleting, not moving.
+ *
+ * *"does not treat a deposit at policy as a concession, so the submit completes"* was subsumed by
+ * the 30% test below: `submit()` throws on any non-200, so a gate that 409s already fails that
+ * test before it reaches its first assertion. Its comment moved there, where the assertion
+ * actually lives, rather than being asserted twice at the price of a second real submit.
  */
 
 const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL'];
 const describeWithPg = url === undefined ? describe.skip : describe;
 
 const tag = randomUUID().slice(0, 8);
-
-/** The red team's own order total, VAT-inclusive — ฿19,722.24. Used only by the pure assertions. */
-const GRAND = 1_972_224n;
 
 /** What the profile ships as, and what this suite has to put back. Plan 13's payment-in-full floor. */
 const SEEDED_DEPOSIT_BP = 10_000;
@@ -66,10 +74,13 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
   let call: ReturnType<typeof client>;
   let line: OrderLineRequestWire;
   let customer: Actor;
+  /** False until `db` is assigned, so the teardown can tell "nothing ran" from "restore me". */
+  let connected = false;
 
   beforeAll(async () => {
     pool = createPool(url ?? '');
     db = createDatabase(pool);
+    connected = true;
 
     app = await bootPaymentsApp(paymentsEnv(url ?? ''));
     call = client(app.baseUrl);
@@ -85,10 +96,19 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
      * one file at a time, which is what makes leaving it at 3 000 bp a problem for the *next*
      * file rather than a race inside this one). A suite that submits an order and expects a
      * single instalment would fail for a reason that has nothing to do with what it tests.
+     *
+     * ⚠️ `try`/`finally`, and the restore is inside the `try`. The `?.` on the two closes says
+     * this hook expects to run after a `beforeAll` that may have failed part-way — and an
+     * unguarded `setDeposit` ahead of them would throw on exactly that path (`db` still
+     * undefined), leaking the app and the pool and hanging the worker on a run that was already
+     * failing for another reason.
      */
-    await setDeposit(SEEDED_DEPOSIT_BP);
-    await app?.close();
-    await pool?.end();
+    try {
+      if (connected) await setDeposit(SEEDED_DEPOSIT_BP);
+    } finally {
+      await app?.close();
+      await pool?.end();
+    }
   });
 
   /** The company setting, written where the admin screen writes it. */
@@ -136,17 +156,6 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
     return rows.rows.map((row) => ({ due: BigInt(row.due), gatesStatus: row.gates }));
   };
 
-  /** The terms a `bp` deposit states, evaluated against one total. No database anywhere near it. */
-  const planAt = (bp: number): readonly PlannedInstalment[] => {
-    const planned = planSchedule(GRAND, depositPercentTerms(bp));
-    if (!planned.ok) throw new Error(`could not plan ${bp} bp: ${JSON.stringify(planned.failure)}`);
-    return planned.instalments;
-  };
-
-  /** The concession the authority module measures, at an explicit floor. */
-  const measure = (rows: readonly PlannedInstalment[], floorBp: number): bigint =>
-    cashflowConcessionMinor(GRAND, rows, floorBp);
-
   /* ================================================================== *
    * The default configuration, unmoved
    * ================================================================== */
@@ -171,12 +180,27 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
    * The setting, switched on
    * ================================================================== */
 
+  /**
+   * ⭐ The schedule follows the setting **and** the submit survives its own gate.
+   *
+   * ⚠️ The second half is not a separate test, because it cannot be. `submit()` throws on any
+   * non-200, so a gate that refuses this order fails this test at its first line — which is
+   * exactly the failure the whole task exists to prevent, and the one Step 7's mutation
+   * reproduces: the gate runs inside the submit transaction, a below-floor schedule measures as a
+   * `cashflow` concession, `authority_limits` has zero rows, so fail-closed refuses an approval it
+   * cannot grant and the entire submit rolls back — document, order, schedule and status event.
+   * Asserting it again in a test of its own bought a second real submit and no second way to fail.
+   *
+   * `awaiting_payment` and not `submitted`: that is what the transition this route names moves the
+   * order to, and there is no `submitted` status in `ORDER_STATUSES`.
+   */
   it('gates production on the configured share when the policy is 30 per cent', async () => {
     await setDeposit(3_000);
 
-    const { orderId, grand } = await submit();
+    const { orderId, grand, status } = await submit();
     const rows = await instalmentsOf(orderId);
 
+    expect(status).toBe('awaiting_payment');
     expect(rows).toHaveLength(2);
     /*
      * `percentOf` is `divRoundHalfUp`, not truncation. The two agree on this fixture and the
@@ -189,31 +213,4 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
     expect(rows[1]?.gatesStatus).toBeNull();
     expect((rows[0]?.due ?? 0n) + (rows[1]?.due ?? 0n)).toBe(grand);
   }, 60_000);
-
-  it('does not treat a deposit at policy as a concession, so the submit completes', async () => {
-    /*
-     * ⚠️ Without the floor moving, this is the failure the whole task exists to prevent. The gate
-     * runs inside the submit transaction, a below-floor schedule measures as a `cashflow`
-     * concession, and `authority_limits` has zero rows — so fail-closed refuses an approval it
-     * cannot grant and the entire submit rolls back: document, order, schedule and status event.
-     *
-     * `awaiting_payment` and not `submitted`: that is what the transition this route names moves
-     * the order to, and there is no `submitted` status in `ORDER_STATUSES`.
-     */
-    await setDeposit(3_000);
-
-    await expect(submit()).resolves.toMatchObject({ status: 'awaiting_payment' });
-  }, 60_000);
-
-  it('still measures a real concession below policy', async () => {
-    /*
-     * The floor moved with the setting; it did not stop existing. A schedule that gates 20% when
-     * the company's policy is 30% is still the company extending credit, and still has to be
-     * approved by somebody whose ceiling covers it.
-     */
-    expect(measure(planAt(3_000), 3_000)).toBe(0n);
-    expect(measure(planAt(2_000), 3_000)).toBeGreaterThan(0n);
-    /* And the size is the gap itself, not a token non-zero. */
-    expect(measure(planAt(2_000), 3_000)).toBe((GRAND * 1_000n) / 10_000n);
-  });
 });

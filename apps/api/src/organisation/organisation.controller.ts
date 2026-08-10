@@ -42,6 +42,7 @@ const contractVersion = (): MethodDecorator =>
  *
  *     GET   /admin/organisation
  *     PUT   /admin/organisation
+ *     GET   /admin/organisation/changes
  *     GET   /admin/organisation/bank-accounts
  *     POST  /admin/organisation/bank-accounts
  *     PATCH /admin/organisation/bank-accounts/:id
@@ -96,6 +97,37 @@ export class OrganisationController {
     @Body(new ZodBodyPipe(organisationProfilePutSchema)) body: OrganisationProfilePutRequestWire,
   ): Promise<OrganisationProfileWire> {
     return encodeProfile(await this.organisation.putProfile(userIdOf(scope), body));
+  }
+
+  /**
+   * ⭐ Who changed the company's settings, and what they changed them from.
+   *
+   * `organisation_profile_changes` had a **writer and no reader**. `putProfile` has recorded every
+   * field of this row since D4 — including `depositBp` — and `bank_account_changes` and
+   * `tax_country_changes` each got a `GET …/changes` route beside them, but this table's only
+   * consumers were tests. A history nothing can read short of `psql` is not an audit trail; it is
+   * a table that will be trusted to answer a question nobody can actually ask it.
+   *
+   * That stopped being cosmetic in task 12. `deposit_bp` is now an authority control — it is the
+   * `cashflow` floor, so lowering it lowers what counts as a concession needing approval — and it
+   * is behind `organisation.write`, which previously only governed letterhead and bank accounts.
+   * Without this route the answer to *"who lowered the approval floor?"* is nobody, through any
+   * product surface.
+   *
+   * Mirrors its two siblings exactly: `organisation.read`, a `{ changes }` envelope like every
+   * other list-returning GET in this file, and `OrganisationService.profileChanges()`'s own
+   * oldest-first ordering, which is `TaxCountryService.changes`'s — so a reader comparing two
+   * settings histories is not comparing two orderings.
+   *
+   * `changes` and not `profile/changes`: the profile *is* this controller's root (`GET` and `PUT`
+   * with no segment), so the sibling shape — resource path, then `changes` — puts it here. No
+   * route on this controller matches a bare `:param` at the root, so nothing shadows it.
+   */
+  @Get('changes')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async profileChanges(): Promise<{ readonly changes: readonly SettingChangeWire[] }> {
+    return { changes: await this.organisation.profileChanges() };
   }
 
   @Get('bank-accounts')
