@@ -170,12 +170,40 @@ export interface ApplyOverridesInput {
   readonly charges: readonly ChargeLine[];
   readonly overrides: readonly LiveOverride[];
   readonly vat: TaxRule;
+  /**
+   * Whether the line figures already contain the tax.
+   *
+   * Required, not optional with a default. A caller that has not thought about the
+   * destination should not silently get exclusive arithmetic — that is precisely how staff
+   * and customer end up holding papers that disagree.
+   *
+   * It travels *beside* `TaxRule` and never inside it: `packages/core/src/vat.ts` keeps that
+   * type to exactly a rate and a treatment so that no code path can vary the basis per line
+   * or per quotation. The basis is a property of the destination, resolved once per request
+   * by `TaxCountryService.resolveDestination`, and handed down here.
+   */
+  readonly basis: 'inclusive' | 'exclusive';
   /** The standard promise, when no `lead_time_days` override replaces it. See `defaults.ts`. */
   readonly computedLeadTimeDays: number;
 }
 
 export function applyOverrides(input: ApplyOverridesInput): EffectiveQuote {
-  const { computed, charges, overrides, vat } = input;
+  const { computed, charges, overrides, vat, basis } = input;
+
+  /*
+   * ⭐ The basis switch, as one helper used at both sites that need it.
+   *
+   * Under `inclusive` the line figures already contain the tax, so the subtotal *is* the gross
+   * and `fromGrand` divides the VAT back out of it; under `exclusive` it is the base and
+   * `fromNet` adds the VAT on top. Two independent ternaries is how the baseline site further
+   * down gets left behind the next time somebody touches this function — it is the one nothing
+   * else in the system re-derives, so nothing else would notice.
+   *
+   * Not applied to the `grand_total` override below: that figure is a human's, typed as the
+   * amount the customer transfers, so it is already gross whatever the destination says.
+   */
+  const taxedOnBasis = (baseMinor: bigint) =>
+    basis === 'inclusive' ? fromGrand(baseMinor, vat) : fromNet(baseMinor, vat);
 
   const lineOverrides = new Map<string, LiveOverride>();
   let grandOverride: LiveOverride | undefined;
@@ -221,7 +249,7 @@ export function applyOverrides(input: ApplyOverridesInput): EffectiveQuote {
     else exemptNet += line.effectiveTotalThbMinor;
   }
 
-  const taxedFromLines = fromNet(taxableNet, vat);
+  const taxedFromLines = taxedOnBasis(taxableNet);
   let money: EffectiveMoney = {
     netThbMinor: taxedFromLines.netMinor + exemptNet,
     taxableNetThbMinor: taxedFromLines.netMinor,
@@ -239,6 +267,13 @@ export function applyOverrides(input: ApplyOverridesInput): EffectiveQuote {
      * adjustment. Any other split would be deciding, on the customer's behalf, that part of
      * their concession applies to a charge that carries no tax — and it is the taxable half
      * whose VAT has to come back out by division, so the half that moves has to be that one.
+     *
+     * ⚠️ **`fromGrand` here is not the basis switch and must not become one.** This figure is
+     * a human's, typed into a box labelled "the total the customer transfers", so it is gross
+     * on every destination — `taxedOnBasis` would divide it under `inclusive` and *multiply*
+     * it under `exclusive`, turning a promise of ฿10,000 into a demand for ฿10,700. A
+     * grand-total override on an inclusive order therefore composes unchanged, and so does the
+     * `belowExempt` refusal below it.
      */
     const taxableGrand = promised - exemptNet;
     belowExempt = taxableGrand < 0n;
@@ -253,7 +288,19 @@ export function applyOverrides(input: ApplyOverridesInput): EffectiveQuote {
     };
   }
 
-  /* ── the baseline the concession is measured from ──────────────────── */
+  /*
+   * ── the baseline the sales screen renders ─────────────────────────────
+   *
+   * ⚠️ This comment used to read *"the baseline the concession is measured from"*. Nothing
+   * measures a concession from it: `measureMargin` derives every source from override rows,
+   * and `AuthorityService.measureFor` never calls this function at all. Its only consumer is
+   * `baselineGrandTotalThbMinor` at `apps/api/src/quotes/encode.ts:96` — a display field beside
+   * the effective total, so a salesperson can see both.
+   *
+   * That matters for more than tidiness: because no gate reads it, a basis mistake *here*
+   * cannot be caught by any authority assertion. The test that catches one is
+   * `baseline.grandTotalThbMinor === money.grandTotalThbMinor` on a quote with no overrides.
+   */
 
   let baseTaxable = 0n;
   let baseExempt = 0n;
@@ -265,7 +312,7 @@ export function applyOverrides(input: ApplyOverridesInput): EffectiveQuote {
     else baseExempt += line.baselineTotalThbMinor;
   }
 
-  const baseTaxed = fromNet(baseTaxable, vat);
+  const baseTaxed = taxedOnBasis(baseTaxable);
   const baseline: EffectiveMoney = {
     netThbMinor: baseTaxed.netMinor + baseExempt,
     taxableNetThbMinor: baseTaxed.netMinor,

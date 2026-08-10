@@ -71,6 +71,10 @@ const apply = (input: {
     charges: input.charges ?? [],
     overrides: input.overrides ?? [],
     vat: VAT,
+    /* Every worked example in this file is Thai domestic — prices quoted before tax, the tax
+     * added on top — so the basis is stated rather than defaulted and no expectation below
+     * moves. The inclusive branch has its own file: `inclusive-basis.test.ts`. */
+    basis: 'exclusive',
     computedLeadTimeDays: 30,
   });
 

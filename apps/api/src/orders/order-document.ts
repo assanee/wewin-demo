@@ -279,6 +279,14 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
     charges,
     overrides: params.overrides,
     vat: params.vat,
+    /*
+     * ⭐ The basis the resolved destination chose, reaching the arithmetic rather than only the
+     * label. Until this argument existed, `taxBasis: 'inclusive'` was written onto the document
+     * a few lines below while `applyOverrides` ran `fromNet` regardless — a document that named
+     * a computation nothing had performed. `SG` at 900 bp pinned ฿13,824.00 net / ฿15,068.16
+     * grand, which is `net × 1.09`: unambiguously exclusive, under a document saying otherwise.
+     */
+    basis: params.taxBasis,
     computedLeadTimeDays: params.leadTimeDays,
   });
 
