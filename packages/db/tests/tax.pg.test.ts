@@ -96,12 +96,69 @@ describeDb('tax_countries', () => {
 
   it('refuses a treatment outside the four', async () => {
     await withConnection(async (db) => {
+      // rate_bp: 0, not 600 — a nonzero rate on a non-'standard' treatment now also trips
+      // `tax_countries_rate_matches_treatment` (added in review of this task), and 'reduced'
+      // is not 'standard' either way. Zero isolates this test to the one constraint it names.
       await expectCheckViolation(
         db.execute(sql`
           insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
-          values ('MY', 'มาเลเซีย', 600, 'reduced', false)
+          values ('MY', 'มาเลเซีย', 0, 'reduced', false)
         `),
         'tax_countries_treatment_allowed',
+      );
+    });
+  });
+
+  /*
+   * The pairing that decides what a frozen quotation prints. Spec §8.3 renders the rate as
+   * `String(document.vatRateBp / 100)` with no awareness of `treatment`
+   * (packages/core/src/quotation.ts:184) — safe only while a non-`standard` treatment always
+   * carries `rate_bp = 0`, since `charges()` (packages/core/src/vat.ts:46) already computes
+   * ฿0 for anything non-`standard` regardless of the rate stored. Added in review of this
+   * task: `('SG', …, rate_bp = 900, treatment = 'zero_rated')` stored fine, computed ฿0 VAT,
+   * and would have printed "VAT 9%" on a document nobody could reconcile and nobody could
+   * un-freeze.
+   */
+  it('refuses a non-standard treatment paired with a nonzero rate', async () => {
+    await withConnection(async (db) => {
+      await expectCheckViolation(
+        db.execute(sql`
+          insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
+          values ('JP', 'ญี่ปุ่น', 900, 'zero_rated', true)
+        `),
+        'tax_countries_rate_matches_treatment',
+      );
+    });
+  });
+
+  /*
+   * The case the constraint must NOT catch. `standard` at 0 bp still files differently from
+   * `exempt` (packages/core/src/vat.ts:47) — a future tightening to `rate_bp = 0` outright
+   * would silently make that distinction impossible to record, and nothing above this test
+   * would notice.
+   */
+  it('accepts standard at zero rate — the pairing the constraint must not catch', async () => {
+    await withConnection(async (db) => {
+      await expect(
+        db.execute(sql`
+          insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax)
+          values ('AU', 'ออสเตรเลีย', 0, 'standard', true)
+        `),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  /*
+   * The actual fraud shape `tax_country_changes` exists to catch: flip a live, nonzero-rate
+   * country to `zero_rated` for one deal without changing the rate, meaning to flip it back
+   * later. A CHECK enforces UPDATE exactly as it enforces INSERT — asserted rather than
+   * assumed, per this task's own mutation-testing standard.
+   */
+  it('refuses flipping an existing standard row to zero_rated while its rate stays nonzero', async () => {
+    await withConnection(async (db) => {
+      await expectCheckViolation(
+        db.execute(sql`update tax_countries set treatment = 'zero_rated' where code = 'TH'`),
+        'tax_countries_rate_matches_treatment',
       );
     });
   });

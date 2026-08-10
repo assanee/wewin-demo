@@ -40,6 +40,18 @@ export const taxCountries = pgTable(
       sql`${t.treatment} in ('standard', 'zero_rated', 'exempt', 'out_of_scope')`,
     ),
     check('tax_countries_name_says_something', sql`length(btrim(${t.nameTh})) > 0`),
+    /*
+     * The pairing a document actually prints. `packages/core/src/quotation.ts:184` renders
+     * the rate as `String(document.vatRateBp / 100)` with no awareness of `treatment` at all
+     * — spec §8.3 chose that deliberately, on the grounds that "VAT 0%" is correct wording on
+     * a Thai export invoice. That reasoning holds only while a non-`standard` treatment
+     * always carries `rate_bp = 0`; without this CHECK a `zero_rated` row at 900 bp stores
+     * fine, computes ฿0 VAT (`charges()`, packages/core/src/vat.ts:46, requires
+     * `treatment === 'standard'`), and prints "VAT 9%" on a frozen document nobody can
+     * reconcile. `standard` at 0 bp stays legal on purpose — see the note two constraints up
+     * on why `charges()` treats it differently from `exempt`.
+     */
+    check('tax_countries_rate_matches_treatment', sql`${t.treatment} = 'standard' or ${t.rateBp} = 0`),
     index('tax_countries_active_idx').on(t.isActive, t.sortOrder),
   ],
 );
