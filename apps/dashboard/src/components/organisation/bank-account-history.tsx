@@ -130,10 +130,18 @@ export function BankAccountHistoryDialog({
                         <dd className="flex flex-wrap items-baseline gap-1.5 font-mono text-xs">
                           {!creation && (
                             <>
-                              <span className="text-muted-foreground line-through">
-                                {field.beforeText}
+                              {/*
+                               * F4's fix: the strikethrough and the arrow are both
+                               * `aria-hidden` in effect (the arrow explicitly, the strikethrough
+                               * because CSS text-decoration announces nothing) — a screen reader
+                               * heard two values with nothing saying which was which. "จาก"/
+                               * "เป็น" are read text, not decoration, so that holds without them.
+                               */}
+                              <span className="text-muted-foreground">
+                                จาก <span className="line-through">{field.beforeText}</span>
                               </span>
                               <span aria-hidden>→</span>
+                              <span className="text-muted-foreground">เป็น</span>
                             </>
                           )}
                           <span>{field.afterText}</span>
