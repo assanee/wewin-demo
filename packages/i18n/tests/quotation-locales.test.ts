@@ -26,6 +26,8 @@ describe('every storefront locale renders without degrading', () => {
     revision: 1,
     documentHash: 'deadbeef',
     pinnedLocale: 'th',
+    destinationCountry: null,
+    taxBasis: 'exclusive',
     orderNo: 'WW-1000',
     contactName: null,
     submittedAt: '2026-08-07T00:52:17.000Z',

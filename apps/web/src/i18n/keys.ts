@@ -385,6 +385,14 @@ export interface UiParamsByKey {
   'quotation.leadTime': Plain;
   'quotation.net': Plain;
   'quotation.vat': Plain;
+  /**
+   * The one VAT string the storefront keeps after `home.pricing.excluded.vat` and its
+   * siblings were removed. Not a contradiction of that removal: a browsing page is
+   * prerendered and cannot know a destination's tax, while a quotation is per-order and
+   * data-driven — it prints the basis `taxBasis` actually pinned. Rendered only when
+   * `PrintableQuotation.vatIsIncluded` is true.
+   */
+  'quotation.vatIncluded': Plain;
   'quotation.total': Plain;
   'quotation.lineNo': Plain;
   'quotation.item': Plain;

@@ -426,6 +426,7 @@ export const my: PartialUiCatalogue = {
   'quotation.leadTime': 'ပို့ဆောင်ချိန် (ရက်)',
   'quotation.net': 'VAT မတိုင်မီ',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'ဈေးနှုန်းတွင် ထည့်သွင်းပြီးဖြစ်သည်',
   'quotation.total': 'စုစုပေါင်း',
   'quotation.lineNo': 'စဉ်',
   'quotation.item': 'အမျိုးအမည်',

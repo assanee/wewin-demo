@@ -58,6 +58,13 @@ export interface PinnedDocument {
   readonly documentHash: string;
   /** ⚠️ Frozen at submit. The reader's language is never consulted. */
   readonly pinnedLocale: string;
+  /** Frozen at submit; `null` on documents issued before the field existed. */
+  readonly destinationCountry: string | null;
+  /**
+   * ⚠️ From the document, never from `tax_countries` — the same rule `pinnedLocale` follows
+   * two fields above. That table is mutable; a quotation prints what was quoted.
+   */
+  readonly taxBasis: 'inclusive' | 'exclusive';
   readonly orderNo: string | null;
   readonly contactName: string | null;
   readonly submittedAt: string | null;
@@ -91,6 +98,13 @@ export interface PrintableQuotation {
   readonly netText: string;
   readonly vatText: string;
   readonly grandTotalText: string;
+  /**
+   * Whether the three money figures above are a breakdown of a price the customer already
+   * saw, rather than tax added on top. It computes nothing new — every figure on this page
+   * is already correct in the document — it only tells the renderer which sentence to put
+   * beside the VAT line.
+   */
+  readonly vatIsIncluded: boolean;
   readonly lines: readonly PrintableLine[];
   readonly charges: readonly { readonly labelTh: string; readonly amountText: string }[];
   /**
@@ -186,6 +200,7 @@ export function printableQuotation(document: PinnedDocument): PrintableQuotation
     netText: money(document.netThbMinor, locale),
     vatText: money(document.vatThbMinor, locale),
     grandTotalText: money(document.grandTotalThbMinor, locale),
+    vatIsIncluded: document.taxBasis === 'inclusive',
     lines: document.lines.map((line) => ({
       lineNo: line.lineNo,
       nameTh: line.nameTh,
@@ -325,6 +340,9 @@ export function pinnedDocumentFrom(
     documentHash: text(document['documentHash']),
     /* ⚠️ From the document, never from the browser. This is the whole of plan 10.6. */
     pinnedLocale: text(document['pinnedLocale']) || 'th',
+    /* Lenient, like its neighbours: a document older than the field is not a broken document. */
+    destinationCountry: text(document['destinationCountry']) || null,
+    taxBasis: document['taxBasis'] === 'inclusive' ? 'inclusive' : 'exclusive',
     orderNo: context.orderNo,
     contactName: context.contactName,
     submittedAt: context.submittedAt,

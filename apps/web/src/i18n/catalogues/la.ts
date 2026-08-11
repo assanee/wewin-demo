@@ -413,6 +413,7 @@ export const la: PartialUiCatalogue = {
   'quotation.leadTime': 'ໄລຍະເວລາຜະລິດ (ວັນ)',
   'quotation.net': 'ກ່ອນ VAT',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'ລວມຢູ່ໃນລາຄາແລ້ວ',
   'quotation.total': 'ລວມທັງໝົດ',
   'quotation.lineNo': 'ລຳດັບ',
   'quotation.item': 'ລາຍການ',

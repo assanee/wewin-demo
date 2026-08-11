@@ -389,6 +389,7 @@ export const zh: PartialUiCatalogue = {
   'quotation.leadTime': '交期（天）',
   'quotation.net': '税前金额',
   'quotation.vat': '增值税',
+  'quotation.vatIncluded': '已含在价格中',
   'quotation.total': '总计',
   'quotation.lineNo': '序号',
   'quotation.item': '项目',

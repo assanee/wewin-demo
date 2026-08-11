@@ -443,6 +443,7 @@ export const hi: PartialUiCatalogue = {
   'quotation.leadTime': 'डिलीवरी समय (दिन)',
   'quotation.net': 'वैट से पहले',
   'quotation.vat': 'वैट',
+  'quotation.vatIncluded': 'कीमत में शामिल',
   'quotation.total': 'कुल',
   'quotation.lineNo': 'क्र.',
   'quotation.item': 'मद',

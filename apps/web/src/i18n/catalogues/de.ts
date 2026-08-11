@@ -465,6 +465,7 @@ export const de: PartialUiCatalogue = {
   'quotation.leadTime': 'Lieferzeit (Tage)',
   'quotation.net': 'Netto',
   'quotation.vat': 'MwSt.',
+  'quotation.vatIncluded': 'im Preis enthalten',
   'quotation.total': 'Gesamt',
   'quotation.lineNo': 'Nr.',
   'quotation.item': 'Position',

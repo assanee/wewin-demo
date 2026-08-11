@@ -399,6 +399,7 @@ export const th: UiCatalogue = {
   'quotation.leadTime': 'ระยะเวลาผลิต (วัน)',
   'quotation.net': 'ราคาก่อนภาษี',
   'quotation.vat': 'ภาษีมูลค่าเพิ่ม',
+  'quotation.vatIncluded': 'รวมอยู่ในราคาแล้ว',
   'quotation.total': 'ยอดรวมทั้งสิ้น',
   'quotation.lineNo': 'ลำดับ',
   'quotation.item': 'รายการ',

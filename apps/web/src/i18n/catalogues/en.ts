@@ -425,6 +425,7 @@ export const en: PartialUiCatalogue = {
   'quotation.leadTime': 'Lead time (days)',
   'quotation.net': 'Before VAT',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'included in the price',
   'quotation.total': 'Total',
   'quotation.lineNo': '#',
   'quotation.item': 'Item',

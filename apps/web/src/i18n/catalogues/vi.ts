@@ -425,6 +425,7 @@ export const vi: PartialUiCatalogue = {
   'quotation.leadTime': 'Thời gian giao (ngày)',
   'quotation.net': 'Trước VAT',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'đã bao gồm trong giá',
   'quotation.total': 'Tổng cộng',
   'quotation.lineNo': 'STT',
   'quotation.item': 'Hạng mục',
