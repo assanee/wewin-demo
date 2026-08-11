@@ -102,7 +102,18 @@ export default function AuthorityLimitsPanel({
           เพดานคือจำนวนเงินสูงสุดที่บทบาทหนึ่งลดให้ลูกค้าได้เองต่อหนึ่งใบเสนอราคา
           เกินเพดานต้องให้คนอื่นอนุมัติ และผู้อนุมัติต้องมีเพดานที่ครอบยอดนั้นด้วย
         </p>
-        {editable && (
+        {/*
+         * ⚠️ `state.status === 'ready'` as well as `editable`, and it is not cosmetic.
+         *
+         * `PUT` is an **upsert**. The dialog's collision warning is the only thing that tells
+         * somebody "this role already has a ceiling and you are about to replace it", and it is
+         * driven by `taken`, which is `state.limits` — `[]` on `loading` and on `failed`. So a
+         * button that stayed live while the list had not arrived would let an administrator
+         * replace an existing ฿5,000 with ฿50,000 believing it was a new grant, with the warning
+         * suppressed and nothing on screen saying so. A control whose safety copy cannot be
+         * computed yet is a control that is not ready.
+         */}
+        {editable && state.status === 'ready' && (
           <Button size="sm" onClick={() => setDialog('create')}>
             <Plus className="size-4" />
             กำหนดเพดาน

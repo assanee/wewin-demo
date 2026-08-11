@@ -101,8 +101,23 @@ export function AuthorityLimitDialog({
     }
   }
 
+  /*
+   * ⚠️ `!busy` on the dismissal below, not only on the Cancel button.
+   *
+   * `onOpenChange` fires for Escape and for a click on the overlay, and those two paths were
+   * not guarded while `ยกเลิก` at the footer was. Dismissing during the in-flight `PUT` skips
+   * `onSaved()` → `onChanged()` → the refetch, so the write lands and the table keeps showing
+   * the **old ceiling** — a number an administrator then reads as the authority in force. Ten
+   * dialogs in this app share the unguarded shape and this is the one where the stale value is
+   * money somebody may concede, so it is closed here rather than left matching.
+   */
   return (
-    <Dialog open onOpenChange={(next) => !next && onClose()}>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose();
+      }}
+    >
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>

@@ -96,8 +96,41 @@ function str(row: Record<string, unknown>, key: string, what: string): string {
   return value;
 }
 
+/**
+ * `null` and an **absent key** are the same answer.
+ *
+ * ⚠️ Only correct where `null` carries no meaning of its own — an actor id erasure may have
+ * scrubbed, a note nobody wrote. Where `null` is a *sentinel* the screen acts on, this fold is
+ * fail-open: see `revokedAtOf` below, and the identical warning on `fxCurrencyOf` in
+ * `organisation-api.ts`.
+ */
 function nullableStr(row: Record<string, unknown>, key: string, what: string): string | null {
   return row[key] === null || row[key] === undefined ? null : str(row, key, what);
+}
+
+/**
+ * ⭐ `revokedAt`, where `null` is not "unknown" but **live** — so an absent key must throw.
+ *
+ * `nullableStr` cannot be reused, for exactly the reason `organisation-api.ts:206-210` writes
+ * down about `fxCurrencyOf`: it folds `undefined` into `null`, which is right for an actor id
+ * and wrong for a field whose `null` is a decision. Here it is worse than a settings field. A
+ * response that stopped carrying this key would decode every withdrawn ceiling as **live**: the
+ * administrator is shown "this role may concede ฿5,000" and a ยกเลิกอำนาจ button, for a role the
+ * server grants nothing to — while the fail-closed banner fires from `isFailClosed` on the same
+ * screen, so the two sentences contradict each other and the fail-*open* one is the one attached
+ * to the row.
+ *
+ * `null` passes because it is the server's real answer. Anything else — a missing key included —
+ * is a decode failure, which `apiJson` turns into MALFORMED and the panel renders as an error
+ * rather than as authority nobody granted.
+ */
+function revokedAtOf(row: Record<string, unknown>, what: string): string | null {
+  const value = row['revokedAt'];
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new TypeError(`${what}.revokedAt is neither an instant nor null`);
+  }
+  return value;
 }
 
 function bool(row: Record<string, unknown>, key: string, what: string): boolean {
@@ -144,7 +177,7 @@ export function decodeAuthorityLimit(input: unknown): AuthorityLimitView {
     grantedByUserId: str(row, 'grantedByUserId', what),
     updatedAt: str(row, 'updatedAt', what),
     noteTh: nullableStr(row, 'noteTh', what),
-    revokedAt: nullableStr(row, 'revokedAt', what),
+    revokedAt: revokedAtOf(row, what),
     revokedByUserId: nullableStr(row, 'revokedByUserId', what),
   };
 }
@@ -183,10 +216,15 @@ export function decodeAuthorityLimitChange(input: unknown): AuthorityLimitChange
     dimension: dimensionOf(row, 'dimension', what),
     changedByUserId: str(row, 'changedByUserId', what),
     changedAt: str(row, 'changedAt', what),
-    before:
-      row['before'] === null || row['before'] === undefined
-        ? null
-        : decodeSnapshot(row['before'], `${what}.before`),
+    /*
+     * ⚠️ `=== null` only, never `?? null`. `before === null` is what marks a **first grant**:
+     * it drives `isGrant`, the ให้อำนาจครั้งแรก headline and the suppression of the จาก → เป็น
+     * rendering. Folding an absent key into it would turn every entry in a chain into a first
+     * grant with no before-value — erasing precisely the widen-then-narrow-back record this
+     * dialog exists to show. An absent key falls through to `decodeSnapshot`, which throws.
+     * Same position as `organisation-api.ts:180-183` and `:275-278`.
+     */
+    before: row['before'] === null ? null : decodeSnapshot(row['before'], `${what}.before`),
     after: decodeSnapshot(row['after'], `${what}.after`),
   };
 }

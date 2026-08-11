@@ -245,6 +245,72 @@ describe('the wire is narrowed, never cast', () => {
     expect(decoded.isFailClosed).toBe(true);
   });
 
+  /**
+   * ⭐⭐ An absent key is not a `null` — on the one field whose `null` means **live**.
+   *
+   * `revokedAt: null` is a ceiling that grants money right now. A decoder that folded a *missing*
+   * key into `null` would decode every withdrawn ceiling as live the moment the server stopped
+   * sending it: the administrator is shown "ลดได้เองถึง ฿5,000" and a ยกเลิกอำนาจ button, for a
+   * role `ceiling()` grants nothing to — while `isFailClosed`, which is decoded from a different
+   * key on the same response, fires the fail-closed banner above it. Two contradictory sentences
+   * on one screen, and the fail-*open* one is the one attached to the row.
+   *
+   * The three assertions are the whole contract: `null` passes, an instant passes, an absent key
+   * throws. `noteTh` and `revokedByUserId` deliberately stay on `nullableStr` below — for those
+   * two, `null` and "not sent" really are the same answer and neither grants anything.
+   */
+  it('refuses a limit whose revokedAt key is absent, rather than reading it as live', () => {
+    const { revokedAt: _absent, ...withoutRevokedAt } = wire;
+
+    expect(() => decodeAuthorityLimit(withoutRevokedAt)).toThrow(/revokedAt/u);
+    expect(decodeAuthorityLimit(wire).revokedAt).toBeNull();
+    expect(
+      decodeAuthorityLimit({ ...wire, revokedAt: '2026-08-11T04:00:00.000Z' }).revokedAt,
+    ).toBe('2026-08-11T04:00:00.000Z');
+
+    /* And the fold really is the difference between the two sentences the screen prints. */
+    expect(ceilingMeaningTh(decodeAuthorityLimit(wire))).toContain('฿5,000');
+    expect(
+      ceilingMeaningTh(decodeAuthorityLimit({ ...wire, revokedAt: '2026-08-11T04:00:00.000Z' })),
+    ).toContain('ยกเลิก');
+
+    /* …while the two fields where `null` genuinely means "not sent" keep folding. */
+    const { noteTh: _noNote, revokedByUserId: _noActor, ...sparse } = wire;
+    expect(decodeAuthorityLimit(sparse).noteTh).toBeNull();
+    expect(decodeAuthorityLimit(sparse).revokedByUserId).toBeNull();
+  });
+
+  /**
+   * ⭐ The same fold on `before`, where it erases the record the dialog exists to show.
+   *
+   * `before === null` is what marks a **first grant** — it drives `isGrant`, the
+   * ให้อำนาจครั้งแรก headline, and the suppression of the จาก → เป็น rendering. Folding an absent
+   * key into it turns every entry of a chain into a first grant with no before-value, which is
+   * exactly the widen-for-one-deal-then-narrow-back history this table was built to catch.
+   */
+  it('refuses a change whose before key is absent, rather than reading it as a first grant', () => {
+    const entry = {
+      id: '33333333-3333-4333-8333-333333333333',
+      groupId: wire.groupId,
+      groupCode: 'sales_lead',
+      dimension: 'margin',
+      changedByUserId: wire.grantedByUserId,
+      changedAt: wire.updatedAt,
+      after: { maxConcessionThbMinor: '500000', noteTh: null, isRevoked: false },
+    };
+
+    expect(() => decodeAuthorityLimitChange(entry)).toThrow(/before/u);
+    expect(decodeAuthorityLimitChange({ ...entry, before: null }).before).toBeNull();
+    expect(isGrant(decodeAuthorityLimitChange({ ...entry, before: null }))).toBe(true);
+
+    const chained = decodeAuthorityLimitChange({
+      ...entry,
+      before: { maxConcessionThbMinor: '100000', noteTh: null, isRevoked: false },
+    });
+    expect(isGrant(chained)).toBe(false);
+    expect(chained.before?.maxConcessionThbMinor).toBe(100_000n);
+  });
+
   it('reads a change with a null before, and refuses a snapshot that is not one', () => {
     const decoded = decodeAuthorityLimitChange({
       id: '33333333-3333-4333-8333-333333333333',
@@ -323,6 +389,21 @@ describe('AuthorityLimitsPanel', () => {
     expect(markup).toContain('กำหนดเพดาน');
     expect(markup).toContain('แก้ไข');
     expect(markup).toContain('ยกเลิกอำนาจ');
+  });
+
+  /**
+   * ⭐ The upsert button waits for the list, because the list is what warns about the upsert.
+   *
+   * `PUT` replaces whatever is at `(role, dimension)`. The dialog's "บทบาทนี้มีเพดานในมิตินี้อยู่แล้ว"
+   * warning is computed from `taken`, which is `state.limits` — empty on `loading` and on
+   * `failed`. A button live before then lets somebody replace a ฿5,000 ceiling with ฿50,000
+   * believing it is a new grant, with the one sentence that would have said otherwise silently
+   * unable to fire. `editable` alone is not enough to render it.
+   */
+  it('withholds the upsert button until it knows what is already in the table', () => {
+    expect(render({ status: 'loading' }, true)).not.toContain('กำหนดเพดาน');
+    expect(render({ status: 'failed', problem: 'โหลดไม่สำเร็จ' }, true)).not.toContain('กำหนดเพดาน');
+    expect(render(ready(), true)).toContain('กำหนดเพดาน');
   });
 
   /**
