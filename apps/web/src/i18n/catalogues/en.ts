@@ -42,8 +42,6 @@ export const en: PartialUiCatalogue = {
   'quote.badge.empty': 'Quote list is empty',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'Prices exclude 7% VAT',
-  'price.vatExcludedShort': 'excl. VAT',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'From',
   'price.fromShort': 'From',
@@ -118,12 +116,11 @@ export const en: PartialUiCatalogue = {
   'home.pricing.floor.note':
     'depending on the design. The pricing page always states the minimum for the design you chose.',
   'home.pricing.excluded.title': 'Not included in this price',
-  'home.pricing.excluded.vat': '7% VAT',
   'home.pricing.excluded.install': 'Installation',
   'home.pricing.excluded.delivery': 'Delivery',
   'home.pricing.excluded.removal': 'Removing the old unit',
   'home.pricing.excluded.note':
-    'All four depend on the site, so they cannot be estimated from a size alone. They appear in the quotation after the survey.',
+    'All three depend on the site, so they cannot be estimated from a size alone. They appear in the quotation after the survey.',
 
   'meta.title': 'WEWIN180 — made to your measurements, priced before you ask',
   'meta.description':
@@ -206,7 +203,7 @@ export const en: PartialUiCatalogue = {
   'summary.add': 'Add to quote list',
   'summary.hasErrors': 'There is still something to fix above. Press the button to see what.',
   'summary.showBreakdown': 'See the price breakdown',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · prices exclude 7% VAT`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} pieces` : ''
@@ -273,7 +270,6 @@ export const en: PartialUiCatalogue = {
     'Every figure here is read from the same catalogue that calculates the prices. None of it is written down separately.',
   'about.fact.designs.note': (p, f) =>
     `across ${f.integer(p.categories)} ${count(p.categories, 'category', 'categories')}`,
-  'about.fact.startingPrice.note': 'excluding 7% VAT',
   'about.fact.leadTime.note': 'depending on the design',
   'about.fact.floor': 'Minimum billable area',
   'about.fact.floor.note': 'smaller panels are charged at the minimum',
@@ -398,12 +394,14 @@ export const en: PartialUiCatalogue = {
   'submit.email': 'Email',
   'submit.phone': 'Telephone',
   'submit.channelHint': 'At least one of the two — a telephone number on its own is fine.',
+  'submit.destination': 'Destination',
   'submit.action': 'Request a quotation',
   'submit.sending': 'Issuing the quotation…',
   'submit.problem.nameMissing': 'Please give a contact name.',
   'submit.problem.noChannel': 'Please give an email address or a telephone number.',
   'submit.problem.badPhone': 'That telephone number cannot be read — e.g. 081-234-5678.',
   'submit.problem.badEmail': 'That email address cannot be read.',
+  'submit.problem.badDestination': 'Please choose a destination again — the previous choice is no longer on the list.',
   'submit.problem.unreachable': 'Cannot connect. Please try again.',
   'submit.problem.unconfigured': 'Requests cannot be taken right now. Please contact the sales team.',
   'submit.problem.unavailable':
@@ -427,6 +425,7 @@ export const en: PartialUiCatalogue = {
   'quotation.leadTime': 'Lead time (days)',
   'quotation.net': 'Before VAT',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'included in the price',
   'quotation.total': 'Total',
   'quotation.lineNo': '#',
   'quotation.item': 'Item',

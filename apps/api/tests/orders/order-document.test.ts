@@ -103,6 +103,14 @@ function priceOne(
     leadTimeDays: 30,
     catalog: new Map([[product.id, entryFor(product)]]),
     vat: DEFAULT_VAT_RULE,
+    /*
+     * A cart that names no destination — the shape every case in this file was written
+     * against, and what `resolveDestination(null)` hands back beside `DEFAULT_VAT_RULE`. Both
+     * fields became required on `PriceOrderParams` when the destination started travelling
+     * inside the document; `...extra` is how the cases that care override them.
+     */
+    destinationCountry: null,
+    taxBasis: 'exclusive',
     locale: 'th',
     coreVersion: 'test',
     revision,

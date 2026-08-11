@@ -20,15 +20,20 @@ import { message } from '../i18n';
 import { CatalogRepository } from '../catalog/catalog.repository';
 import { encodeAccountPublic, encodeProfile } from '../organisation/encode';
 import { OrganisationRepository } from '../organisation/organisation.repository';
+import { TaxCountryService } from '../organisation/tax-country.service';
 import { PaymentLifecycleService } from '../payments/lifecycle';
 import { AuthorityService } from '../quotes/authority';
+/* The port file and not the barrel — see `organisation.module.ts` on the require cycle. */
+import { DEPOSIT_POLICY, type DepositPolicyPort } from '../quotes/authority/deposit-policy.port';
 import { QuotesService } from '../quotes/quotes.service';
 import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
-import {
-  DEFAULT_LOCALE,
-  DEFAULT_VAT_RULE,
-  MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT,
-} from './defaults';
+/*
+ * `DEFAULT_VAT_RULE` is deliberately no longer imported here. Every rate this file pins now
+ * comes from `TaxCountryService.resolveDestination`, which returns the default itself when an
+ * order names no destination — one fallback, in the place that owns the question, rather than
+ * a second copy of it inside the submit.
+ */
+import { DEFAULT_LOCALE, MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT } from './defaults';
 import {
   encodeChangeRequest,
   encodeDocumentResponse,
@@ -133,6 +138,20 @@ export class OrdersService {
      * than in this service.
      */
     private readonly organisation: OrganisationRepository,
+    /**
+     * ⭐ Where the goods are going, turned into the tax rule the document is priced with.
+     *
+     * One call site: the first statement of `submit` that needs a rate, before
+     * `priceOrderDocument`. This service never reads `tax_countries` itself and never decides
+     * what a code means — `resolveDestination` is the single place a destination becomes a
+     * rate, a treatment and a basis (spec §3), which is what stops a second interpretation of
+     * "withdrawn" or "unknown" growing here.
+     *
+     * Injectable only because `OrganisationModule` exports it. It did not until this task, and
+     * the failure mode is the good one: a missing export is a "cannot resolve dependencies"
+     * error at boot, not a silent fallback at runtime.
+     */
+    private readonly taxCountries: TaxCountryService,
     @Inject(ENV) private readonly env: Env,
     /**
      * What happens to money when this order moves — 5b's closing seam.
@@ -169,6 +188,18 @@ export class OrdersService {
      * a concession smaller than the document grants.
      */
     private readonly authority: AuthorityService,
+    /**
+     * The company's deposit percentage — one method, one number, and no way to write anything.
+     *
+     * One call site: `submit`, immediately before `pinsForSubmit`. It is the *same* provider
+     * `AuthorityService` injects to measure the `cashflow` floor, which is the point — a submit
+     * that planned its schedule from one reading of `organisation_profile.deposit_bp` while the
+     * gate judged it against another would be plan 7.13's ฿12,902 seam reopened in a new column.
+     *
+     * The token rather than `OrganisationService`: that class also holds `putProfile`, and an
+     * order handler able to rewrite the company's profile is a capability nothing here needs.
+     */
+    @Inject(DEPOSIT_POLICY) private readonly depositPolicy: DepositPolicyPort,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -308,6 +339,22 @@ export class OrdersService {
         contactName: body.contact?.name ?? null,
         contactPhone: body.contact?.phone ?? null,
         contactLocale: body.contact?.locale ?? DEFAULT_LOCALE,
+        /*
+         * ⚠️ Forwarded, where it used to be dropped on the floor.
+         *
+         * `createOrderRequestSchema` reuses `orderContactRequestSchema`, so a `POST /orders`
+         * carrying `contact.destinationCountry` validated and answered 201 while this method
+         * never passed the value on. That was cosmetic for exactly as long as nothing read the
+         * column. It stopped being cosmetic when `submit` began pricing from it: a draft
+         * created with `SG` and submitted without repeating the country resolved `null`, priced
+         * at Thai 7%, and pinned a document that disagreed with its own order row.
+         *
+         * The country is *not* validated here. `resolveDestination` is the one place a code
+         * becomes a rule, and it runs at submit — refusing an unknown code at create would put
+         * a second interpretation of `tax_countries` on the anonymous cart-creation path, and
+         * would refuse a cart for a country the company is about to add.
+         */
+        destinationCountry: body.contact?.destinationCountry ?? null,
         actorKind: actor.actorKind,
         actorUserId: actor.actorUserId,
         actorGuestId: actor.actorGuestId,
@@ -506,6 +553,13 @@ export class OrdersService {
           contactName: order.contactName,
           contactPhone: order.contactPhone,
           contactLocale: order.contactLocale,
+          /*
+           * Carried forward with the other five, and for the same reason they are: the
+           * successor is the *same sale* re-quoted after the freeze. A successor that lost the
+           * destination would silently re-price a Singapore order at Thai 7% — and would do it
+           * on the one path where the customer is being asked to approve a new number.
+           */
+          destinationCountry: order.destinationCountry,
           actorKind: actor.actorKind,
           actorUserId: actor.actorUserId,
           actorGuestId: actor.actorGuestId,
@@ -710,15 +764,82 @@ export class OrdersService {
 
     if (body.lines !== undefined) await this.quotes.adoptCart(tx, order, body.lines);
 
-    const { document } = await this.quotes.assertSubmittable(tx, order);
+    /*
+     * ⭐ THE DESTINATION BECOMES A TAX RULE HERE, AND BEFORE EVERYTHING THAT USES IT.
+     *
+     * ⚠️ It moved **above** `assertSubmittable`, which is not cosmetic. That gate recomputes
+     * the whole quote — `applyOverrides`, the coherence refusals, and the re-verification of a
+     * `grand_total` promise's stored baseline — and every one of those is now basis-dependent.
+     * Resolving afterwards and handing the result only to `priceOrderDocument` would have the
+     * submit *approve* one document and *pin* a different one, on a code path whose entire
+     * purpose is that those two are the same document.
+     *
+     * One resolution for the whole request, passed to both. `QuotesService` never resolves for
+     * itself here, which is what makes "the figure the gate approved" and "the figure that got
+     * frozen" the same arithmetic over the same row rather than two reads of a mutable table.
+     *
+     * Resolution comes before pricing, and therefore before the order row that records the
+     * country is written by `applySubmission` below. The document is priced a few lines down
+     * and pinned after that; a resolution placed after either of those would pin a document
+     * that never saw it. The expression is `body.contact.destinationCountry ??
+     * order.destinationCountry` — the identical `??` the write itself uses, so the country the
+     * document is priced for and the country the row records are one decision read twice, not
+     * two decisions that could differ.
+     *
+     * `tx`, not a bare call. `TaxCountryRepository.byCode` threads it through
+     * `executor(tx) ?? this.db`, and it was *measured* to arrive: `select pg_backend_pid(),
+     * txid_current()` run on this `tx` and again inside `byCode` reports the same backend and
+     * the same transaction id (pid 96517, xid 1629137); with the argument dropped they diverge
+     * every run (pid 96581/96580, xid 1629191/1629192) — a second pooled connection in a
+     * transaction of its own.
+     *
+     * ⚠️ **What that does and does not buy, stated honestly**, because the first version of
+     * this comment claimed a concurrency guarantee it does not have. This database runs at
+     * READ COMMITTED (verified: `show transaction_isolation` → `read committed`), where every
+     * *statement* takes a fresh snapshot — so a rate committed by a concurrent
+     * `PATCH /admin/organisation/tax-countries/:code` is equally visible to a read on this
+     * transaction and to one on another connection. Threading `tx` does **not** make this read
+     * snapshot-consistent with the pin today.
+     *
+     * What it buys is: one connection instead of two for the same work; a read that sees
+     * whatever this transaction has already written, which is the property that keeps holding
+     * as `submit` grows; and the only version of this call that is still correct if the
+     * isolation level is ever raised to REPEATABLE READ, where a separate connection would
+     * definitively be reading a different instant from the document it is about to freeze.
+     *
+     * ⚠️ **No runtime test can fail on any of that**, which is why the parameter is a required
+     * `Tx | undefined` on `resolveDestination` rather than an optional one — dropping it is
+     * `TS2554: Expected 2 arguments, but got 1`. A one-connection pool does not distinguish
+     * them either; that was measured too, and the reason is one line below.
+     *
+     * A code naming no row is refused with `reason: 'unknown_destination_country'` rather than
+     * quietly falling back to `DEFAULT_VAT_RULE` — see `TaxCountryService.resolveDestination`.
+     * A *withdrawn* country resolves normally, on purpose: `is_active` governs what a new
+     * customer is offered, not whether a cart already carrying it may still be submitted.
+     */
+    const destination = await this.taxCountries.resolveDestination(
+      body.contact.destinationCountry ?? order.destinationCountry,
+      tx,
+    );
+
+    const { document } = await this.quotes.assertSubmittable(tx, order, destination);
 
     const priced = priceOrderDocument({
       lines: document.lines,
       charges: document.charges,
       overrides: document.overrides,
       leadTimeDays: document.leadTimeDays,
+      /*
+       * ⚠️ This takes a **second pooled connection while the transaction holds a first**:
+       * `CatalogRepository.findAll()` reads `this.db` and has no `tx` parameter at all. It
+       * predates this task and is left alone here, but it is why a `max: 1` pool cannot be used
+       * to prove the `tx` above arrives — the submit needs two connections either way — and it
+       * is worth knowing before anybody sizes a pool by counting transactions.
+       */
       catalog: await this.catalogIndex(),
-      vat: DEFAULT_VAT_RULE,
+      vat: destination.rule,
+      destinationCountry: destination.code,
+      taxBasis: destination.basis,
       locale: body.contact.locale ?? order.contactLocale,
       coreVersion: this.env.SERVICE_VERSION,
       revision: (await this.orders.latestRevision(tx, order.id)) + 1,
@@ -744,8 +865,17 @@ export class OrdersService {
       document: priced.document,
       documentHash: priced.documentHash,
       pinnedCoreVersion: this.env.SERVICE_VERSION,
-      pinnedVatRateBp: DEFAULT_VAT_RULE.rateBp,
-      pinnedVatTreatment: DEFAULT_VAT_RULE.treatment,
+      /*
+       * ⚠️ From the resolution, and from the same object the document was priced with.
+       *
+       * `orders_totals_match_document()` foots the *totals* and never looks at the rate, so a
+       * column saying 700 beside a document saying 900 passes every constraint in the database
+       * — and the two are read by different screens. `destination.rule` is the one source both
+       * halves come from; mutation-tested by reverting this line to `DEFAULT_VAT_RULE.rateBp`
+       * and watching `destination-pinning.pg.test.ts` go red on the column alone.
+       */
+      pinnedVatRateBp: destination.rule.rateBp,
+      pinnedVatTreatment: destination.rule.treatment,
       pinnedLocale: priced.document.pinnedLocale,
       netThbMinor: priced.netThbMinor,
       vatThbMinor: priced.vatThbMinor,
@@ -770,8 +900,50 @@ export class OrdersService {
      * statement that stamps `submitted_at` (`orders_submitted_shape`), and the instalment rows
      * must be written after it because `assert_order_schedule()` foots them against the total
      * on the row. One evaluation, used twice, and no arithmetic in this file.
+     *
+     * ── ⭐ AND THE SHARE COMES FROM THE COMPANY'S OWN SETTING ────────────────────
+     *
+     * `organisation_profile.deposit_bp`, read here — inside this transaction, through the same
+     * one-method port `AuthorityService` measures the `cashflow` floor with, so the schedule this
+     * submit writes and the floor the gate judges it against come from **one definition**. They
+     * came from two for a whole round: the schedule was planned `payInFullTerms()`
+     * unconditionally while the floor was a module constant at 10 000 bp, and the day somebody
+     * used the admin screen the setting would have changed nothing at all.
+     *
+     * ⚠️ **One definition is not one read, and this comment used to claim it was.**
+     *
+     * There are two reads of that row in a submit — this one, and `AuthorityService.measureFor`'s
+     * at the `gate` call below. `OrganisationRepository.profile()` is a plain unlocked `SELECT`,
+     * this database runs at READ COMMITTED (verified: `show transaction_isolation` → `read
+     * committed`), and every *statement* there takes a fresh snapshot. So a
+     * `PUT /admin/organisation` committing between the two is visible to the second and not the
+     * first, and the two reads can genuinely disagree.
+     *
+     * What that costs, in the only direction it costs anything. Raising the policy mid-submit —
+     * 3 000 bp, then 10 000 — plans a schedule gating 30% and then judges it against a floor of
+     * 100%: a 70% `cashflow` concession, no row in `authority_limits` to cover it, so the gate
+     * refuses and the whole submit rolls back. The customer sees a 409 about approval authority
+     * for an order nobody conceded anything on, and a retry succeeds. Lowering it mid-submit is
+     * harmless: the schedule gates *more* than the new floor asks for, which is not a concession.
+     *
+     * Accepted rather than locked, and the alternative was written before it was rejected. A
+     * `FOR SHARE` on the first read would close it — the row would be pinned for the rest of the
+     * transaction and a concurrent `putProfile`'s `FOR UPDATE` would queue behind it. The price is
+     * that every submit would hold a shared lock on one singleton row for its whole duration
+     * (pricing, catalogue reads, the gate), so a slow submit delays an admin saving the company
+     * profile. That is a real, permanent cost paid on every order to close a window that needs an
+     * admin write landing between two statements of one request, that is fail-closed when it does,
+     * and that a retry clears. The same call the destination resolution a page above makes, and
+     * for the same reason: a comment that claims a consistency the code does not provide is worse
+     * than the window it papers over.
+     *
+     * `tx` is still threaded, for the reasons that resolution gives at length: it does not buy
+     * snapshot consistency at READ COMMITTED, and it does buy one connection instead of two, a
+     * read that sees what this transaction has already written, and the only version still correct
+     * if the isolation level is ever raised — at which point this window closes on its own.
      */
-    const pins = await this.payments.pinsForSubmit(tx, priced.grandTotalThbMinor);
+    const depositBp = await this.depositPolicy.depositBp(tx);
+    const pins = await this.payments.pinsForSubmit(tx, priced.grandTotalThbMinor, depositBp);
 
     await this.orders.applySubmission(tx, {
       orderId: order.id,
@@ -788,6 +960,8 @@ export class OrdersService {
       contactEmail: body.contact.email ?? order.contactEmail,
       contactName: body.contact.name ?? order.contactName,
       contactPhone: body.contact.phone ?? order.contactPhone,
+      /* Same `??` shape as the three contact fields above: a submit naming no destination must not erase one the cart already had. */
+      destinationCountry: body.contact.destinationCountry ?? order.destinationCountry,
       contactLocale: priced.document.pinnedLocale,
       netThbMinor: priced.netThbMinor,
       vatThbMinor: priced.vatThbMinor,

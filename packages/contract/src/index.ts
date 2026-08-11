@@ -126,6 +126,7 @@ export type {
   OverrideEntryModeWire,
   OverrideReasonWire,
   PresentLineRequestWire,
+  QuoteDestinationWire,
   QuoteLineKindWire,
   QuoteLineWire,
   QuoteMoneyWire,
@@ -161,6 +162,16 @@ export type {
   OrganisationProfileWire,
   PaymentInstructionsWire,
 } from './organisation.js';
+
+export type {
+  DestinationTaxBasis,
+  DestinationWire,
+  SettingChangeWire,
+  TaxCountryAvailabilityRequest,
+  TaxCountryCreateRequest,
+  TaxCountryPatchRequest,
+  TaxCountryWire,
+} from './tax.js';
 
 export type {
   AdminOptionGroupListWire,

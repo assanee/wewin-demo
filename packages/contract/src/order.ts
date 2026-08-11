@@ -8,6 +8,7 @@ import { priceBreakdownWireSchema, priceRequestWireSchema, type PriceBreakdownWi
 import { catalogRefShape, type CatalogRef } from './catalog.js';
 import { lengthWireSchema, type LengthWire } from './measure.js';
 import type { OrganisationProfileWire } from './organisation.js';
+import { DESTINATION_TAX_BASES } from './tax.js';
 
 /**
  * The order lifecycle on the wire — phase 5a.
@@ -162,11 +163,17 @@ export interface OrderDocumentLineWire extends CatalogRef {
   readonly measures: Readonly<Record<string, LengthWire>>;
   readonly qty: number;
   /**
-   * VAT-exclusive line total — **what the customer is charged for this line**.
+   * The line total — **what the customer is charged for this line**.
    *
    * Equal to `computedNetMinor` unless a human overrode it, in which case this is the human's
    * figure and that one is the machine's. Plan 4.3(ข): the number on the contract is the line
    * total, and there is one of it.
+   *
+   * ⚠️ Not always VAT-exclusive, despite the name. Whether this figure already contains the
+   * tax depends on the destination's basis this document pinned — see `taxBasis` below and
+   * `QuoteDestinationWire.basis` (`quote.ts`) for the identity: under `exclusive` line totals
+   * sum to the net; under `inclusive` they already contain the tax and sum to the grand total
+   * instead.
    */
   readonly netMinor: MoneyWire<'THB'>;
   /** ⓵ `calcPrice(...).totalMinor`, always, whether or not it is what was charged. */
@@ -248,6 +255,22 @@ export interface OrderDocumentWire {
   readonly grandTotalThbMinor: MoneyWire<'THB'>;
   /** How many days the customer was promised. Plan 7.9(ค) makes it an anchor; this pins it. */
   readonly leadTimeDays: number;
+  /**
+   * Where the goods are going, frozen at submit, and absent on every document issued before
+   * this field existed.
+   *
+   * Optional is what keeps the 21 already-issued quotations readable: `documentSchemaVersion`
+   * is a bare `z.literal` with no v1/v2 union reader, and a parse failure is a 503 for staff
+   * and customer alike (`apps/api/src/orders/order.repository.ts:722-729`).
+   */
+  readonly destinationCountry?: string | undefined;
+  /**
+   * Which arithmetic ran, recorded because the printed page needs it and cannot ask.
+   *
+   * The renderer picks a layout from this. It cannot read `tax_countries` instead: that table
+   * is mutable, and a quotation must print what was quoted, not what is policy today.
+   */
+  readonly taxBasis?: (typeof DESTINATION_TAX_BASES)[number] | undefined;
 }
 
 /**
@@ -310,6 +333,8 @@ export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
     rateBp: z.int().min(0).max(10_000),
     treatment: z.literal(VAT_TREATMENTS_WIRE),
   }),
+  destinationCountry: z.string().regex(/^[A-Z]{2}$/u).optional(),
+  taxBasis: z.enum(DESTINATION_TAX_BASES).optional(),
   lines: z.array(orderDocumentLineWireSchema),
   charges: z.array(orderDocumentChargeWireSchema),
   documentOverride: orderDocumentOverrideWireSchema.nullable(),
@@ -348,6 +373,16 @@ export interface OrderContactWire {
   readonly name: string | null;
   readonly phone: string | null;
   readonly locale: string;
+  /**
+   * Where this order is going, or `null` on a cart that predates the field and every order
+   * before a destination was ever chosen.
+   *
+   * ⭐ Carried beside `locale` deliberately — the two make the identical round trip through
+   * `GET /orders/:id` (`encode.ts`'s `contact` object, off `ScopedOrder.destinationCountry`),
+   * and the storefront's pre-fill (`prefillContact.ts`) follows `locale` to find every place
+   * this field had to be added too.
+   */
+  readonly destinationCountry: string | null;
 }
 
 export interface OrderMoneyWire {
@@ -459,6 +494,8 @@ export interface OrderContactRequestWire {
   readonly name?: string | undefined;
   readonly phone?: string | undefined;
   readonly locale?: string | undefined;
+  /** Where the order is going. Optional: a submit that names none carries over the cart's own. */
+  readonly destinationCountry?: string | undefined;
 }
 
 export interface CreateOrderRequestWire {
@@ -625,6 +662,7 @@ export const orderContactRequestSchema: z.ZodType<OrderContactRequestWire> = z
     name: z.string().trim().min(1).max(200).optional(),
     phone: phoneSchema.optional(),
     locale: localeSchema.optional(),
+    destinationCountry: z.string().regex(/^[A-Z]{2}$/u).optional(),
   })
   .refine((contact) => contact.email !== undefined || contact.phone !== undefined, {
     message: 'a submitted order needs an email address or a telephone number',

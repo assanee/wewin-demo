@@ -112,6 +112,9 @@ const quote = (over: Partial<QuoteWire> = {}): QuoteWire => {
     orderId: '00000000-0000-4000-8000-000000000001',
     quoteRevision: '0123456789abcdef',
     currency: 'THB',
+    /* A domestic order, resolved. `recognised: false` means the money block above is the
+     * default rule rather than this country's — see `QuoteDestinationWire`. */
+    destination: { country: 'TH', recognised: true, basis: 'exclusive' },
     lines,
     money: {
       netThbMinor: thb(net),
@@ -132,6 +135,97 @@ const quote = (over: Partial<QuoteWire> = {}): QuoteWire => {
     ...over,
   };
 };
+
+describe('the destination the server could not resolve', () => {
+  /**
+   * ⭐ Relayed, never decided. This module has no list of countries and must never grow one —
+   * `destination.recognised` is the API's own statement and the fold copies it across.
+   */
+  it('surfaces the code when the server says it recognised nothing', () => {
+    const view = foldQuote(quote({ destination: { country: 'ZZ', recognised: false, basis: 'exclusive' } }));
+
+    expect(view.unrecognisedDestination).toBe('ZZ');
+  });
+
+  it('is null for a destination that resolved, and for an order naming none', () => {
+    expect(foldQuote(quote()).unrecognisedDestination).toBeNull();
+    expect(
+      foldQuote(quote({ destination: { country: null, recognised: true, basis: 'exclusive' } }))
+        .unrecognisedDestination,
+    ).toBeNull();
+  });
+
+  /**
+   * ⚠️ **A warning, not a gate.** The refusal is `assertSubmittable`'s in apps/api and it stays
+   * there. `hasStaleBaselines` is this module's one send-blocker and its own note says why a
+   * second one computed here would be wrong: it would disagree with the API the first time
+   * either moved, and a client that had not been updated would not enforce it at all.
+   *
+   * So an unrecognised destination must move this field not at all.
+   */
+  it('does not become a second send-blocker on the screen', () => {
+    const view = foldQuote(quote({ destination: { country: 'ZZ', recognised: false, basis: 'exclusive' } }));
+
+    expect(view.hasStaleBaselines).toBe(false);
+    expect(view.alarms).toEqual([]);
+  });
+});
+
+/**
+ * ⭐ The footing identity is basis-dependent, and getting it wrong condemns correct money.
+ *
+ * `lines_do_not_foot` renders *"ข้อมูลใบนี้ขัดกันเอง — อย่าส่งออกจนกว่าจะตรวจสอบ"* — the strongest
+ * thing this screen says. Under `exclusive` the effective line totals are the tax base and sum
+ * to `netThbMinor`; under `inclusive` they already contain the tax and sum to
+ * `grandTotalThbMinor`. Compared against the wrong one they are out by exactly `vatThbMinor`,
+ * so **every** inclusive quote raised the alarm — ฿13,824.00 folded against ฿12,682.57 on a
+ * real Singapore order, a ฿1,141.43 gap that is just the 9% VAT.
+ *
+ * ⚠️ No test caught that: the fixtures were all exclusive, and the API suite cannot see a
+ * dashboard fold. It was found by opening the screen.
+ */
+describe('the footing check follows the destination’s basis', () => {
+  /** ฿13,824.00 of goods quoted tax-inclusive at 900 bp: net 12 682.57 + VAT 1 141.43. */
+  const inclusive = (over: Partial<QuoteWire> = {}): QuoteWire =>
+    quote({
+      destination: { country: 'SG', recognised: true, basis: 'inclusive' },
+      lines: [catalogLine('l-1', 1, 1_382_400n)],
+      money: {
+        netThbMinor: thb(1_268_257n),
+        taxableNetThbMinor: thb(1_268_257n),
+        exemptNetThbMinor: thb(0n),
+        vatThbMinor: thb(114_143n),
+        grandTotalThbMinor: thb(1_382_400n),
+        vat: { rateBp: 900, treatment: 'standard' },
+      },
+      ...over,
+    });
+
+  it('raises nothing on an inclusive quote whose lines sum to the grand total', () => {
+    expect(foldQuote(inclusive()).alarms).toEqual([]);
+  });
+
+  /*
+   * ⚠️ The other half, and the reason this pair is not a weakening. Moving the comparison to
+   * the grand total must not make the alarm unraisable — a line that genuinely does not belong
+   * to the total still has to be caught under an inclusive destination.
+   */
+  it('still catches a genuine mismatch under an inclusive destination', () => {
+    const view = foldQuote(
+      inclusive({ lines: [catalogLine('l-1', 1, 1_382_400n), catalogLine('l-2', 2, 100_000n)] }),
+    );
+
+    expect(view.alarms).toEqual([
+      { kind: 'lines_do_not_foot', serverThbMinor: 1_382_400n, foldedThbMinor: 1_482_400n },
+    ]);
+  });
+
+  it('still foots an exclusive quote against the net, unchanged', () => {
+    /* `quote()`'s own fixture is exclusive and its money block is built from the lines, so a
+       basis switch that broke this direction would show up here rather than nowhere. */
+    expect(foldQuote(quote()).alarms).toEqual([]);
+  });
+});
 
 const salesOf = (base: QuoteWire, over: Partial<NonNullable<QuoteWire['sales']>>) => ({
   ...base,

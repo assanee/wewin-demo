@@ -136,11 +136,31 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
    */
   ['GET /admin/organisation', ['organisation.read']],
   ['PUT /admin/organisation', ['organisation.write']],
+  /*
+   * ⭐ `organisation.read`, matching its two `…/changes` siblings, and worth one sentence of its
+   * own: the profile carries `deposit_bp`, which is the `cashflow` approval floor, so
+   * `organisation.write` now moves what counts as a concession needing approval. This is the only
+   * route that can say who moved it — the table had a writer and no reader until task 12's review.
+   */
+  ['GET /admin/organisation/changes', ['organisation.read']],
   ['GET /admin/organisation/bank-accounts', ['organisation.read']],
   ['POST /admin/organisation/bank-accounts', ['organisation.write']],
   ['PATCH /admin/organisation/bank-accounts/:id', ['organisation.write']],
   ['PUT /admin/organisation/bank-accounts/:id/availability', ['organisation.write']],
   ['GET /admin/organisation/bank-accounts/:id/changes', ['organisation.read']],
+  /*
+   * Tax countries, the same split: `organisation.read` for looking, `organisation.write`
+   * for editing — including the availability route, for the identical reason a bank-account
+   * deactivation is `PUT` with `organisation.write` rather than a `DELETE` (`tax_countries_
+   * block_delete` refuses one anyway). `GET /destinations` is deliberately not in this
+   * table — it is not under `/admin`, which is exactly why it is public: see
+   * `destinations.controller.ts`.
+   */
+  ['GET /admin/organisation/tax-countries', ['organisation.read']],
+  ['POST /admin/organisation/tax-countries', ['organisation.write']],
+  ['PATCH /admin/organisation/tax-countries/:code', ['organisation.write']],
+  ['PUT /admin/organisation/tax-countries/:code/availability', ['organisation.write']],
+  ['GET /admin/organisation/tax-countries/:code/changes', ['organisation.read']],
 ]);
 
 const codesOf = (record: RouteRecord): readonly string[] =>

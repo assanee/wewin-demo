@@ -349,8 +349,26 @@ describe('cashflow — delegated, not re-implemented', () => {
 
   const GRAND = fromNet(NET_18432, VAT_7).grandMinor;
 
+  /**
+   * The floor is now an **argument**, and these three cases pass the value that used to be
+   * hard-coded.
+   *
+   * `measureCashflow` took two parameters and reached 10 000 bp through
+   * `cashflowConcessionMinor`'s default — plan 13's placeholder, back when the owner had not
+   * answered the question. They have: it is `organisation_profile.deposit_bp`, and
+   * `AuthorityService` reads it through `DepositPolicyPort` on every measurement. Restating it
+   * here keeps these three about what they were always about (the arithmetic of the gated prefix)
+   * rather than about the default that has moved out from under them, and the fourth case below
+   * is what makes the parameter load-bearing.
+   */
+  const PAY_IN_FULL_BP = 10_000;
+
   it('is zero when the whole total is gated behind production — plan 13’s floor', () => {
-    const measured = measureCashflow(GRAND, [instalment(1, GRAND, 'production_confirmed')]);
+    const measured = measureCashflow(
+      GRAND,
+      [instalment(1, GRAND, 'production_confirmed')],
+      PAY_IN_FULL_BP,
+    );
 
     expect(measured.dimension).toBe('cashflow');
     expect(measured.concessionThbMinor).toBe(0n);
@@ -358,19 +376,39 @@ describe('cashflow — delegated, not re-implemented', () => {
   });
 
   it('is the whole total when nothing gates production — the company extending credit', () => {
-    const measured = measureCashflow(GRAND, [instalment(1, GRAND, null)]);
+    const measured = measureCashflow(GRAND, [instalment(1, GRAND, null)], PAY_IN_FULL_BP);
 
     expect(measured.concessionThbMinor).toBe(GRAND);
     expect(measured.sources[0]?.kind).toBe('gate_below_floor');
   });
 
-  it('measures a 30/70 against the floor the plan documents', () => {
+  it('measures a 30/70 against a payment-in-full floor', () => {
     const deposit = (GRAND * 3n) / 10n;
-    const measured = measureCashflow(GRAND, [
-      instalment(1, deposit, 'production_confirmed'),
-      instalment(2, GRAND - deposit, null),
-    ]);
+    const measured = measureCashflow(
+      GRAND,
+      [instalment(1, deposit, 'production_confirmed'), instalment(2, GRAND - deposit, null)],
+      PAY_IN_FULL_BP,
+    );
 
     expect(measured.concessionThbMinor).toBe(GRAND - deposit);
+  });
+
+  /**
+   * ⭐ The same schedule, judged against the company's own policy — and it concedes nothing.
+   *
+   * This is the whole of task 12 in one assertion. The 30/70 above is a ฿12,902 concession only
+   * because it is being measured against a floor of payment in full; against a company that has
+   * authored a 30% deposit it is exactly what the policy asks for. With `authority_limits` empty
+   * — which is how this ships — the difference between these two lines is a submit that completes
+   * and a submit that rolls back document, order, schedule and status event.
+   */
+  it('concedes nothing when the floor is the company’s own 30 per cent', () => {
+    const deposit = (GRAND * 3n) / 10n;
+    const rows = [instalment(1, deposit, 'production_confirmed'), instalment(2, GRAND - deposit, null)];
+
+    expect(measureCashflow(GRAND, rows, 3_000).concessionThbMinor).toBe(0n);
+    expect(measureCashflow(GRAND, rows, 3_000).sources).toEqual([]);
+    /* And a schedule below the policy is still a concession, sized to the gap. */
+    expect(measureCashflow(GRAND, rows, 5_000).concessionThbMinor).toBe((GRAND * 5n) / 10n - deposit);
   });
 });

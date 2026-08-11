@@ -42,8 +42,6 @@ export const hi: PartialUiCatalogue = {
   'quote.badge.empty': 'कोटेशन सूची खाली है',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'मूल्य में 7% वैट शामिल नहीं है',
-  'price.vatExcludedShort': 'वैट अलग',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'से',
   'price.fromShort': 'से',
@@ -120,12 +118,11 @@ export const hi: PartialUiCatalogue = {
   'home.pricing.floor.note':
     'डिज़ाइन के अनुसार। मूल्य पृष्ठ पर आपके चुने डिज़ाइन का न्यूनतम हमेशा लिखा रहता है।',
   'home.pricing.excluded.title': 'इस मूल्य में शामिल नहीं',
-  'home.pricing.excluded.vat': '7% वैट',
   'home.pricing.excluded.install': 'फ़िटिंग',
   'home.pricing.excluded.delivery': 'ढुलाई',
   'home.pricing.excluded.removal': 'पुराना सेट निकालना',
   'home.pricing.excluded.note':
-    'चारों साइट पर निर्भर करते हैं, इसलिए केवल नाप से इनका अनुमान नहीं लगाया जा सकता। ये साइट पर नाप के बाद कोटेशन में आते हैं।',
+    'तीनों साइट पर निर्भर करते हैं, इसलिए केवल नाप से इनका अनुमान नहीं लगाया जा सकता। ये साइट पर नाप के बाद कोटेशन में आते हैं।',
 
   'meta.title': 'WEWIN180 — आपके नाप पर बना, पूछने से पहले मूल्य',
   'meta.description':
@@ -204,7 +201,7 @@ export const hi: PartialUiCatalogue = {
   'summary.add': 'कोटेशन सूची में जोड़ें',
   'summary.hasErrors': 'ऊपर अब भी कुछ ठीक करना है। क्या, यह देखने के लिए बटन दबाइए।',
   'summary.showBreakdown': 'मूल्य का विवरण देखें',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · मूल्य में 7% वैट शामिल नहीं`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} नग` : ''
@@ -269,7 +266,6 @@ export const hi: PartialUiCatalogue = {
     'यहाँ का हर आँकड़ा उसी कैटलॉग से पढ़ा गया है जो मूल्य निकालता है। इनमें से कुछ भी अलग से नहीं लिखा गया।',
   'about.fact.designs.note': (p, f) =>
     `${f.integer(p.categories)} ${count(p.categories, 'श्रेणी', 'श्रेणियों')} में`,
-  'about.fact.startingPrice.note': '7% वैट अलग',
   'about.fact.leadTime.note': 'डिज़ाइन के अनुसार',
   'about.fact.floor': 'न्यूनतम बिल योग्य क्षेत्रफल',
   'about.fact.floor.note': 'छोटे पैनल का बिल न्यूनतम पर बनता है',
@@ -413,6 +409,7 @@ export const hi: PartialUiCatalogue = {
   'submit.email': 'ईमेल',
   'submit.phone': 'फ़ोन',
   'submit.channelHint': 'दोनों में से कम से कम एक — अकेला फ़ोन नंबर भी चलेगा।',
+  'submit.destination': 'गंतव्य देश',
   'submit.action': 'कोटेशन मँगाएँ',
   'submit.sending': 'कोटेशन जारी हो रहा है…',
   'submit.problem.nameMissing': 'कृपया संपर्क का नाम दीजिए।',
@@ -420,6 +417,7 @@ export const hi: PartialUiCatalogue = {
   'submit.problem.badPhone':
     'यह फ़ोन नंबर पढ़ा नहीं जा सका — जैसे 081-234-5678।',
   'submit.problem.badEmail': 'यह ईमेल पता पढ़ा नहीं जा सका।',
+  'submit.problem.badDestination': 'कृपया गंतव्य फिर से चुनें — पिछला विकल्प अब सूची में नहीं है।',
   'submit.problem.unreachable': 'जुड़ नहीं पा रहे। कृपया फिर कोशिश कीजिए।',
   'submit.problem.unconfigured':
     'अभी अनुरोध नहीं लिए जा सकते। कृपया बिक्री टीम से संपर्क कीजिए।',
@@ -445,6 +443,7 @@ export const hi: PartialUiCatalogue = {
   'quotation.leadTime': 'डिलीवरी समय (दिन)',
   'quotation.net': 'वैट से पहले',
   'quotation.vat': 'वैट',
+  'quotation.vatIncluded': 'कीमत में शामिल',
   'quotation.total': 'कुल',
   'quotation.lineNo': 'क्र.',
   'quotation.item': 'मद',

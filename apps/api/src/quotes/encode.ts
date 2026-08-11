@@ -8,6 +8,7 @@ import type {
 } from '@wewin/contract/quote';
 import type { TaxRule } from '@wewin/core/vat';
 
+import type { DestinationTax } from '../organisation/tax-country.service';
 import type { EffectiveMoney, EffectiveQuote } from './overrides';
 import { decodeStoredSelections, encodeStoredMeasures } from './pricing';
 import type { QuoteLineRow, QuoteOverrideRow } from './quote.repository';
@@ -62,7 +63,15 @@ export interface EncodeQuoteInput {
    * state, not two, and the pair is either usable together or not at all.
    */
   readonly productIdByVersionId: ReadonlyMap<string, string>;
-  readonly vat: TaxRule;
+  /**
+   * The destination `effective` was computed under — the whole envelope, not just its rule.
+   *
+   * One input rather than two, because the rate the screen *prints* and the country it names
+   * have to be the same resolution. Passing `vat: TaxRule` beside a country would let the two
+   * drift, and they already had: the money was computed at the destination's rate while
+   * `DEFAULT_VAT_RULE` was printed over it, so a Singapore order read "VAT 7%" above 9% money.
+   */
+  readonly destination: DestinationTax;
   readonly staleBaselines: readonly StaleBaselineWire[];
   readonly audience: QuoteAudience;
 }
@@ -76,6 +85,16 @@ export function encodeQuote(input: EncodeQuoteInput): QuoteWire {
     orderId: input.orderId,
     quoteRevision: input.quoteRevision,
     currency: 'THB',
+    /* Outside `sales`, so a customer sees it too: an unresolvable country is a fact about
+     * their own order that only they can correct, not the company's negotiating position. */
+    destination: {
+      country: input.destination.code,
+      recognised: input.destination.known,
+      /* Which of `fromNet`/`fromGrand` produced `money` below. A client adding the lines up
+       * cannot derive it — the two identities differ by exactly `vatThbMinor` and every other
+       * field is consistent under either. See `QuoteDestinationWire`. */
+      basis: input.destination.basis,
+    },
     lines: input.lines.map((line) =>
       encodeLine(line, {
         effectiveByLineId,
@@ -84,7 +103,7 @@ export function encodeQuote(input: EncodeQuoteInput): QuoteWire {
         audience: input.audience,
       }),
     ),
-    money: encodeMoney(input.effective.money, input.vat),
+    money: encodeMoney(input.effective.money, input.destination.rule),
     computedLeadTimeDays: input.effective.computedLeadTimeDays,
     effectiveLeadTimeDays: input.effective.effectiveLeadTimeDays,
     sales:

@@ -311,6 +311,17 @@ export class OrderRepository {
       readonly contactName: string | null;
       readonly contactPhone: string | null;
       readonly contactLocale: string;
+      /**
+       * Where the goods are going, if the cart already knows — `null` on a cart that does not.
+       *
+       * ⚠️ Written *here* and not only at submit, because `orderContactRequestSchema` accepts
+       * the field on `POST /orders` and a strict-object schema that accepts a field the write
+       * discards is a lie the type system endorses. It was cosmetic while nothing read the
+       * column; it stopped being cosmetic when the submit began pricing from it, because a
+       * draft created with `SG` and submitted without repeating it would have priced at Thai
+       * 7% while the row recorded Singapore.
+       */
+      readonly destinationCountry: string | null;
       readonly actorKind: OrderActorKind;
       readonly actorUserId: string | null;
       readonly actorGuestId: string | null;
@@ -330,6 +341,7 @@ export class OrderRepository {
       contactName: input.contactName,
       contactPhone: input.contactPhone,
       contactLocale: input.contactLocale,
+      destinationCountry: input.destinationCountry,
       supersedesOrderId: input.supersedesOrderId,
     });
 
@@ -426,6 +438,8 @@ export class OrderRepository {
       readonly contactName: string | null;
       readonly contactPhone: string | null;
       readonly contactLocale: string;
+      /** Chosen by the customer at submit, or carried over from a cart that already had one. */
+      readonly destinationCountry: string | null;
       readonly netThbMinor: bigint;
       readonly vatThbMinor: bigint;
       readonly grandTotalThbMinor: bigint;
@@ -454,6 +468,7 @@ export class OrderRepository {
         contactName: input.contactName,
         contactPhone: input.contactPhone,
         contactLocale: input.contactLocale,
+        destinationCountry: input.destinationCountry,
         netThbMinor: input.netThbMinor,
         vatThbMinor: input.vatThbMinor,
         grandTotalThbMinor: input.grandTotalThbMinor,

@@ -175,7 +175,6 @@ export function AppFooter() {
             {t('footer.copyright', { year: COPYRIGHT_YEAR })}{' '}
             <span {...sourceLang}>{company.legalNameTh}</span>
           </p>
-          <p className="numeric text-caption text-chalk-3">{t('price.vatExcluded')}</p>
         </div>
       </div>
 

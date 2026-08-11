@@ -12,8 +12,15 @@ import {
   type ContactProblem,
 } from '../../lib/quote/submit';
 import { fetchContactPrefill, fieldsToApply } from '../../lib/quote/prefillContact';
+import {
+  destinationIsSubmittable,
+  readDestinations,
+  THAILAND_ONLY,
+  type DestinationsRead,
+} from '../../lib/quote/destinations';
 import type { Session } from '../../lib/auth/account';
 import { useLocale } from '../../state/localeContext';
+import { DestinationSelect } from './DestinationSelect';
 import { SubmittedNotice } from './SubmittedNotice';
 import type { PlainKey } from '../../i18n/keys';
 
@@ -41,14 +48,38 @@ import type { PlainKey } from '../../i18n/keys';
  * customer who has just pressed a button should not have to go and look in their inbox, and a
  * customer who gave only a telephone number will not find one there at all.
  *
- * ── ⚠️ The three fields pre-fill themselves, quietly ──────────────────────────
+ * ── ⚠️ The fields pre-fill themselves, quietly ──────────────────────────
  *
- * A returning customer has already told this company their name, number and address — on a
- * prior order, or at worst at registration. `../../lib/quote/prefillContact` goes and asks,
- * over the network, after the form is already on screen and usable. Because that answer can
- * arrive after somebody has started typing, `touchedRef` below remembers which fields a
- * finger has already reached — see `fieldsToApply` for the rule that keeps a slow network
- * response from overwriting a fast typist.
+ * A returning customer has already told this company their name, number, address and
+ * destination — on a prior order, or at worst at registration. `../../lib/quote/prefillContact`
+ * goes and asks, over the network, after the form is already on screen and usable. Because that
+ * answer can arrive after somebody has started typing (or picking), `touchedRef` below remembers
+ * which fields a finger has already reached — see `fieldsToApply` for the rule that keeps a slow
+ * network response from overwriting a fast typist.
+ *
+ * ── ⚠️ The destination is its own picker, and its own network call ───────────
+ *
+ * `DestinationSelect` is a plain, prop-driven `<select>` — the fetch that populates it
+ * (`../../lib/quote/destinations`) lives here, beside the fetch for the pre-fill, and is asked
+ * for independently: a customer must be able to open the picker before this form has ever heard
+ * back from `GET /orders`, and a slow or unreachable pre-fill must not hold the picker's
+ * options hostage. On failure it degrades to Thailand alone, same as the picker's own default,
+ * so this form is exactly as submittable as it was before either fetch ran. `destinationIsSubmittable`
+ * is a last check before submit: a value this app did not itself select — most likely a
+ * destination pre-filled from a prior order that has since been withdrawn — is refused here
+ * rather than reaching the API, where Task 9 found the refusal otherwise lands far from the
+ * mistake.
+ *
+ * ⚠️ **`destinationsRead` is a tri-state, not an options array — a review-round finding.** The
+ * destinations fetch and the pre-fill fetch are unsequenced, so a returning customer's fast
+ * pre-fill can set `destinationCountry` to a real, valid code *before* this form has heard back
+ * from `GET /destinations` at all. An options array cannot tell that apart from "the read
+ * failed and degraded to Thailand" — both look like `[TH]` — and a guard reading only the array
+ * would refuse a perfectly good selection, with a banner telling the customer to pick again from
+ * the one option visibly on screen: Thailand. Wrong destination, wrong VAT, and the customer did
+ * exactly what the form told them to. `destinationsRead.kind === 'loading'` is what lets the
+ * guard tell "nothing to check against yet" apart from "checked, and this is the answer" — see
+ * `destinations.ts`'s module note for the full account.
  */
 
 /**
@@ -92,6 +123,11 @@ export function RequestQuotationForm({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  /* `TH` — `DestinationSelect`'s own default, and `ContactPrefill`'s "nothing to offer" value. */
+  const [destinationCountry, setDestinationCountry] = useState('TH');
+  /* `loading` until `readDestinations` settles — see the module note above on why this is a
+   * tri-state rather than an options array the guard would otherwise have to infer from. */
+  const [destinationsRead, setDestinationsRead] = useState<DestinationsRead>({ kind: 'loading' });
 
   /*
    * ⚠️ A ref, not state. Nothing here needs to trigger a render — it only needs to be
@@ -100,7 +136,7 @@ export function RequestQuotationForm({
    * `onChange`, so the effect below always reads what actually happened, not what was true
    * when it started listening.
    */
-  const touchedRef = useRef({ name: false, phone: false, email: false });
+  const touchedRef = useRef({ name: false, phone: false, email: false, destinationCountry: false });
 
   /*
    * ⭐ Pre-filled once, from whichever the customer told us most recently — see the module
@@ -121,6 +157,7 @@ export function RequestQuotationForm({
       if (toApply.name !== undefined) setName(toApply.name);
       if (toApply.phone !== undefined) setPhone(toApply.phone);
       if (toApply.email !== undefined) setEmail(toApply.email);
+      if (toApply.destinationCountry !== undefined) setDestinationCountry(toApply.destinationCountry);
     });
 
     return () => {
@@ -128,8 +165,46 @@ export function RequestQuotationForm({
     };
   }, [session.accessToken]);
 
+  /*
+   * ⭐ What `DestinationSelect` renders and the guard checks against — asked for once,
+   * independently of the pre-fill above. `readDestinations` never rejects: it always settles to
+   * `ready` (a real list) or `failed` (degraded to Thailand alone, exactly this state's own
+   * initial rendering value), so a slow or broken settings endpoint costs this form nothing — it
+   * stays exactly as submittable as it was before this effect ran. Until it settles, state stays
+   * `loading`, which is what keeps `destinationIsSubmittable` from refusing a pre-filled value
+   * this fetch simply hasn't confirmed yet.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    void readDestinations().then((result) => {
+      if (!cancelled) setDestinationsRead(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const send = useCallback(async () => {
-    const contact = contactToWire({ name, email, phone }, locale);
+    /*
+     * ⭐ The unknown-code guard (Task 9's finding). `POST /orders` accepts any `/^[A-Z]{2}$/`
+     * code without checking it against `tax_countries` and the refusal, if one comes, lands at
+     * the API — far from the mistake. This is the storefront-side check against the list this
+     * customer was actually shown just now: it catches a destination pre-filled from a prior
+     * order that has since been withdrawn, before a network round trip is spent on it.
+     *
+     * ⚠️ `destinationIsSubmittable`, not `isKnownDestination` directly — see the module note on
+     * `destinationsRead`. While the destinations read is still `loading`, this always answers
+     * yes: there is no confirmed list yet to refuse a value against, and refusing anyway is
+     * exactly the false refusal a review round caught live.
+     */
+    if (!destinationIsSubmittable(destinationCountry, destinationsRead)) {
+      setPhase({ kind: 'failed', message: t('submit.problem.badDestination') });
+      return;
+    }
+
+    const contact = contactToWire({ name, email, phone, destinationCountry }, locale);
     if (!contact.ok) {
       setPhase({ kind: 'failed', message: t(PROBLEM_KEYS[contact.problem]) });
       return;
@@ -185,7 +260,18 @@ export function RequestQuotationForm({
      */
     setPhase({ kind: 'done', orderId: result.orderId, orderNo: result.orderNo });
     onSubmitted?.({ orderId: result.orderId, orderNo: result.orderNo });
-  }, [email, lines, locale, name, onSubmitted, phone, session.accessToken, t]);
+  }, [
+    destinationCountry,
+    destinationsRead,
+    email,
+    lines,
+    locale,
+    name,
+    onSubmitted,
+    phone,
+    session.accessToken,
+    t,
+  ]);
 
   if (phase.kind === 'done') {
     return <SubmittedNotice orderId={phase.orderId} orderNo={phase.orderNo} />;
@@ -253,6 +339,19 @@ export function RequestQuotationForm({
         </Field>
 
         <p className="text-caption text-chalk-3">{t('submit.channelHint')}</p>
+
+        <DestinationSelect
+          /* `THAILAND_ONLY` while `loading` too — the picker has to show something, and this is
+           * exactly what `destinationsRead`'s own `failed` degrade renders. */
+          options={destinationsRead.kind === 'loading' ? THAILAND_ONLY : destinationsRead.options}
+          value={destinationCountry}
+          onChange={(code) => {
+            touchedRef.current.destinationCountry = true;
+            setDestinationCountry(code);
+          }}
+          label={t('submit.destination')}
+          disabled={busy}
+        />
 
         <button
           type="button"

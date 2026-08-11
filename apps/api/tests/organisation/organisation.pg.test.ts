@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
-import { eq } from '@wewin/db/sql';
+import { eq, sql as sqlTag } from '@wewin/db/sql';
 import { bankAccountChanges, groupPermissions, groups, userGroups, users } from '@wewin/db/schema';
 
 import { AccessTokenService } from '../../src/auth/session/access-token';
@@ -11,7 +11,9 @@ import { parseEnv } from '../../src/config/env';
 import type { PermissionCode } from '../../src/rbac';
 import { encodeAccountPublic } from '../../src/organisation/encode';
 import { OrganisationRepository } from '../../src/organisation/organisation.repository';
+import { OrganisationService } from '../../src/organisation/organisation.service';
 import { bootApp, type BootedApp } from '../support/app';
+import { createPgHarness } from '../support/pg-harness';
 import { waitForBlockedBackend } from '../orders/scope/support/fixtures';
 
 /**
@@ -154,6 +156,45 @@ describeWithPg('the organisation module against Postgres', () => {
 
       const reread = await asReader('GET', '/admin/organisation');
       expect(reread.body?.['phone']).toBe(phone);
+    });
+
+    /**
+     * ⭐ The history route, which did not exist until task 12's review found the table had a
+     * writer and no reader.
+     *
+     * `putProfile` has recorded every field of this row since D4, `bank_account_changes` and
+     * `tax_country_changes` each had a `GET …/changes` beside them, and this one had nothing —
+     * so *"who changed the company's settings?"* was answerable only from `psql`. It matters
+     * because `deposit_bp` on this row is now the `cashflow` approval floor.
+     *
+     * Asserted against the **last** entry rather than a length: the table is a permanently-seeded
+     * singleton's history, this block shares one database with everything before it in the run,
+     * and an absolute count here would be a test about file ordering. The profile-history block
+     * further down re-provisions and owns the counting assertions.
+     */
+    it('serves the profile history oldest-first, to organisation.read and nobody else', async () => {
+      const before = await asReader('GET', '/admin/organisation');
+      const phone = `+66${randomInt(100_000_000, 999_999_999)}`;
+
+      await asWriter('PUT', '/admin/organisation', {
+        legalNameTh: String(before.body?.['legalNameTh']),
+        addressTh: String(before.body?.['addressTh']),
+        phone,
+      });
+
+      const seen = await asReader('GET', '/admin/organisation/changes');
+      expect(seen.status).toBe(200);
+
+      const changes = seen.body?.['changes'] as readonly Record<string, unknown>[];
+      expect(Array.isArray(changes)).toBe(true);
+
+      /* Oldest first, like both siblings — so the write just made is the *last* row. */
+      const newest = changes.at(-1);
+      expect((newest?.['after'] as { phone?: string } | undefined)?.phone).toBe(phone);
+      expect(newest?.['changedByUserId']).toBe(writer.userId);
+
+      /* And it is behind the same permission as its siblings, not accidentally public. */
+      expect((await call('GET', '/admin/organisation/changes')).status).toBe(401);
     });
 
     it('refuses a reader who tries to edit it, and an anonymous caller entirely', async () => {
@@ -347,5 +388,135 @@ describeWithPg('the organisation module against Postgres', () => {
       const rows = await historyRows(id);
       expect(rows).toHaveLength(1);
     });
+  });
+});
+
+/* ---------------------------------------------------------------- *
+ * The profile's own history — organisation_profile_changes (Task 4)
+ * ---------------------------------------------------------------- */
+
+/**
+ * `OrganisationService.putProfile` and its history, against a real Postgres.
+ *
+ * A sibling top-level `describeWithPg`, not a `describe` nested inside the block above:
+ * `organisation_profile` is a singleton row (`id = 1`) that `organisation_profile_block_delete`
+ * refuses to let anything remove, exactly like `tax_countries`' `TH` row in
+ * `tax-country.pg.test.ts`, and every test below asserts an *absolute* count of its history (0,
+ * 1, 2 rows) — meaningful only against a database nothing earlier in the run has touched. The
+ * block above shares one `app`/`pool` across every test in it for the opposite reason: each of
+ * *those* tests creates its own fresh bank account, so there is no singleton to collide over.
+ *
+ * Sibling rather than nested matters for a second reason: `createPgHarness`'s `harness()` drops
+ * and recreates the whole test database (`provisionTestDatabase`, `DROP DATABASE … WITH
+ * (FORCE)`), which terminates *any* connection still open on it — including the block above's
+ * own `pool`, had its tests still been running. Vitest runs sibling `describe` blocks in
+ * declaration order, each one's `afterAll` completing before the next one's `beforeAll` starts,
+ * so by the time this block's first `harness()` call provisions, the block above has already
+ * closed its `pool` in its own `afterAll` — there is never a second live connection for `WITH
+ * (FORCE)` to terminate out from under a still-running test.
+ */
+describeWithPg('the profile, and its history', () => {
+  const base = createPgHarness(url ?? '');
+  afterAll(base.closeOpened);
+
+  /**
+   * ⚠️ **Put `deposit_bp` back, because it is no longer an inert column.**
+   *
+   * Every test below writes it and none of them used to have to undo that: nothing read the
+   * value, so leaving the singleton at 3 000 or 5 000 bp changed nothing for the suites that run
+   * afterwards. It is read now — `OrdersService.submit` plans the payment schedule from it and
+   * `AuthorityService` measures the `cashflow` floor against it — so the last write in this file
+   * silently reshaped every order submitted for the rest of the run. Measured, not guessed:
+   * `tests/orders/lifecycle.pg.test.ts:223` failed with `expected 739584n to be 1479168n` (a 50%
+   * deposit pinned where the assertion wants the whole total) and `refunds.pg.test.ts` failed 37
+   * times on `instalment … is due 739584 but 1479168 is allocated to it`, purely because this
+   * block happened to run first.
+   *
+   * `vitest.config.ts` runs one fork, one file at a time precisely so that "a suite that restores
+   * what it changed can actually be relied on to have finished doing it". This is that.
+   *
+   * Its own pool, rather than a hook ordered against `closeOpened`: `afterAll` ordering inside one
+   * suite is a Vitest configuration detail (`sequence.hooks`), and a restore that silently stops
+   * running because the default changed would put the leak straight back.
+   */
+  afterAll(async () => {
+    const restorePool = createPool(url ?? '');
+    try {
+      await createDatabase(restorePool).execute(
+        sqlTag`update organisation_profile set deposit_bp = 10000 where id = 1`,
+      );
+    } finally {
+      await restorePool.end();
+    }
+  });
+
+  const harness = async () => {
+    const { app, actor, db } = await base.harness();
+    return {
+      service: app.app.get(OrganisationService),
+      repository: app.app.get(OrganisationRepository),
+      actor,
+      db,
+    };
+  };
+
+  /**
+   * `organisationProfilePutSchema` requires `legalNameTh`, `addressTh` and `phone` on every
+   * PUT — unlike `legalNameEn`/`addressEn`/`taxId`/`email`/`depositBp`, none of the three is
+   * `.optional()`. Calling `putProfile` directly (as every test below does, bypassing the HTTP
+   * body pipe on purpose) still has to satisfy that same TypeScript type, so a depositBp-only
+   * edit reads the three off the row currently on disk rather than guessing or hardcoding the
+   * seed.
+   */
+  const currentCore = async (repository: OrganisationRepository) => {
+    const [row] = await repository.profile();
+    if (!row) throw new Error('fixture missing: organisation_profile has no row');
+    return { legalNameTh: row.legalNameTh, addressTh: row.addressTh, phone: row.phone };
+  };
+
+  it('records a profile change, before and after', async () => {
+    const { service, repository, actor } = await harness();
+    const core = await currentCore(repository);
+
+    await service.putProfile(actor.id, { ...core, depositBp: 3000 });
+    const [entry] = await service.profileChanges();
+
+    expect((entry?.before as { depositBp: number } | null)?.depositBp).toBe(10_000);
+    expect((entry?.after as { depositBp: number })?.depositBp).toBe(3_000);
+  });
+
+  it('refuses a deposit of zero at the database, not at submit', async () => {
+    const { service, repository, actor } = await harness();
+    const core = await currentCore(repository);
+
+    // Bypasses `organisationProfilePutSchema`'s own `z.int().min(1)` on purpose — the point is
+    // that `organisation_profile_deposit_in_range` (migration 0029) refuses it too, so a value
+    // that somehow got past validation is still refused rather than silently written.
+    await expect(service.putProfile(actor.id, { ...core, depositBp: 0 })).rejects.toThrow();
+    expect(await service.profileChanges()).toHaveLength(0);
+  });
+
+  /**
+   * `lockProfile`'s `FOR UPDATE`, proved rather than assumed. Mutation-tested against the
+   * pre-fix shape — `lockProfile` reading through a plain, unlocked `.select()` instead of
+   * `.for('update')` — and confirmed red: see `task-4-report.md` for the exact run.
+   */
+  it('keeps profile history contiguous under concurrent updates', async () => {
+    const { service, repository, actor } = await harness();
+    const core = await currentCore(repository);
+
+    await Promise.all([
+      service.putProfile(actor.id, { ...core, depositBp: 3000 }),
+      service.putProfile(actor.id, { ...core, depositBp: 5000 }),
+    ]);
+
+    /* Ascending, like `changes()` — see Task 3. Do not reverse: entry 1's `before` must equal
+       entry 0's `after`, and on a reversed array that comparison is backwards and passes for
+       the wrong reason. */
+    const entries = await service.profileChanges();
+    expect(entries).toHaveLength(2);
+    expect((entries[1]?.before as { depositBp: number }).depositBp).toBe(
+      (entries[0]?.after as { depositBp: number }).depositBp,
+    );
   });
 });

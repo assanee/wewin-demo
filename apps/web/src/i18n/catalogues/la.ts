@@ -42,8 +42,6 @@ export const la: PartialUiCatalogue = {
   'quote.badge.empty': 'ລາຍການສະເໜີລາຄາຫວ່າງເປົ່າ',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'ລາຄາຍັງບໍ່ລວມ VAT 7%',
-  'price.vatExcludedShort': 'ບໍ່ລວມ VAT',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'ເລີ່ມຕົ້ນ',
   'price.fromShort': 'ເລີ່ມ',
@@ -115,12 +113,11 @@ export const la: PartialUiCatalogue = {
     p.span === null ? '—' : `${f.area(p.span[0])}–${f.area(p.span[1])} m²`,
   'home.pricing.floor.note': 'ຂຶ້ນກັບແບບ. ໜ້າລາຄາລະບຸຂັ້ນຕ່ຳຂອງແບບທີ່ທ່ານເລືອກສະເໝີ.',
   'home.pricing.excluded.title': 'ລາຄານີ້ຍັງບໍ່ລວມ',
-  'home.pricing.excluded.vat': 'VAT 7%',
   'home.pricing.excluded.install': 'ການຕິດຕັ້ງ',
   'home.pricing.excluded.delivery': 'ການຂົນສົ່ງ',
   'home.pricing.excluded.removal': 'ການຮື້ຂອງເກົ່າ',
   'home.pricing.excluded.note':
-    'ທັງສີ່ຢ່າງຂຶ້ນກັບໜ້າງານ ຈຶ່ງບໍ່ສາມາດປະເມີນຈາກຂະໜາດຢ່າງດຽວໄດ້. ພວກມັນຈະປາກົດໃນໃບສະເໜີລາຄາຫຼັງການວັດແທກ.',
+    'ທັງສາມຢ່າງຂຶ້ນກັບໜ້າງານ ຈຶ່ງບໍ່ສາມາດປະເມີນຈາກຂະໜາດຢ່າງດຽວໄດ້. ພວກມັນຈະປາກົດໃນໃບສະເໜີລາຄາຫຼັງການວັດແທກ.',
 
   'meta.title': 'WEWIN180 — ຜະລິດຕາມຂະໜາດຂອງທ່ານ ຮູ້ລາຄາກ່ອນຖາມ',
   'meta.description':
@@ -199,7 +196,7 @@ export const la: PartialUiCatalogue = {
   'summary.add': 'ເພີ່ມເຂົ້າລາຍການສະເໜີລາຄາ',
   'summary.hasErrors': 'ຍັງມີບາງຢ່າງຕ້ອງແກ້ຢູ່ຂ້າງເທິງ. ກົດປຸ່ມເພື່ອເບິ່ງວ່າແມ່ນຫຍັງ.',
   'summary.showBreakdown': 'ເບິ່ງລາຍລະອຽດລາຄາ',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · ລາຄາຍັງບໍ່ລວມ VAT 7%`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} ອັນ` : ''
@@ -260,7 +257,6 @@ export const la: PartialUiCatalogue = {
   'about.range.body':
     'ທຸກຕົວເລກໃນນີ້ອ່ານມາຈາກລາຍການສິນຄ້າຊຸດດຽວກັນກັບທີ່ຄິດໄລ່ລາຄາ. ບໍ່ມີອັນໃດຂຽນແຍກໄວ້ຕ່າງຫາກ.',
   'about.fact.designs.note': (p, f) => `ໃນ ${f.integer(p.categories)} ໝວດ`,
-  'about.fact.startingPrice.note': 'ຍັງບໍ່ລວມ VAT 7%',
   'about.fact.leadTime.note': 'ຂຶ້ນກັບແບບ',
   'about.fact.floor': 'ເນື້ອທີ່ຄິດເງິນຂັ້ນຕ່ຳ',
   'about.fact.floor.note': 'ບານທີ່ນ້ອຍກວ່ານີ້ຄິດເງິນຕາມຂັ້ນຕ່ຳ',
@@ -386,12 +382,14 @@ export const la: PartialUiCatalogue = {
   'submit.email': 'ອີເມວ',
   'submit.phone': 'ໂທລະສັບ',
   'submit.channelHint': 'ຢ່າງໜ້ອຍໜຶ່ງໃນສອງ — ໃສ່ພຽງເບີໂທກໍໄດ້.',
+  'submit.destination': 'ປາຍທາງສິນຄ້າ',
   'submit.action': 'ຂໍໃບສະເໜີລາຄາ',
   'submit.sending': 'ກຳລັງອອກໃບສະເໜີລາຄາ…',
   'submit.problem.nameMissing': 'ກະລຸນາໃສ່ຊື່ຜູ້ຕິດຕໍ່.',
   'submit.problem.noChannel': 'ກະລຸນາໃສ່ອີເມວ ຫຼື ເບີໂທ.',
   'submit.problem.badPhone': 'ອ່ານເບີໂທນີ້ບໍ່ໄດ້ — ຕົວຢ່າງ 081-234-5678.',
   'submit.problem.badEmail': 'ອ່ານທີ່ຢູ່ອີເມວນີ້ບໍ່ໄດ້.',
+  'submit.problem.badDestination': 'ກະລຸນາເລືອກປາຍທາງໃໝ່ — ຕົວເລືອກເກົ່າບໍ່ມີໃນລາຍການແລ້ວ.',
   'submit.problem.unreachable': 'ເຊື່ອມຕໍ່ບໍ່ໄດ້. ກະລຸນາລອງໃໝ່.',
   'submit.problem.unconfigured': 'ຮັບຄຳຂໍບໍ່ໄດ້ຕອນນີ້. ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
   'submit.problem.unavailable':
@@ -415,6 +413,7 @@ export const la: PartialUiCatalogue = {
   'quotation.leadTime': 'ໄລຍະເວລາຜະລິດ (ວັນ)',
   'quotation.net': 'ກ່ອນ VAT',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'ລວມຢູ່ໃນລາຄາແລ້ວ',
   'quotation.total': 'ລວມທັງໝົດ',
   'quotation.lineNo': 'ລຳດັບ',
   'quotation.item': 'ລາຍການ',

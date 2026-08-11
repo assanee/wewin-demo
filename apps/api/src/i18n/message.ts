@@ -308,12 +308,42 @@ const PARAM_SHAPES = {
    */
   'error.organisation.account_missing': {},
   'error.organisation.profile_missing': {},
+  /** The same shape as the two above, for the tax-country row a PATCH or availability write names. */
+  'error.tax_country.missing': {},
+  /**
+   * Not a constraint translator either — thrown by `TaxCountryService.resolveDestination`
+   * (`packages/core/src/vat.ts`'s amended header explains why the destination decides the
+   * basis) for a code that names no row at all. Never thrown for a withdrawn
+   * (`isActive: false`) country, which resolves normally — see that method's own comment.
+   */
+  'error.tax_country.unknown_destination': {},
+
+  /*
+   * ── Tax-country constraints — src/organisation/pg-errors.ts ────────────────
+   *
+   * Unlike the two keys just above, these three *are* constraint translators — the note there
+   * stopped being true the moment Task 1 added `tax_countries_rate_matches_treatment`. See
+   * `pg-errors.ts` for exactly which of the table's CHECKs are reachable through a validated
+   * body and which are not.
+   */
+  'error.tax_country.duplicate': {},
+  'error.tax_country.code_taken': {},
+  'error.tax_country.name_blank': {},
+  'error.tax_country.rate_treatment_conflict': {},
+  'error.tax_country.check_failed': {},
 
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},
   'error.stale.catalog_while_editing_quote': {},
   'error.stale.quote_edited_by_someone_else': {},
   'error.stale.override_baselines': {},
+  /**
+   * The one cause `override_baselines` describes wrongly: the destination changed, not the
+   * catalogue. The two country codes travel in the error's `details` rather than in the
+   * sentence — `ServerParamKind` is `'money' | 'count'` on purpose, and a code a client sent is
+   * not a thing to interpolate into prose. See `quotes/errors.ts`.
+   */
+  'error.stale.destination_changed_under_promise': {},
 
   /* ── Configuration — src/quotes/pricing.ts, src/orders/order-document.ts ──── */
   'error.line.cannot_be_made': {},

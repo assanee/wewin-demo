@@ -18,7 +18,12 @@ import { CustomerDocument } from './customer-document';
 import { LineTable } from './line-table';
 import { OverrideDialog } from './override-dialog';
 import { ProvenanceLegend } from './provenance';
-import { ConflictBanner, IntegrityAlarms, StaleBaselineBanner } from './quote-alerts';
+import {
+  ConflictBanner,
+  IntegrityAlarms,
+  StaleBaselineBanner,
+  UnrecognisedDestinationBanner,
+} from './quote-alerts';
 import { failureMessage, verifyQuote } from './quote-api';
 import { hasHumanFigures } from './quote-model';
 import { TotalsCard } from './totals-card';
@@ -126,6 +131,16 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
         {view.staleLines.length === 0 ? null : (
           <Badge variant="destructive">ต้องยืนยันราคา {view.staleLines.length} บรรทัด</Badge>
         )}
+        {view.unrecognisedDestination === null ? null : (
+          /* In the strip as well as the banner below — not because either is pinned in place:
+             nothing in this dashboard is `sticky` or `fixed`, so both scroll away together
+             with the rest of the page. It sits here for the same reason the other summary
+             badges do (the revision token, "แก้ราคาแล้ว", "ต้องยืนยันราคา") — visible at a
+             glance beside them, not because it survives scrolling that they do not. */
+          <Badge variant="destructive" title="ยอดที่แสดงคิดจากอัตราภาษีเริ่มต้น ไม่ใช่ของประเทศปลายทางนี้">
+            ประเทศปลายทาง &quot;{view.unrecognisedDestination}&quot; ไม่มีในระบบ
+          </Badge>
+        )}
       </div>
 
       {editor.conflict === null ? null : (
@@ -135,6 +150,9 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
           onReload={editor.reload}
         />
       )}
+      {/* First of the three, because it is the only one that says the quote cannot be sent
+          *at all* — the others are about lines to re-confirm on a quote that otherwise can. */}
+      <UnrecognisedDestinationBanner view={view} />
       <StaleBaselineBanner view={view} />
       <IntegrityAlarms alarms={view.alarms} />
 

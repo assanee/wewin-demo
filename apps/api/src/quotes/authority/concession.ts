@@ -190,6 +190,29 @@ export class ConcessionIntegrityError extends Error {
  * is accepted, and it is safe **because this number is never posted anywhere**: it is
  * compared against a ceiling and written into `approvals.concession_thb_minor`, which is a
  * record of what was asked for. Nothing derives cash from it.
+ *
+ * ── ⚠️ EXCLUSIVE-ONLY, ON PURPOSE, INCLUDING FOR AN INCLUSIVE DESTINATION ────────
+ *
+ * `applyOverrides` learned a `basis` and switches between `fromNet` and `fromGrand`; this
+ * function did not, and is not going to. `basis` is not an input to `measureMargin` at any
+ * level — `MarginInput` is `{ vat, lines, overrides }` — and adding one would be a second
+ * place where an inclusive destination changes an answer.
+ *
+ * What that costs, stated rather than hidden: on an inclusive destination a ฿1,000 reduction
+ * measures ฿1,070 rather than the ฿1,000 the customer actually stops transferring. The
+ * overstatement does not cancel out, because `grossUp` is applied to the **reduction itself**
+ * (line :283, over the value computed at :260) and not to two differenced states — there is no
+ * second grossed-up figure for it to cancel against.
+ *
+ * Accepted for two reasons. The figure is never posted: it is compared against a ceiling and
+ * recorded as what was asked for, and the note above already says nothing derives cash from
+ * it. And the error is fail-closed in direction — a concession measured *too large* asks for
+ * an approval that may not have been needed, which is the wrong that gets noticed and undone.
+ *
+ * ⚠️ **There is deliberately no test for this**, and a reader should not add one that looks
+ * like a test for it. Because basis is not a parameter anywhere in this module, an "exclusive
+ * run versus inclusive run" assertion is one call written twice with identical arguments; it
+ * cannot fail, and a green test beside a known overstatement is worse than no test at all.
  */
 function grossUp(netMinor: bigint, taxable: boolean, vat: TaxRule): bigint {
   return taxable ? fromNet(netMinor, vat).grandMinor : netMinor;
@@ -329,6 +352,9 @@ export function measureMargin(input: MarginInput): DimensionMeasurement {
 
     sources.push({
       kind: 'vat_exemption',
+      /* ⚠️ `fromNet` and not the destination's basis — see `grossUp`'s note. On an inclusive
+       * destination the tax is already inside `listed`, so this overstates the exemption by the
+       * same proportion, deliberately and in the fail-closed direction. */
       amountThbMinor: fromNet(listed, input.vat).vatMinor,
       quoteLineId: line.id,
       overrideId: null,
@@ -354,15 +380,27 @@ export function measureMargin(input: MarginInput): DimensionMeasurement {
  * All this adds is the shape the ceiling comparison needs, and one source row so that the
  * approver's inbox can say what the schedule actually gates.
  *
- * The floor it measures against is plan 13's documented default (`GATE_COVERAGE_BP_DEFAULT`,
- * payment in full) and **the owner has not answered it**. The consequence is stated where it
- * bites, in `authority.service.ts`.
+ * ── ⚠️ `floorBp` IS REQUIRED, AND A DEFAULT HERE WOULD BE THE BUG ────────────────
+ *
+ * The floor used to be plan 13's placeholder — `GATE_COVERAGE_BP_DEFAULT`, payment in full,
+ * reached through `cashflowConcessionMinor`'s own default parameter — and the owner had not
+ * answered it. They have now: it is `organisation_profile.deposit_bp`, one row, editable from the
+ * admin screen, and `authority.service.ts` reads it through `DepositPolicyPort` on every
+ * measurement.
+ *
+ * A default value on this parameter would be how the setting silently stops being read. A caller
+ * that forgot to pass it would measure against 10 000 bp, every configured deposit below payment
+ * in full would measure as a concession, and — with `authority_limits` empty, which is how this
+ * ships — fail-closed would refuse an approval it cannot grant and roll back the submit. That
+ * failure is invisible in a diff and total in production, so the parameter is required and
+ * omitting it is `TS2554: Expected 3 arguments, but got 2`.
  */
 export function measureCashflow(
   grandTotalThbMinor: bigint,
   instalments: readonly PlannedInstalment[],
+  floorBp: number,
 ): DimensionMeasurement {
-  const concession = cashflowConcessionMinor(grandTotalThbMinor, instalments);
+  const concession = cashflowConcessionMinor(grandTotalThbMinor, instalments, floorBp);
 
   return {
     dimension: 'cashflow',

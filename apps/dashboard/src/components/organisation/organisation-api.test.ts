@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeBankAccount, decodeBankAccountChange, decodeProfile } from './organisation-api';
+import {
+  decodeBankAccount,
+  decodeBankAccountChange,
+  decodeProfile,
+  decodeTaxCountry,
+  decodeTaxCountryChange,
+} from './organisation-api';
 
 /**
  * The hand-narrowed decoders, tested where hand-narrowing goes wrong — the same reason
@@ -17,6 +23,7 @@ const PROFILE = {
   taxId: '1234567890123',
   phone: '021234567',
   email: null,
+  depositBp: 10_000,
   updatedAt: '2026-08-09T10:00:00.000Z',
 };
 
@@ -119,5 +126,75 @@ describe('decodeBankAccountChange', () => {
 
   it('refuses a before that is neither an object nor null', () => {
     expect(() => decodeBankAccountChange({ ...CREATE, before: 'yesterday' })).toThrow(/before/);
+  });
+});
+
+const TAX_COUNTRY = {
+  code: 'TH',
+  nameTh: 'ไทย',
+  rateBp: 700,
+  treatment: 'standard',
+  pricesIncludeTax: false,
+  isActive: true,
+  sortOrder: 0,
+  updatedAt: '2026-08-09T10:00:00.000Z',
+};
+
+describe('decodeTaxCountry', () => {
+  it('accepts a well-formed row', () => {
+    const country = decodeTaxCountry(TAX_COUNTRY);
+    expect(country.code).toBe('TH');
+    expect(country.rateBp).toBe(700);
+    expect(country.treatment).toBe('standard');
+  });
+
+  it('does not hide a withdrawn destination behind a decode failure', () => {
+    const country = decodeTaxCountry({ ...TAX_COUNTRY, isActive: false });
+    expect(country.isActive).toBe(false);
+  });
+
+  it('refuses a treatment this build has never heard of, naming the code', () => {
+    expect(() => decodeTaxCountry({ ...TAX_COUNTRY, treatment: 'reduced' })).toThrow(/TH/);
+  });
+
+  it('refuses a rateBp that is not a number', () => {
+    expect(() => decodeTaxCountry({ ...TAX_COUNTRY, rateBp: '700' })).toThrow(/rateBp/);
+  });
+});
+
+describe('decodeTaxCountryChange', () => {
+  const CREATE = {
+    id: '00000000-0000-4000-8000-0000000000d1',
+    changedAt: '2026-08-09T10:00:00.000Z',
+    changedByUserId: '00000000-0000-4000-8000-0000000000aa',
+    before: null,
+    after: { code: 'TH', nameTh: 'ไทย', rateBp: 700, treatment: 'standard', pricesIncludeTax: false, isActive: true, sortOrder: 0 },
+  };
+
+  it('accepts a creation row, whose before is null', () => {
+    const change = decodeTaxCountryChange(CREATE);
+    expect(change.before).toBeNull();
+    expect(change.after).toEqual(CREATE.after);
+  });
+
+  it('accepts an edit row, whose before is the previous snapshot', () => {
+    const edit = { ...CREATE, before: CREATE.after, after: { ...CREATE.after, rateBp: 0, treatment: 'zero_rated' } };
+    const change = decodeTaxCountryChange(edit);
+    expect(change.before).toEqual(CREATE.after);
+    expect((change.after as Record<string, unknown>)['treatment']).toBe('zero_rated');
+  });
+
+  it('accepts a changedByUserId of null — the erasure case', () => {
+    const change = decodeTaxCountryChange({ ...CREATE, changedByUserId: null });
+    expect(change.changedByUserId).toBeNull();
+  });
+
+  it('refuses an after that is missing entirely, rather than defaulting it to {}', () => {
+    const { after: _unused, ...broken } = CREATE;
+    expect(() => decodeTaxCountryChange(broken)).toThrow(/after/);
+  });
+
+  it('refuses a before that is neither an object nor null', () => {
+    expect(() => decodeTaxCountryChange({ ...CREATE, before: 'yesterday' })).toThrow(/before/);
   });
 });

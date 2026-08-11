@@ -150,8 +150,9 @@ describe('⭐ a line the catalogue no longer publishes is a refusal', () => {
  */
 
 describe('⭐ the contact needs a name and one channel', () => {
-  const draft = (over: Partial<{ name: string; email: string; phone: string }> = {}) =>
-    contactToWire({ name: 'สมหญิง ใจดี', email: '', phone: '', ...over }, 'th');
+  const draft = (
+    over: Partial<{ name: string; email: string; phone: string; destinationCountry: string }> = {},
+  ) => contactToWire({ name: 'สมหญิง ใจดี', email: '', phone: '', destinationCountry: 'TH', ...over }, 'th');
 
   it('accepts a number alone', () => {
     const result = draft({ phone: '081-234-5678' });
@@ -191,8 +192,17 @@ describe('⭐ the contact needs a name and one channel', () => {
 
   it('carries the reading language, which the document pins', () => {
     /* Plan 10.6: the locale is frozen at submit, so it has to be the one they were reading. */
-    const result = contactToWire({ name: 'Somying', email: 'a@b.test', phone: '' }, 'en');
+    const result = contactToWire(
+      { name: 'Somying', email: 'a@b.test', phone: '', destinationCountry: 'TH' },
+      'en',
+    );
 
     expect(result.ok && result.contact.locale).toBe('en');
+  });
+
+  it('⭐ carries the destination the picker held, whatever it was — the same round trip as locale', () => {
+    const result = draft({ phone: '081-234-5678', destinationCountry: 'SG' });
+
+    expect(result.ok && result.contact.destinationCountry).toBe('SG');
   });
 });

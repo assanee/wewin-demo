@@ -44,7 +44,16 @@ import type { QuoteView } from './quote-model';
  * see if we sent it now" are different claims, and only one of them is evidence.
  */
 export function CustomerDocument({ view }: { readonly view: QuoteView }) {
-  const { money, effectiveLeadTimeDays } = view.wire;
+  const { money, effectiveLeadTimeDays, destination } = view.wire;
+  /*
+   * The frozen document (`quotation-sheet.tsx`, `QuotationIsland.tsx`) says whether VAT is
+   * already folded into the price — "(รวมอยู่ในราคาแล้ว)" beside the rate — and this preview
+   * is what staff negotiate against before that freeze. Leaving the suffix off here left the
+   * numbers agreeing with the frozen document while the *story* did not: on an inclusive
+   * destination this card said "VAT 9%" with nothing distinguishing it from an exclusive
+   * quote where 9% is added on top, right up until submit added the parenthetical.
+   */
+  const vatSuffix = destination.basis === 'inclusive' ? ' (รวมอยู่ในราคาแล้ว)' : '';
 
   return (
     <Card>
@@ -97,7 +106,7 @@ export function CustomerDocument({ view }: { readonly view: QuoteView }) {
         <dl className="flex flex-col gap-1 self-end text-sm sm:w-80">
           <Line label="ยอดก่อนภาษี" value={baht(thbMinorOf(money.netThbMinor))} />
           <Line
-            label={vatLabelTh(money.vat.rateBp, money.vat.treatment)}
+            label={`${vatLabelTh(money.vat.rateBp, money.vat.treatment)}${vatSuffix}`}
             value={baht(thbMinorOf(money.vatThbMinor))}
           />
           <Separator className="my-1" />

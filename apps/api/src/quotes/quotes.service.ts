@@ -17,7 +17,14 @@ import type { ZodType } from 'zod';
 
 import { CatalogRepository, type PublishedProduct } from '../catalog/catalog.repository';
 import { AppError } from '../common/errors/app-error';
-import { DEFAULT_VAT_RULE } from '../orders/defaults';
+import { message } from '../i18n';
+/*
+ * `DEFAULT_VAT_RULE` is deliberately no longer imported here, exactly as `orders.service.ts`
+ * stopped importing it. Every rate and every basis this file uses now comes from
+ * `TaxCountryService.resolveDestination`, which returns the default itself for an order that
+ * names no destination — one fallback, in the module that owns the question, rather than a
+ * second copy of it beside the quote screen.
+ */
 /*
  * Type-only, and therefore erased: `order-document.ts` imports `applyOverrides` from
  * `./overrides` at runtime, so a value import in this direction would close a cycle.
@@ -28,11 +35,12 @@ import type {
   QuoteDocumentOverride,
 } from '../orders/order-document';
 import { ScopedOrderRepository, isOrderUuid, type ScopedOrder } from '../orders/scope';
+import { TaxCountryService, type DestinationTax } from '../organisation/tax-country.service';
 import { scopeHolds, type Scope, type UserScope } from '../rbac';
 import { ConcessionIntegrityError, measureMargin } from './authority/concession';
 import { DEFAULT_LEAD_TIME_DAYS, MAX_LEAD_TIME_DAYS, MAX_QUOTE_LINES } from './defaults';
 import { encodeQuote, type QuoteAudience } from './encode';
-import { baselinesStale, catalogStale, quoteStale } from './errors';
+import { baselinesStale, catalogStale, destinationChanged, quoteStale } from './errors';
 import { EntryError, normaliseCharge, normaliseEntry } from './entry';
 import {
   applyOverrides,
@@ -125,6 +133,24 @@ export class QuotesService {
      */
     private readonly scoped: ScopedOrderRepository,
     private readonly catalog: CatalogRepository,
+    /**
+     * ⭐ Where the goods are going, turned into the rate *and the basis* the screen quotes at.
+     *
+     * `order-document.ts:254` refuses to call `fromNet` itself precisely so the document and
+     * the quote screen cannot foot to two different figures. `effective()` hardcoding
+     * `DEFAULT_VAT_RULE` recreated that divergence from the other end, and it was measured on
+     * one order: the screen said ฿14,791.68 (700 bp, added on top) while the pinned document
+     * said ฿15,068.16 (900 bp, added on top) under a `taxBasis` of `inclusive` — three
+     * different answers to one question, none of them the ฿13,824.00 the customer was quoted.
+     *
+     * This service never reads `tax_countries` itself: `resolveDestination` is the single place
+     * a code becomes a rate, a treatment and a basis (spec §3), so "what does a withdrawn
+     * country mean" cannot grow a second answer here.
+     *
+     * Resolved **once per entry point** — `getQuote`, `write`, and `assertSubmittable`'s caller
+     * — and threaded down. The five `effective()` call sites are not five resolutions.
+     */
+    private readonly taxCountries: TaxCountryService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -140,7 +166,27 @@ export class QuotesService {
       this.quotes.listLiveOverrides(order.id),
     ]);
 
-    const effective = this.effective(lines, overrides);
+    /*
+     * ⭐ Entry point ① — one resolution, off the row `findOrFail` already returned.
+     *
+     * `destination_country` is a column on `orders` and `ORDER_COLUMNS` selects it, so the
+     * `ScopedOrder` in hand carries it and this costs one read of `tax_countries` rather than a
+     * second read of the order. `undefined` for the transaction because a plain GET genuinely
+     * has none — see `resolveDestination`'s note on why that argument is required but nullable.
+     *
+     * ⚠️ `resolveForEditing` and **not** `resolveDestination`: a read pins nothing, and a read
+     * that refused would leave a cart carrying a mistyped country permanently unopenable —
+     * `applySubmission` is the only writer of `orders.destination_country`, so there would be
+     * no screen from which to correct it. The degrade is reported on the wire
+     * (`destination.recognised`) rather than passed off as a real answer, and the refusal stays
+     * where the money is frozen: `assertSubmittable` below, and `OrdersService.submit`.
+     */
+    const destination = await this.taxCountries.resolveForEditing(
+      order.destinationCountry,
+      undefined,
+    );
+
+    const effective = this.effective(lines, overrides, destination);
     const published = await this.publishedIndex();
 
     /*
@@ -150,7 +196,9 @@ export class QuotesService {
      * for the same reason no other concession-shaped fact is.
      */
     const staleBaselines =
-      audience === 'customer' ? [] : await this.staleBaselines(order.id, lines, overrides);
+      audience === 'customer'
+        ? []
+        : await this.staleBaselines(order.id, lines, overrides, destination);
 
     return encodeQuote({
       orderId: order.id,
@@ -158,10 +206,20 @@ export class QuotesService {
       lines,
       liveOverrides: overrides,
       effective,
-      marginConcessionThbMinor: this.marginConcession(lines, overrides),
+      marginConcessionThbMinor: this.marginConcession(lines, overrides, destination),
       documentHashByVersionId: documentHashes(published),
       productIdByVersionId: productIdsByVersion(published),
-      vat: DEFAULT_VAT_RULE,
+      /*
+       * ⚠️ The whole envelope, because the rate the screen *prints* is a separate thing from
+       * the money and both come from here.
+       *
+       * `encodeMoney` copies `destination.rule` onto `money.vat`, and left at
+       * `DEFAULT_VAT_RULE` an inclusive Singapore order returned figures computed at 9% under a
+       * heading reading "VAT 7%". Two numbers that agree with each other and disagree with the
+       * sentence beside them is worse than a wrong total, because nothing on the page looks
+       * wrong. `destination.known` travels with it so a degraded resolution says so.
+       */
+      destination,
       staleBaselines,
       audience,
     });
@@ -178,10 +236,18 @@ export class QuotesService {
    * `OrdersService.submit` calls it, inside the transaction that pins, on the row it has already
    * locked. For one round it did not, and 5c was an editor whose output nothing consumed: submit
    * priced the cart in the request body and never read `quote_lines` at all.
+   *
+   * ⭐ `destination` is a **parameter and not a resolution**, because this method has no entry
+   * point of its own: it is reached from `OrdersService.submit`, which already resolves the
+   * country it is about to price and pin with, and from `verify()` below, which is inside
+   * `write`'s transaction and has resolved there. Resolving a third time would be a third
+   * chance for the figure this gate approves to differ from the figure that gets frozen — and
+   * `tax_countries` is mutable, so "the same code twice" is not "the same rate twice".
    */
   async assertSubmittable(
     tx: Tx,
     order: ScopedOrder,
+    destination: DestinationTax,
   ): Promise<{
     readonly effective: EffectiveQuote;
     readonly lines: readonly QuoteLineRow[];
@@ -191,6 +257,27 @@ export class QuotesService {
       this.quotes.listLines(order.id, tx),
       this.quotes.listLiveOverrides(order.id, tx),
     ]);
+
+    /*
+     * ⭐ The refusal the read and the write no longer make, made here — where it pins.
+     *
+     * `resolveForEditing` degrades an unrecognised country to the default so a mistyped cart
+     * can still be opened and edited. This is the other half of that bargain: a quote naming a
+     * country `tax_countries` cannot resolve must not become a contract, and
+     * `POST …/quote/verification` must not answer 200 for one either — a gate that green-lit a
+     * quote the submit will reject is worse than no gate.
+     *
+     * `OrdersService.submit` calls `resolveDestination`, which throws the same refusal before
+     * this method is even reached, so on that path this is the second lock rather than the
+     * first. It is not redundant: `verify()` reaches here through `write`, whose resolution is
+     * the degrading one.
+     */
+    if (!destination.known) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+        destinationCountry: destination.code,
+      });
+    }
 
     if (lines.length === 0) {
       /*
@@ -204,10 +291,10 @@ export class QuotesService {
       });
     }
 
-    const stale = await this.staleBaselines(order.id, lines, overrides, tx);
-    if (stale.length > 0) throw baselinesStale(stale);
+    const stale = await this.staleBaselines(order.id, lines, overrides, destination, tx);
+    if (stale.length > 0) throw this.staleRefusal(stale, order, destination);
 
-    const effective = this.effective(lines, overrides);
+    const effective = this.effective(lines, overrides, destination);
     this.assertCoherent(effective);
 
     return {
@@ -368,8 +455,9 @@ export class QuotesService {
 
   /** The same gate, as a request a person can make from the editor before they press send. */
   async verify(scope: Scope, orderId: string): Promise<QuoteWire> {
-    return this.write(scope, orderId, {}, async ({ tx, order }) => {
-      await this.assertSubmittable(tx, order);
+    /* The destination `write` already resolved under the lock, forwarded — not a fourth call. */
+    return this.write(scope, orderId, {}, async ({ tx, order, destination }) => {
+      await this.assertSubmittable(tx, order, destination);
     });
   }
 
@@ -628,7 +716,7 @@ export class QuotesService {
    * forces (see `0016_quote_guards.sql`).
    */
   async setOverride(scope: Scope, orderId: string, rawBody: unknown): Promise<QuoteWire> {
-    return this.write(scope, orderId, rawBody, async ({ tx, order, body, user, lines, overrides }) => {
+    return this.write(scope, orderId, rawBody, async ({ tx, order, body, user, lines, overrides, destination }) => {
       const parsed = parse(setOverrideRequestSchema, body);
 
       /*
@@ -640,7 +728,7 @@ export class QuotesService {
        */
       if (parsed.anchor === 'line_total') this.assertNoDocumentPromise(overrides, 'line_override');
 
-      const baseline = await this.baselineFor(tx, order, parsed, lines, overrides);
+      const baseline = await this.baselineFor(tx, order, parsed, lines, overrides, destination);
 
       const normalised = entered(() =>
         normaliseEntry({
@@ -770,6 +858,8 @@ export class QuotesService {
       readonly lines: readonly QuoteLineRow[];
       readonly overrides: readonly QuoteOverrideRow[];
       readonly published: PublishedIndex;
+      /** Resolved once below, under the lock. Nothing inside `apply` resolves it again. */
+      readonly destination: DestinationTax;
     }) => Promise<void>,
     operation: QuoteOperation = 'write_line',
   ): Promise<QuoteWire> {
@@ -800,8 +890,27 @@ export class QuotesService {
 
       const published = await this.publishedIndex();
 
+      /*
+       * ⭐ Entry point ② — one resolution per mutation, taken on the row this transaction has
+       * locked and *before* anything is written, so the arithmetic that decides whether the
+       * write may commit is the arithmetic the write is judged by.
+       *
+       * ⚠️ `resolveForEditing`, for the reason `getQuote` gives: an edit freezes nothing, and a
+       * write path that refused an unrecognised country would make the read's degrade pointless
+       * — the quote would open and then refuse every change made on it.
+       *
+       * `tx` and not a bare call: the same discipline `OrdersService.submit` follows. It buys
+       * one connection rather than two, and a read that sees whatever this transaction has
+       * already written — see `resolveDestination`'s own note for what it honestly does and
+       * does not buy under READ COMMITTED.
+       */
+      const destination = await this.taxCountries.resolveForEditing(
+        order.destinationCountry,
+        tx,
+      );
+
       /* ③ …and only now is the body's own schema chosen and run. Trap 4 — see the file note. */
-      await apply({ tx, order, user, body, lines, overrides, published });
+      await apply({ tx, order, user, body, lines, overrides, published, destination });
 
       /* ④ The whole document, as this write left it. */
       const [after, afterOverrides] = await Promise.all([
@@ -809,10 +918,16 @@ export class QuotesService {
         this.quotes.listLiveOverrides(order.id, tx),
       ]);
 
-      const effective = this.effective(after, afterOverrides);
+      const effective = this.effective(after, afterOverrides, destination);
       this.assertCoherent(effective);
 
-      const staleBaselines = await this.staleBaselines(order.id, after, afterOverrides, tx);
+      const staleBaselines = await this.staleBaselines(
+        order.id,
+        after,
+        afterOverrides,
+        destination,
+        tx,
+      );
 
       return encodeQuote({
         orderId: order.id,
@@ -820,10 +935,12 @@ export class QuotesService {
         lines: after,
         liveOverrides: afterOverrides,
         effective,
-        marginConcessionThbMinor: this.marginConcession(after, afterOverrides),
+        marginConcessionThbMinor: this.marginConcession(after, afterOverrides, destination),
         documentHashByVersionId: documentHashes(published),
         productIdByVersionId: productIdsByVersion(published),
-        vat: DEFAULT_VAT_RULE,
+        /* Same envelope, same reason as `getQuote`'s: a write answers with the whole quote, and
+         * the heading over the money has to name the rate the money was computed at. */
+        destination,
         staleBaselines,
         audience: 'sales',
       });
@@ -834,10 +951,22 @@ export class QuotesService {
    * Helpers
    * ---------------------------------------------------------------- */
 
-  /** `applyOverrides`, fed from rows. The one place the engine is called. */
+  /**
+   * `applyOverrides`, fed from rows. The one place the engine is called.
+   *
+   * ⚠️ `destination` is required and there is no default. Five call sites reach this method and
+   * only three of them are entry points (`getQuote`, `write`, `assertSubmittable`); the other
+   * two — `baselineFor` and `staleBaselines` — are reached from inside those, and take the
+   * resolution as a parameter rather than repeating it. That is not only a cost argument: a
+   * `grand_total` promise's stored baseline is whatever this method returned when the promise
+   * was written, and `verifyBaselines` compares it against whatever this method returns now, so
+   * two resolutions in one request would be two chances for that comparison to be about
+   * different arithmetic.
+   */
   private effective(
     lines: readonly QuoteLineRow[],
     overrides: readonly QuoteOverrideRow[],
+    destination: DestinationTax,
   ): EffectiveQuote {
     const computed: ComputedLine[] = [];
     const charges: ChargeLine[] = [];
@@ -865,7 +994,8 @@ export class QuotesService {
       computed,
       charges,
       overrides,
-      vat: DEFAULT_VAT_RULE,
+      vat: destination.rule,
+      basis: destination.basis,
       computedLeadTimeDays: DEFAULT_LEAD_TIME_DAYS,
     });
   }
@@ -885,9 +1015,28 @@ export class QuotesService {
   private marginConcession(
     lines: readonly QuoteLineRow[],
     overrides: readonly QuoteOverrideRow[],
+    destination: DestinationTax,
   ): bigint {
     try {
-      return measureMargin({ vat: DEFAULT_VAT_RULE, lines, overrides }).concessionThbMinor;
+      /*
+       * ⚠️ `destination.rule` and not `DEFAULT_VAT_RULE`, and the reason is which of the two
+       * numbers this one has to agree with.
+       *
+       * `AuthorityService.gate` runs *after* the document is pinned, so `vatRuleFor` reads the
+       * pinned rate — which is `destination.rule`. Leaving 700 bp here would put a different
+       * grossed-up concession on the screen from the one the submit gate compares against a
+       * ceiling, which is precisely the disagreement `overrides.ts`' header records and this
+       * service's own note calls worse than showing nothing.
+       *
+       * ⚠️ **The basis is not passed, because `measureMargin` has no basis parameter at any
+       * level.** `grossUp` is applied to the reduction *itself* rather than to two differenced
+       * states, so nothing cancels and an inclusive ฿1,000 reduction measures ฿1,070 — an
+       * overstatement of the tax on the concession. Accepted deliberately: the figure is never
+       * posted anywhere (it is compared against a ceiling and written into
+       * `approvals.concession_thb_minor`), and being too large is the fail-closed direction.
+       * See the note beside `authority/concession.ts`'s `grossUp`.
+       */
+      return measureMargin({ vat: destination.rule, lines, overrides }).concessionThbMinor;
     } catch (error) {
       if (error instanceof ConcessionIntegrityError) {
         throw new AppError(
@@ -965,6 +1114,8 @@ export class QuotesService {
     parsed: SetOverrideRequestWire,
     lines: readonly QuoteLineRow[],
     overrides: readonly QuoteOverrideRow[],
+    /* `write`'s resolution, forwarded. This method is never an entry point. */
+    destination: DestinationTax,
   ): Promise<{
     readonly computedThbMinor: bigint | null;
     readonly computedDays: number | null;
@@ -978,6 +1129,7 @@ export class QuotesService {
       const withoutGrand = this.effective(
         lines,
         overrides.filter((override) => override.anchor !== 'grand_total'),
+        destination,
       );
       return {
         computedThbMinor: withoutGrand.money.grandTotalThbMinor,
@@ -1009,7 +1161,7 @@ export class QuotesService {
      * that and both now fail when this `if` is removed.
      */
     if (line.kind === 'catalog') {
-      const stale = await this.staleBaselines(order.id, [line], overrides, tx);
+      const stale = await this.staleBaselines(order.id, [line], overrides, destination, tx);
       if (stale.length > 0) throw baselinesStale(stale);
     }
 
@@ -1019,6 +1171,44 @@ export class QuotesService {
     }
 
     return { computedThbMinor: baseline, computedDays: null, qty: line.qty };
+  }
+
+  /**
+   * The same 409, with the sentence that matches the cause.
+   *
+   * `verifyBaselines` reports *that* the document baseline moved; it cannot report *why*, and
+   * for one cause the default sentence is actively misleading. A submit naming a different
+   * country from the one the quote was edited under recomputes the tax another way, which moves
+   * the baseline and produced *"แคตตาล็อกเปลี่ยน…"* with two null product-version fields and no
+   * country in the body — a message that sends somebody to check a catalogue that did not move.
+   *
+   * Narrow on purpose, and it narrows nothing away:
+   *
+   *   * **every** row must be `document_baseline_moved`. One line-level row and the catalogue
+   *     sentence is the right one, because a line really did go stale;
+   *   * the codes must actually differ. Same country, moved rate — an admin `PATCH` between the
+   *     promise and the submit — is a real case this cannot tell from a catalogue move, and it
+   *     keeps the generic sentence rather than claiming something unproven.
+   *
+   * Both branches are the same 409 over the same rows. The refusal is the refusal; this picks
+   * the words.
+   */
+  private staleRefusal(
+    stale: readonly StaleBaselineWire[],
+    order: ScopedOrder,
+    destination: DestinationTax,
+  ): AppError {
+    const onlyDocument = stale.every((row) => row.kind === 'document_baseline_moved');
+
+    if (onlyDocument && destination.code !== order.destinationCountry) {
+      return destinationChanged({
+        stale,
+        quotedFor: order.destinationCountry,
+        submittedFor: destination.code,
+      });
+    }
+
+    return baselinesStale(stale);
   }
 
   private async requireLine(orderId: string, lineId: string, tx: Tx): Promise<QuoteLineRow> {
@@ -1064,6 +1254,8 @@ export class QuotesService {
     orderId: string,
     lines: readonly QuoteLineRow[],
     overrides: readonly QuoteOverrideRow[],
+    /* Its caller's resolution, forwarded — see `effective`'s note on why not a second one. */
+    destination: DestinationTax,
     tx?: Tx,
   ): Promise<readonly StaleBaselineWire[]> {
     const published = await this.publishedIndex();
@@ -1088,6 +1280,7 @@ export class QuotesService {
       documentBaselineThbMinor: this.effective(
         lines,
         overrides.filter((override) => override.anchor !== 'grand_total'),
+        destination,
       ).money.grandTotalThbMinor,
       publishedByVersionId: published.byVersionId,
       publishedByProductId: published.byProductId,

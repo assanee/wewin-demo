@@ -125,8 +125,26 @@ export class AuthorityController {
    *
    * The read the editor makes before it enables the submit button, so that "you cannot send
    * this" arrives while the salesperson is still looking at the numbers rather than as a 409
-   * after they have told the customer. It is the same measurement `gate` makes — the same
-   * method, not a second one — so the screen and the gate cannot disagree.
+   * after they have told the customer. It is the same *measurement* `gate` makes — the same
+   * method, not a second one.
+   *
+   * ⚠️ **It is not always the same number, and the claim that it could not disagree was false.**
+   * `measureMargin` grosses a concession up at a `TaxRule`, and `vatRuleFor` sources that rule
+   * differently either side of the pin: `DEFAULT_VAT_RULE` while `order.document_id` is null,
+   * the pinned rate afterwards. So on an unsubmitted order for a destination that is not 700 bp
+   * this endpoint measures at 7% while the quote screen measures at the destination's rate —
+   * ฿1,988.16 against ฿1,951.68 on a Singapore order at 900 bp, measured.
+   *
+   * The quote screen was aligned with **`gate`** rather than with this endpoint, deliberately:
+   * `gate` runs after `pinDocument` and is the number that actually refuses a submit, and
+   * `overrides.ts`' header records what it costs to show a figure the gate will not honour. The
+   * residual gap is therefore this read being stale before the pin, in the direction that it
+   * *understates* — which is the fail-open direction and is why it is written down here rather
+   * than left to be rediscovered.
+   *
+   * Closing it means giving `AuthorityService` the destination, which is a decision about
+   * whether a draft's ceiling should move with a country the customer can still change. That
+   * predates the per-destination VAT work and is not settled here.
    */
   @Get('orders/:orderId')
   @RequirePermissions('quotes.read')

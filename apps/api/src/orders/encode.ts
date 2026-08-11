@@ -100,6 +100,8 @@ export function encodeOrder(row: ScopedOrder, context: OrderContext): OrderWire 
       name: row.contactName,
       phone: row.contactPhone,
       locale: row.contactLocale,
+      /* `ScopedOrder.destinationCountry` — already selected by `ORDER_COLUMNS` (Task 8). */
+      destinationCountry: row.destinationCountry,
     },
     money,
     documentRevision: context.documentRevision,

@@ -3,7 +3,12 @@ import type { FaultParty, OrderStatus } from '@wewin/db/schema';
 
 import { AppError } from '../../common/errors/app-error';
 import { LedgerRepository, LedgerService, type LedgerTx } from '../ledger';
-import { ScheduleService, type PlannedInstalment } from '../schedule';
+import {
+  ScheduleService,
+  depositPercentTerms,
+  payInFullTerms,
+  type PlannedInstalment,
+} from '../schedule';
 import { LifecycleRepository } from './lifecycle.repository';
 
 /**
@@ -101,16 +106,39 @@ export class PaymentLifecycleService {
    * the forfeit ceiling where the schedule said 30%: ฿19,722.24 against ฿5,916.67 on the red
    * team's live order, and the customer got ฿0.00 back instead of ฿13,805.57. That function is
    * gone; this is the only one left.
+   *
+   * ── `depositBp` is the company's setting, and it arrives as an argument ──────────
+   *
+   * `organisation_profile.deposit_bp`, read by `OrdersService.submit` in the transaction it
+   * already owns and handed down. This service takes no port and reads no settings: the schedule
+   * has to be planned inside a transaction that has already locked the order and priced the
+   * document, and a second read here could see a different value from the one the gate measures
+   * against — which is the ฿12,902 seam wearing a new hat.
    */
   async pinsForSubmit(
     tx: LedgerTx,
     grandTotalThbMinor: bigint,
+    depositBp: number,
   ): Promise<{
     readonly instalments: readonly PlannedInstalment[];
     readonly scheduledDepositThbMinor: bigint;
     readonly forfeitPolicyId: string;
   }> {
-    const instalments = this.schedule.plan(grandTotalThbMinor);
+    /*
+     * ⚠️ At payment in full, keep the terms submit has always produced.
+     *
+     * `depositPercentTerms(10_000)` is not wrong, just *different*: a gating `percent` row for
+     * the whole total plus a `remainder` due ฿0.00, where submit produces one `remainder` row due
+     * the whole total. Both foot, both gate the same amount, and the deposit pinned off either is
+     * identical — but one is two rows and the other is one, and
+     * `tests/payments/lifecycle/lifecycle.pg.test.ts:188` asserts the count. Changing the default
+     * configuration's behaviour is not part of making the number configurable, and a feature
+     * nobody switched on must not reshape the schedule of every order in the system.
+     */
+    const instalments = this.schedule.plan(
+      grandTotalThbMinor,
+      depositBp === 10_000 ? payInFullTerms() : depositPercentTerms(depositBp),
+    );
 
     /*
      * Fail closed, at submit, where it is a refusal to make a contract rather than a refusal

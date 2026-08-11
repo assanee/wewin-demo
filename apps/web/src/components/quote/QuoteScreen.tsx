@@ -177,7 +177,6 @@ export function QuoteScreen() {
         <span className="text-lead text-chalk">{t('price.grandTotal')}</span>
         <span className="numeric text-display text-lime">{f.baht(total)}</span>
       </div>
-      <p className="numeric text-caption text-chalk-3">{t('price.vatExcluded')}</p>
       {/*
         ⭐ `configure.futureQuote` used to be here, and it was telling the truth: everything
         downstream of a submit existed and there was no way to reach it. The form below is the
@@ -325,7 +324,7 @@ export function QuoteScreen() {
             <div className="min-w-0">
               <p className="numeric text-lead text-lime">{f.baht(total)}</p>
               <p className="numeric text-caption text-chalk-3">
-                {t('count.pieces', { count: itemCount })} · {t('price.vatExcludedShort')}
+                {t('count.pieces', { count: itemCount })}
               </p>
             </div>
             <ButtonLink href={productsHref} className="shrink-0">

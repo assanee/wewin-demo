@@ -128,7 +128,7 @@ export function PriceSummaryCard({
           {f.baht(price.totalMinor)}
         </p>
         <p className="numeric mt-1 text-caption text-chalk-3">
-          {t('summary.areaAndVat', { areaSqUm: price.areaSqUm })}
+          {t('summary.area', { areaSqUm: price.areaSqUm })}
         </p>
         <p className="numeric mt-1 text-caption text-chalk-2">
           {t('leadTime.produce', { days: product.leadTimeDays })}

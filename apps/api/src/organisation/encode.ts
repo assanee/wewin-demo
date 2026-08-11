@@ -50,6 +50,7 @@ export const encodeProfile = (row: {
   taxId: string | null;
   phone: string;
   email: string | null;
+  depositBp: number;
   updatedAt: Date;
 }): OrganisationProfileWire => ({
   legalNameTh: row.legalNameTh,
@@ -59,6 +60,7 @@ export const encodeProfile = (row: {
   taxId: row.taxId,
   phone: row.phone,
   email: row.email,
+  depositBp: row.depositBp,
   updatedAt: row.updatedAt.toISOString(),
 });
 

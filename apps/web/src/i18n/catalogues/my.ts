@@ -40,8 +40,6 @@ export const my: PartialUiCatalogue = {
   'quote.badge.empty': 'စျေးနှုန်းစာရင်း ဗလာဖြစ်နေသည်',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'စျေးနှုန်းများတွင် VAT ၇% မပါဝင်ပါ',
-  'price.vatExcludedShort': 'VAT မပါ',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'စတင်',
   'price.fromShort': 'စ',
@@ -118,12 +116,11 @@ export const my: PartialUiCatalogue = {
   'home.pricing.floor.note':
     'ဒီဇိုင်းပေါ်မူတည်သည်။ စျေးနှုန်းစာမျက်နှာတွင် သင်ရွေးထားသောဒီဇိုင်း၏ အနည်းဆုံးကို အမြဲဖော်ပြထားသည်။',
   'home.pricing.excluded.title': 'ဤစျေးနှုန်းတွင် မပါဝင်သည်များ',
-  'home.pricing.excluded.vat': 'VAT ၇%',
   'home.pricing.excluded.install': 'တပ်ဆင်ခြင်း',
   'home.pricing.excluded.delivery': 'ပို့ဆောင်ခြင်း',
   'home.pricing.excluded.removal': 'အဟောင်းဖြုတ်ခြင်း',
   'home.pricing.excluded.note':
-    'လေးခုလုံးသည် နေရာအပေါ်မူတည်သဖြင့် အတိုင်းအတာတစ်ခုတည်းဖြင့် ခန့်မှန်း၍မရပါ။ တိုင်းတာပြီးနောက် စျေးနှုန်းစာရွက်တွင် ပေါ်လာပါမည်။',
+    'သုံးခုလုံးသည် နေရာအပေါ်မူတည်သဖြင့် အတိုင်းအတာတစ်ခုတည်းဖြင့် ခန့်မှန်း၍မရပါ။ တိုင်းတာပြီးနောက် စျေးနှုန်းစာရွက်တွင် ပေါ်လာပါမည်။',
 
   'meta.title': 'WEWIN180 — သင့်အတိုင်းအတာအတိုင်း၊ မမေးမီ စျေးနှုန်းသိပြီး',
   'meta.description':
@@ -203,7 +200,7 @@ export const my: PartialUiCatalogue = {
   'summary.add': 'စျေးနှုန်းစာရင်းသို့ ထည့်ရန်',
   'summary.hasErrors': 'အထက်တွင် ပြင်ရန်ကျန်နေသေးသည်။ မည်သည့်အရာလဲ ကြည့်ရန် ခလုတ်ကိုနှိပ်ပါ။',
   'summary.showBreakdown': 'စျေးနှုန်းအသေးစိတ်ကြည့်ရန်',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · စျေးနှုန်းတွင် VAT ၇% မပါ`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} ခု` : ''
@@ -266,7 +263,6 @@ export const my: PartialUiCatalogue = {
   'about.range.body':
     'ဤနေရာရှိ ဂဏန်းတိုင်းသည် စျေးနှုန်းတွက်ချက်သည့် တူညီသောစာရင်းမှပင် ဖတ်ယူထားခြင်းဖြစ်သည်။ မည်သည့်အရာမျှ သီးခြားရေးမှတ်ထားခြင်းမဟုတ်ပါ။',
   'about.fact.designs.note': (p, f) => `အမျိုးအစား ${f.integer(p.categories)} ခုအတွင်း`,
-  'about.fact.startingPrice.note': 'VAT ၇% မပါ',
   'about.fact.leadTime.note': 'ဒီဇိုင်းပေါ်မူတည်သည်',
   'about.fact.floor': 'အနည်းဆုံး ငွေတောင်းဧရိယာ',
   'about.fact.floor.note': 'ထိုထက်သေးငယ်သောပြားများကို အနည်းဆုံးဖြင့် ငွေတောင်းသည်',
@@ -396,12 +392,15 @@ export const my: PartialUiCatalogue = {
   'submit.email': 'အီးမေးလ်',
   'submit.phone': 'ဖုန်း',
   'submit.channelHint': 'နှစ်ခုအနက် အနည်းဆုံးတစ်ခု — ဖုန်းနံပါတ်တစ်ခုတည်းလည်း ရပါသည်။',
+  'submit.destination': 'ပန်းတိုင်နိုင်ငံ',
   'submit.action': 'စျေးနှုန်းစာရွက် တောင်းခံရန်',
   'submit.sending': 'စျေးနှုန်းစာရွက် ထုတ်နေသည်…',
   'submit.problem.nameMissing': 'ဆက်သွယ်ရန်အမည်ကို ထည့်ပါ။',
   'submit.problem.noChannel': 'အီးမေးလ်လိပ်စာ သို့မဟုတ် ဖုန်းနံပါတ်ကို ထည့်ပါ။',
   'submit.problem.badPhone': 'ဤဖုန်းနံပါတ်ကို မဖတ်နိုင်ပါ — ဥပမာ 081-234-5678။',
   'submit.problem.badEmail': 'ဤအီးမေးလ်လိပ်စာကို မဖတ်နိုင်ပါ။',
+  'submit.problem.badDestination':
+    'ကျေးဇူးပြု၍ ပန်းတိုင်ကို ပြန်ရွေးပါ — ယခင်ရွေးချယ်မှုသည် စာရင်းတွင် မရှိတော့ပါ။',
   'submit.problem.unreachable': 'ချိတ်ဆက်၍မရပါ။ ထပ်ကြိုးစားပါ။',
   'submit.problem.unconfigured':
     'ယခု တောင်းဆိုချက်များ လက်မခံနိုင်ပါ။ အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
@@ -427,6 +426,7 @@ export const my: PartialUiCatalogue = {
   'quotation.leadTime': 'ပို့ဆောင်ချိန် (ရက်)',
   'quotation.net': 'VAT မတိုင်မီ',
   'quotation.vat': 'VAT',
+  'quotation.vatIncluded': 'ဈေးနှုန်းတွင် ထည့်သွင်းပြီးဖြစ်သည်',
   'quotation.total': 'စုစုပေါင်း',
   'quotation.lineNo': 'စဉ်',
   'quotation.item': 'အမျိုးအမည်',

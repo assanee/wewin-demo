@@ -201,12 +201,14 @@ export const VAT_TREATMENTS = ['standard', 'zero_rated', 'exempt', 'out_of_scope
 /**
  * ⚠️ A DEFAULT, NOT A DECISION — plan 13.
  *
- * 700 bp is what the plan says to use *until the owner answers*, and the two questions it
- * is standing in for are still open: whether an overseas customer is zero-rated, and
- * whether delivery and installation are taxable. It is deliberately not a column default:
- * a `DEFAULT 700` in the schema is how a placeholder becomes a fact nobody remembers
- * choosing. The API passes it, pins it per document, and the pinned value is what a
- * reprint of that document renders forever after.
+ * 700 bp is Thailand's own rate and the fallback for an order naming no destination. Of the
+ * two questions it used to stand in for, migration 0029's `tax_countries` answered the
+ * first — whether an overseas customer is zero-rated is now a per-destination fact, not one
+ * rate for everybody — and cites this very comment while doing it. Whether delivery and
+ * installation are taxable is still open. It is deliberately not a column default: a
+ * `DEFAULT 700` in the schema is how a placeholder becomes a fact nobody remembers choosing.
+ * The API passes it, pins it per document, and the pinned value is what a reprint of that
+ * document renders forever after.
  */
 export const VAT_RATE_BP_DEFAULT = 700;
 
@@ -397,6 +399,23 @@ export const orders = pgTable(
      */
     contactLocale: text('contact_locale').notNull().default('th'),
 
+    /**
+     * Where the order is going, chosen by the customer at submit. Migration 0032.
+     *
+     * Nullable and mutable, both deliberately. Nullable because all 25 existing orders — the
+     * 21 carrying an issued document and the 4 drafts — predate the question, and migration
+     * 0017 established the house answer to inventing a value for a new NOT NULL column: it
+     * deleted the rows rather than guess, and these do not qualify for deletion. Mutable
+     * because a customer who picks the wrong country should be correctable before the
+     * document freezes; the tax that country produced stays pinned on the issued quotation
+     * (`order_documents.destination_country`), never read live from here again.
+     *
+     * No foreign key to `tax_countries`. `TaxCountryService.resolveDestination` (Task 7) does
+     * the checking, so it can tell *withdrawn* from *unknown* — a constraint cannot, and would
+     * treat both alike, turning a routine withdrawal (`is_active = false`) into a broken cart.
+     */
+    destinationCountry: char('destination_country', { length: 2 }),
+
     // ── the revision chain ───────────────────────────────────────────────────
     /**
      * The order this one replaces. Set at insert, immutable afterwards.
@@ -573,6 +592,11 @@ export const orders = pgTable(
     check(
       'orders_contact_phone_e164',
       sql`${table.contactPhone} is null or ${table.contactPhone} ~ '^\\+[1-9][0-9]{7,14}$'`,
+    ),
+    /* Migration 0032. Shape only — whether the code names a real, still-relevant country is `resolveDestination`'s job, not a constraint's. */
+    check(
+      'orders_destination_country_shape',
+      sql`${table.destinationCountry} is null or ${table.destinationCountry} ~ '^[A-Z]{2}$'`,
     ),
     check(
       'orders_frozen_after_submitted',

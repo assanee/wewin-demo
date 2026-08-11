@@ -22,6 +22,7 @@ const VALID: ProfileFields = {
   taxId: '1234567890123',
   phone: '021234567',
   email: 'info@wewin180.co.th',
+  depositPercent: '30',
 };
 
 describe('profileFormErrors', () => {
@@ -42,7 +43,9 @@ describe('profileFormErrors', () => {
      * a decoder that regressed to "empty is an error" would paint every required field red
      * before a person had typed a single character.
      */
-    expect(profileFormErrors({ ...VALID, legalNameTh: '', addressTh: '', phone: '' })).toEqual({});
+    expect(
+      profileFormErrors({ ...VALID, legalNameTh: '', addressTh: '', phone: '', depositPercent: '' }),
+    ).toEqual({});
   });
 
   it('refuses a tax id that is not exactly thirteen digits', () => {
@@ -56,10 +59,23 @@ describe('profileFormErrors', () => {
     expect(profileFormErrors({ ...VALID, email: 'a@b' }).email).toBeDefined();
     expect(profileFormErrors({ ...VALID, email: 'a@b.co' }).email).toBeUndefined();
   });
+
+  it('refuses a deposit outside 0..100%, and 0% itself — the schema floor is 1 bp, not 0', () => {
+    /*
+     * ⭐ `organisationProfilePutSchema`'s `depositBp` is `z.int().min(1).max(10_000)` because
+     * "the schedule planner refuses a 0% deposit" — 0% is not merely unusual here, it is the
+     * one value between the general 0..100% range and this field's own floor.
+     */
+    expect(profileFormErrors({ ...VALID, depositPercent: '0' }).depositPercent).toBeDefined();
+    expect(profileFormErrors({ ...VALID, depositPercent: '200' }).depositPercent).toBeDefined();
+    expect(profileFormErrors({ ...VALID, depositPercent: 'abc' }).depositPercent).toBeDefined();
+    expect(profileFormErrors({ ...VALID, depositPercent: '0.01' }).depositPercent).toBeUndefined();
+    expect(profileFormErrors({ ...VALID, depositPercent: '100' }).depositPercent).toBeUndefined();
+  });
 });
 
 describe('profileFormReady', () => {
-  it('is ready once the three required fields hold something and nothing is malformed', () => {
+  it('is ready once the four required fields hold something and nothing is malformed', () => {
     expect(profileFormReady(VALID)).toBe(true);
     expect(profileFormReady({ ...VALID, legalNameEn: '', addressEn: '', taxId: '', email: '' })).toBe(
       true,
@@ -70,11 +86,17 @@ describe('profileFormReady', () => {
     expect(profileFormReady({ ...VALID, legalNameTh: '   ' })).toBe(false);
     expect(profileFormReady({ ...VALID, addressTh: '' })).toBe(false);
     expect(profileFormReady({ ...VALID, phone: '' })).toBe(false);
+    expect(profileFormReady({ ...VALID, depositPercent: '' })).toBe(false);
   });
 
   it('is not ready while an optional field is present but malformed', () => {
     expect(profileFormReady({ ...VALID, taxId: '123' })).toBe(false);
     expect(profileFormReady({ ...VALID, email: 'not-an-email' })).toBe(false);
+  });
+
+  it('is not ready while the deposit is present but below the floor or out of range', () => {
+    expect(profileFormReady({ ...VALID, depositPercent: '0' })).toBe(false);
+    expect(profileFormReady({ ...VALID, depositPercent: '200' })).toBe(false);
   });
 });
 
@@ -84,6 +106,11 @@ describe('profileRequest', () => {
     expect(request.legalNameTh).toBe('บริษัท');
     expect(request.phone).toBe('021234567');
     expect(request.taxId).toBe('1234567890123');
+  });
+
+  it('encodes the deposit percentage as basis points', () => {
+    expect(profileRequest({ ...VALID, depositPercent: '30' }).depositBp).toBe(3_000);
+    expect(profileRequest({ ...VALID, depositPercent: '7.5' }).depositBp).toBe(750);
   });
 
   it('sends null for a blank optional field, never omits it', () => {
@@ -98,7 +125,7 @@ describe('profileRequest', () => {
     expect(request.taxId).toBeNull();
     expect(request.email).toBeNull();
     expect(Object.keys(request).sort()).toEqual(
-      ['legalNameTh', 'legalNameEn', 'addressTh', 'addressEn', 'taxId', 'phone', 'email'].sort(),
+      ['legalNameTh', 'legalNameEn', 'addressTh', 'addressEn', 'taxId', 'phone', 'email', 'depositBp'].sort(),
     );
   });
 });
@@ -113,14 +140,17 @@ describe('fieldsFromProfile and profileRequest round-trip', () => {
       taxId: null,
       phone: '021234567',
       email: null,
+      depositBp: 3_000,
     });
 
     expect(fields.legalNameEn).toBe('');
     expect(fields.taxId).toBe('');
+    expect(fields.depositPercent).toBe('30');
 
     const request = profileRequest(fields);
     expect(request.legalNameEn).toBeNull();
     expect(request.taxId).toBeNull();
     expect(request.legalNameTh).toBe('บริษัท วีวิน180 จำกัด');
+    expect(request.depositBp).toBe(3_000);
   });
 });

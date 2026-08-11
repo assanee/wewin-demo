@@ -42,19 +42,28 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const asString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
-/** The three fields the form has, always present so a caller never has to ask "which one". */
+/**
+ * The four fields the form has, always present so a caller never has to ask "which one".
+ *
+ * `destinationCountry` is never empty the way the other three can be — there is no "nothing to
+ * offer" state for a destination, only "no reason yet to move off the form's own `TH` default" —
+ * so it carries `'TH'` rather than `''` when neither source had an opinion. See `fieldsToApply`
+ * for what that choice buys.
+ */
 export interface ContactPrefill {
   readonly name: string;
   readonly phone: string;
   readonly email: string;
+  readonly destinationCountry: string;
 }
 
-const EMPTY_PREFILL: ContactPrefill = { name: '', phone: '', email: '' };
+const EMPTY_PREFILL: ContactPrefill = { name: '', phone: '', email: '', destinationCountry: 'TH' };
 
 interface OrderContactRaw {
   readonly name: string | null;
   readonly phone: string | null;
   readonly email: string | null;
+  readonly destinationCountry: string | null;
 }
 
 interface AccountContactRaw {
@@ -75,12 +84,21 @@ export function resolveContactPrefill(
   account: AccountContactRaw | null,
 ): ContactPrefill {
   if (order !== null) {
-    return { name: order.name ?? '', phone: order.phone ?? '', email: order.email ?? '' };
+    return {
+      name: order.name ?? '',
+      phone: order.phone ?? '',
+      email: order.email ?? '',
+      /* `null` covers both "predates the field" and "never chose one" — either way, `TH`. */
+      destinationCountry: order.destinationCountry ?? 'TH',
+    };
   }
 
   if (account !== null) {
-    /* No name: see the module note — `displayName` is not this feature's to show. */
-    return { name: '', phone: account.phone ?? '', email: account.email ?? '' };
+    /*
+     * No name: see the module note — `displayName` is not this feature's to show. No
+     * destination either — an account carries no destination at all, only an order does.
+     */
+    return { name: '', phone: account.phone ?? '', email: account.email ?? '', destinationCountry: 'TH' };
   }
 
   return EMPTY_PREFILL;
@@ -94,6 +112,7 @@ export interface ContactTouched {
   readonly name: boolean;
   readonly phone: boolean;
   readonly email: boolean;
+  readonly destinationCountry: boolean;
 }
 
 /**
@@ -103,6 +122,11 @@ export interface ContactTouched {
  * empty string from `prefill` is "this source had nothing", not "clear what is there". The
  * form applies exactly the keys present here and reads nothing else, so a stale value
  * sitting in `prefill` for an already-typed field can never reach `setState`.
+ *
+ * `destinationCountry`'s "nothing to offer" sentinel is `'TH'` rather than `''` — the form's
+ * own state already starts there, so a prefill that also says `'TH'` would write a value
+ * indistinguishable from doing nothing; only a prefill that disagrees with the default is worth
+ * a key here, and that is exactly "a prefilled value beats the `TH` default".
  */
 export function fieldsToApply(
   touched: ContactTouched,
@@ -113,6 +137,9 @@ export function fieldsToApply(
   if (!touched.name && prefill.name !== '') result.name = prefill.name;
   if (!touched.phone && prefill.phone !== '') result.phone = prefill.phone;
   if (!touched.email && prefill.email !== '') result.email = prefill.email;
+  if (!touched.destinationCountry && prefill.destinationCountry !== 'TH') {
+    result.destinationCountry = prefill.destinationCountry;
+  }
 
   return result;
 }
@@ -169,11 +196,21 @@ export function newestSubmittedOrder(list: readonly OrderListRow[] | null): Orde
   return best;
 }
 
-/** `{ contact: { name, phone, email } }` off `GET /orders/:id` — `OrderContactWire`, restated. */
+/**
+ * `{ contact: { name, phone, email, destinationCountry } }` off `GET /orders/:id` —
+ * `OrderContactWire`, restated. `destinationCountry` is the sixth hop: without it here, a
+ * returning customer's destination could never reach `resolveContactPrefill` at all, however
+ * completely the API side of the round trip had been built.
+ */
 function decodeOrderContact(body: unknown): OrderContactRaw | null {
   if (!isRecord(body) || !isRecord(body['contact'])) return null;
   const contact = body['contact'];
-  return { name: asString(contact['name']), phone: asString(contact['phone']), email: asString(contact['email']) };
+  return {
+    name: asString(contact['name']),
+    phone: asString(contact['phone']),
+    email: asString(contact['email']),
+    destinationCountry: asString(contact['destinationCountry']),
+  };
 }
 
 /**

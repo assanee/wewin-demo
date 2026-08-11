@@ -204,6 +204,34 @@
       "when": 1786270407506,
       "tag": "0028_erase_organisation_actors",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0029_tax_countries",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786400000001,
+      "tag": "0030_erase_tax_actors",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786400000002,
+      "tag": "0031_tax_rate_matches_treatment",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786400000003,
+      "tag": "0032_order_destination",
+      "breakpoints": true
     }
   ]
 }

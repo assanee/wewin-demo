@@ -300,6 +300,7 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
             <tr>
               <td className="pr-2 text-right" colSpan={2}>
                 ภาษีมูลค่าเพิ่ม {sheet.vatRateText}
+                {sheet.vatIsIncluded ? ' (รวมอยู่ในราคาแล้ว)' : ''}
               </td>
               <td className="text-right tabular-nums">{sheet.vatText}</td>
             </tr>

@@ -269,7 +269,12 @@ function Sheet({
 
       <dl className="mt-6 ml-auto max-w-[320px] text-body">
         <Row label={t('quotation.net')} value={quotation.netText} />
-        <Row label={`${t('quotation.vat')} ${quotation.vatRateText}`} value={quotation.vatText} />
+        <Row
+          label={`${t('quotation.vat')} ${quotation.vatRateText}${
+            quotation.vatIsIncluded ? ` (${t('quotation.vatIncluded')})` : ''
+          }`}
+          value={quotation.vatText}
+        />
         <Row label={t('quotation.total')} value={quotation.grandTotalText} strong />
       </dl>
 

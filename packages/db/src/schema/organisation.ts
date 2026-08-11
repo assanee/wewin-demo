@@ -122,6 +122,18 @@ export const organisationProfile = pgTable(
     updatedByUserId: uuid('updated_by_user_id').references(() => users.id, {
       onDelete: 'set null',
     }),
+    /*
+     * The share of the grand total that must be received before production may start.
+     *
+     * No `.default()`. `apps/api/src/orders/defaults.ts:12-15` forbids a column default for a
+     * placeholder business number by name; migration 0029 writes 10000 into the single row
+     * instead, so the value sits somewhere a person can see it was chosen.
+     *
+     * Lower bound 1, not 0: `depositPercentTerms` already refuses 0 bp
+     * (`apps/api/tests/payments/schedule/plan.test.ts:172-173`), and the CHECK reports that
+     * refusal at the layer where it is cheap instead of at submit.
+     */
+    depositBp: smallint('deposit_bp').notNull(),
     ...timestamps,
   },
   (table) => [
@@ -129,5 +141,26 @@ export const organisationProfile = pgTable(
     check('organisation_profile_tax_id_shape', sql`${table.taxId} is null or ${table.taxId} ~ '^[0-9]{13}$'`),
     check('organisation_profile_legal_name_says_something', sql`length(btrim(${table.legalNameTh})) > 0`),
     check('organisation_profile_address_says_something', sql`length(btrim(${table.addressTh})) > 0`),
+    check('organisation_profile_deposit_in_range', sql`${table.depositBp} between 1 and 10000`),
   ],
+);
+
+/**
+ * The letterhead did not have a history and now does.
+ *
+ * D4 put the deposit percentage on this row, and a deposit percentage is a money control —
+ * it is the line that decides what counts as a concession needing approval. Once one audited
+ * field lives here the whole row is cheaper to audit than to split, and the side effect is
+ * that changing the company's tax id also stops being untraceable.
+ */
+export const organisationProfileChanges = pgTable(
+  'organisation_profile_changes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    changedByUserId: uuid('changed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+    before: jsonb('before'),
+    after: jsonb('after').notNull(),
+  },
+  (t) => [index('organisation_profile_changes_at_idx').on(t.changedAt)],
 );

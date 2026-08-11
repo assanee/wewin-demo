@@ -242,6 +242,17 @@ describe('boot-time route audit', () => {
      * own code, held by nobody at boot. It was `quotes.write` for one round, which every
      * salesperson holds, so the permission system did not separate the approver from the
      * requester at all.
+     *
+     * ── Six more: five tax-country admin routes, and one public read ─────────────
+     *
+     * `GET/POST/PATCH/PUT/GET` under `/admin/organisation/tax-countries` reuse
+     * `organisation.read`/`organisation.write` rather than a new pair — tax settings are
+     * company settings, the same authority as the bank accounts beside them. `GET
+     * /destinations` is the odd one: `[anonymous]`, and not under `/admin` at all, because a
+     * customer picks a destination before an order — and therefore an owner to scope by —
+     * exists. What makes it safe to publish is the same shape P1 chose for bank accounts:
+     * withhold the policy. This route returns `code` and `nameTh` only; `rateBp`, `treatment`
+     * and `pricesIncludeTax` never leave the five permissioned routes above.
      */
     expect(records.map((record) => `${record.key} [${record.access.kind}]`)).toStrictEqual([
       'DELETE /admin/catalog/products/:productId/draft [permissions]',
@@ -293,6 +304,17 @@ describe('boot-time route audit', () => {
       'GET /admin/organisation [permissions]',
       'GET /admin/organisation/bank-accounts [permissions]',
       'GET /admin/organisation/bank-accounts/:id/changes [permissions]',
+      /*
+       * ⭐ The company profile's own history, and the reason it arrived a task late than its two
+       * siblings: `organisation_profile_changes` had a writer and no reader at all. It matters now
+       * because `deposit_bp` on that row became the `cashflow` approval floor — so
+       * `organisation.write`, which used to govern letterhead and bank accounts, now moves what
+       * counts as a concession needing approval, and this is the only surface that can say who
+       * did.
+       */
+      'GET /admin/organisation/changes [permissions]',
+      'GET /admin/organisation/tax-countries [permissions]',
+      'GET /admin/organisation/tax-countries/:code/changes [permissions]',
 
       'GET /admin/reviews/queue [permissions]',
       'GET /admin/users [permissions]',
@@ -302,6 +324,14 @@ describe('boot-time route audit', () => {
       'GET /catalog/categories [anonymous]',
       'GET /catalog/products [anonymous]',
       'GET /catalog/products/:slug [anonymous]',
+      /*
+       * ⭐ The storefront's destination picker, and the reason it is not `[permissions]` under
+       * `/admin` beside its five siblings: a customer chooses where an order ships *before*
+       * an order — and therefore an owner to scope by — exists. `DestinationsController`
+       * withholds the policy instead: `code` and `nameTh` only, never `rateBp`, `treatment`
+       * or `pricesIncludeTax`. See `organisation/destinations.controller.ts`.
+       */
+      'GET /destinations [anonymous]',
       'GET /health [anonymous]',
       'GET /health/live [anonymous]',
       'GET /health/ready [anonymous]',
@@ -387,6 +417,7 @@ describe('boot-time route audit', () => {
       'PATCH /admin/groups/:groupId [permissions]',
       'PATCH /admin/media/:mediaId [permissions]',
       'PATCH /admin/organisation/bank-accounts/:id [permissions]',
+      'PATCH /admin/organisation/tax-countries/:code [permissions]',
       'POST /admin/catalog/option-groups [permissions]',
       'POST /admin/catalog/option-groups/:groupCode/values [permissions]',
       'POST /admin/catalog/products [permissions]',
@@ -396,6 +427,7 @@ describe('boot-time route audit', () => {
       'POST /admin/media [permissions]',
       'POST /admin/notifications/:notificationId/retry [permissions]',
       'POST /admin/organisation/bank-accounts [permissions]',
+      'POST /admin/organisation/tax-countries [permissions]',
       'POST /admin/reviews/:reviewId/hide [permissions]',
       'POST /admin/reviews/:reviewId/publish [permissions]',
       'POST /admin/reviews/:reviewId/reply [permissions]',
@@ -469,6 +501,7 @@ describe('boot-time route audit', () => {
       'PUT /admin/groups/:groupId/permissions [permissions]',
       'PUT /admin/organisation [permissions]',
       'PUT /admin/organisation/bank-accounts/:id/availability [permissions]',
+      'PUT /admin/organisation/tax-countries/:code/availability [permissions]',
       'PUT /admin/users/:userId/groups [permissions]',
       'PUT /me/preferences [authenticated]',
       'PUT /quotes/authority/limits [permissions]',

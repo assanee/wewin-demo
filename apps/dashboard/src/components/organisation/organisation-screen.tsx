@@ -18,7 +18,7 @@ import { useSession } from '@/lib/auth/session';
 
 import { BankAccountDialog } from './bank-account-dialog';
 import { BankAccountHistoryDialog } from './bank-account-history';
-import { getProfile, listBankAccounts, putProfile, setBankAccountAvailability } from './organisation-api';
+import { getProfile, listBankAccounts, listTaxCountries, putProfile, setBankAccountAvailability } from './organisation-api';
 import {
   fieldsFromProfile,
   profileFormErrors,
@@ -26,24 +26,27 @@ import {
   profileRequest,
   type ProfileFields,
 } from './profile-form';
+import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * The company profile, and the accounts it is paid into.
+ * The company profile, the accounts it is paid into, and the destinations it taxes.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * Two sections, and they are independent screens sharing one page rather than one form: the
- * profile is a single row a staff member edits a few times a year, and the bank-account list
- * is a queue with its own history control. Loading, saving and failing are tracked separately
- * for each, so a slow `bank-accounts` fetch cannot leave the profile form looking broken, and
- * a rejected profile save cannot disable the account list.
+ * Three sections, and they are independent screens sharing one page rather than one form: the
+ * profile is a single row a staff member edits a few times a year, the bank-account list is a
+ * queue with its own history control, and the tax-country table is a short, mostly-static list
+ * with the same kind of control. Loading, saving and failing are tracked separately for each,
+ * so a slow `bank-accounts` fetch cannot leave the profile form looking broken, and a rejected
+ * profile save cannot disable the account list or the tax table.
  *
  * ⚠️ **Retired accounts are shown greyed, never hidden.** `listBankAccounts` reads Task 9's
  * `GET bank-accounts`, which returns `is_active = false` rows deliberately — an administrator
  * auditing what was retired, and when, has to be able to see the row, not just the ones still
  * receiving money. `AccountsTable` below renders every row the API sends and dims the inactive
  * ones with the same `opacity-60` treatment `option-group-card.tsx` uses for an unavailable
- * catalogue value, rather than filtering them out of the array.
+ * catalogue value, rather than filtering them out of the array. `TaxCountriesSection` makes the
+ * identical choice for a withdrawn destination, for the identical reason.
  */
 
 type ProfileState =
@@ -62,6 +65,7 @@ export function OrganisationScreen() {
 
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
   const [accountsState, setAccountsState] = useState<AccountsState>({ status: 'loading' });
+  const [taxCountriesState, setTaxCountriesState] = useState<TaxCountriesState>({ status: 'loading' });
 
   const reloadProfile = async (): Promise<void> => {
     try {
@@ -79,15 +83,25 @@ export function OrganisationScreen() {
     }
   };
 
+  const reloadTaxCountries = async (): Promise<void> => {
+    try {
+      setTaxCountriesState({ status: 'ready', taxCountries: await listTaxCountries() });
+    } catch (cause) {
+      setTaxCountriesState({ status: 'failed', problem: failureMessage(cause) });
+    }
+  };
+
   useEffect(() => {
     void reloadProfile();
     void reloadAccounts();
+    void reloadTaxCountries();
   }, []);
 
   return (
     <div className="flex flex-col gap-6">
       <ProfileCard state={profileState} editable={editable} onSaved={reloadProfile} />
       <AccountsCard state={accountsState} editable={editable} onChanged={reloadAccounts} />
+      <TaxCountriesSection state={taxCountriesState} editable={editable} onChanged={reloadTaxCountries} />
     </div>
   );
 }
@@ -252,6 +266,16 @@ function ProfileForm({
           onChange={set('email')}
           error={errors.email}
           disabled={disabled}
+        />
+        <TextField
+          label="เงินมัดจำก่อนเข้าผลิต (%)"
+          description="ต่ำกว่านโยบายนี้ต้องขออนุมัติ"
+          value={fields.depositPercent}
+          onChange={set('depositPercent')}
+          error={errors.depositPercent}
+          suffix="%"
+          disabled={disabled}
+          mono
         />
       </FieldGroup>
 

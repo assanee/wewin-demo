@@ -13,6 +13,16 @@ import {
   type OrganisationProfilePutRequestWire,
   type OrganisationProfileWire,
 } from '@wewin/contract/organisation';
+import {
+  taxCountryAvailabilitySchema,
+  taxCountryCreateSchema,
+  taxCountryPatchSchema,
+  type SettingChangeWire,
+  type TaxCountryAvailabilityRequest,
+  type TaxCountryCreateRequest,
+  type TaxCountryPatchRequest,
+  type TaxCountryWire,
+} from '@wewin/contract/tax';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
 import { AppError } from '../common/errors/app-error';
@@ -21,33 +31,53 @@ import { CurrentScope, RequirePermissions, type Scope } from '../rbac';
 import { encodeAccount, encodeChange, encodeProfile } from './encode';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
+import { TaxCountryService } from './tax-country.service';
 
 const contractVersion = (): MethodDecorator =>
   Header(CONTRACT_VERSION_HEADER, String(CONTRACT_VERSION));
 
 /**
- * The company's own profile and the bank accounts it is paid into.
+ * The company's own profile, the bank accounts it is paid into, and the destinations it
+ * sells to.
  *
  *     GET   /admin/organisation
  *     PUT   /admin/organisation
+ *     GET   /admin/organisation/changes
  *     GET   /admin/organisation/bank-accounts
  *     POST  /admin/organisation/bank-accounts
  *     PATCH /admin/organisation/bank-accounts/:id
  *     PUT   /admin/organisation/bank-accounts/:id/availability
  *     GET   /admin/organisation/bank-accounts/:id/changes
+ *     GET   /admin/organisation/tax-countries
+ *     POST  /admin/organisation/tax-countries
+ *     PATCH /admin/organisation/tax-countries/:code
+ *     PUT   /admin/organisation/tax-countries/:code/availability
+ *     GET   /admin/organisation/tax-countries/:code/changes
  *
- * `availability` is its own route rather than a field `patchAccount` also accepts, the same
- * shape decision `option-catalog.controller.ts` makes for stock: it is the one write here a
- * client must never be able to smuggle in beside an unrelated edit, and `bankAccountPatchSchema`
- * enforces that by refusing the field outright. `OrganisationService.setAvailability` reuses
- * the patch path with a cast rather than a second write, so a deactivation is recorded in
- * `bank_account_changes` exactly like any other change — see that file.
+ * `availability` is its own route rather than a field `patchAccount`/`patchTaxCountry` also
+ * accepts, the same shape decision `option-catalog.controller.ts` makes for stock: it is the
+ * one write here a client must never be able to smuggle in beside an unrelated edit, and
+ * `bankAccountPatchSchema`/`taxCountryPatchSchema` enforce that by refusing the field outright.
+ * `OrganisationService.setAvailability`/`TaxCountryService.setAvailability` both reuse their
+ * own patch path with a cast rather than a second write, so a deactivation is recorded in
+ * `bank_account_changes`/`tax_country_changes` exactly like any other change — see those files.
+ *
+ * The five tax-country routes reuse `organisation.read`/`organisation.write` rather than a
+ * new permission pair: tax settings are company settings, the same authority as the bank
+ * accounts beside them. `TaxCountryService` already wraps its own writes in
+ * `withTranslatedOrganisationErrors` (`pg-errors.ts`), so these handlers call it and return —
+ * a second `try`/`catch` here would only re-wrap an already-translated `AppError`.
+ *
+ * The public, anonymous read a storefront needs before an order exists — `GET /destinations`
+ * — is deliberately not here: see `destinations.controller.ts` for why it cannot share this
+ * controller's `/admin` prefix.
  */
 @Controller('admin/organisation')
 export class OrganisationController {
   constructor(
     private readonly organisation: OrganisationService,
     private readonly repository: OrganisationRepository,
+    private readonly taxCountries: TaxCountryService,
   ) {}
 
   @Get()
@@ -67,6 +97,37 @@ export class OrganisationController {
     @Body(new ZodBodyPipe(organisationProfilePutSchema)) body: OrganisationProfilePutRequestWire,
   ): Promise<OrganisationProfileWire> {
     return encodeProfile(await this.organisation.putProfile(userIdOf(scope), body));
+  }
+
+  /**
+   * ⭐ Who changed the company's settings, and what they changed them from.
+   *
+   * `organisation_profile_changes` had a **writer and no reader**. `putProfile` has recorded every
+   * field of this row since D4 — including `depositBp` — and `bank_account_changes` and
+   * `tax_country_changes` each got a `GET …/changes` route beside them, but this table's only
+   * consumers were tests. A history nothing can read short of `psql` is not an audit trail; it is
+   * a table that will be trusted to answer a question nobody can actually ask it.
+   *
+   * That stopped being cosmetic in task 12. `deposit_bp` is now an authority control — it is the
+   * `cashflow` floor, so lowering it lowers what counts as a concession needing approval — and it
+   * is behind `organisation.write`, which previously only governed letterhead and bank accounts.
+   * Without this route the answer to *"who lowered the approval floor?"* is nobody, through any
+   * product surface.
+   *
+   * Mirrors its two siblings exactly: `organisation.read`, a `{ changes }` envelope like every
+   * other list-returning GET in this file, and `OrganisationService.profileChanges()`'s own
+   * oldest-first ordering, which is `TaxCountryService.changes`'s — so a reader comparing two
+   * settings histories is not comparing two orderings.
+   *
+   * `changes` and not `profile/changes`: the profile *is* this controller's root (`GET` and `PUT`
+   * with no segment), so the sibling shape — resource path, then `changes` — puts it here. No
+   * route on this controller matches a bare `:param` at the root, so nothing shadows it.
+   */
+  @Get('changes')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async profileChanges(): Promise<{ readonly changes: readonly SettingChangeWire[] }> {
+    return { changes: await this.organisation.profileChanges() };
   }
 
   @Get('bank-accounts')
@@ -118,6 +179,74 @@ export class OrganisationController {
   ): Promise<{ readonly changes: readonly BankAccountChangeWire[] }> {
     const rows = await this.repository.changes(id);
     return { changes: rows.map(encodeChange) };
+  }
+
+  /*
+   * ── Tax countries ────────────────────────────────────────────────────────────
+   *
+   * Wrapped, like every other list-returning GET in this file and everywhere else in
+   * `apps/api/src` (`{ accounts }`, `{ changes }`, `{ products }`, `{ categories }`,
+   * `{ users }`, `{ groups }`, …) — a bare array here would have been the one exception, not
+   * a shape this task's brief actually asked for; its own Files list is silent on envelope
+   * shape and the illustrative `toHaveLength(1)` in its Step-1 sample doesn't decide it either
+   * way. `taxCountries`, not the shorter `countries` a strict parallel to `accounts` (dropping
+   * `bank`/`tax` the way `bank-accounts` drops to `accounts`) would suggest: `bank`/`account`
+   * already carries an unambiguous domain shorthand throughout this file (`accounts()`,
+   * `createAccount()`, …), and there is no equivalent shorthand for "tax country" anywhere in
+   * this codebase — `countries` alone would read as every country, not the configured subset
+   * with a tax policy attached.
+   */
+
+  @Get('tax-countries')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async listTaxCountries(): Promise<{ readonly taxCountries: readonly TaxCountryWire[] }> {
+    // `false`: the admin list shows every destination, active or withdrawn.
+    const rows = await this.taxCountries.list(false);
+    return { taxCountries: rows };
+  }
+
+  @Post('tax-countries')
+  @HttpCode(201)
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async createTaxCountry(
+    @CurrentScope() scope: Scope,
+    @Body(new ZodBodyPipe(taxCountryCreateSchema)) body: TaxCountryCreateRequest,
+  ): Promise<TaxCountryWire> {
+    return this.taxCountries.create(body, userIdOf(scope));
+  }
+
+  @Patch('tax-countries/:code')
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async patchTaxCountry(
+    @CurrentScope() scope: Scope,
+    @Param('code') code: string,
+    @Body(new ZodBodyPipe(taxCountryPatchSchema)) body: TaxCountryPatchRequest,
+  ): Promise<TaxCountryWire> {
+    return this.taxCountries.patch(code, body, userIdOf(scope));
+  }
+
+  @Put('tax-countries/:code/availability')
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async setTaxCountryAvailability(
+    @CurrentScope() scope: Scope,
+    @Param('code') code: string,
+    @Body(new ZodBodyPipe(taxCountryAvailabilitySchema)) body: TaxCountryAvailabilityRequest,
+  ): Promise<TaxCountryWire> {
+    return this.taxCountries.setAvailability(code, body.isActive, userIdOf(scope));
+  }
+
+  @Get('tax-countries/:code/changes')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async taxCountryChanges(
+    @Param('code') code: string,
+  ): Promise<{ readonly changes: readonly SettingChangeWire[] }> {
+    const rows = await this.taxCountries.changes(code);
+    return { changes: rows };
   }
 }
 

@@ -2,7 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
 import { asc, desc, eq } from '@wewin/db/sql';
-import { bankAccountChanges, bankAccounts, organisationProfile } from '@wewin/db/schema';
+import {
+  bankAccountChanges,
+  bankAccounts,
+  organisationProfile,
+  organisationProfileChanges,
+} from '@wewin/db/schema';
 
 import { DRIZZLE } from '../database/database.tokens';
 
@@ -87,5 +92,33 @@ export class OrganisationRepository {
       .from(bankAccountChanges)
       .where(eq(bankAccountChanges.bankAccountId, accountId))
       .orderBy(desc(bankAccountChanges.changedAt));
+  }
+
+  /**
+   * The one-row profile, locked, inside a transaction the caller opened.
+   *
+   * ⚠️ Same reason as `lockAccount` just above: an unlocked pre-image lets two concurrent
+   * `PUT`s on the profile each read the same stale row before the other's write commits, so
+   * the history chain `organisation_profile_changes` exists to hold — entry N's `before`
+   * equal to entry N−1's `after` — stops being contiguous. `putProfile` takes this lock
+   * before reading the pre-image for exactly that reason; an unlocked `profile()` read is the
+   * one write in this module `lockAccount` warns about, applied to the singleton row instead
+   * of a bank account.
+   */
+  lockProfile(tx: Tx) {
+    return tx
+      .select()
+      .from(organisationProfile)
+      .where(eq(organisationProfile.id, 1))
+      .limit(1)
+      .for('update');
+  }
+
+  /** Oldest first — matches `TaxCountryRepository.changes`, so both history readers behave alike. */
+  profileChanges(tx?: Tx) {
+    return this.executor(tx)
+      .select()
+      .from(organisationProfileChanges)
+      .orderBy(asc(organisationProfileChanges.changedAt));
   }
 }

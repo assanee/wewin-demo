@@ -40,3 +40,7 @@ tmp/
 
 # Snapshots the Playwright MCP writes while a browser is being driven. Test debris.
 .playwright-mcp/
+
+# Subagent-driven-development scratch: ledgers, briefs, review packages.
+# Git history is the durable record; this is the controller working memory.
+.superpowers/

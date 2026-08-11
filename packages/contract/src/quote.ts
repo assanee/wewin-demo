@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { type MoneyWire, moneyWireSchema } from './money.js';
 import { lengthWireSchema, type LengthWire } from './measure.js';
 import { priceRequestWireSchema, type PriceRequestWire } from './pricing.js';
+import { DESTINATION_TAX_BASES, type DestinationTaxBasis } from './tax.js';
 
 /**
  * The sales-editable quote on the wire — phase 5c.
@@ -321,7 +322,17 @@ export interface QuoteLineWire {
   readonly computedTotalThbMinor: MoneyWire<'THB'> | null;
   /** The typed charge on a free-form line, and null on a configured one — and null for a customer. */
   readonly chargeTotalThbMinor: MoneyWire<'THB'> | null;
-  /** ⓶ What this line costs after its own override, if it has one. VAT-exclusive. */
+  /**
+   * ⓶ What this line costs after its own override, if it has one — what the customer is
+   * charged for this line.
+   *
+   * ⚠️ Not always VAT-exclusive. Whether this figure already contains the tax depends on the
+   * destination's basis, carried beside it on `QuoteWire.destination.basis`: under `exclusive`
+   * it is the tax base and effective line totals sum to `money.netThbMinor`; under `inclusive`
+   * it already contains the tax and they sum to `money.grandTotalThbMinor` instead. See
+   * `QuoteDestinationWire.basis` for the full identity — a reader who assumes exclusive on an
+   * inclusive quote gets a total that looks like it does not foot by exactly the VAT.
+   */
   readonly effectiveTotalThbMinor: MoneyWire<'THB'>;
 }
 
@@ -446,10 +457,56 @@ export interface QuoteSalesViewWire {
   readonly staleBaselines: readonly StaleBaselineWire[];
 }
 
+/**
+ * ⭐ Where this quote is going, and whether the money above is actually that country's.
+ *
+ * `money.vat` names a rate but cannot say *whose*. `POST /orders` accepts any two-letter code
+ * without validating it — deliberately, so an anonymous cart is never refused for a country the
+ * company is about to add — so an order can name a code `tax_countries` has no row for. The
+ * quote screen and every quote write degrade that to the default rule rather than refusing,
+ * because they freeze nothing and a read that refuses leaves a cart nobody can open or correct.
+ *
+ * `recognised: false` is what stops the degrade being silent. It means: **the figures above are
+ * the default rule, not this country's**, the submit will refuse until the code is corrected,
+ * and the correction is a real destination on the submit's own `contact`. Without this field a
+ * client could not tell a genuine Thai quote from a Singapore typo priced as one, which is the
+ * exact failure `TaxCountryService.resolveDestination` refuses at the pin to avoid.
+ *
+ * Outside `sales` and therefore visible to a customer, unlike everything concession-shaped: it
+ * is a fact about their own order that they chose and may have to fix, not the company's
+ * position in a negotiation.
+ */
+export interface QuoteDestinationWire {
+  /** Verbatim, including a code that names no row. Null when the order names no destination. */
+  readonly country: string | null;
+  /** False when `country` names no row: `money.vat` is the default rule, not this country's. */
+  readonly recognised: boolean;
+  /**
+   * ⭐ Which arithmetic produced `money` — and a client genuinely cannot work it out.
+   *
+   * Under `exclusive` the line figures are the tax base and the effective line totals sum to
+   * `money.netThbMinor`. Under `inclusive` they already **contain** the tax, so they sum to
+   * `money.grandTotalThbMinor` instead and the net is what is left after dividing it back out.
+   * The two sums differ by exactly `vatThbMinor`, and nothing else on this payload distinguishes
+   * them — `net`, `grand` and `vat` are consistent with each other under either reading.
+   *
+   * It is here because a screen that adds the lines up and compares has to know which identity
+   * it is checking. The dashboard's does, and without this field it read every inclusive quote
+   * as a document that does not foot: a destructive *"this quote contradicts itself — do not
+   * send it"* banner on correct money, off by the VAT, on every order for an inclusive country.
+   *
+   * The same value the document pins as `taxBasis`, from the same resolution — see
+   * `TaxCountryService.resolveDestination`. `TaxRule` still carries only a rate and a treatment;
+   * the basis travels beside it, never inside it.
+   */
+  readonly basis: DestinationTaxBasis;
+}
+
 export interface QuoteWire {
   readonly orderId: string;
   readonly quoteRevision: string;
   readonly currency: 'THB';
+  readonly destination: QuoteDestinationWire;
   readonly lines: readonly QuoteLineWire[];
   readonly money: QuoteMoneyWire;
   readonly computedLeadTimeDays: number;
@@ -610,10 +667,20 @@ export const quoteMoneyWireSchema: z.ZodType<QuoteMoneyWire> = z.object({
   vat: z.object({ rateBp: z.int().min(0).max(10_000), treatment: z.string().min(1) }),
 });
 
+export const quoteDestinationWireSchema: z.ZodType<QuoteDestinationWire> = z.object({
+  /* No `/^[A-Z]{2}$/` here, on purpose: this field's whole job is to carry a code the server
+   * could not resolve, and a schema that refused a malformed one would refuse the very payload
+   * that reports it. `orders.destination_country`'s own CHECK is where shape is decided. */
+  country: z.string().nullable(),
+  recognised: z.boolean(),
+  basis: z.literal(DESTINATION_TAX_BASES),
+});
+
 export const quoteWireSchema: z.ZodType<QuoteWire> = z.object({
   orderId: z.uuid(),
   quoteRevision: z.string().regex(QUOTE_REVISION_PATTERN),
   currency: z.literal('THB'),
+  destination: quoteDestinationWireSchema,
   lines: z.array(quoteLineWireSchema),
   money: quoteMoneyWireSchema,
   computedLeadTimeDays: z.int().min(0),

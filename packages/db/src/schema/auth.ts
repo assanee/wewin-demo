@@ -464,6 +464,15 @@ export const ERASURE_TREATMENTS = {
   'bank_accounts.updated_by_user_id': 'scrub',
   'bank_account_changes.changed_by_user_id': 'scrub',
   'organisation_profile.updated_by_user_id': 'scrub',
+
+  /*
+   * Staff actor ids on configuration rows, exactly like the P1 three above. `scrub`, not
+   * `delete`: the row is the company's tax policy and its history, and neither stops being
+   * true because the person who typed it exercised erasure.
+   */
+  'tax_countries.updated_by_user_id': 'scrub',
+  'tax_country_changes.changed_by_user_id': 'scrub',
+  'organisation_profile_changes.changed_by_user_id': 'scrub',
 } as const satisfies Record<string, 'delete' | 'scrub' | 'keep' | 'escalated'>;
 
 export const authTokenPurpose = pgEnum('auth_token_purpose', [

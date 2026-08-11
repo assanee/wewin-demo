@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  pinnedDocumentFrom,
   printableQuotation,
   quotationProblem,
   type PinnedDocument,
@@ -32,6 +33,8 @@ const DOCUMENT: PinnedDocument = {
   revision: 3,
   documentHash: 'a5b1c0d2e3f40516',
   pinnedLocale: 'th',
+  destinationCountry: null,
+  taxBasis: 'exclusive',
   orderNo: 'WW-1000',
   contactName: 'สมหญิง ใจดี',
   submittedAt: '2026-08-07T00:52:17.000Z',
@@ -143,6 +146,91 @@ describe('the money on the page', () => {
     expect(lines + charges).toBe(DOCUMENT.netThbMinor);
     expect(DOCUMENT.netThbMinor + DOCUMENT.vatThbMinor).toBe(DOCUMENT.grandTotalThbMinor);
     expect(rendered.vatRateText).toBe('7%');
+  });
+});
+
+describe('⭐ the basis the destination was quoted on', () => {
+  /*
+   * ⚠️ A wire-shaped fixture, not a `PinnedDocument` literal — these tests exercise
+   * `pinnedDocumentFrom`, the decoder, not only the renderer. Money on the wire is tagged
+   * (`{unit: 'THB.satang', digits}`, checked by `satang()` above), so a bare numeric string
+   * would throw on the way in rather than decode — the same trap `quotation-wire.test.ts`
+   * exists to catch.
+   *
+   * The figures are the ones `apps/api/tests/quotes/inclusive-basis.test.ts` pins for
+   * `applyOverrides`: two lines at ฿20,000.00 and ฿9,000.00, one ฿1,000.00 charge, and a
+   * 900bp (9%) inclusive destination whose net and VAT are divided back out of the
+   * ฿30,000.00 grand total rather than added on top.
+   */
+  const satangTag = (digits: string) => ({ unit: 'THB.satang', digits });
+
+  const wireLine = (lineNo: number, nameTh: string, netDigits: string): Record<string, unknown> => ({
+    lineNo,
+    nameTh,
+    skuCode: `SKU-${String(lineNo)}`,
+    qty: 1,
+    customerDescriptionTh: null,
+    measures: {},
+    price: { lines: [] },
+    netMinor: satangTag(netDigits),
+  });
+
+  const doc: Record<string, unknown> = {
+    documentSchemaVersion: 2,
+    revision: 1,
+    documentHash: 'wire-hash',
+    currency: 'THB',
+    pinnedLocale: 'th',
+    pinnedCoreVersion: 'dev',
+    vat: { rateBp: 900, treatment: 'standard' },
+    lines: [wireLine(1, 'เก้าอี้อะลูมิเนียม', '2000000'), wireLine(2, 'โต๊ะอะลูมิเนียม', '900000')],
+    charges: [{ labelTh: 'ค่าติดตั้ง', amountThbMinor: satangTag('100000') }],
+    documentOverride: null,
+    netThbMinor: satangTag('2752294'),
+    vatThbMinor: satangTag('247706'),
+    grandTotalThbMinor: satangTag('3000000'),
+    leadTimeDays: 30,
+  };
+
+  const context = { orderNo: 'WW-2000', contactName: 'ลูกค้า', submittedAt: '2026-08-07T00:00:00.000Z' };
+
+  it('reads a basis from the document and defaults to exclusive for older ones', () => {
+    expect(pinnedDocumentFrom({ ...doc, taxBasis: 'inclusive' }, context).taxBasis).toBe('inclusive');
+    /* Lenient, like its neighbours: a document older than the field is not a broken document. */
+    expect(pinnedDocumentFrom(doc, context).taxBasis).toBe('exclusive');
+    expect(pinnedDocumentFrom(doc, context).destinationCountry).toBeNull();
+  });
+
+  it('reports that VAT is included', () => {
+    const pinned = pinnedDocumentFrom({ ...doc, taxBasis: 'inclusive' }, context);
+
+    expect(printableQuotation(pinned).vatIsIncluded).toBe(true);
+  });
+
+  it('says nothing extra for an exclusive destination', () => {
+    const pinned = pinnedDocumentFrom(doc, context);
+
+    expect(printableQuotation(pinned).vatIsIncluded).toBe(false);
+  });
+
+  it('⚠️ foots: lines and charges together equal the grand total under an inclusive basis', () => {
+    /*
+     * Asserted on the `PinnedDocument`, NOT the `PrintableQuotation`. `PrintableLine` carries
+     * `netText: string` and `charges` is `{ labelTh, amountText }` — formatted strings, no
+     * minor units. The minor units live on `PinnedLine.netMinor` and `PinnedCharge.amountMinor`.
+     */
+    const pinned = pinnedDocumentFrom({ ...doc, taxBasis: 'inclusive' }, context);
+
+    /*
+     * Both arrays. `lines` and `charges` are separate in the document, and under an inclusive
+     * basis the grand total is the sum of both, so a lines-only assertion would be false for
+     * any quote carrying a charge — which is why this fixture has one.
+     */
+    const lineSum = pinned.lines.reduce((total, line) => total + line.netMinor, 0n);
+    const chargeSum = pinned.charges.reduce((total, charge) => total + charge.amountMinor, 0n);
+
+    expect(lineSum + chargeSum).toBe(pinned.grandTotalThbMinor);
+    expect(pinned.netThbMinor + pinned.vatThbMinor).toBe(pinned.grandTotalThbMinor);
   });
 });
 

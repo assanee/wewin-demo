@@ -21,14 +21,18 @@ import type { TaxRule } from '@wewin/core/vat';
 /**
  * VAT — plan 13 row 1, plan 4.4.
  *
- * 700 bp and `standard`, applied to every line. The two questions still open behind it are
- * whether an overseas customer is zero-rated and whether delivery and installation are
- * taxable; until somebody answers, everything is taxable at 7%, which is the conservative
+ * 700 bp and `standard` — Thailand's own rate, and the fallback for an order naming no
+ * destination or one `tax_countries` has no row for. Of the two questions this constant used
+ * to stand in for, migration 0029 answered the first: whether an overseas customer is
+ * zero-rated is now a per-destination fact in `tax_countries`, resolved by
+ * `TaxCountryService.resolveDestination` and no longer this one rate for everybody. Whether
+ * delivery and installation are taxable is still open; until somebody answers it, every line
+ * on every destination is taxable at that destination's own rate, which is the conservative
  * direction for a filing (a business that over-declares owes nothing; one that under-declares
  * owes interest).
  *
- * The rate is *pinned per document* at submit, so answering the question later changes new
- * quotes and cannot change what an old invoice reprints as.
+ * The rate is *pinned per document* at submit, so answering the remaining question later
+ * changes new quotes and cannot change what an old invoice reprints as.
  */
 export const DEFAULT_VAT_RULE: TaxRule = {
   rateBp: VAT_RATE_BP_DEFAULT,
@@ -45,11 +49,13 @@ export const DEFAULT_VAT_RULE: TaxRule = {
  * would silently cap the company's protection; a too-high one cannot cause an over-charge,
  * because the forfeit is clamped a second time by cash actually received.
  *
- * SEAM 5b: instalments replace this single number with a schedule of basis + gate rows, and
- * `scheduledDepositMinor` becomes the fold over the gate-holding instalments — one function
- * in core, per plan 7.13, because three implementations of it differed by ฿12,902 on the
- * same 30/70 shape. Until that exists there is one instalment, it is the whole amount, and
- * it holds the gate into `production_confirmed`.
+ * SEAM 5b closed this constant's own role: `payments/schedule` now plans a real schedule of
+ * basis + gate rows, and `scheduledDepositMinor` (`payments/schedule/plan.ts`) is the one
+ * function, per plan 7.13, that folds the gate-holding instalments into the obligation —
+ * three earlier implementations of it differed by ฿12,902 on the same 30/70 shape. This
+ * constant is no longer read by that arithmetic; it is `payments/schedule/defaults.ts`'s
+ * `GATE_COVERAGE_BP_DEFAULT` that plans the schedule now, and it carries the identical
+ * value and the identical plan-13 default for the same reason.
  */
 export const SCHEDULED_DEPOSIT_BP_DEFAULT = 10_000;
 
