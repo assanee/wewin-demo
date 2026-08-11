@@ -232,6 +232,13 @@
       "when": 1786400000003,
       "tag": "0032_order_destination",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786400000004,
+      "tag": "0033_fx_rates",
+      "breakpoints": true
     }
   ]
 }

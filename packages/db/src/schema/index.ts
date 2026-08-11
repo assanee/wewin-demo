@@ -6,6 +6,7 @@ export * from './media.js';
 export * from './order.js';
 export * from './organisation.js';
 export * from './tax.js';
+export * from './fx.js';
 export * from './payment.js';
 export * from './quote.js';
 export * from './review.js';
