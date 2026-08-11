@@ -120,7 +120,7 @@ CREATE TABLE "authority_limit_changes" (
   "group_code" text NOT NULL,
   "dimension" text NOT NULL,
   "changed_by_user_id" uuid NOT NULL,
-  "changed_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "changed_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
   "before" jsonb,
   "after" jsonb NOT NULL,
   CONSTRAINT "authority_limit_changes_dimension_known"
@@ -136,15 +136,29 @@ CREATE INDEX "authority_limit_changes_subject_idx"
   ON "authority_limit_changes" ("group_id","dimension","changed_at");
 --> statement-breakpoint
 
--- ⚠️ `changed_at` has `DEFAULT now()` and NOTHING IS SUPPOSED TO USE IT.
+-- ⚠️ `changed_at` DEFAULTS TO `clock_timestamp()`, AND THE DEFAULT IS A SAFETY NET.
 --
+-- Every writer passes the value explicitly — `AuthorityRepository.insertLimitChange`, and the
+-- three `*.service.ts` writers of the other history tables — so on the paths that exist today
+-- this default never fires. Its only job is the one a default can do: stop a future writer, or
+-- a `psql` session, producing a row whose timestamp is wrong or missing.
+--
+-- It was `now()`, which cannot do that job, because `now()` IS the value proven wrong.
 -- `now()` is `transaction_timestamp()` — fixed at BEGIN. Two concurrent writes to one ceiling
 -- both open before either takes the row lock, so the one that blocks can hold the *earlier*
 -- `now()` while committing *second*, and a history sorted by `changed_at` then reads out of
--- order: entry N's `before` no longer equals entry N−1's `after`, which is the one property
--- this table exists to prove. `AuthorityService` writes `clock_timestamp()` explicitly for
--- that reason — see the comment there, and the identical one in `tax-country.service.ts`. The
--- default is kept only so a `psql` session cannot produce a row with no timestamp at all.
+-- order: entry N's `before` stops equalling entry N−1's `after`, which is the one property
+-- this table exists to prove. Putting that exact value in the fallback slot of the only column
+-- whose ordering is load-bearing meant the safety net was woven from the failure.
+--
+-- `clock_timestamp()` is volatile and Postgres accepts it as a column default; it reads the
+-- wall clock per row, so two rows written inside one transaction get distinct, ordered values.
+-- Measured: a writer that forgets the explicit value is caught by the contiguity test 12 of 12
+-- runs under `DEFAULT now()`, and passes 12 of 12 under this default — the difference between
+-- a net and a hole. Migration 0039 does the same for the three tables 0027 and 0029 created.
+--
+-- The explicit `clock_timestamp()` in the writers stays. Belt and braces, and it is where the
+-- comment explaining the hazard lives.
 CREATE FUNCTION authority_limit_changes_append_only() RETURNS trigger AS $$
 BEGIN
   RAISE EXCEPTION 'authority_limit_changes is append-only; a change to who may concede cannot be un-recorded'

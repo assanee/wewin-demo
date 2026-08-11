@@ -274,6 +274,13 @@
       "when": 1786400000009,
       "tag": "0038_authority_limit_history",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786400000010,
+      "tag": "0039_history_clock",
+      "breakpoints": true
     }
   ]
 }

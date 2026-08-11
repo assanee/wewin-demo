@@ -192,7 +192,17 @@ export const taxCountryChanges = pgTable(
       .notNull()
       .references(() => taxCountries.code, { onDelete: 'restrict' }),
     changedByUserId: uuid('changed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
-    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * ⚠️ `clock_timestamp()`, not `defaultNow()` — migration 0039, and the reason is the whole
+     * point of this table. `now()` is `transaction_timestamp()`, fixed at BEGIN, so under
+     * concurrency the transaction that blocks on a row lock can hold the *earlier* stamp while
+     * committing *second*, and the chain reads in an order that never happened. Every writer
+     * passes the value explicitly; this is the net under the one that forgets, and it used to
+     * be woven from the exact failure it was meant to catch.
+     */
+    changedAt: timestamp('changed_at', { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
     before: jsonb('before'),
     after: jsonb('after').notNull(),
   },
