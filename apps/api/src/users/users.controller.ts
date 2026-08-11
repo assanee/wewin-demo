@@ -35,6 +35,8 @@ const contractVersion = (): MethodDecorator =>
  *     POST   /admin/users                              create an account + send a set-password link
  *     POST   /admin/users/:userId/suspension           ban
  *     DELETE /admin/users/:userId/suspension           reinstate
+ *     POST   /admin/users/:userId/phones/:phoneId/verification    a staff member vouches for a number
+ *     DELETE /admin/users/:userId/phones/:phoneId/verification    undo a mistaken one
  *     PUT    /admin/users/:userId/groups               which groups they are in
  *     POST   /admin/users/:userId/sessions/revocation  sign them out everywhere
  *     POST   /admin/users/:userId/password-link        email them a set-password link
@@ -111,6 +113,36 @@ export class UsersController {
   @RequirePermissions('users.write')
   async reinstate(@CurrentScope() scope: Scope, @Param('userId') userId: string): Promise<void> {
     await this.users.setSuspended(callerOf(scope), userId, false);
+  }
+
+  /**
+   * A member of staff, having spoken to the customer on the telephone, says the number is
+   * theirs. `users.write` — the same permission that edits the rest of the account — and
+   * deliberately no new code: see `UsersService.verifyPhone` for what this is and is not.
+   */
+  @Post('users/:userId/phones/:phoneId/verification')
+  @HttpCode(204)
+  @contractVersion()
+  @RequirePermissions('users.write')
+  async verifyPhone(
+    @CurrentScope() scope: Scope,
+    @Param('userId') userId: string,
+    @Param('phoneId') phoneId: string,
+  ): Promise<void> {
+    await this.users.verifyPhone(callerOf(scope), userId, phoneId);
+  }
+
+  /** Undo one vouched for by mistake. See `UsersService.unverifyPhone`. */
+  @Delete('users/:userId/phones/:phoneId/verification')
+  @HttpCode(204)
+  @contractVersion()
+  @RequirePermissions('users.write')
+  async unverifyPhone(
+    @CurrentScope() scope: Scope,
+    @Param('userId') userId: string,
+    @Param('phoneId') phoneId: string,
+  ): Promise<void> {
+    await this.users.unverifyPhone(callerOf(scope), userId, phoneId);
   }
 
   @Put('users/:userId/groups')

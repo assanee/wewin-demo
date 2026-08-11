@@ -23,6 +23,8 @@ import { createTaxCountry, patchTaxCountry } from './organisation-api';
 import {
   basisLabelTh,
   fieldsFromTaxCountry,
+  fxCurrencyOptions,
+  fxManualRateOnCurrencyChange,
   rateEditable,
   readRateBp,
   taxCountryCreateFormErrors,
@@ -42,6 +44,9 @@ const EMPTY: TaxCountryCreateFields = {
   ratePercent: '',
   treatment: 'standard',
   pricesIncludeTax: false,
+  fxCurrency: '',
+  fxSpreadPercent: '0',
+  fxManualRate: '',
 };
 
 /**
@@ -112,6 +117,32 @@ export function TaxCountryDialog({
 
   const setPricesIncludeTax = (checked: boolean) =>
     setFields((current) => ({ ...current, pricesIncludeTax: checked }));
+
+  const setFxSpreadPercent = (value: string) =>
+    setFields((current) => ({ ...current, fxSpreadPercent: value }));
+  const setFxManualRate = (value: string) =>
+    setFields((current) => ({ ...current, fxManualRate: value }));
+
+  /*
+   * Changing the currency clears the override in the same click — dropping it to "ไม่แปลง
+   * สกุลเงิน" exactly as `setTreatment` above clears the rate box, but now also *switching* it
+   * from one currency to another. `fxManualRateOnCurrencyChange` (`tax-country-fields.ts`) is
+   * the pure rule and carries the argument in full: a rate is baht per one unit of whatever
+   * currency was selected when it was typed, so carrying "35.90" across a switch from USD to
+   * SGD keeps the digits and throws away what they meant — confirmed against Postgres as a 33%
+   * overstatement that passes every CHECK on the row. The spread is still not touched by any of
+   * this: it is inert without a currency, not wrong, and survives both a clear and a switch so
+   * that picking a currency again restores the policy that was already decided.
+   */
+  const setFxCurrency = (value: string) => {
+    setFields((current) => ({
+      ...current,
+      fxCurrency: value,
+      fxManualRate: fxManualRateOnCurrencyChange(current.fxCurrency, current.fxManualRate, value),
+    }));
+  };
+
+  const convertsCurrency = fields.fxCurrency !== '';
 
   async function submit(): Promise<void> {
     if (!ready) return;
@@ -202,6 +233,53 @@ export function TaxCountryDialog({
               <Label htmlFor="prices-include-tax">ราคาที่ลูกค้าเห็นรวมภาษีแล้ว</Label>
               <p className="text-muted-foreground text-sm">{basisLabelTh(fields.pricesIncludeTax)}</p>
             </div>
+          </div>
+
+          {/*
+            The exchange-rate settings. Nothing converts a quotation yet — the arithmetic lives
+            in `@wewin/core/fx` and is unwired on purpose — so these are settings being decided
+            ahead of the screen that will use them, which is why the descriptions say what each
+            one *means* rather than what it will look like.
+          */}
+          <div className="border-border/60 flex flex-col gap-4 border-t pt-4">
+            <SelectField
+              label="สกุลเงินปลายทาง"
+              description="สกุลเงินที่ใช้เสนอราคาลูกค้าประเทศนี้ — เลือก “ไม่แปลงสกุลเงิน” หากเสนอราคาเป็นบาทเท่านั้น"
+              value={fields.fxCurrency}
+              onChange={setFxCurrency}
+              options={fxCurrencyOptions()}
+              disabled={busy}
+            />
+
+            <TextField
+              label="ส่วนต่างอัตราแลกเปลี่ยน"
+              description={
+                convertsCurrency
+                  ? 'อัตรากลางตลาดไม่ใช่อัตราที่ธนาคารให้จริง — ส่วนต่างนี้จะถูกหักออกจากอัตรากลางก่อนคำนวณ เช่น 2% ทำให้ 36.50 กลายเป็น 35.77 บาท/USD'
+                  : 'เลือกสกุลเงินปลายทางก่อน จึงจะมีผล'
+              }
+              value={fields.fxSpreadPercent}
+              onChange={setFxSpreadPercent}
+              error={errors.fxSpreadPercent}
+              suffix="%"
+              mono
+              disabled={busy || !convertsCurrency}
+            />
+
+            <TextField
+              label="อัตราแลกเปลี่ยนกำหนดเอง"
+              description={
+                convertsCurrency
+                  ? `บาทต่อ 1 ${fields.fxCurrency} เช่น 35.90 — เว้นว่างไว้เพื่อใช้อัตรากลางตลาด ⚠️ หากกรอกช่องนี้ ระบบจะใช้อัตรานี้ตรง ๆ และจะไม่หักส่วนต่างข้างบนอีก เพราะอัตราที่ธนาคารเสนอรวมส่วนต่างของธนาคารไว้แล้ว`
+                  : 'เลือกสกุลเงินปลายทางก่อน จึงจะกรอกได้'
+              }
+              value={fields.fxManualRate}
+              onChange={setFxManualRate}
+              error={errors.fxManualRate}
+              mono
+              disabled={busy || !convertsCurrency}
+              placeholder="35.90"
+            />
           </div>
         </div>
 

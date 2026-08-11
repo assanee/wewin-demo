@@ -4,6 +4,7 @@ import {
   decodeBankAccount,
   decodeBankAccountChange,
   decodeProfile,
+  decodeProfileChange,
   decodeTaxCountry,
   decodeTaxCountryChange,
 } from './organisation-api';
@@ -135,6 +136,9 @@ const TAX_COUNTRY = {
   rateBp: 700,
   treatment: 'standard',
   pricesIncludeTax: false,
+  fxCurrency: null,
+  fxSpreadBp: 0,
+  fxManualRate: null,
   isActive: true,
   sortOrder: 0,
   updatedAt: '2026-08-09T10:00:00.000Z',
@@ -146,6 +150,40 @@ describe('decodeTaxCountry', () => {
     expect(country.code).toBe('TH');
     expect(country.rateBp).toBe(700);
     expect(country.treatment).toBe('standard');
+  });
+
+  it('reads a destination quoted in a foreign currency', () => {
+    const country = decodeTaxCountry({
+      ...TAX_COUNTRY,
+      code: 'SG',
+      fxCurrency: 'SGD',
+      fxSpreadBp: 200,
+      fxManualRate: '27.0500000000',
+    });
+
+    expect(country.fxCurrency).toBe('SGD');
+    expect(country.fxSpreadBp).toBe(200);
+    // ⚠️ Still a string. `numeric(20, 10)` crosses the wire as digits so that nothing on the
+    // way past turns a rate into a float — see `fxManualRateOf`.
+    expect(country.fxManualRate).toBe('27.0500000000');
+  });
+
+  it('refuses a currency this build has never heard of, naming the code', () => {
+    expect(() => decodeTaxCountry({ ...TAX_COUNTRY, fxCurrency: 'XBT' })).toThrow(/TH/);
+  });
+
+  /*
+   * ⚠️ An absent key is not the same as `null`, and this is the assertion that keeps them
+   * apart. `null` means somebody chose "baht only"; a missing key means a server that stopped
+   * sending it, and reading that as a cleared setting is how a destination silently stops
+   * converting.
+   */
+  it('refuses an absent FX field rather than reading it as “not set”', () => {
+    const { fxSpreadBp: _dropped, ...withoutSpread } = TAX_COUNTRY;
+    expect(() => decodeTaxCountry(withoutSpread)).toThrow(/fxSpreadBp/);
+
+    const { fxCurrency: _alsoDropped, ...withoutCurrency } = TAX_COUNTRY;
+    expect(() => decodeTaxCountry(withoutCurrency)).toThrow(/fxCurrency/);
   });
 
   it('does not hide a withdrawn destination behind a decode failure', () => {
@@ -196,5 +234,40 @@ describe('decodeTaxCountryChange', () => {
 
   it('refuses a before that is neither an object nor null', () => {
     expect(() => decodeTaxCountryChange({ ...CREATE, before: 'yesterday' })).toThrow(/before/);
+  });
+});
+
+describe('decodeProfileChange', () => {
+  const EDIT = {
+    id: '00000000-0000-4000-8000-0000000000e1',
+    changedAt: '2026-08-09T10:00:00.000Z',
+    changedByUserId: '00000000-0000-4000-8000-0000000000aa',
+    before: { ...PROFILE, updatedAt: undefined },
+    after: { ...PROFILE, updatedAt: undefined, depositBp: 3_000 },
+  };
+
+  it('accepts an edit row, whose before is the previous snapshot', () => {
+    const change = decodeProfileChange(EDIT);
+    expect(change.before).toEqual(EDIT.before);
+    expect((change.after as Record<string, unknown>)['depositBp']).toBe(3_000);
+  });
+
+  it('accepts a creation row, whose before is null — reachable by the wire type even if never seen in practice', () => {
+    const change = decodeProfileChange({ ...EDIT, before: null });
+    expect(change.before).toBeNull();
+  });
+
+  it('accepts a changedByUserId of null — the erasure case', () => {
+    const change = decodeProfileChange({ ...EDIT, changedByUserId: null });
+    expect(change.changedByUserId).toBeNull();
+  });
+
+  it('refuses an after that is missing entirely, rather than defaulting it to {}', () => {
+    const { after: _unused, ...broken } = EDIT;
+    expect(() => decodeProfileChange(broken)).toThrow(/after/);
+  });
+
+  it('refuses a before that is neither an object nor null', () => {
+    expect(() => decodeProfileChange({ ...EDIT, before: 'yesterday' })).toThrow(/before/);
   });
 });

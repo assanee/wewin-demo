@@ -105,7 +105,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 503 })));
 
-    await service.fetchHourly();
+    await service.fetchDaily();
     vi.unstubAllGlobals();
 
     expect(await rowCount()).toBe(before);
@@ -125,7 +125,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
     // Valid JSON, wrong shape: no `timestamp`, no `rates`.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { base: 'USD' })));
 
-    await service.fetchHourly();
+    await service.fetchDaily();
     vi.unstubAllGlobals();
 
     expect(await rowCount()).toBe(before);
@@ -139,7 +139,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{not json', { status: 200 })));
 
-    await service.fetchHourly();
+    await service.fetchDaily();
     vi.unstubAllGlobals();
 
     expect(await rowCount()).toBe(before);
@@ -163,7 +163,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
     // Neither call should log or fetch again — the flag set at construction is silent
     // from here on, not a warning repeated on every tick.
     await disabled.onModuleInit();
-    await disabled.fetchHourly();
+    await disabled.fetchDaily();
     vi.unstubAllGlobals();
 
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -226,7 +226,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
       const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, GOOD_BODY)));
 
-      await expect(unreachableService.fetchHourly()).resolves.toBeUndefined();
+      await expect(unreachableService.fetchDaily()).resolves.toBeUndefined();
       vi.unstubAllGlobals();
 
       expect(warn).toHaveBeenCalled();

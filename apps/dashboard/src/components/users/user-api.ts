@@ -21,12 +21,35 @@ export interface UserGroup {
   readonly isSystem: boolean;
 }
 
+/**
+ * One telephone claim, verified or not.
+ *
+ * Unlike `emails`, this is every claim on the account — the verify/un-verify buttons need
+ * the unverified row on screen to act on. Each entry carries its own `verifiedAt`, so
+ * showing an unverified one here never reads as a fact the way a bare string would.
+ */
+export interface UserPhone {
+  readonly id: string;
+  readonly number: string;
+  readonly isPrimary: boolean;
+  /** Null until a member of staff vouched, or a future OTP proves possession. */
+  readonly verifiedAt: string | null;
+  /**
+   * Who vouched — null for an unverified claim **and** null for a future OTP, since proven
+   * possession needs no human to say so. Non-null is what marks this as a staff assertion
+   * rather than the stronger claim an OTP would represent, readable off this row alone.
+   */
+  readonly verifiedByUserId: string | null;
+}
+
 export interface UserSummary {
   readonly id: string;
   readonly displayName: string | null;
   readonly status: UserStatus;
   /** Verified addresses only — an unverified row is a claim, not an identity. */
   readonly emails: readonly string[];
+  /** See `UserPhone` — every claim, verified or not. */
+  readonly phones: readonly UserPhone[];
   readonly groups: readonly UserGroup[];
   readonly permissions: readonly string[];
   readonly liveSessions: number;
@@ -55,6 +78,19 @@ const decodeGroupRef = (raw: unknown): UserGroup => {
   };
 };
 
+const decodePhone = (raw: unknown): UserPhone => {
+  const row = raw as Record<string, unknown>;
+  if (typeof row['id'] !== 'string') throw new TypeError('phone: no id');
+
+  return {
+    id: row['id'],
+    number: String(row['number'] ?? ''),
+    isPrimary: row['isPrimary'] === true,
+    verifiedAt: (row['verifiedAt'] as string | null) ?? null,
+    verifiedByUserId: (row['verifiedByUserId'] as string | null) ?? null,
+  };
+};
+
 function decodeUser(raw: unknown): UserSummary {
   const row = raw as Record<string, unknown>;
   if (typeof row['id'] !== 'string') throw new TypeError('user: no id');
@@ -64,6 +100,7 @@ function decodeUser(raw: unknown): UserSummary {
     displayName: (row['displayName'] as string | null) ?? null,
     status: row['status'] as UserStatus,
     emails: asArray(row['emails'] ?? [], 'emails').map(String),
+    phones: asArray(row['phones'] ?? [], 'phones').map(decodePhone),
     groups: asArray(row['groups'] ?? [], 'groups').map(decodeGroupRef),
     permissions: asArray(row['permissions'] ?? [], 'permissions').map(String),
     liveSessions: Number(row['liveSessions'] ?? 0),
@@ -131,6 +168,23 @@ export const reinstateUser = (userId: string): Promise<unknown> =>
 export const setUserGroups = (userId: string, groupIds: readonly string[]): Promise<unknown> =>
   send(`${userPath(userId)}/groups`, 'PUT', { groupIds });
 
+const phonePath = (userId: string, phoneId: string): string =>
+  `${userPath(userId)}/phones/${encodeURIComponent(phoneId)}/verification`;
+
+/**
+ * A member of staff, having spoken to the customer, vouches for the number.
+ *
+ * Not proof of possession — there is no SMS OTP in this build, by the owner's own decision.
+ * `verifiedByUserId` on the returned list is what keeps that distinguishable from a future
+ * OTP flow, which would set `verifiedAt` alone.
+ */
+export const verifyPhone = (userId: string, phoneId: string): Promise<unknown> =>
+  send(phonePath(userId, phoneId), 'POST');
+
+/** Undo one vouched for by mistake. */
+export const unverifyPhone = (userId: string, phoneId: string): Promise<unknown> =>
+  send(phonePath(userId, phoneId), 'DELETE');
+
 /** The lost-laptop action: ends every session and leaves the account able to work. */
 /**
  * ⭐ Turn off a colleague's second factor — the other half of plan 6.4's recovery.
@@ -149,6 +203,8 @@ export type AdminEventAction =
   | 'user.sessions_revoked'
   | 'user.password_link_sent'
   | 'user.mfa_disabled'
+  | 'user.phone_verified'
+  | 'user.phone_unverified'
   | 'group.created'
   | 'group.renamed'
   | 'group.deleted'

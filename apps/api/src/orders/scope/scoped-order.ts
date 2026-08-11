@@ -90,6 +90,15 @@ export interface ScopedOrder {
   readonly grandTotalThbMinor: bigint | null;
   /** Pinned at submit because it is a term of the contract, not a value computed later (plan 7.13). */
   readonly scheduledDepositThbMinor: bigint | null;
+  /**
+   * The `cashflow` approval floor this contract was judged against, in basis points.
+   *
+   * Pinned at submit for the same reason the deposit above it is, and NULL on every order that
+   * predates the column — see the schema note on `orders.deposit_floor_bp`. Selected here
+   * because this row is the whole order and not a projection each caller picks; the measurement
+   * itself reads it through `AuthorityRepository`, which has its own narrower select.
+   */
+  readonly depositFloorBp: number | null;
 
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -127,6 +136,7 @@ export const ORDER_COLUMNS = {
   vatThbMinor: orders.vatThbMinor,
   grandTotalThbMinor: orders.grandTotalThbMinor,
   scheduledDepositThbMinor: orders.scheduledDepositThbMinor,
+  depositFloorBp: orders.depositFloorBp,
   createdAt: orders.createdAt,
   updatedAt: orders.updatedAt,
 } as const;

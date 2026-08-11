@@ -14,7 +14,7 @@ import { vatLabelTh } from '@/components/quotes/quote-alerts';
 import { failureMessage } from '@/lib/api/errors';
 
 import { setTaxCountryAvailability } from './organisation-api';
-import { basisLabelTh } from './tax-country-fields';
+import { basisLabelTh, fxSummaryTh } from './tax-country-fields';
 import { TaxCountryDialog } from './tax-country-dialog';
 import { TaxCountryHistoryDialog } from './tax-country-history';
 
@@ -78,6 +78,7 @@ export default function TaxCountriesSection({
             <CardTitle>ประเทศปลายทางและภาษีมูลค่าเพิ่ม</CardTitle>
             <CardDescription>
               อัตราภาษี ประเภทการคำนวณ และฐานราคาของแต่ละประเทศปลายทาง — ใบเสนอราคาใช้ค่าเหล่านี้คำนวณภาษีให้อัตโนมัติตามปลายทางที่ลูกค้าเลือก
+              ส่วนการตั้งค่าอัตราแลกเปลี่ยนบันทึกไว้แล้วแต่ยังไม่ถูกนำไปใช้กับใบเสนอราคา
             </CardDescription>
           </div>
           {editable && (
@@ -120,6 +121,7 @@ export default function TaxCountriesSection({
                 <TableHead>ประเทศ</TableHead>
                 <TableHead>ภาษี</TableHead>
                 <TableHead>ฐานราคา</TableHead>
+                <TableHead>อัตราแลกเปลี่ยน</TableHead>
                 <TableHead>สถานะ</TableHead>
                 <TableHead className="text-right">การจัดการ</TableHead>
               </TableRow>
@@ -131,6 +133,7 @@ export default function TaxCountriesSection({
                   <TableCell>{country.nameTh}</TableCell>
                   <TableCell>{vatLabelTh(country.rateBp, country.treatment)}</TableCell>
                   <TableCell>{basisLabelTh(country.pricesIncludeTax)}</TableCell>
+                  <TableCell className="text-sm">{fxSummaryTh(country)}</TableCell>
                   <TableCell>
                     {country.isActive ? (
                       <Badge variant="outline">ใช้งาน</Badge>

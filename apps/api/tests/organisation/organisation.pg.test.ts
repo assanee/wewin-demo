@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq, sql as sqlTag } from '@wewin/db/sql';
-import { bankAccountChanges, groupPermissions, groups, userGroups, users } from '@wewin/db/schema';
+import { bankAccountChanges, bankAccounts, groupPermissions, groups, userGroups, users } from '@wewin/db/schema';
 
 import { AccessTokenService } from '../../src/auth/session/access-token';
 import { parseEnv } from '../../src/config/env';
@@ -518,5 +518,76 @@ describeWithPg('the profile, and its history', () => {
     expect((entries[1]?.before as { depositBp: number }).depositBp).toBe(
       (entries[0]?.after as { depositBp: number }).depositBp,
     );
+  });
+});
+
+/* ---------------------------------------------------------------- *
+ * Bank-account history, raced through a genuinely concurrent pool
+ * ---------------------------------------------------------------- */
+
+/**
+ * `OrganisationService.patchAccount` and `bank_account_changes`, under real concurrency.
+ *
+ * A sibling `describeWithPg`, not a test folded into the "bank accounts and their history"
+ * block above: that block shares one `app`/`pool` built once in its own `beforeAll`, with
+ * no pre-warming. `pg-harness.ts`'s own header explains why that matters for a race
+ * specifically — two `connect()` calls issued "at once" against a pool holding zero or
+ * exactly one idle client do not reliably overlap at the database layer, so a naive
+ * `Promise.all` contiguity test built on that shared app would risk proving nothing, the
+ * same trap the lock-proof test above already found once with two concurrent HTTP `PATCH`es
+ * and worked around with manual synchronisation instead. `createPgHarness` pre-warms three
+ * idle clients into the app's own pool for exactly this reason — used here, it is what
+ * makes two concurrent `patchAccount` calls actually race rather than run one after another.
+ *
+ * The account is inserted directly (`db.insert(bankAccounts)`, bypassing `createAccount`)
+ * rather than through the service, so its history starts empty — the same shape
+ * `tax-country.pg.test.ts`'s "keeps history contiguous under concurrent patches" gets for
+ * free from the seeded `TH` row, which has no history of its own at the start of a fresh
+ * harness either. That keeps the two concurrent `patchAccount` calls below the only writers
+ * of this row's history, so it ends with exactly two entries and "entry 1's `before` equals
+ * entry 0's `after`" is the whole property under test.
+ */
+describeWithPg('bank-account history under concurrent patches', () => {
+  const base = createPgHarness(url ?? '');
+  afterAll(base.closeOpened);
+
+  const harness = async () => {
+    const { app, actor, db } = await base.harness();
+    return { service: app.app.get(OrganisationService), db, actor };
+  };
+
+  it('keeps history contiguous under concurrent patches', async () => {
+    const { service, db, actor } = await harness();
+
+    const [account] = await db
+      .insert(bankAccounts)
+      .values({
+        bankCode: 'KBANK',
+        accountNumber: freshAccountNumber(),
+        accountName: 'บริษัท ทดสอบ (probe) จำกัด',
+      })
+      .returning({ id: bankAccounts.id });
+    if (!account) throw new Error('fixture insert returned nothing');
+
+    /* Both at once, over the pre-warmed pool `createPgHarness` hands back — see the file
+       header above for why that pre-warming is what makes this a genuine race. Without the
+       row lock in `lockAccount`, both read the same pre-image and the chain breaks:
+       entry[1].before would equal the seed row rather than entry[0].after. */
+    await Promise.all([
+      service.patchAccount(actor.id, account.id, { accountName: 'ชื่อ A' }),
+      service.patchAccount(actor.id, account.id, { accountName: 'ชื่อ B' }),
+    ]);
+
+    const entries = await db
+      .select()
+      .from(bankAccountChanges)
+      .where(eq(bankAccountChanges.bankAccountId, account.id))
+      .orderBy(bankAccountChanges.changedAt);
+
+    /* Ascending, like `tax-country.pg.test.ts`'s sibling test — do NOT reverse it. Entry 1's
+       `before` must equal entry 0's `after`; on a reversed array that comparison runs
+       backwards and passes for the wrong reason. */
+    expect(entries).toHaveLength(2);
+    expect(entries[1]?.before).toMatchObject(entries[0]?.after as Record<string, unknown>);
   });
 });

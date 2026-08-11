@@ -56,6 +56,14 @@ export interface OrderFacts {
   /** NULL until submit pins it — `orders_submitted_shape` ties the two together. */
   readonly grandTotalThbMinor: bigint | null;
   readonly documentId: string | null;
+  /**
+   * ⭐ The `cashflow` floor this order was judged against at submit, in basis points.
+   *
+   * NULL before submit, and NULL on every order submitted before the column existed — the two
+   * are not the same thing and `measureFor` treats them the same way, because in both cases the
+   * only floor available is the live one. See `AuthorityService.measureFor`.
+   */
+  readonly depositFloorBp: number | null;
 }
 
 /** The VAT rule a concession is grossed up with: the document's, once there is a document. */
@@ -132,6 +140,7 @@ export class AuthorityRepository {
         status: orders.status,
         grandTotalThbMinor: orders.grandTotalThbMinor,
         documentId: orders.documentId,
+        depositFloorBp: orders.depositFloorBp,
       })
       .from(orders)
       .where(eq(orders.id, orderId))
@@ -149,6 +158,7 @@ export class AuthorityRepository {
         status: orders.status,
         grandTotalThbMinor: orders.grandTotalThbMinor,
         documentId: orders.documentId,
+        depositFloorBp: orders.depositFloorBp,
       })
       .from(orders)
       .where(eq(orders.id, orderId));

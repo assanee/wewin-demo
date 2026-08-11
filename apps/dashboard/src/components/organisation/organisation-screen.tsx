@@ -19,6 +19,7 @@ import { useSession } from '@/lib/auth/session';
 import { BankAccountDialog } from './bank-account-dialog';
 import { BankAccountHistoryDialog } from './bank-account-history';
 import { getProfile, listBankAccounts, listTaxCountries, putProfile, setBankAccountAvailability } from './organisation-api';
+import { ProfileHistoryDialog } from './profile-history';
 import {
   fieldsFromProfile,
   profileFormErrors,
@@ -39,6 +40,13 @@ import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
  * with the same kind of control. Loading, saving and failing are tracked separately for each,
  * so a slow `bank-accounts` fetch cannot leave the profile form looking broken, and a rejected
  * profile save cannot disable the account list or the tax table.
+ *
+ * ⚠️ **The profile's own `ประวัติ` control is simpler than either sibling's, on purpose.** A bank
+ * account and a tax country are both rows in a list — `AccountsCard`/`TaxCountriesSection` open
+ * their history dialog against *one* row a person picked from a table. `organisation_profile` is
+ * a singleton: there is no row to pick, so `ProfileCard` just opens `ProfileHistoryDialog` with
+ * no argument at all. It answers the same question `depositBp` made worth answering: who lowered
+ * the approval floor, and when — see `profile-history.tsx` and `profile-changes.ts`.
  *
  * ⚠️ **Retired accounts are shown greyed, never hidden.** `listBankAccounts` reads Task 9's
  * `GET bank-accounts`, which returns `is_active = false` rows deliberately — an administrator
@@ -119,13 +127,26 @@ function ProfileCard({
   readonly editable: boolean;
   readonly onSaved: () => Promise<void>;
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>ข้อมูลบริษัท</CardTitle>
-        <CardDescription>
-          ชื่อ ที่อยู่ เบอร์โทร และเลขผู้เสียภาษี — ข้อมูลนี้จะพิมพ์อยู่บนใบเสนอราคาทุกใบที่ออกจากนี้ไป
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>ข้อมูลบริษัท</CardTitle>
+            <CardDescription>
+              ชื่อ ที่อยู่ เบอร์โทร และเลขผู้เสียภาษี — ข้อมูลนี้จะพิมพ์อยู่บนใบเสนอราคาทุกใบที่ออกจากนี้ไป
+            </CardDescription>
+          </div>
+          {/* Needs only `organisation.read`, like `AccountsCard`/`TaxCountriesSection`'s own
+              `ประวัติ` — GET /admin/organisation/changes carries no write permission at all, so
+              this is not gated behind `editable`. */}
+          <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+            <History className="size-4" />
+            ประวัติ
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {state.status === 'loading' && <Skeleton className="h-72 w-full" />}
@@ -142,6 +163,8 @@ function ProfileCard({
           <ProfileForm profile={state.profile} editable={editable} onSaved={onSaved} />
         )}
       </CardContent>
+
+      {historyOpen && <ProfileHistoryDialog onClose={() => setHistoryOpen(false)} />}
     </Card>
   );
 }

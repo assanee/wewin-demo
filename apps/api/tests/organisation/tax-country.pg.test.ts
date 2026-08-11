@@ -119,6 +119,67 @@ describeWithPg('the tax-country module against Postgres', () => {
       expect(entry?.after).toMatchObject({ code: 'SG', rateBp: 900, pricesIncludeTax: true });
     });
 
+    /**
+     * ⭐ A spread change on the audit chain — the property the FX settings were added to
+     * `RECORDED` for.
+     *
+     * A spread moves what a customer pays without moving a single figure a VAT return would
+     * print, so widening it for one deal and narrowing it back afterwards leaves no trace
+     * anywhere else in the system. The attack is `tax_country_changes`' original one exactly,
+     * one column across, and the only thing that makes it visible is that this snapshot
+     * carries `fxSpreadBp` before and after. Drop it from `RECORDED` and this reddens.
+     */
+    it('records a spread change, before and after, on the same chain a rate change uses', async () => {
+      const { service, actor } = await harness();
+
+      await service.patch('TH', { fxCurrency: 'USD', fxSpreadBp: 200 }, actor.id);
+      await service.patch('TH', { fxSpreadBp: 350 }, actor.id);
+      await service.patch('TH', { fxSpreadBp: 200 }, actor.id);
+
+      const entries = await service.changes('TH');
+      expect(entries).toHaveLength(3);
+
+      // The there-and-back that no other table would show: 2% → 3.5% → 2%.
+      expect(entries.map((entry) => (entry.after as { fxSpreadBp: number }).fxSpreadBp)).toEqual([
+        200, 350, 200,
+      ]);
+      expect(entries[1]?.before).toMatchObject({ fxSpreadBp: 200, fxCurrency: 'USD' });
+      expect(entries[2]?.before).toMatchObject({ fxSpreadBp: 350 });
+    });
+
+    /**
+     * The override is on the chain as digits, and the spread it silently stops applying is on
+     * the same snapshot beside it — so a reviewer can see both the rate that ran and the
+     * setting that did not. Neither is reconstructible from the other.
+     */
+    it('records an override as exact digits, with the spread it made inert still beside it', async () => {
+      const { service, actor } = await harness();
+
+      await service.patch('TH', { fxCurrency: 'USD', fxSpreadBp: 200 }, actor.id);
+      const updated = await service.patch('TH', { fxManualRate: '35.90' }, actor.id);
+
+      // `numeric`, so it comes back as exact digits padded to the column's scale — never a float.
+      expect(updated.fxManualRate).toBe('35.9000000000');
+
+      const [, second] = await service.changes('TH');
+      expect(second?.before).toMatchObject({ fxSpreadBp: 200, fxManualRate: null });
+      expect(second?.after).toMatchObject({ fxSpreadBp: 200, fxManualRate: '35.9000000000' });
+    });
+
+    it('clears an override back to the mid-market rate, and the chain shows the clearing', async () => {
+      const { service, actor } = await harness();
+
+      await service.patch('TH', { fxCurrency: 'USD', fxSpreadBp: 200, fxManualRate: '35.90' }, actor.id);
+      const cleared = await service.patch('TH', { fxManualRate: null }, actor.id);
+
+      expect(cleared.fxManualRate).toBeNull();
+      // The spread survived the round trip — which is why clearing the override restores it.
+      expect(cleared.fxSpreadBp).toBe(200);
+
+      const [, second] = await service.changes('TH');
+      expect(second?.after).toMatchObject({ fxManualRate: null, fxSpreadBp: 200 });
+    });
+
     it('withdraws a country by flag, and the row survives', async () => {
       const { service, actor } = await harness();
 
@@ -179,6 +240,25 @@ describeWithPg('the tax-country module against Postgres', () => {
         status: 409,
         details: { constraint: 'tax_countries_pkey' },
         serverMessage: { key: 'error.tax_country.code_taken' },
+      });
+      expect(await service.changes('TH')).toHaveLength(0);
+    });
+
+    /**
+     * ⭐ The fourth entry in `pg-errors.ts`' `EXPLANATIONS`, and the second constraint on this
+     * table with no zod equivalent at all. `{ fxManualRate: '35.90' }` is a perfectly
+     * well-formed patch; whether it is legal depends on the `fx_currency` already committed on
+     * the row, which is why it is answered as a 409 with a sentence naming the second field to
+     * send rather than as a 500.
+     */
+    it('setting an override on a destination with no currency is a 409 naming the constraint', async () => {
+      const { service, actor } = await harness();
+
+      await expect(service.patch('TH', { fxManualRate: '35.90' }, actor.id)).rejects.toMatchObject({
+        code: 'CONFLICT',
+        status: 409,
+        details: { constraint: 'tax_countries_fx_manual_rate_needs_currency' },
+        serverMessage: { key: 'error.tax_country.fx_rate_needs_currency' },
       });
       expect(await service.changes('TH')).toHaveLength(0);
     });

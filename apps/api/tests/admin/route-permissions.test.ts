@@ -119,6 +119,13 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['GET /admin/audit', ['users.write']],
   ['DELETE /admin/users/:userId/mfa', ['users.write']],
   ['DELETE /admin/users/:userId/suspension', ['users.write']],
+  /*
+   * ⭐ A staff assertion, not proof of possession — `users.write` because it is the same
+   * authority that edits the rest of the account, and deliberately no new code. See
+   * `UsersService.verifyPhone` for what distinguishes this from a future SMS OTP.
+   */
+  ['POST /admin/users/:userId/phones/:phoneId/verification', ['users.write']],
+  ['DELETE /admin/users/:userId/phones/:phoneId/verification', ['users.write']],
   ['PUT /admin/users/:userId/groups', ['users.write']],
   ['POST /admin/users/:userId/sessions/revocation', ['users.write']],
   ['POST /admin/users/:userId/password-link', ['users.write']],

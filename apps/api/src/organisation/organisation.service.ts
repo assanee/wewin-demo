@@ -92,14 +92,17 @@ export class OrganisationService {
         .returning();
 
       /*
-       * ⚠️ Same transaction as the write, not a follow-up.
+       * ⚠️ Same transaction as the write, not a follow-up — see the class comment. A history
+       * row that can be skipped is a history somebody skips. The append-only trigger stops it
+       * being edited afterwards; this is what stops it never existing.
        *
-       * A history row that can be skipped is a history somebody skips. The append-only
-       * trigger stops it being edited afterwards; this is what stops it never existing.
+       * `changedAt: clock_timestamp()`, not the column's own `defaultNow()` — see the note on
+       * `patchAccount`'s insert below for why the default is the wrong clock for this table.
        */
       await tx.insert(bankAccountChanges).values({
         bankAccountId: created!.id,
         changedByUserId: actorUserId,
+        changedAt: sql`clock_timestamp()`,
         before: null,
         after: snapshotAccount(created!),
       });
@@ -125,9 +128,37 @@ export class OrganisationService {
         .where(eq(bankAccounts.id, id))
         .returning();
 
+      /*
+       * ⚠️ `changedAt: clock_timestamp()`, not the column's own `defaultNow()`. `now()` — what
+       * `defaultNow()` calls — is `transaction_timestamp()`: fixed at BEGIN and frozen for the
+       * whole transaction (confirmed by experiment — see `tax-country.service.ts`'s `patch()`,
+       * which ran `select now()` before and after a `pg_sleep` inside one transaction and got
+       * the identical instant back both times). Two concurrent `patchAccount` calls both open
+       * their transaction before either reaches `lockAccount`, so the one `FOR UPDATE` blocks
+       * can easily have the *earlier* `now()` despite committing *second* — which reorders
+       * `changes()` (`organisation.repository.ts`, sorted `changedAt` DESC) relative to actual
+       * commit order and breaks exactly the contiguity `bank_account_changes` exists to prove.
+       * `clock_timestamp()` reads the real wall clock at the moment this `INSERT` executes —
+       * after `lockAccount` has already waited out any earlier holder of the row — so it
+       * reflects commit order instead of BEGIN order.
+       *
+       * ⚠️ `clock_timestamp()` alone orders nothing — it is a value, not a lock. The guarantee
+       * this restores: entry N+1's transaction cannot reach its own `clock_timestamp()` until
+       * entry N's transaction has committed, because it is blocked on `lockAccount`'s row lock
+       * until then. That only holds because this `INSERT` runs inside the *same* transaction as
+       * the lock, as the last statement before commit — a `clock_timestamp()` read outside that
+       * transaction, or a lock released before this statement, would let two inserts land in an
+       * order the wall clock cannot fix after the fact. Verified by mutation-testing the other
+       * direction: with the lock intact and this line reverted to the column default, the new
+       * contiguity test in `organisation.pg.test.ts` ("bank-account history under concurrent
+       * patches") failed at a *rate* rather than a fixed count — 7 of 20 runs in one measured
+       * session — which is the expected shape for a race that depends on exactly how the two
+       * transactions happen to interleave, not a number to pin.
+       */
       await tx.insert(bankAccountChanges).values({
         bankAccountId: id,
         changedByUserId: actorUserId,
+        changedAt: sql`clock_timestamp()`,
         before: snapshotAccount(before),
         after: snapshotAccount(after!),
       });
@@ -210,15 +241,28 @@ export class OrganisationService {
    * A schedule that gates 30% judged against a floor of 100% is a 70% concession, fail-closed
    * refuses an approval it cannot grant, and the whole submit rolls back — so a second reader of
    * this column, with its own opinion about a missing row or its own default, would be plan
-   * 7.13's ฿12,902 seam in a new column. Both consumers arrive at this method.
+   * 7.13's ฿12,902 seam in a new column.
    *
-   * ⚠️ **One method is not one read, and the first version of this note said "both consumers
-   * arrive here" in a way that implied it was.** A submit calls this twice — once for the
-   * schedule, once inside `gate` — and this is a plain unlocked `SELECT` at READ COMMITTED, where
-   * each statement takes its own snapshot. A `putProfile` committing between the two is seen by
-   * the second and not the first. The window, its one harmful direction, and why a `FOR SHARE`
-   * was written and then rejected are set out at the call site in `orders.service.ts`; what
-   * belongs here is only that this method does **not** promise the two reads agree.
+   * ⚠️ **A submit calls this method once, not twice — and that was not always true.** This is a
+   * plain unlocked `SELECT` at READ COMMITTED, where every statement takes its own snapshot, so
+   * two live calls can disagree if a `putProfile` commits between them. That used to be exactly
+   * what a submit did: `pinsForSubmit` called this to plan the schedule and
+   * `AuthorityService.measureFor` called it again inside `gate` — each its own snapshot, and a
+   * `putProfile` landing between the two was seen by the second call and not the first. Commit
+   * `4a00bd0` closed that window without a lock: `applySubmission` pins this call's result onto
+   * the order, in the same transaction, as `orders.deposit_floor_bp`, and `measureFor` now reads
+   * `order.depositFloorBp ?? (await this.depositPolicy.depositBp(tx))` — so the pin short-circuits
+   * the second live read entirely, for any order that has one. See `orders.service.ts` — *"One
+   * definition is now also one read"* — for the full account of the window and why a `FOR SHARE`
+   * was rejected as its remedy.
+   *
+   * That guarantee is only as old as the pin. Every order submitted before it existed carries
+   * `deposit_floor_bp = null` forever — `0034_order_deposit_floor.sql` deliberately backfills
+   * nothing, because no column says which orders predate the setting they'd be backfilled to —
+   * so for those orders `measureFor`'s `??` still falls through to a live call here on every
+   * measurement: `assess`, `request`, an objection's `gate`. Each of those remains its own
+   * snapshot, unsynchronised with any other, exactly as this note used to describe for every
+   * order. The window is closed only where a pin exists to read instead.
    *
    * A missing profile row throws rather than defaulting to payment in full. It is the singleton
    * `id = 1` seeded by migration `0029`, so its absence is not a configuration state — and a

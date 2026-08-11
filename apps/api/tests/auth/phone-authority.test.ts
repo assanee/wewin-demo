@@ -63,11 +63,23 @@ const files = (directory: string): string[] =>
  * input at all — so it is not the second reader ⓶ warns about. It exists so `GET /me/account`
  * can show somebody their own number back, which is showing a claim to the person who made
  * it, not attaching one to a stranger who found it.
+ *
+ * `users/users.repository.ts` — the staff-verification screen, added for the same reason
+ * `account.repository.ts` is safe and one step further from the number than it is: every
+ * query here is keyed by the phone row's own `id` or by `userId`, and none takes a `number`
+ * as input at all — grep the file for `eq(userPhones.number` and it is not there. The
+ * dashboard list (`list()`) reads every claim on an already-identified account, unverified
+ * ones included, because the verify button needs the unverified row on screen to act on —
+ * exactly the shape `emails` on the same query avoids and phones deliberately does not,
+ * see `UserPhoneWire`. `findPhone`/`verifyPhone`/`unverifyPhone` act on one row a caller
+ * already named by its own id, having reached it through that same per-account list. None of
+ * this can be used to find *whose* claim a number is — the one thing ⓶ forbids.
  */
 const READERS: readonly string[] = [
   'account/account.repository.ts',
   'auth/password/password.repository.ts',
   'auth/password/registration.service.ts',
+  'users/users.repository.ts',
 ];
 
 const relative = (path: string): string => path.slice(SOURCE.length + 1).replaceAll('\\', '/');

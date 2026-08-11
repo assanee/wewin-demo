@@ -1,14 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db/client';
 import { and, eq, inArray, sql } from '@wewin/db/sql';
-import { groupPermissions, groups, userEmails, userGroups, users } from '@wewin/db/schema';
+import { groupPermissions, groups, userEmails, userGroups, userPhones, users } from '@wewin/db/schema';
 import type { UserStatus } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../database/database.tokens';
 import { AuditRepository } from './audit.repository';
 import type { PermissionCode } from '../rbac/permissions';
 import { USER_ADMIN_PERMISSION } from './lockout';
-import type { GroupWire, UserSummaryWire } from './users.contract';
+import type { GroupWire, UserPhoneWire, UserSummaryWire } from './users.contract';
 
 @Injectable()
 export class UsersRepository {
@@ -45,6 +45,7 @@ export class UsersRepository {
       suspended_at: string | null;
       created_at: string;
       emails: string[] | null;
+      phones_json: unknown;
       group_json: unknown;
       permissions: string[] | null;
       live_sessions: number;
@@ -57,6 +58,18 @@ export class UsersRepository {
              (select array_agg(e.address order by e.is_primary desc, e.address)
                 from user_emails e
                where e.user_id = u.id and e.verified_at is not null)          as emails,
+             /*
+              * ⚠️ Every claim, not "where verified_at is not null" the way emails above
+              * filters. See UserPhoneWire — the "verify" button needs the unverified row
+              * on the screen, and each entry carries its own verifiedAt so none of them
+              * reads as a fact it is not.
+              */
+             (select coalesce(jsonb_agg(jsonb_build_object(
+                        'id', p.id, 'number', p.number, 'isPrimary', p.is_primary,
+                        'verifiedAt', p.verified_at, 'verifiedByUserId', p.verified_by_user_id
+                      ) order by p.is_primary desc, p.created_at), '[]'::jsonb)
+                from user_phones p
+               where p.user_id = u.id)                                        as phones_json,
              (select coalesce(jsonb_agg(jsonb_build_object(
                         'id', g.id, 'code', g.code,
                         'nameTh', g.name_th, 'isSystem', g.is_system
@@ -78,6 +91,7 @@ export class UsersRepository {
       displayName: row.display_name,
       status: row.status as UserStatus,
       emails: row.emails ?? [],
+      phones: normalisePhoneRows(row.phones_json),
       groups: (row.group_json ?? []) as UserSummaryWire['groups'],
       permissions: ((row.permissions ?? []) as PermissionCode[]).sort(),
       liveSessions: row.live_sessions,
@@ -499,4 +513,148 @@ export class UsersRepository {
 
     return row !== undefined;
   }
+
+  /** `undefined` when no such row, so the service can answer 404 rather than crash. */
+  async findPhone(phoneId: string): Promise<
+    | {
+        readonly id: string;
+        readonly userId: string;
+        readonly verifiedAt: Date | null;
+        readonly verifiedByUserId: string | null;
+        readonly isPrimary: boolean;
+      }
+    | undefined
+  > {
+    const [row] = await this.db
+      .select({
+        id: userPhones.id,
+        userId: userPhones.userId,
+        verifiedAt: userPhones.verifiedAt,
+        verifiedByUserId: userPhones.verifiedByUserId,
+        isPrimary: userPhones.isPrimary,
+      })
+      .from(userPhones)
+      .where(eq(userPhones.id, phoneId))
+      .limit(1);
+
+    return row;
+  }
+
+  /**
+   * ⭐ A staff assertion, not proof of possession — and a compare-and-set, not a blind write.
+   *
+   * `where verified_at is null` is what makes "verifying an already-verified number does not
+   * silently rewrite the original actor and timestamp" true rather than merely intended: two
+   * staff opening the same stale row and both pressing verify can only have one UPDATE match.
+   * The other returns zero rows, the service reads that as a conflict, and the actor the first
+   * caller wrote stands. A read-then-write in the service would have the same race the
+   * suspension guard exists to avoid — the check and the write have to be one statement.
+   *
+   * `userId` is part of the `where`, not only checked earlier in the service — the caller
+   * already confirmed the phone belongs to this user, and repeating it here means the UPDATE
+   * itself cannot act on the wrong person's row even if that check is ever skipped upstream.
+   */
+  async verifyPhone(phoneId: string, userId: string, actorUserId: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(userPhones)
+        .set({ verifiedAt: new Date(), verifiedByUserId: actorUserId })
+        .where(
+          and(
+            eq(userPhones.id, phoneId),
+            eq(userPhones.userId, userId),
+            sql`${userPhones.verifiedAt} is null`,
+          ),
+        )
+        .returning({ id: userPhones.id });
+
+      if (updated.length !== 1) return false;
+
+      /*
+       * `user_phones.verified_at` / `.verified_by_user_id` are already the record of who and
+       * when — see the schema comment. This row exists for what un-verifying does to that
+       * pair: it NULLs both, so without a row here the fact that a mistaken assertion (and
+       * its correction) ever happened would not survive the undo. Ids only in the payload —
+       * the phone number itself is exactly the kind of personal data `admin_events_payload_
+       * is_impersonal` exists to keep out.
+       */
+      await this.audit.record(tx, {
+        action: 'user.phone_verified',
+        actorUserId,
+        subjectUserId: userId,
+        payload: { phoneId },
+      });
+
+      return true;
+    });
+  }
+
+  /**
+   * Clear a mistaken verification.
+   *
+   * Both columns go to null together, never one alone — `user_phones_voucher_needs_a_
+   * verification` refuses a voucher on a row that is not verified, so "un-verify" can only
+   * mean the pair returning to the state a fresh unverified claim starts in. That is also
+   * why this is a compare-and-set on `verified_at is not null` and `not is_primary`: the
+   * first makes a double un-verify a conflict rather than a silent no-op, and the second is
+   * defence in depth alongside the service's own check — `user_phones_primary_is_verified`
+   * would refuse the UPDATE outright if a primary number ever reached here, and this keeps
+   * that a 0-row miss the service reports cleanly rather than a 23514 the caller has to
+   * decode.
+   */
+  async unverifyPhone(phoneId: string, userId: string, actorUserId: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(userPhones)
+        .set({ verifiedAt: null, verifiedByUserId: null })
+        .where(
+          and(
+            eq(userPhones.id, phoneId),
+            eq(userPhones.userId, userId),
+            sql`${userPhones.verifiedAt} is not null and not ${userPhones.isPrimary}`,
+          ),
+        )
+        .returning({ id: userPhones.id });
+
+      if (updated.length !== 1) return false;
+
+      await this.audit.record(tx, {
+        action: 'user.phone_unverified',
+        actorUserId,
+        subjectUserId: userId,
+        payload: { phoneId },
+      });
+
+      return true;
+    });
+  }
+}
+
+/**
+ * `db.execute` returns the phones subquery as parsed JSON already — `jsonb_agg` crossed the
+ * wire as JSON, not as the raw-string trap `created_at`/`suspended_at` fall into above — but
+ * `verifiedAt` inside each element is still Postgres's own `timestamptz` text rendering
+ * (`2024-01-01 12:00:00+00`), not the `Z`-suffixed ISO string the rest of this wire uses. This
+ * is where the two are made to agree.
+ */
+function normalisePhoneRows(raw: unknown): readonly UserPhoneWire[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((entry) => {
+    const row = entry as {
+      readonly id: string;
+      readonly number: string;
+      readonly isPrimary: boolean;
+      readonly verifiedAt: string | null;
+      readonly verifiedByUserId: string | null;
+    };
+
+    return {
+      id: row.id,
+      number: row.number,
+      isPrimary: row.isPrimary,
+      verifiedAt: row.verifiedAt === null ? null : new Date(row.verifiedAt).toISOString(),
+      verifiedByUserId: row.verifiedByUserId,
+    };
+  });
 }

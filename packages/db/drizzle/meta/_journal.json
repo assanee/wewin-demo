@@ -239,6 +239,34 @@
       "when": 1786400000004,
       "tag": "0033_fx_rates",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786400000005,
+      "tag": "0034_order_deposit_floor",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786400000006,
+      "tag": "0035_phone_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786400000007,
+      "tag": "0036_tax_country_fx",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786400000008,
+      "tag": "0037_deposit_floor_guard",
+      "breakpoints": true
     }
   ]
 }

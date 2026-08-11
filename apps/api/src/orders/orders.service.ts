@@ -910,37 +910,32 @@ export class OrdersService {
      * unconditionally while the floor was a module constant at 10 000 bp, and the day somebody
      * used the admin screen the setting would have changed nothing at all.
      *
-     * ⚠️ **One definition is not one read, and this comment used to claim it was.**
+     * ⚠️ **One definition is now also one read, and it was not always.**
      *
-     * There are two reads of that row in a submit — this one, and `AuthorityService.measureFor`'s
-     * at the `gate` call below. `OrganisationRepository.profile()` is a plain unlocked `SELECT`,
-     * this database runs at READ COMMITTED (verified: `show transaction_isolation` → `read
-     * committed`), and every *statement* there takes a fresh snapshot. So a
-     * `PUT /admin/organisation` committing between the two is visible to the second and not the
-     * first, and the two reads can genuinely disagree.
+     * There used to be two reads of that row in a submit — this one, and
+     * `AuthorityService.measureFor`'s at the `gate` call below. `OrganisationRepository.profile()`
+     * is a plain unlocked `SELECT`, this database runs at READ COMMITTED (verified: `show
+     * transaction_isolation` → `read committed`), and every *statement* there takes a fresh
+     * snapshot — so a `PUT /admin/organisation` committing between the two was visible to the
+     * second and not the first, and the two could genuinely disagree. Raising the policy
+     * mid-submit (3 000 bp, then 10 000) planned a schedule gating 30% and then judged it against
+     * a floor of 100%: a 70% `cashflow` concession, no row in `authority_limits` to cover it, the
+     * gate refuses, and the whole submit rolls back with a 409 about approval authority for an
+     * order nobody conceded anything on.
      *
-     * What that costs, in the only direction it costs anything. Raising the policy mid-submit —
-     * 3 000 bp, then 10 000 — plans a schedule gating 30% and then judges it against a floor of
-     * 100%: a 70% `cashflow` concession, no row in `authority_limits` to cover it, so the gate
-     * refuses and the whole submit rolls back. The customer sees a 409 about approval authority
-     * for an order nobody conceded anything on, and a retry succeeds. Lowering it mid-submit is
-     * harmless: the schedule gates *more* than the new floor asks for, which is not a concession.
+     * That window is closed, and not by a lock. This value is now **pinned onto the order** by
+     * `applySubmission` below (`orders.deposit_floor_bp`), and `measureFor` reads the pin rather
+     * than the setting whenever there is one — so the gate a few lines down judges this schedule
+     * against the floor it was planned from, by construction, whatever an admin does in between.
+     * The pin exists for a different reason (an order re-read next month must report the
+     * concession it was measured for, not one against today's policy — see the schema note on the
+     * column); closing this window is a consequence of it, and a `FOR SHARE` on this read, which
+     * was the alternative and would have made every submit hold a shared lock on one singleton row
+     * for its whole duration, is not needed and was not taken.
      *
-     * Accepted rather than locked, and the alternative was written before it was rejected. A
-     * `FOR SHARE` on the first read would close it — the row would be pinned for the rest of the
-     * transaction and a concurrent `putProfile`'s `FOR UPDATE` would queue behind it. The price is
-     * that every submit would hold a shared lock on one singleton row for its whole duration
-     * (pricing, catalogue reads, the gate), so a slow submit delays an admin saving the company
-     * profile. That is a real, permanent cost paid on every order to close a window that needs an
-     * admin write landing between two statements of one request, that is fail-closed when it does,
-     * and that a retry clears. The same call the destination resolution a page above makes, and
-     * for the same reason: a comment that claims a consistency the code does not provide is worse
-     * than the window it papers over.
-     *
-     * `tx` is still threaded, for the reasons that resolution gives at length: it does not buy
-     * snapshot consistency at READ COMMITTED, and it does buy one connection instead of two, a
-     * read that sees what this transaction has already written, and the only version still correct
-     * if the isolation level is ever raised — at which point this window closes on its own.
+     * `tx` is still threaded, for the reasons the destination resolution above gives at length: it
+     * buys one connection instead of two, a read that sees what this transaction has already
+     * written, and the only version still correct if the isolation level is ever raised.
      */
     const depositBp = await this.depositPolicy.depositBp(tx);
     const pins = await this.payments.pinsForSubmit(tx, priced.grandTotalThbMinor, depositBp);
@@ -967,6 +962,12 @@ export class OrdersService {
       vatThbMinor: priced.vatThbMinor,
       grandTotalThbMinor: priced.grandTotalThbMinor,
       scheduledDepositThbMinor: pins.scheduledDepositThbMinor,
+      /*
+       * ⭐ The floor the schedule above was planned from, pinned beside the deposit it will be
+       * compared against. The same `depositBp` — the variable, not a second read — so the two
+       * halves of the comparison can never come from two different instants of the setting.
+       */
+      depositFloorBp: depositBp,
     });
 
     /*

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, KeyRound, LogOut, Plus, ShieldOff, UserCheck } from 'lucide-react';
+import { AlertTriangle, KeyRound, LogOut, Phone, PhoneOff, Plus, ShieldOff, UserCheck } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +27,10 @@ import {
   disableUserMfa,
   revokeSessions,
   sendPasswordLink,
+  unverifyPhone,
+  verifyPhone,
   type Group,
+  type UserPhone,
   type UserSummary,
 } from './user-api';
 import { CreateUserDialog } from './create-user-dialog';
@@ -67,6 +70,20 @@ import { UserGroupsDialog } from './user-groups-dialog';
  * shows the refusal and does not attempt to predict it — a client-side copy of "is this the
  * last administrator" would be a second implementation of the only rule here that cannot be
  * recovered from, and the two would disagree the day somebody is in two admin groups.
+ *
+ * ── ⭐ Phone verification, and why it is a badge next to a claim rather than a fact ──────
+ *
+ * `user_phones` has no dedicated screen and this list is where staff already look at any
+ * account, customer or colleague — so the verify/un-verify control lives here rather than
+ * on an invented "customer detail" page nothing else in the dashboard has.
+ *
+ * ⚠️ It is not proof of possession. The owner's decision was no SMS OTP — no provider, no
+ * per-message cost — so this button records that *a member of staff, having spoken to the
+ * customer, vouches for the number*. That is a real and weaker claim than an OTP would be,
+ * and `PhoneList` below shows every claim (unlike `emails`, which shows only proven ones)
+ * precisely so an unverified one is visible to act on rather than hidden and mistaken for
+ * absence. See `apps/api/src/users/users.contract.ts:UserPhoneWire` for how the wire keeps
+ * a staff assertion distinguishable from a future OTP on the same column.
  */
 
 type State =
@@ -184,6 +201,7 @@ export function UserAdmin() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>ผู้ใช้</TableHead>
+                      <TableHead>เบอร์โทร</TableHead>
                       <TableHead>สถานะ</TableHead>
                       <TableHead>กลุ่ม</TableHead>
                       <TableHead>เซสชัน</TableHead>
@@ -207,6 +225,28 @@ export function UserAdmin() {
                                 {user.emails.join(' · ') || 'ไม่มีอีเมลที่ยืนยันแล้ว'}
                               </span>
                             </div>
+                          </TableCell>
+
+                          <TableCell>
+                            <PhoneList
+                              phones={user.phones}
+                              editable={editable}
+                              busy={busy}
+                              onVerify={(phone) =>
+                                void act(
+                                  user.id,
+                                  () => verifyPhone(user.id, phone.id),
+                                  `ยืนยันเบอร์ ${phone.number} แล้ว`,
+                                )
+                              }
+                              onUnverify={(phone) =>
+                                void act(
+                                  user.id,
+                                  () => unverifyPhone(user.id, phone.id),
+                                  `ยกเลิกการยืนยันเบอร์ ${phone.number} แล้ว`,
+                                )
+                              }
+                            />
                           </TableCell>
 
                           <TableCell>
@@ -414,6 +454,76 @@ export function UserAdmin() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Every telephone claim on one account, each carrying its own verified state.
+ *
+ * Unlike the emails line above it in the identity cell, an unverified number is shown here
+ * rather than filtered out — the badge says which it is, so nothing reads as a fact it is
+ * not, and the button has a row to attach to.
+ */
+function PhoneList({
+  phones,
+  editable,
+  busy,
+  onVerify,
+  onUnverify,
+}: {
+  readonly phones: readonly UserPhone[];
+  readonly editable: boolean;
+  readonly busy: boolean;
+  readonly onVerify: (phone: UserPhone) => void;
+  readonly onUnverify: (phone: UserPhone) => void;
+}) {
+  if (phones.length === 0) {
+    return <span className="text-muted-foreground text-sm">ไม่มีเบอร์โทร</span>;
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {phones.map((phone) => {
+        const verified = phone.verifiedAt !== null;
+
+        return (
+          <div key={phone.id} className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-xs">{phone.number}</span>
+            <Badge variant={verified ? 'outline' : 'secondary'}>
+              {verified ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}
+            </Badge>
+
+            {editable &&
+              (verified ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || phone.isPrimary}
+                  title={
+                    /*
+                     * `user_phones_primary_is_verified` demands a primary number stay
+                     * verified — the API refuses this too, this just says why before the
+                     * 409 does.
+                     */
+                    phone.isPrimary
+                      ? 'ยกเลิกยืนยันเบอร์หลักไม่ได้ — ตั้งเบอร์อื่นเป็นเบอร์หลักก่อน'
+                      : undefined
+                  }
+                  onClick={() => onUnverify(phone)}
+                >
+                  <PhoneOff className="size-3.5" />
+                  ยกเลิกยืนยัน
+                </Button>
+              ) : (
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => onVerify(phone)}>
+                  <Phone className="size-3.5" />
+                  ยืนยันเบอร์
+                </Button>
+              ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
