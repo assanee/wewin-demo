@@ -219,10 +219,23 @@ describeWithPg('the cashflow floor is pinned to the contract, not read from toda
      * predate the setting becoming live. So a NULL pin falls back to the live policy — today's
      * behaviour, unchanged, for exactly the rows that already have it — and this asserts that
      * fallback rather than leaving it to be discovered.
+     *
+     * ⚠️ `orders_guard_deposit_floor` (`0037_deposit_floor_guard.sql`) now refuses exactly this
+     * UPDATE outside a test — that guard is the point, closing the door this file's own defect
+     * used to leave open. A bypass built into the guard itself would weaken that promise for
+     * every real caller just to make a fixture convenient, so this reaches for the same tool
+     * `redteam.pg.test.ts` and `catalog-fidelity.pg.test.ts` already use to simulate a shape the
+     * application may never write: disable the one trigger, for the one statement, and put it
+     * back before anything else touches this row.
      */
-    await db.execute(
-      sql`update orders set deposit_floor_bp = null where id = ${order.id}::uuid`,
-    );
+    await db.execute(sql`alter table orders disable trigger orders_guard_deposit_floor`);
+    try {
+      await db.execute(
+        sql`update orders set deposit_floor_bp = null where id = ${order.id}::uuid`,
+      );
+    } finally {
+      await db.execute(sql`alter table orders enable trigger orders_guard_deposit_floor`);
+    }
 
     expect(await reportedCashflow(order.id)).toBe(
       liveFloorConcession(pinned.grand, pinned.deposit).toString(),

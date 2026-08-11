@@ -260,6 +260,13 @@
       "when": 1786400000007,
       "tag": "0036_tax_country_fx",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786400000008,
+      "tag": "0037_deposit_floor_guard",
+      "breakpoints": true
     }
   ]
 }

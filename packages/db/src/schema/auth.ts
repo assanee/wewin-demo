@@ -864,7 +864,7 @@ export const userEmails = pgTable(
  * be undoable, which is exactly what this table's own paragraph above already promised and
  * the original trigger never carved out room for.
  *
- * 0035_phone_verification_events.sql narrows the refusal rather than removing it: undoing is
+ * 0035_phone_verification.sql narrows the refusal rather than removing it: undoing is
  * let through only when `verified_by_user_id` was set going in — a staff assertion, by
  * construction — and both columns must return to null together, never the voucher alone
  * (`user_phones_voucher_needs_a_verification` already makes the other combination
@@ -1461,7 +1461,7 @@ export const ADMIN_EVENT_ACTIONS = [
   'user.password_link_sent',
   'user.mfa_disabled',
   /*
-   * ⭐ Added for the staff-assertion phone flow (0035_phone_verification_events.sql).
+   * ⭐ Added for the staff-assertion phone flow (0035_phone_verification.sql).
    *
    * `user_phones.verified_at` / `.verified_by_user_id` already carry who and when — that is
    * what makes a staff assertion distinguishable from a future OTP verification, per the
