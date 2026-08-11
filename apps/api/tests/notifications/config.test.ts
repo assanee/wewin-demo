@@ -90,6 +90,34 @@ describe('notification configuration', () => {
     expect(problems.join('\n')).toContain('NOTIFICATIONS_RETRY_MAX_MS must not be smaller');
   });
 
+  it('defaults to the file transport — a developer with no Resend account still boots', () => {
+    expect(parseNotificationsConfig({}).emailTransport).toBe('file');
+    expect(parseNotificationsConfig({}).resendApiKey).toBeUndefined();
+  });
+
+  it('refuses NOTIFICATIONS_EMAIL_TRANSPORT=resend without RESEND_API_KEY, in every environment', () => {
+    // Not gated on production: a boot with no Resend account is exactly the case `file`'s
+    // default protects, and the mistake is just as real on a laptop.
+    const dev = refusal({ NOTIFICATIONS_EMAIL_TRANSPORT: 'resend' });
+    expect(dev.join('\n')).toContain('NOTIFICATIONS_EMAIL_TRANSPORT=resend requires RESEND_API_KEY');
+
+    const prod = refusal({
+      NODE_ENV: 'production',
+      NOTIFICATIONS_SALES_QUEUE_EMAIL: 'sales@example.com',
+      NOTIFICATIONS_EMAIL_TRANSPORT: 'resend',
+    });
+    expect(prod.join('\n')).toContain('NOTIFICATIONS_EMAIL_TRANSPORT=resend requires RESEND_API_KEY');
+  });
+
+  it('accepts resend once a key is present', () => {
+    const config = parseNotificationsConfig({
+      NOTIFICATIONS_EMAIL_TRANSPORT: 'resend',
+      RESEND_API_KEY: 're_' + 'x'.repeat(33),
+    });
+    expect(config.emailTransport).toBe('resend');
+    expect(config.resendApiKey).toBe('re_' + 'x'.repeat(33));
+  });
+
   it('does not construct a LINE adapter without a token', () => {
     // Plan 13's channel question is unanswered and there are no credentials here, so the
     // absence has to be the default rather than something a deployment opts out of.

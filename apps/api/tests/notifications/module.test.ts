@@ -7,6 +7,7 @@ import type { NotificationChannelAdapter } from '../../src/notifications/channel
 import { EmailChannelAdapter } from '../../src/notifications/channels/email.channel';
 import { LineChannelAdapter } from '../../src/notifications/channels/line.channel';
 import { FileEmailTransport } from '../../src/notifications/channels/transports/file.transport';
+import { ResendEmailTransport } from '../../src/notifications/channels/transports/resend.transport';
 import { SmtpEmailTransport } from '../../src/notifications/channels/transports/smtp.transport';
 import { NotificationWorker } from '../../src/notifications/notification-worker.service';
 import { parseNotificationsConfig } from '../../src/notifications/notifications.config';
@@ -88,8 +89,18 @@ describe('NotificationsModule', () => {
     const smtp = await build({
       config: parseNotificationsConfig({ NODE_ENV: 'test', NOTIFICATIONS_EMAIL_TRANSPORT: 'smtp' }),
     });
-    close = () => smtp.close();
     expect(smtp.get(EMAIL_TRANSPORT)).toBeInstanceOf(SmtpEmailTransport);
+    await smtp.close();
+
+    const resend = await build({
+      config: parseNotificationsConfig({
+        NODE_ENV: 'test',
+        NOTIFICATIONS_EMAIL_TRANSPORT: 'resend',
+        RESEND_API_KEY: `re_${'x'.repeat(33)}`,
+      }),
+    });
+    close = () => resend.close();
+    expect(resend.get(EMAIL_TRANSPORT)).toBeInstanceOf(ResendEmailTransport);
   });
 
   it('registers LINE only when there is a token, and puts it in front of email', async () => {

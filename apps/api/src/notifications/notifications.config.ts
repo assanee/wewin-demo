@@ -37,10 +37,15 @@ import { z } from 'zod';
  *   NOTIFICATIONS_RETRY_BASE_MS         60000    ⚠️ this module's default
  *   NOTIFICATIONS_RETRY_MAX_MS          3600000  ⚠️ this module's default
  *   NOTIFICATIONS_CLAIM_LEASE_MS        120000
- *   NOTIFICATIONS_EMAIL_TRANSPORT       file | smtp
+ *   NOTIFICATIONS_EMAIL_TRANSPORT       file | smtp | resend
  *   NOTIFICATIONS_EMAIL_FROM            wewin <no-reply@wewin.local>
  *   NOTIFICATIONS_EMAIL_DIR             <tmp>/wewin-mail        (file transport only)
  *   NOTIFICATIONS_SMTP_HOST/_PORT/_SECURE/_USER/_PASSWORD       (smtp transport only)
+ *   RESEND_API_KEY                      required when NOTIFICATIONS_EMAIL_TRANSPORT=resend,
+ *                                        otherwise read by nothing. Not namespaced under
+ *                                        NOTIFICATIONS_ because it is the account's one key,
+ *                                        not a setting of this outbox — same reasoning as
+ *                                        OPENEXCHANGERATES_APP_ID in src/fx.
  *   NOTIFICATIONS_WEB_BASE_URL          storefront origin, for the quotation link in a message
  *   NOTIFICATIONS_SALES_QUEUE_EMAIL     where `group:sales_queue` is delivered
  *   NOTIFICATIONS_APPROVER_QUEUE_EMAIL  where `group:approver_queue` is delivered
@@ -123,7 +128,29 @@ const schema = z.object({
     /* One trailing slash stripped: every URL here is `base + '/something'`. */
     .transform((value) => value?.replace(/\/+$/u, '')),
 
-  NOTIFICATIONS_EMAIL_TRANSPORT: z.enum(['file', 'smtp']).default('file'),
+  /*
+   * `resend` added alongside `file` and `smtp`. `file` stays the default so a developer
+   * with no Resend account still boots and runs the suite — see the check below, which
+   * refuses `resend` outright when RESEND_API_KEY is absent rather than constructing a
+   * transport that would fail on its first send.
+   */
+  NOTIFICATIONS_EMAIL_TRANSPORT: z.enum(['file', 'smtp', 'resend']).default('file'),
+  /**
+   * ⚠️ The `resend` decision: this one variable is `from` for every transport, and stays
+   * that way. Resend gets no `RESEND_FROM` of its own.
+   *
+   * Resend requires the domain in `from` to be verified in its dashboard, and enforces that
+   * at *send* time — there is no API to ask "is this domain verified" at boot, so
+   * `parseNotificationsConfig` cannot refuse an unverified one the way it refuses a
+   * malformed queue address. An unverified `from` is therefore a `403` on the first real
+   * send (see resend.transport.ts for the exact body, read by observation against the real
+   * API), which `ResendEmailTransport` classifies as permanent — it will not become verified
+   * by the outbox retrying five times in an hour. What happens next is the *caller's*
+   * decision, already made for each of the two today: `EmailChannelAdapter` sends it to the
+   * dead queue, visibly; `PasswordResetService` logs it and still answers the customer
+   * `{ accepted: true }`, matching every other reset outcome. Neither is new: this is the
+   * exact path a wrong SMTP password already takes.
+   */
   NOTIFICATIONS_EMAIL_FROM: z.string().min(1).default('wewin <no-reply@wewin.local>'),
   /*
    * The temp directory and not the repository. A mail drop inside the checkout is a
@@ -139,6 +166,13 @@ const schema = z.object({
   NOTIFICATIONS_SMTP_SECURE: flag.default(false),
   NOTIFICATIONS_SMTP_USER: z.string().min(1).optional(),
   NOTIFICATIONS_SMTP_PASSWORD: z.string().min(1).optional(),
+
+  /**
+   * Resend's account key. Optional at the schema level — a deployment that never selects
+   * `resend` must not be forced to have one — and required by the check below the moment
+   * `NOTIFICATIONS_EMAIL_TRANSPORT=resend` is actually chosen.
+   */
+  RESEND_API_KEY: z.string().min(1).optional(),
 
   NOTIFICATIONS_SALES_QUEUE_EMAIL: address.optional(),
   NOTIFICATIONS_APPROVER_QUEUE_EMAIL: address.optional(),
@@ -167,10 +201,12 @@ export interface NotificationsConfig {
   /** Storefront origin, without a trailing slash. `undefined` means messages carry no link. */
   readonly webBaseUrl: string | undefined;
 
-  readonly emailTransport: 'file' | 'smtp';
+  readonly emailTransport: 'file' | 'smtp' | 'resend';
   readonly emailFrom: string;
   readonly emailDir: string;
   readonly smtp: SmtpSettings;
+  /** `undefined` unless `RESEND_API_KEY` is set — required when `emailTransport` is `'resend'`. */
+  readonly resendApiKey: string | undefined;
 
   /**
    * Where a `group:` recipient key is delivered.
@@ -208,6 +244,16 @@ export function parseNotificationsConfig(source: Record<string, string | undefin
 
   if (data.NOTIFICATIONS_RETRY_MAX_MS < data.NOTIFICATIONS_RETRY_BASE_MS) {
     problems.push('NOTIFICATIONS_RETRY_MAX_MS must not be smaller than NOTIFICATIONS_RETRY_BASE_MS');
+  }
+
+  /*
+   * Not gated on `production`: a boot with no Resend account is exactly the case `file`'s
+   * default exists to protect, and choosing `resend` without a key is a plausible-and-wrong
+   * mistake in every environment, not only that one — the class this whole function exists
+   * to catch before the first send rather than at it.
+   */
+  if (data.NOTIFICATIONS_EMAIL_TRANSPORT === 'resend' && data.RESEND_API_KEY === undefined) {
+    problems.push('NOTIFICATIONS_EMAIL_TRANSPORT=resend requires RESEND_API_KEY');
   }
 
   /*
@@ -249,6 +295,7 @@ export function parseNotificationsConfig(source: Record<string, string | undefin
     emailTransport: data.NOTIFICATIONS_EMAIL_TRANSPORT,
     emailFrom: data.NOTIFICATIONS_EMAIL_FROM,
     emailDir: data.NOTIFICATIONS_EMAIL_DIR,
+    resendApiKey: data.RESEND_API_KEY,
     smtp: {
       host: data.NOTIFICATIONS_SMTP_HOST,
       port: data.NOTIFICATIONS_SMTP_PORT,
