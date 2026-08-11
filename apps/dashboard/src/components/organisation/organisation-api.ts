@@ -55,6 +55,13 @@ import { apiJson } from '@/lib/api/client';
  * unreachable from the one screen that could call them, and would leave the storefront's
  * destination picker (Task 13) with exactly one option forever. The five calls below are
  * read, create, edit, withdraw/restore, and history.
+ *
+ * `listProfileChanges` reads the third `GET …/changes` this file wraps — `organisation
+ * .controller.ts`'s `profileChanges()` — with the identical `{ changes }` envelope and the
+ * identical narrowing shape as `decodeTaxCountryChange`. `ProfileChangeRow` is a third copy of
+ * that five-field restatement of `SettingChangeWire`, not a shared type with
+ * `TaxCountryChangeRow`: the two log different fields inside `before`/`after`, and
+ * `profile-changes.ts` is where that difference actually lives.
  */
 
 function asObject(input: unknown, what: string): Record<string, unknown> {
@@ -101,6 +108,43 @@ export function decodeProfile(input: unknown): OrganisationProfileWire {
     email: nullableStr(row, 'email', 'organisation profile'),
     depositBp: num(row, 'depositBp', 'organisation profile'),
     updatedAt: str(row, 'updatedAt', 'organisation profile'),
+  };
+}
+
+/**
+ * `SettingChangeWire` (`@wewin/contract/tax`) narrowed the same way `decodeTaxCountryChange`
+ * narrows it below — see that function's own comment for why this is a third copy of the
+ * narrowing rather than one shared helper. `ProfileChangeRow` restates the same five fields
+ * `TaxCountryChangeRow` does, for `profile-changes.ts`'s reader to index into.
+ */
+export interface ProfileChangeRow {
+  readonly id: string;
+  readonly changedAt: string;
+  readonly changedByUserId: string | null;
+  readonly before: Readonly<Record<string, unknown>> | null;
+  readonly after: Readonly<Record<string, unknown>>;
+}
+
+export function decodeProfileChange(input: unknown): ProfileChangeRow {
+  const row = asObject(input, 'organisation profile change');
+  const id = str(row, 'id', 'organisation profile change');
+  const what = `organisation profile change "${id}"`;
+
+  const before = row['before'];
+  if (before !== null && (typeof before !== 'object' || Array.isArray(before))) {
+    throw new TypeError(`${what} has a before that is neither an object nor null`);
+  }
+  const after = row['after'];
+  if (typeof after !== 'object' || after === null || Array.isArray(after)) {
+    throw new TypeError(`${what} has no after`);
+  }
+
+  return {
+    id,
+    changedAt: str(row, 'changedAt', what),
+    changedByUserId: nullableStr(row, 'changedByUserId', what),
+    before: before as Readonly<Record<string, unknown>> | null,
+    after: after as Readonly<Record<string, unknown>>,
   };
 }
 
@@ -221,6 +265,16 @@ export function decodeTaxCountryChange(input: unknown): TaxCountryChangeRow {
 
 export const getProfile = (): Promise<OrganisationProfileWire> =>
   apiJson('/admin/organisation', decodeProfile);
+
+export const listProfileChanges = (): Promise<readonly ProfileChangeRow[]> =>
+  apiJson('/admin/organisation/changes', (body) => {
+    const row = asObject(body, 'organisation profile changes response');
+    const changes = row['changes'];
+    if (!Array.isArray(changes)) {
+      throw new TypeError('organisation profile changes response has no changes array');
+    }
+    return changes.map(decodeProfileChange);
+  });
 
 /**
  * Every account, including retired ones. Admin only — Task 10's customer-facing route filters

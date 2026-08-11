@@ -4,6 +4,7 @@ import {
   decodeBankAccount,
   decodeBankAccountChange,
   decodeProfile,
+  decodeProfileChange,
   decodeTaxCountry,
   decodeTaxCountryChange,
 } from './organisation-api';
@@ -196,5 +197,40 @@ describe('decodeTaxCountryChange', () => {
 
   it('refuses a before that is neither an object nor null', () => {
     expect(() => decodeTaxCountryChange({ ...CREATE, before: 'yesterday' })).toThrow(/before/);
+  });
+});
+
+describe('decodeProfileChange', () => {
+  const EDIT = {
+    id: '00000000-0000-4000-8000-0000000000e1',
+    changedAt: '2026-08-09T10:00:00.000Z',
+    changedByUserId: '00000000-0000-4000-8000-0000000000aa',
+    before: { ...PROFILE, updatedAt: undefined },
+    after: { ...PROFILE, updatedAt: undefined, depositBp: 3_000 },
+  };
+
+  it('accepts an edit row, whose before is the previous snapshot', () => {
+    const change = decodeProfileChange(EDIT);
+    expect(change.before).toEqual(EDIT.before);
+    expect((change.after as Record<string, unknown>)['depositBp']).toBe(3_000);
+  });
+
+  it('accepts a creation row, whose before is null — reachable by the wire type even if never seen in practice', () => {
+    const change = decodeProfileChange({ ...EDIT, before: null });
+    expect(change.before).toBeNull();
+  });
+
+  it('accepts a changedByUserId of null — the erasure case', () => {
+    const change = decodeProfileChange({ ...EDIT, changedByUserId: null });
+    expect(change.changedByUserId).toBeNull();
+  });
+
+  it('refuses an after that is missing entirely, rather than defaulting it to {}', () => {
+    const { after: _unused, ...broken } = EDIT;
+    expect(() => decodeProfileChange(broken)).toThrow(/after/);
+  });
+
+  it('refuses a before that is neither an object nor null', () => {
+    expect(() => decodeProfileChange({ ...EDIT, before: 'yesterday' })).toThrow(/before/);
   });
 });
