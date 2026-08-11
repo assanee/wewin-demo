@@ -164,7 +164,14 @@ describeWithPg('authority limits — the screen that fills the table in', () => 
     pool = createPool(url ?? '');
     db = createDatabase(pool);
 
-    app = await bootAuthorityApp(authorityEnv(url ?? ''));
+    /*
+     * ⚠️ The pool is raised to the fan-out on purpose — see `RACING_WRITERS`. At the default of
+     * ten, forty concurrent requests are ten concurrent *transactions* and thirty in a queue,
+     * and the queue is what let the wrong-clock mutation escape.
+     */
+    app = await bootAuthorityApp(
+      authorityEnv(url ?? '', { DATABASE_POOL_MAX: String(RACING_WRITERS) }),
+    );
     call = client(app.baseUrl);
     service = app.app.get(AuthorityService);
 
