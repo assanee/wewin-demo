@@ -67,9 +67,15 @@ import {
  *    path.**~~ Closed. The floor was `GATE_COVERAGE_BP_DEFAULT` — 10,000 bp, payment in full —
  *    so a 30% deposit measured as a 70% `cashflow` concession, while plan 13's smoke path says
  *    *"มัดจำ 30%"* and must run with no approval. Both could not be true. **The owner has now set
- *    the floor**: it is `organisation_profile.deposit_bp`, read on every measurement through
- *    `DepositPolicyPort` and applied to the submit's schedule by the same value, so the two are
- *    one setting rather than two opinions.
+ *    the floor**: it is `organisation_profile.deposit_bp`, applied to the submit's schedule and to
+ *    this measurement by the same value, so the two are one setting rather than two opinions.
+ *
+ *    ⭐ And it is **pinned onto the order at submit** — `orders.deposit_floor_bp`, written by
+ *    `applySubmission` beside `scheduled_deposit_thb_minor`, read here in preference to the live
+ *    setting. Reading `DepositPolicyPort` on every measurement made the reported concession a
+ *    function of when you asked: move the policy from 30% to 100% next month and last month's
+ *    order retroactively reports a 70% concession. Same class of defect as note 3 below, same
+ *    remedy, and `measureFor` says what the fallback covers.
  *
  *    ⚠️ The consequence, stated in both directions, because the old sentence said only one of
  *    them and was half wrong the moment the setting became live: a deposit **at** policy is not
@@ -161,20 +167,49 @@ export class AuthorityService {
 
   private async measureFor(order: OrderFacts, tx?: AuthorityTx): Promise<DocumentConcessions> {
     /*
-     * ⭐ The floor, from the port rather than from a parameter — and its absence from this
-     * signature is the design, not an omission.
+     * ⭐ THE FLOOR THIS ORDER WAS JUDGED AGAINST — THE PIN FIRST, THE LIVE SETTING ONLY IF THERE
+     * ISN'T ONE.
      *
-     * `measure`, `assess` and `request` all reach here, and two of them come from HTTP
-     * controllers with no submit transaction and no deposit in scope. A required `floorBp`
-     * threaded down from every entry point would put a settings read into two controllers and
-     * change `gate`'s neighbours for a value only one of them could ever supply. So this method's
-     * signature does not change, and neither do its three callers.
+     * ── What the live read got wrong ─────────────────────────────────────────────
      *
-     * `tx` is forwarded: the submit path passes one, and a gate that measured the floor on a
-     * different connection from the one it is about to commit would be reading a setting the
+     * This was `await this.depositPolicy.depositBp(tx)`, unconditionally, and that made the
+     * `cashflow` figure a function of *when you asked*. An order submitted while the policy was
+     * 30% and re-read after the owner moved it to 100% reported a 70% concession nobody ever
+     * asked for — on `GET /quotes/authority/orders/:orderId` and on the `live` figure in
+     * `approval` below, both of which are the audit surfaces.
+     *
+     * Enforcement never moved: `gate` has one production caller and it runs inside the submit
+     * transaction, where the setting cannot have moved yet. So this was display and audit rather
+     * than money, and an audit trail that answers a different question each time it is asked is
+     * still not one.
+     *
+     * ── Why the answer is a column on `orders` and not an argument ───────────────
+     *
+     * `measure`, `assess` and `request` all reach here, and two of them arrive from HTTP
+     * controllers with no submit transaction and no deposit in scope — which is why the port
+     * exists and why threading a `floorBp` down from every entry point was rejected when the
+     * floor became live (see `deposit-policy.port.ts`). None of that changes: the floor still
+     * does not appear in this signature. It arrives on the row that is already being read,
+     * pinned by `applySubmission` in the same statement that pins the document totals and the
+     * deposit it is compared against.
+     *
+     * `??` and not a hard requirement, in two cases that are different facts with one honest
+     * answer:
+     *
+     *   before submit   `grand_total_thb_minor` is NULL, so `measureCashflow` is handed a zero
+     *                   total and an empty schedule and returns ฿0.00 whatever the floor is. The
+     *                   value read here is not consulted; the fallback keeps the draft path
+     *                   working without pretending a floor exists.
+     *   already submitted, no pin
+     *                   every order that predates the column. There is no recorded floor and
+     *                   `0034` refused to invent one, so the live setting is the only figure
+     *                   available — which is exactly the behaviour those rows have today.
+     *
+     * `tx` is still forwarded on the fallback, for the reason it always was: a gate measuring the
+     * floor on a different connection from the one it is about to commit reads a setting this
      * transaction cannot see.
      */
-    const floorBp = await this.depositPolicy.depositBp(tx);
+    const floorBp = order.depositFloorBp ?? (await this.depositPolicy.depositBp(tx));
 
     const [lines, overrides, instalments] = await Promise.all([
       this.repository.liveLines(order.id, tx),

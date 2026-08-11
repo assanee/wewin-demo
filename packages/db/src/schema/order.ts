@@ -494,6 +494,47 @@ export const orders = pgTable(
     scheduledDepositThbMinor: bigint('scheduled_deposit_thb_minor', { mode: 'bigint' }),
 
     /**
+     * The `cashflow` approval floor in force **when this contract was made**, in basis points.
+     *
+     * ── What it is, and why the column beside it cannot stand in for it ─────────
+     *
+     * `organisation_profile.deposit_bp` is the share of `grand_total_thb_minor` a payment
+     * schedule must gate before production opens. Anything the schedule gates *below* it is a
+     * `cashflow` concession — money the company agreed not to hold before cutting aluminium —
+     * and `AuthorityService.measureFor` is the one place that subtraction happens.
+     *
+     * It read the setting **live**, so an order submitted while the policy was 30% and re-read
+     * after the owner moved it to 100% reported a 70% concession nobody ever asked for. Not a
+     * money defect — `gate` has one production caller and it runs inside the submit — but
+     * `GET /quotes/authority/orders/:orderId` and the approval-detail `live` figure are audit
+     * surfaces, and an audit trail that re-interprets a historical order against today's policy
+     * answers a different question each time it is asked.
+     *
+     * `scheduled_deposit_thb_minor` above is **not** this number and cannot be made into it. It
+     * is what the schedule *gates*; this is what the policy *required*. The concession is
+     * `percentOf(grand_total, deposit_floor_bp) − scheduled_deposit_thb_minor`, so the same
+     * pinned deposit against two different floors is two different concessions — ฿0 at a 30%
+     * floor, 70% of the order at a 100% one. Two facts, and only one of them was recorded.
+     *
+     * The precedent is `approvals.decided_ceiling_thb_minor`, added by `0017` for the identical
+     * retroactive re-interpretation on the ceiling side: pin the *input* the comparison was made
+     * with, never the verdict. Which is why this is the floor and not the measured concession —
+     * the concession is deliberately re-measured from the live schedule, and freezing it would
+     * hide a schedule edited after submit.
+     *
+     * Nullable, and never backfilled. Every order submitted before this column existed genuinely
+     * has no recorded floor, and `0029` seeded `deposit_bp` at 10 000 only as the shipping
+     * default — writing that onto historical rows would assert a business fact nobody recorded.
+     * `measureFor` falls back to the live policy on a NULL, which is exactly today's behaviour
+     * for exactly the rows that already have it. Same call `forfeit_policy_id` above makes, and
+     * `0017` before it.
+     *
+     * Deliberately **not** in `orders_submitted_shape`: that constraint is an `=` between two
+     * nullabilities, and every already-submitted row would violate it.
+     */
+    depositFloorBp: smallint('deposit_floor_bp'),
+
+    /**
      * The forfeit policy in force **when this contract was made** — plan 7.13's seventh pin.
      *
      * Plan 7.13 lists `forfeit_policy` among the seven things `submit_for_payment` pins and
@@ -636,6 +677,27 @@ export const orders = pgTable(
       sql`${table.scheduledDepositThbMinor} is null
           or (${table.scheduledDepositThbMinor} >= 0
               and ${table.scheduledDepositThbMinor} <= ${table.grandTotalThbMinor})`,
+    ),
+
+    /*
+     * The floor is a percentage or it is unrecorded — the same range
+     * `organisation_profile_deposit_in_range` puts on the column it is copied from, restated
+     * here because a copy that may drift is not a copy anybody can rely on. **1, not 0**: a
+     * zero floor is expressed by authoring terms with no gate, and `depositPercentTerms(0)` is
+     * refused by `planSchedule`.
+     */
+    check(
+      'orders_deposit_floor_in_range',
+      sql`${table.depositFloorBp} is null or ${table.depositFloorBp} between 1 and 10000`,
+    ),
+    /*
+     * A draft has no contract and therefore no floor. Stated one-way rather than as the `=`
+     * `orders_submitted_shape` uses, because NULL on a submitted row is the honest state of
+     * every order that predates the column and inventing a value for them was refused.
+     */
+    check(
+      'orders_deposit_floor_needs_a_contract',
+      sql`${table.depositFloorBp} is null or ${table.submittedAt} is not null`,
     ),
 
     check(

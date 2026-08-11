@@ -444,6 +444,16 @@ export class OrderRepository {
       readonly vatThbMinor: bigint;
       readonly grandTotalThbMinor: bigint;
       readonly scheduledDepositThbMinor: bigint;
+      /**
+       * ⭐ The `cashflow` approval floor this contract is judged against, in basis points.
+       *
+       * The same `organisation_profile.deposit_bp` the schedule above was planned from, pinned
+       * here so that re-reading the order next month measures the concession the gate measured
+       * at submit rather than one against today's policy. Required, not optional: an order
+       * submitted without it would be a new row carrying the historical defect, and the caller
+       * has the value in hand — it read it to plan the schedule.
+       */
+      readonly depositFloorBp: number;
     },
   ): Promise<void> {
     await tx
@@ -473,6 +483,7 @@ export class OrderRepository {
         vatThbMinor: input.vatThbMinor,
         grandTotalThbMinor: input.grandTotalThbMinor,
         scheduledDepositThbMinor: input.scheduledDepositThbMinor,
+        depositFloorBp: input.depositFloorBp,
         updatedAt: new Date(),
       })
       .where(eq(orders.id, input.orderId));

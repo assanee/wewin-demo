@@ -584,6 +584,66 @@ describeDb('the freeze point is a fact the database can see', () => {
       PG.restrictViolation,
     );
   });
+
+  /**
+   * The `cashflow` approval floor is a term of the contract, so a cart cannot carry one.
+   *
+   * `deposit_floor_bp` (migration `0034`) records the `organisation_profile.deposit_bp` an order
+   * was judged against at submit, because reading the live setting made a historical order report
+   * a concession against *today's* policy — the same retroactive re-interpretation
+   * `approvals.decided_ceiling_thb_minor` closed on the ceiling side.
+   *
+   * ⚠️ It is deliberately **not** in `orders_submitted_shape`, and that is the interesting half.
+   * That constraint is an `=` between two nullabilities; every order submitted before this column
+   * existed would violate it, and `0034` refused to invent a floor for them. So the rule is
+   * one-way — a floor implies a contract, a contract does not imply a floor — and this is the
+   * test that says so, in both directions, rather than leaving the weaker form to look like an
+   * oversight.
+   */
+  it('lets only a contract carry a deposit floor, and never invents one for the orders that predate it', async () => {
+    const guestId = await createGuest();
+
+    // A cart with a floor is unrepresentable: there is no contract for it to be a term of.
+    await expectViolation(
+      db.execute(sql`
+        insert into orders (status_event_id, guest_id, deposit_floor_bp)
+        values (gen_random_uuid(), ${guestId}, 3000)
+      `),
+      PG.checkViolation,
+    );
+
+    // …and so is a floor that is not a percentage. 1, not 0 — a zero floor is a schedule with
+    // no gate, which is `payments/schedule`'s business and not a value of this column.
+    const submitted = await createDraft({ contactEmail: `floor-${tag}@example.test` });
+    await submit(submitted);
+
+    await expectViolation(
+      db.execute(
+        sql`update orders set deposit_floor_bp = 0 where id = ${submitted.orderId}::uuid`,
+      ),
+      PG.checkViolation,
+    );
+    await expectViolation(
+      db.execute(
+        sql`update orders set deposit_floor_bp = 10001 where id = ${submitted.orderId}::uuid`,
+      ),
+      PG.checkViolation,
+    );
+
+    /*
+     * And a submitted order with NO floor is legal, and has to be: it is every order in every
+     * database that predates the column, and a backfill would be a business fact nobody
+     * recorded. `submit` above pins the seven things and not this one, so this asserts the
+     * schema rather than restating the fixture.
+     */
+    const [row] = await db
+      .select({ submittedAt: orders.submittedAt, floorBp: orders.depositFloorBp })
+      .from(orders)
+      .where(eq(orders.id, submitted.orderId));
+
+    expect(row?.submittedAt).not.toBeNull();
+    expect(row?.floorBp).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
