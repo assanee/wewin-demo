@@ -49,8 +49,6 @@ export interface UiParamsByKey {
   'quote.badge.empty': Plain;
 
   /* ---- Money and measurement, shared across screens ----------------- */
-  'price.vatExcluded': Plain;
-  'price.vatExcludedShort': Plain;
   'price.perSqmSuffix': Plain;
   'price.from': Plain;
   'price.fromShort': Plain;
@@ -110,7 +108,6 @@ export interface UiParamsByKey {
   'home.pricing.floor.range': { span: readonly [bigint, bigint] | null };
   'home.pricing.floor.note': Plain;
   'home.pricing.excluded.title': Plain;
-  'home.pricing.excluded.vat': Plain;
   'home.pricing.excluded.install': Plain;
   'home.pricing.excluded.delivery': Plain;
   'home.pricing.excluded.removal': Plain;
@@ -187,7 +184,7 @@ export interface UiParamsByKey {
   'summary.add': Plain;
   'summary.hasErrors': Plain;
   'summary.showBreakdown': Plain;
-  'summary.areaAndVat': { areaSqUm: bigint };
+  'summary.area': { areaSqUm: bigint };
   'summary.stickyMeta': { areaSqUm: bigint; qty: number };
   'breakdown.minimumApplied': { areaSqUm: bigint; minBillableSqUm: bigint };
 
@@ -241,7 +238,6 @@ export interface UiParamsByKey {
   'about.range.heading': Plain;
   'about.range.body': Plain;
   'about.fact.designs.note': { categories: number };
-  'about.fact.startingPrice.note': Plain;
   'about.fact.leadTime.note': Plain;
   'about.fact.floor': Plain;
   'about.fact.floor.note': Plain;

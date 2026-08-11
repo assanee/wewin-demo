@@ -42,8 +42,6 @@ export const en: PartialUiCatalogue = {
   'quote.badge.empty': 'Quote list is empty',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'Prices exclude 7% VAT',
-  'price.vatExcludedShort': 'excl. VAT',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'From',
   'price.fromShort': 'From',
@@ -118,12 +116,11 @@ export const en: PartialUiCatalogue = {
   'home.pricing.floor.note':
     'depending on the design. The pricing page always states the minimum for the design you chose.',
   'home.pricing.excluded.title': 'Not included in this price',
-  'home.pricing.excluded.vat': '7% VAT',
   'home.pricing.excluded.install': 'Installation',
   'home.pricing.excluded.delivery': 'Delivery',
   'home.pricing.excluded.removal': 'Removing the old unit',
   'home.pricing.excluded.note':
-    'All four depend on the site, so they cannot be estimated from a size alone. They appear in the quotation after the survey.',
+    'All three depend on the site, so they cannot be estimated from a size alone. They appear in the quotation after the survey.',
 
   'meta.title': 'WEWIN180 — made to your measurements, priced before you ask',
   'meta.description':
@@ -206,7 +203,7 @@ export const en: PartialUiCatalogue = {
   'summary.add': 'Add to quote list',
   'summary.hasErrors': 'There is still something to fix above. Press the button to see what.',
   'summary.showBreakdown': 'See the price breakdown',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · prices exclude 7% VAT`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} pieces` : ''
@@ -273,7 +270,6 @@ export const en: PartialUiCatalogue = {
     'Every figure here is read from the same catalogue that calculates the prices. None of it is written down separately.',
   'about.fact.designs.note': (p, f) =>
     `across ${f.integer(p.categories)} ${count(p.categories, 'category', 'categories')}`,
-  'about.fact.startingPrice.note': 'excluding 7% VAT',
   'about.fact.leadTime.note': 'depending on the design',
   'about.fact.floor': 'Minimum billable area',
   'about.fact.floor.note': 'smaller panels are charged at the minimum',

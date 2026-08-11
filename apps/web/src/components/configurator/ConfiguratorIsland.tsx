@@ -608,7 +608,6 @@ function ConfigureProduct({
             <span className="text-body text-chalk">{t('price.total')}</span>
             <span className="numeric text-title text-lime">{f.baht(config.price.totalMinor)}</span>
           </div>
-          <p className="numeric text-caption text-chalk-3">{t('price.vatExcluded')}</p>
         </div>
       </BottomSheet>
     </>

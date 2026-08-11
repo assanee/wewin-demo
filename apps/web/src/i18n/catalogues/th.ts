@@ -27,8 +27,6 @@ export const th: UiCatalogue = {
   'quote.badge.empty': 'ตะกร้าว่าง',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'ราคายังไม่รวม VAT 7%',
-  'price.vatExcludedShort': 'ยังไม่รวม VAT',
   'price.perSqmSuffix': '/ ตร.ม.',
   'price.from': 'เริ่มต้น',
   'price.fromShort': 'เริ่ม',
@@ -99,12 +97,11 @@ export const th: UiCatalogue = {
     p.span === null ? '—' : `${f.area(p.span[0])}–${f.area(p.span[1])} ตร.ม.`,
   'home.pricing.floor.note': 'แล้วแต่แบบ หน้าคำนวณราคาจะบอกทุกครั้งว่าแบบที่เลือกใช้ขั้นต่ำเท่าไร',
   'home.pricing.excluded.title': 'ราคานี้ยังไม่รวม',
-  'home.pricing.excluded.vat': 'VAT 7%',
   'home.pricing.excluded.install': 'ค่าติดตั้ง',
   'home.pricing.excluded.delivery': 'ค่าขนส่ง',
   'home.pricing.excluded.removal': 'ค่ารื้อของเดิม',
   'home.pricing.excluded.note':
-    'ทั้งสี่รายการขึ้นกับหน้างาน จึงประเมินจากขนาดอย่างเดียวไม่ได้ และจะอยู่ในใบเสนอราคาหลังเข้าวัด',
+    'ทั้งสามรายการขึ้นกับหน้างาน จึงประเมินจากขนาดอย่างเดียวไม่ได้ และจะอยู่ในใบเสนอราคาหลังเข้าวัด',
 
   'meta.title': 'WEWIN180 — สั่งทำตามขนาดจริง เห็นราคาก่อนคุยกับเรา',
   'meta.description':
@@ -184,7 +181,7 @@ export const th: UiCatalogue = {
   'summary.add': 'เพิ่มลงรายการ',
   'summary.hasErrors': 'ยังมีข้อที่ต้องแก้ด้านบน กดปุ่มเพื่อดูว่าเหลืออะไรบ้าง',
   'summary.showBreakdown': 'ดูรายละเอียดราคา',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} ตร.ม. · ราคายังไม่รวม VAT 7%`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} ตร.ม.`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} ตร.ม.${p.qty > 1 ? ` · ${f.integer(p.qty)} ชิ้น` : ''} · ดูรายละเอียด`,
   'breakdown.minimumApplied': (p, f) =>
@@ -248,7 +245,6 @@ export const th: UiCatalogue = {
   'about.range.body':
     'ตัวเลขทั้งหมดนี้อ่านจากแคตตาล็อกจริงที่ใช้คำนวณราคา ไม่ได้เขียนแยกไว้ต่างหาก',
   'about.fact.designs.note': (p, f) => `ใน ${f.integer(p.categories)} หมวด`,
-  'about.fact.startingPrice.note': 'ยังไม่รวม VAT 7%',
   'about.fact.leadTime.note': 'แล้วแต่แบบ',
   'about.fact.floor': 'พื้นที่คิดเงินขั้นต่ำ',
   'about.fact.floor.note': 'บานเล็กกว่านี้คิดที่ขั้นต่ำ',

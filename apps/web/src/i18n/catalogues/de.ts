@@ -48,8 +48,6 @@ export const de: PartialUiCatalogue = {
   'quote.badge.empty': 'Angebotsliste ist leer',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'Preise zzgl. 7 % MwSt.',
-  'price.vatExcludedShort': 'zzgl. MwSt.',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'Ab',
   'price.fromShort': 'Ab',
@@ -126,12 +124,11 @@ export const de: PartialUiCatalogue = {
   'home.pricing.floor.note':
     'je nach Ausführung. Die Preisseite nennt stets die Mindestfläche der von Ihnen gewählten Ausführung.',
   'home.pricing.excluded.title': 'Nicht in diesem Preis enthalten',
-  'home.pricing.excluded.vat': '7 % MwSt.',
   'home.pricing.excluded.install': 'Montage',
   'home.pricing.excluded.delivery': 'Lieferung',
   'home.pricing.excluded.removal': 'Ausbau des alten Elements',
   'home.pricing.excluded.note':
-    'Alle vier hängen von den Gegebenheiten vor Ort ab und lassen sich daher nicht allein aus einem Maß schätzen. Sie erscheinen nach dem Aufmaß im Angebot.',
+    'Alle drei hängen von den Gegebenheiten vor Ort ab und lassen sich daher nicht allein aus einem Maß schätzen. Sie erscheinen nach dem Aufmaß im Angebot.',
 
   'meta.title': 'WEWIN180 — nach Maß gefertigt, Preis vor der Anfrage',
   'meta.description':
@@ -216,7 +213,7 @@ export const de: PartialUiCatalogue = {
   'summary.hasErrors':
     'Oben ist noch etwas zu korrigieren. Drücken Sie die Schaltfläche, um zu sehen, was.',
   'summary.showBreakdown': 'Preisaufstellung ansehen',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · Preise zzgl. 7 % MwSt.`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} Stück` : ''
@@ -286,7 +283,6 @@ export const de: PartialUiCatalogue = {
     'Jede Zahl hier stammt aus demselben Katalog, der auch die Preise berechnet. Nichts davon ist separat gepflegt.',
   'about.fact.designs.note': (p, f) =>
     `in ${f.integer(p.categories)} ${count(p.categories, 'Kategorie', 'Kategorien')}`,
-  'about.fact.startingPrice.note': 'zzgl. 7 % MwSt.',
   'about.fact.leadTime.note': 'je nach Ausführung',
   'about.fact.floor': 'Mindestberechnungsfläche',
   'about.fact.floor.note': 'kleinere Elemente werden mit der Mindestfläche berechnet',

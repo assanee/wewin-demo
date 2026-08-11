@@ -40,8 +40,6 @@ export const zh: PartialUiCatalogue = {
   'quote.badge.empty': '报价清单为空',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': '价格不含 7% 增值税',
-  'price.vatExcludedShort': '不含税',
   'price.perSqmSuffix': '/ m²',
   'price.from': '起价',
   'price.fromShort': '起',
@@ -110,12 +108,11 @@ export const zh: PartialUiCatalogue = {
     p.span === null ? '—' : `${f.area(p.span[0])}–${f.area(p.span[1])} m²`,
   'home.pricing.floor.note': '视款式而定。价格页面始终注明您所选款式的最低面积。',
   'home.pricing.excluded.title': '此价格不包含',
-  'home.pricing.excluded.vat': '7% 增值税',
   'home.pricing.excluded.install': '安装',
   'home.pricing.excluded.delivery': '运输',
   'home.pricing.excluded.removal': '拆除旧件',
   'home.pricing.excluded.note':
-    '这四项都取决于现场情况，无法仅凭尺寸估算。它们会在复尺之后出现在报价单上。',
+    '这三项都取决于现场情况，无法仅凭尺寸估算。它们会在复尺之后出现在报价单上。',
 
   'meta.title': 'WEWIN180 — 按尺寸定制，询价前先看到价格',
   'meta.description':
@@ -191,7 +188,7 @@ export const zh: PartialUiCatalogue = {
   'summary.add': '加入报价清单',
   'summary.hasErrors': '上方还有需要修改的地方。点击按钮查看是哪一项。',
   'summary.showBreakdown': '查看价格明细',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · 价格不含 7% 增值税`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${p.qty > 1 ? ` · ${f.integer(p.qty)} 件` : ''} · 查看明细`,
   'breakdown.minimumApplied': (p, f) =>
@@ -248,7 +245,6 @@ export const zh: PartialUiCatalogue = {
   'about.range.heading': '我们做什么',
   'about.range.body': '这里的每一个数字都来自计算价格所用的同一套目录，没有一项是另行维护的。',
   'about.fact.designs.note': (p, f) => `分属 ${f.integer(p.categories)} 个分类`,
-  'about.fact.startingPrice.note': '不含 7% 增值税',
   'about.fact.leadTime.note': '视款式而定',
   'about.fact.floor': '最低计费面积',
   'about.fact.floor.note': '小于此面积的扇按最低面积计费',

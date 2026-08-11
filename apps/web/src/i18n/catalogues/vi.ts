@@ -38,8 +38,6 @@ export const vi: PartialUiCatalogue = {
   'quote.badge.empty': 'Danh sách báo giá đang trống',
 
   /* ---- Money and measurement ---------------------------------------- */
-  'price.vatExcluded': 'Giá chưa bao gồm VAT 7%',
-  'price.vatExcludedShort': 'chưa VAT',
   'price.perSqmSuffix': '/ m²',
   'price.from': 'Từ',
   'price.fromShort': 'Từ',
@@ -116,12 +114,11 @@ export const vi: PartialUiCatalogue = {
   'home.pricing.floor.note':
     'tuỳ theo mẫu. Trang giá luôn nêu rõ mức tối thiểu của mẫu bạn đã chọn.',
   'home.pricing.excluded.title': 'Giá này chưa bao gồm',
-  'home.pricing.excluded.vat': 'VAT 7%',
   'home.pricing.excluded.install': 'Lắp đặt',
   'home.pricing.excluded.delivery': 'Vận chuyển',
   'home.pricing.excluded.removal': 'Tháo dỡ bộ cũ',
   'home.pricing.excluded.note':
-    'Cả bốn khoản đều phụ thuộc vào công trình nên không thể ước tính chỉ từ kích thước. Chúng sẽ xuất hiện trong báo giá sau khi khảo sát.',
+    'Cả ba khoản đều phụ thuộc vào công trình nên không thể ước tính chỉ từ kích thước. Chúng sẽ xuất hiện trong báo giá sau khi khảo sát.',
 
   'meta.title': 'WEWIN180 — làm theo số đo của bạn, có giá trước khi hỏi',
   'meta.description':
@@ -200,7 +197,7 @@ export const vi: PartialUiCatalogue = {
   'summary.add': 'Thêm vào danh sách báo giá',
   'summary.hasErrors': 'Còn điều cần sửa ở phía trên. Bấm nút để xem đó là gì.',
   'summary.showBreakdown': 'Xem chi tiết giá',
-  'summary.areaAndVat': (p, f) => `${f.area(p.areaSqUm)} m² · giá chưa bao gồm VAT 7%`,
+  'summary.area': (p, f) => `${f.area(p.areaSqUm)} m²`,
   'summary.stickyMeta': (p, f) =>
     `${f.area(p.areaSqUm)} m²${
       p.qty > 1 ? ` · ${f.integer(p.qty)} cái` : ''
@@ -264,7 +261,6 @@ export const vi: PartialUiCatalogue = {
   'about.range.body':
     'Mọi con số ở đây đều đọc từ cùng bộ danh mục dùng để tính giá. Không con số nào được ghi lại riêng.',
   'about.fact.designs.note': (p, f) => `thuộc ${f.integer(p.categories)} hạng mục`,
-  'about.fact.startingPrice.note': 'chưa bao gồm VAT 7%',
   'about.fact.leadTime.note': 'tuỳ theo mẫu',
   'about.fact.floor': 'Diện tích tính tiền tối thiểu',
   'about.fact.floor.note': 'cánh nhỏ hơn được tính theo mức tối thiểu',

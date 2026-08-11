@@ -151,8 +151,6 @@ export default async function HomePage({
             }
           />
         </dl>
-
-        <p className="numeric mt-4 text-caption text-chalk-3">{t('price.vatExcluded')}</p>
       </section>
 
       {/* ---- How it works ---- */}
@@ -298,7 +296,6 @@ export default async function HomePage({
 
           <PriceNote l={l} titleKey="home.pricing.excluded.title">
             <ul className="flex flex-col gap-1 text-body text-chalk-2">
-              <li>{t('home.pricing.excluded.vat')}</li>
               <li>{t('home.pricing.excluded.install')}</li>
               <li>{t('home.pricing.excluded.delivery')}</li>
               <li>{t('home.pricing.excluded.removal')}</li>

@@ -187,7 +187,6 @@ export default async function AboutPage({
                 ? t('value.unknown')
                 : `${f.baht(bahtToMinor(catalogFrom))} ${t('price.perSqmSuffix')}`
             }
-            note={t('about.fact.startingPrice.note')}
           />
           <Fact
             l={l}
@@ -310,14 +309,14 @@ function Fact({
   l: LocaleBundle;
   termKey: PlainKey;
   value: string;
-  note: string;
+  note?: string;
 }) {
   return (
     <div className="min-w-0 bg-panel px-4 py-4 md:px-5">
       <dt className="text-caption text-chalk-3">{l.t(termKey)}</dt>
       <dd className="min-w-0">
         <span className="numeric block truncate text-lead text-chalk">{value}</span>
-        <span className="block text-caption text-chalk-3">{note}</span>
+        {note === undefined ? null : <span className="block text-caption text-chalk-3">{note}</span>}
       </dd>
     </div>
   );
