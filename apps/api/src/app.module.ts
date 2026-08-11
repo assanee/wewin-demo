@@ -11,6 +11,7 @@ import { RequestIdMiddleware } from './common/request-id';
 import { ConfigModule } from './config/config.module';
 import type { Env } from './config/env';
 import { DatabaseModule } from './database/database.module';
+import { FxModule } from './fx/fx.module';
 import { HealthModule } from './health/health.module';
 import { MediaModule } from './media/media.module';
 import { MetaModule } from './meta/meta.module';
@@ -84,6 +85,16 @@ export class AppModule implements NestModule {
         auth,
         HealthModule,
         MetaModule,
+        /*
+         * Exchange-rate ingestion (P2, ingestion only — see FxRatesService's header).
+         * Registered here rather than left unwired, on the standing lesson three earlier
+         * phases already paid for: a finished module Nest never imports is compiled,
+         * typechecked and tested, and served to nobody. This one has no routes to be
+         * missing from a reachability sweep, but its `@Cron` tick and its startup fetch
+         * would be exactly as silent an omission — a green suite and a table that stays
+         * empty forever.
+         */
+        FxModule,
         CatalogModule,
         /*
          * The write side, after the read side for the same non-reason: order does not

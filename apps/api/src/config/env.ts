@@ -120,6 +120,17 @@ export const envSchema = z.object({
         .map((origin) => origin.trim())
         .filter((origin) => origin.length > 0),
     ),
+
+  /*
+   * Open Exchange Rates' `app_id` — https://openexchangerates.org/api/latest.json.
+   * Optional, deliberately: a developer with no OXR account still has to be able to boot
+   * this app and run its suite, and exchange-rate ingestion (`apps/api/src/fx`) is a
+   * background job that nothing else in the system depends on yet. Absent,
+   * `FxRatesService` logs that once at construction and never schedules a fetch; present,
+   * it fetches hourly — a quota decision explained where the fetch happens, not repeated
+   * here.
+   */
+  OPENEXCHANGERATES_APP_ID: z.string().min(1).optional(),
 });
 
 export type Env = Readonly<z.infer<typeof envSchema>>;
