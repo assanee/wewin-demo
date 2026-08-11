@@ -20,19 +20,36 @@ import { parseLatestRates } from './latest-rates';
  * honestly, with both timestamps attached, and leaving them for whoever makes that
  * decision to read back.
  *
- * ── Hourly, and why that number and not a smaller one ────────────────────────────
+ * ── Daily, and why that number and not a smaller one ──────────────────────────────
  *
- * The free Open Exchange Rates plan allows 1,000 requests a month. Hourly is ~730 requests
- * and fits with room to spare; every thirty minutes is ~1,460 and runs out mid-month. The
- * free plan also only *updates* its rates hourly, so polling faster would spend quota
- * re-fetching numbers that have not changed — it would not make the data any fresher. Do
- * not tighten `CronExpression.EVERY_HOUR` below without re-reading both of those facts;
- * they are the reason for the number, not a preference that happened to land here.
+ * The free Open Exchange Rates plan allows 1,000 requests a month. Daily is ~30 of those —
+ * roughly 970 spare every month, which is the point: a failed fetch (see "Failure
+ * handling" below) can be retried on the next tick, or by hand, without quota anxiety.
+ * Hourly used to be ~730 a month, which fit too, but left no such room.
+ *
+ * The stronger reason is on the consuming side, not the provider's. Nothing reads
+ * `fx_rates` yet, but what will read it is a quotation the staff confirm — see the header
+ * on `fx_rates` (`packages/db/src/schema/fx.ts`) — and a confirmed quotation is a document
+ * whose life is measured in days, not minutes. Hourly freshness bought nothing for a rate
+ * that gets pinned once and then sits for days; it only spent quota re-observing a number
+ * that, per the free plan's own hourly update cadence, usually had not even changed.
+ *
+ * `CronExpression.EVERY_DAY_AT_1AM` — 01:00 server time — is a choice, not a discovery:
+ * Open Exchange Rates' free plan updates hourly and USD trades in a market that is
+ * effectively continuous, so no moment in the day is "the" correct one to read it at. This
+ * repo sets `TZ` nowhere (`docker-compose.yml`, every `.env*`) and containers default to
+ * UTC, so 01:00 here is 08:00 in Bangkok — `overview/business-month.ts`'s
+ * `BUSINESS_TIME_ZONE`, and where the staff who confirm quotations actually work — which
+ * puts the fetch just ahead of the working day rather than in the middle of it, so the
+ * rate on hand when staff arrive is at most a few hours old rather than one fetched
+ * mid-afternoon the day before. Do not tighten the schedule below without re-reading the
+ * quota and staleness reasoning above; they are why the number is what it is, not a
+ * preference that happened to land here.
  *
  * ── Startup fetch ─────────────────────────────────────────────────────────────────
  *
  * `onModuleInit` fetches once, but only when `fx_rates` is still empty, so a fresh
- * environment is not blank for the first hour rather than because startup fetching is
+ * environment is not blank for the first day rather than because startup fetching is
  * generally safe to repeat — it is not what runs on every restart.
  *
  * ── Failure handling ──────────────────────────────────────────────────────────────
@@ -50,7 +67,7 @@ import { parseLatestRates } from './latest-rates';
  * database that is still starting, and a service that exits on it turns a ten-second
  * outage into a crash loop." `OnModuleInit` is awaited by Nest, so an uncaught rejection
  * here would propagate out of `NestFactory.create()` and take the whole app down at boot
- * — over a table nothing reads. Wrapping the insert also matters for the hourly tick:
+ * — over a table nothing reads. Wrapping the insert also matters for the daily tick:
  * unguarded, `@nestjs/schedule`'s own explorer would still catch it, but through a
  * generic `'Scheduler'` logger carrying the raw driver error, not through the deliberately
  * narrow logging the rest of this class uses. Both paths report through `this.logger`.
@@ -61,7 +78,7 @@ import { parseLatestRates } from './latest-rates';
  * account still has to be able to boot this app and run its suite. Its absence is logged
  * once, in the constructor, and never again — every scheduled tick and the startup check
  * both return immediately and silently, so a fleet running without the key produces one
- * boot-time line rather than an hourly warning for the life of the process.
+ * boot-time line rather than a daily warning for the life of the process.
  */
 @Injectable()
 export class FxRatesService implements OnModuleInit {
@@ -77,7 +94,7 @@ export class FxRatesService implements OnModuleInit {
     if (this.appId === undefined) {
       this.logger.warn(
         'OPENEXCHANGERATES_APP_ID is not set; exchange-rate ingestion is disabled. ' +
-          'The app boots and the test suite runs regardless — set the key to start hourly fetching.',
+          'The app boots and the test suite runs regardless — set the key to start daily fetching.',
       );
     }
   }
@@ -90,7 +107,7 @@ export class FxRatesService implements OnModuleInit {
       existing = await this.db.select({ id: fxRates.id }).from(fxRates).limit(1);
     } catch (error) {
       // See the class header: refusing to boot over this would turn a database that is
-      // still starting into a crash loop, over a table nothing reads. The regular hourly
+      // still starting into a crash loop, over a table nothing reads. The regular daily
       // tick still runs and will fill an empty table once the database is reachable.
       this.logger.warn(
         `could not check whether fx_rates is empty (${dbFailureReason(error)}); skipping the startup fetch`,
@@ -100,13 +117,13 @@ export class FxRatesService implements OnModuleInit {
     if (existing.length > 0) return;
 
     this.logger.log(
-      'fx_rates is empty; fetching once at startup so a fresh environment is not blank for an hour.',
+      'fx_rates is empty; fetching once at startup so a fresh environment is not blank for a day.',
     );
     await this.fetchAndStore(this.appId);
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
-  async fetchHourly(): Promise<void> {
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  async fetchDaily(): Promise<void> {
     if (this.appId === undefined) return;
     await this.fetchAndStore(this.appId);
   }
