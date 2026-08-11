@@ -33,6 +33,8 @@ import {
   type UserPhone,
   type UserSummary,
 } from './user-api';
+import { listAuthorityLimits } from './authority-limits-api';
+import AuthorityLimitsPanel, { type AuthorityLimitsState } from './authority-limits-panel';
 import { CreateUserDialog } from './create-user-dialog';
 import { GroupsPanel } from './groups-panel';
 import { AuditTrail } from './audit-trail';
@@ -114,7 +116,20 @@ export function UserAdmin() {
   const [suspending, setSuspending] = useState<UserSummary | null>(null);
   const [editingGroups, setEditingGroups] = useState<UserSummary | null>(null);
 
+  /*
+   * ⚠️ Loaded separately from `users`/`groups`, and its failure is its own.
+   *
+   * `GET /quotes/authority/limits` is behind `groups.read` while this page's other two reads
+   * are behind `users.read` — two different permissions, so a person can hold one and not the
+   * other. Folding this into `reload()`'s `Promise.all` would turn a 403 on the ceilings into
+   * "โหลดรายชื่อผู้ใช้ไม่สำเร็จ" and take the whole screen down for a tab they were never
+   * entitled to see. Same split `organisation-screen.tsx` makes across its three sections.
+   */
+  const [limits, setLimits] = useState<AuthorityLimitsState>({ status: 'loading' });
+
   const editable = can('users.write');
+  const mayReadLimits = can('groups.read');
+  const mayWriteLimits = can('groups.write');
   const meId = session.status === 'signed-in' ? session.principal.userId : null;
 
   async function reload(): Promise<void> {
@@ -126,8 +141,19 @@ export function UserAdmin() {
     }
   }
 
+  async function reloadLimits(): Promise<void> {
+    if (!mayReadLimits) return;
+    try {
+      const list = await listAuthorityLimits();
+      setLimits({ status: 'ready', limits: list.limits, isFailClosed: list.isFailClosed });
+    } catch (cause) {
+      setLimits({ status: 'failed', problem: failureMessage(cause) });
+    }
+  }
+
   useEffect(() => {
     void reload();
+    void reloadLimits();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
 
@@ -177,6 +203,13 @@ export function UserAdmin() {
           <TabsList>
             <TabsTrigger value="users">ผู้ใช้ ({state.users.length})</TabsTrigger>
             <TabsTrigger value="groups">กลุ่มและสิทธิ์ ({state.groups.length})</TabsTrigger>
+            {/*
+             * Behind `groups.read`, which is not `users.read`. Hiding the tab rather than
+             * showing an empty one is the same call `visibleNavigation` makes about a nav entry
+             * whose permission the person does not hold — the enforcement is
+             * `@RequirePermissions` on the route either way.
+             */}
+            {mayReadLimits && <TabsTrigger value="authority">อำนาจอนุมัติ</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="users" className="flex flex-col gap-4">
@@ -402,6 +435,17 @@ export function UserAdmin() {
               onProblem={setProblem}
             />
           </TabsContent>
+
+          {mayReadLimits && (
+            <TabsContent value="authority">
+              <AuthorityLimitsPanel
+                state={limits}
+                groups={state.groups}
+                editable={mayWriteLimits}
+                onChanged={reloadLimits}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       )}
 
