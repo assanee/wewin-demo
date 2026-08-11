@@ -2,12 +2,14 @@ import type {
   ApprovalRow,
   AuthorityLimitChangeRow,
   AuthorityLimitRow,
+  GroupFacts,
 } from './authority.repository';
 import type { AuthorityAssessment, DimensionAssessment } from './authority.service';
 import type { DimensionMeasurement } from './concession';
 import type {
   ApprovalWire,
   AuthorityAssessmentWire,
+  AuthorityGroupWire,
   AuthorityLimitChangeWire,
   AuthorityLimitWire,
   CeilingWire,
@@ -156,4 +158,9 @@ export function limitChangeWire(row: AuthorityLimitChangeRow): AuthorityLimitCha
     before: row.before,
     after: row.after,
   };
+}
+
+/** A role the picker can offer. `GroupFacts` is already exactly this shape — see why there. */
+export function groupWire(row: GroupFacts): AuthorityGroupWire {
+  return { id: row.id, code: row.code, nameTh: row.nameTh };
 }

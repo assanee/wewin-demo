@@ -38,6 +38,22 @@ import { apiJson } from '@/lib/api/client';
 export const APPROVAL_DIMENSIONS_WIRE = ['margin', 'cashflow'] as const;
 export type AuthorityDimension = (typeof APPROVAL_DIMENSIONS_WIRE)[number];
 
+/**
+ * ⭐ A role the picker can offer — from `GET /quotes/authority/groups`, under `groups.read`.
+ *
+ * ⚠️ **Not `Group` from `components/users/user-api.ts`, and that import is gone on purpose.**
+ * That type comes from `GET /admin/groups`, which is gated on `users.read` — sight of the whole
+ * staff directory. While the picker was fed from there, this screen could not be reached by
+ * somebody holding only `groups.read` + `groups.write`, the permissions that actually own the
+ * ceiling table. Reintroducing the import would quietly reintroduce the dead-end, so this
+ * module owns its own three-field shape and this folder imports nothing from `users/`.
+ */
+export interface AuthorityGroupView {
+  readonly id: string;
+  readonly code: string;
+  readonly nameTh: string;
+}
+
 export interface AuthorityLimitView {
   readonly groupId: string;
   readonly groupCode: string;
@@ -241,6 +257,23 @@ const withBody = (method: string, body: unknown): RequestInit => ({
 
 export const listAuthorityLimits = (): Promise<AuthorityLimitList> =>
   apiJson('/quotes/authority/limits', decodeAuthorityLimitList);
+
+export function decodeAuthorityGroup(input: unknown): AuthorityGroupView {
+  const row = asObject(input, 'authority group');
+  const id = str(row, 'id', 'authority group');
+  const what = `authority group "${id}"`;
+  return { id, code: str(row, 'code', what), nameTh: str(row, 'nameTh', what) };
+}
+
+export const listAuthorityGroups = (): Promise<readonly AuthorityGroupView[]> =>
+  apiJson('/quotes/authority/groups', (body) => {
+    const row = asObject(body, 'authority groups response');
+    const groups = row['groups'];
+    if (!Array.isArray(groups)) {
+      throw new TypeError('authority groups response has no groups array');
+    }
+    return groups.map(decodeAuthorityGroup);
+  });
 
 export interface SetAuthorityLimitRequest {
   readonly groupId: string;

@@ -510,6 +510,33 @@ describeWithPg('authority limits — the screen that fills the table in', () => 
       expect(after.isFailClosed).toBe(false);
     });
 
+    /**
+     * ⭐ The role picker's source, and the permission dead-end it exists to close.
+     *
+     * The only list of groups was `GET /admin/groups`, gated on **`users.read`** — the whole
+     * staff directory. So `groups.write`, the permission that owns this table, could not be
+     * delegated without a PDPA-relevant disclosure, and a reviewer holding `groups.read` +
+     * `groups.write` could not reach the screen at all.
+     *
+     * ⚠️ Two assertions, and the second is the point of the first: the roster is readable with
+     * `groups.read` **and** carries nothing but what names a role. A future hand that added
+     * `permissions` or `memberCount` here would be re-opening the disclosure under a different
+     * route, so the shape is pinned exactly rather than by presence.
+     */
+    it('serves the role picker under groups.read, and nothing about any person', async () => {
+      const listed = await call('GET', '/quotes/authority/groups', { token: owner.token });
+      expect(listed.status).toBe(200);
+
+      const wire = body<{ groups: readonly Record<string, unknown>[] }>(listed);
+      const ours = wire.groups.find((row) => row['id'] === salesGroupId);
+      expect(ours, 'the sales group is missing from the roster').toBeDefined();
+      expect(Object.keys(ours ?? {}).sort()).toEqual(['code', 'id', 'nameTh']);
+
+      /* And it is `groups.read` that opens it — a salesperson holding neither is refused. */
+      const bySales = await call('GET', '/quotes/authority/groups', { token: sales.token });
+      expect(bySales.status).toBe(403);
+    });
+
     it('refuses an unknown group and an unknown dimension as not-found, never a 500', async () => {
       const unknownGroup = await grant(randomUUID(), 'margin', '100');
       expect(unknownGroup.status).toBe(404);

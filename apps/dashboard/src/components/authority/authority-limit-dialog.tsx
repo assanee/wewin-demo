@@ -16,7 +16,11 @@ import {
 import { ReadOnlyField, SelectField, TextField } from '@/components/products/form-field';
 import { failureMessage } from '@/lib/api/errors';
 
-import { setAuthorityLimit, type AuthorityLimitView } from './authority-limits-api';
+import {
+  setAuthorityLimit,
+  type AuthorityGroupView,
+  type AuthorityLimitView,
+} from './authority-limits-api';
 import {
   DIMENSION_HINT_TH,
   DIMENSION_LABEL_TH,
@@ -29,7 +33,6 @@ import {
   setLimitRequest,
   type LimitFields,
 } from './authority-limits';
-import type { Group } from './user-api';
 
 /**
  * Granting, changing or reinstating one role's ceiling.
@@ -58,7 +61,7 @@ export function AuthorityLimitDialog({
 }: {
   /** `null` to grant a new ceiling. */
   readonly limit: AuthorityLimitView | null;
-  readonly groups: readonly Group[];
+  readonly groups: readonly AuthorityGroupView[];
   /** Every ceiling that already exists, live or withdrawn — see `collision` below. */
   readonly taken: readonly AuthorityLimitView[];
   readonly onClose: () => void;

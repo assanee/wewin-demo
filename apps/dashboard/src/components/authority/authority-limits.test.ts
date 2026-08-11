@@ -20,11 +20,11 @@ import {
   decodeAuthorityLimit,
   decodeAuthorityLimitChange,
   decodeAuthorityLimitList,
+  type AuthorityGroupView,
   type AuthorityLimitChangeView,
   type AuthorityLimitView,
 } from './authority-limits-api';
 import AuthorityLimitsPanel, { type AuthorityLimitsState } from './authority-limits-panel';
-import type { Group } from './user-api';
 
 /**
  * The ceiling screen's rules, proved without a browser.
@@ -346,15 +346,8 @@ describe('the wire is narrowed, never cast', () => {
  * ------------------------------------------------------------------ */
 
 describe('AuthorityLimitsPanel', () => {
-  const groups: readonly Group[] = [
-    {
-      id: '11111111-1111-4111-8111-111111111111',
-      code: 'sales_lead',
-      nameTh: 'หัวหน้าฝ่ายขาย',
-      isSystem: false,
-      permissions: [],
-      memberCount: 2,
-    },
+  const groups: readonly AuthorityGroupView[] = [
+    { id: '11111111-1111-4111-8111-111111111111', code: 'sales_lead', nameTh: 'หัวหน้าฝ่ายขาย' },
   ];
 
   const render = (state: AuthorityLimitsState, editable: boolean): string =>

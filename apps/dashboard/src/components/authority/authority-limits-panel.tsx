@@ -11,11 +11,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { baht } from '@/components/quotes/amounts';
 import { failureMessage } from '@/lib/api/errors';
 
-import { withdrawAuthorityLimit, type AuthorityLimitView } from './authority-limits-api';
+import {
+  withdrawAuthorityLimit,
+  type AuthorityGroupView,
+  type AuthorityLimitView,
+} from './authority-limits-api';
 import { DIMENSION_LABEL_TH, ceilingMeaningTh } from './authority-limits';
 import { AuthorityLimitDialog } from './authority-limit-dialog';
 import { AuthorityLimitHistoryDialog } from './authority-limit-history';
-import type { Group } from './user-api';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -32,8 +35,13 @@ import type { Group } from './user-api';
  *
  * Authority attaches to a **group**, and a salesperson who could write this table would raise
  * their own ceiling and then need nobody's approval for anything. So the API gates it on
- * `groups.write` — group administration — and this is the screen where groups are already
- * administered. `AuthorityLimitsPanel` is a sibling of `GroupsPanel`, one tab across.
+ * `groups.write` — group administration.
+ *
+ * ⚠️ It began as a third tab on `/users`, and that was wrong for a reason no test could see:
+ * `/users` is gated on `users.read`, so reaching the ceiling table required sight of the entire
+ * staff directory, and `groups.write` — held by nobody at boot — could not be delegated without
+ * it. It is its own page now, reachable with `groups.read` alone, and **nothing in this folder
+ * imports from `components/users/`**. That is the invariant; the rest is layout.
  *
  * ── ⚠️ Withdrawn rows are shown, dimmed, not hidden ──────────────────────────────
  *
@@ -72,8 +80,8 @@ export default function AuthorityLimitsPanel({
   onChanged,
 }: {
   readonly state: AuthorityLimitsState;
-  /** For the add dialog's role picker. Already loaded by the parent for `GroupsPanel`. */
-  readonly groups: readonly Group[];
+  /** For the add dialog's role picker — `GET /quotes/authority/groups`, under `groups.read`. */
+  readonly groups: readonly AuthorityGroupView[];
   readonly editable: boolean;
   readonly onChanged: () => Promise<void>;
 }) {

@@ -256,3 +256,26 @@ export interface AuthorityLimitChangeWire {
 export interface AuthorityLimitChangeListWire {
   readonly changes: readonly AuthorityLimitChangeWire[];
 }
+
+/**
+ * ⭐ A role, named — and nothing else about it.
+ *
+ * The role picker on the authority screen needs a list of groups to choose from, and the only
+ * endpoint that served one was `GET /admin/groups` behind **`users.read`**. That made the
+ * ceiling table undelegatable: a person holding `groups.read` + `groups.write` — the permission
+ * that *owns* this table — could not reach the screen without also being granted sight of the
+ * entire staff directory, which this project treats as a PDPA-relevant disclosure.
+ *
+ * ⚠️ Three fields, deliberately. No permission grants, no member counts, and nothing about any
+ * person. `groups.read`'s catalogue entry already describes reading groups; what was missing
+ * was a route that asked for it rather than for `users.read`.
+ */
+export interface AuthorityGroupWire {
+  readonly id: string;
+  readonly code: string;
+  readonly nameTh: string;
+}
+
+export interface AuthorityGroupListWire {
+  readonly groups: readonly AuthorityGroupWire[];
+}

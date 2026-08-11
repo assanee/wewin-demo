@@ -21,6 +21,7 @@ import {
   type AuthorityLimitRow,
   type AuthorityLimitSnapshot,
   type AuthorityTx,
+  type GroupFacts,
   type OrderFacts,
 } from './authority.repository';
 
@@ -648,6 +649,16 @@ export class AuthorityService {
 
   async limits(): Promise<readonly AuthorityLimitRow[]> {
     return this.repository.listLimits();
+  }
+
+  /**
+   * The roles a ceiling can be granted to.
+   *
+   * Read-only, three columns, and behind `groups.read` — see `AuthorityRepository.listGroups`
+   * for why this exists at all rather than the screen calling `GET /admin/groups`.
+   */
+  async groups(): Promise<readonly GroupFacts[]> {
+    return this.repository.listGroups();
   }
 
   /**

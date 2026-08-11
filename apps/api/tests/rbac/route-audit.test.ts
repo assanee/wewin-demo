@@ -410,6 +410,11 @@ describe('boot-time route audit', () => {
       'GET /products/:productId/reviews [anonymous]',
       'GET /quotes/approvals [permissions]',
       'GET /quotes/approvals/:approvalId [permissions]',
+      /* The role picker's source, `groups.read`. It exists because the only other list of
+       * groups is `GET /admin/groups` behind `users.read`, which made `groups.write` — the
+       * permission that owns the ceiling table — undelegatable without handing over the staff
+       * directory too. Three columns, nothing about any person. */
+      'GET /quotes/authority/groups [permissions]',
       'GET /quotes/authority/limits [permissions]',
       /* The history read is `groups.read`, not `groups.write` — seeing that authority was
        * widened for one deal and narrowed back must not require the power to do it. */

@@ -345,11 +345,13 @@ export const isForbidden = (error: unknown): boolean =>
  * the day either grows a domain-specific message the shared version would have to grow a flag
  * saying which caller it is for.
  */
-export function failureMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error && error.message !== '') return error.message;
-  return 'เกิดข้อผิดพลาดที่ไม่รู้จัก';
-}
+/**
+ * ⚠️ One of three copies that predate `@/lib/api/errors`, now delegating to it rather than
+ * restating it. It stopped being a harmless duplicate the day the canonical one learned to
+ * render `RbacGuard`'s English `Missing permission: …` in Thai: a copy that did not would put
+ * that sentence on this screen and nowhere else, which is worse than either answer alone.
+ */
+export { failureMessage } from '@/lib/api/errors';
 
 /* ------------------------------------------------------------------ *
  * The pinned document — what a quotation actually is

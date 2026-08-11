@@ -135,7 +135,11 @@ export interface AuthorityLimitChangeRow {
   readonly after: AuthorityLimitSnapshot;
 }
 
-/** The group a ceiling attaches to, locked. `undefined` from `lockGroup` means no such group. */
+/**
+ * The group a ceiling attaches to. `undefined` from `lockGroup` means no such group; the same
+ * three columns are what `listGroups` puts on the wire for the role picker, deliberately —
+ * naming a role is all either caller needs, and it is all `groups.read` should have to buy.
+ */
 export interface GroupFacts {
   readonly id: string;
   readonly code: string;
@@ -406,6 +410,28 @@ export class AuthorityRepository {
       .from(authorityLimits)
       .innerJoin(groups, eq(groups.id, authorityLimits.groupId))
       .orderBy(asc(groups.code), asc(authorityLimits.dimension));
+  }
+
+  /**
+   * ⭐ Every role a ceiling can be granted to — the picker's source, under `groups.read`.
+   *
+   * ⚠️ Three columns and no more, and that is the whole design. `GET /admin/groups` answers a
+   * richer question (permission grants, member counts) and is gated on **`users.read`**, which
+   * is sight of the entire staff directory. Requiring that to fill in a `<select>` on the
+   * authority screen made `groups.write` — the permission that owns this table — undelegatable
+   * without a PDPA-relevant disclosure, which is what a reviewer found by holding
+   * `groups.read` + `groups.write` and being unable to reach the screen at all.
+   *
+   * So the roster is served here, from the module that owns the ceilings, carrying only what a
+   * role picker needs to name a role. `groups.read`'s own catalogue entry — *"Read groups and
+   * their permission grants"* — already covers it; what was missing was a route that asked for
+   * it. Nothing about any *person* crosses this boundary.
+   */
+  async listGroups(tx?: AuthorityTx): Promise<readonly GroupFacts[]> {
+    return this.executor(tx)
+      .select({ id: groups.id, code: groups.code, nameTh: groups.nameTh })
+      .from(groups)
+      .orderBy(asc(groups.code));
   }
 
   /**

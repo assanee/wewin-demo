@@ -4,6 +4,7 @@ import {
   ApiError,
   apiErrorFromResponse,
   displayMessage,
+  failureMessage,
   ERROR_CODES,
 } from '../src/lib/api/errors';
 import {
@@ -241,6 +242,61 @@ describe('a raw key must not reach a screen', () => {
     // An empty toast reads as "nothing happened", which is the one thing that is not true.
     expect(displayMessage(error)).toContain('req_999');
     expect(displayMessage(error).trim().length).toBeGreaterThan(10);
+  });
+
+  /**
+   * ⭐ The one English sentence a member of staff can reach, rendered in Thai.
+   *
+   * `RbacGuard` refuses with a raw Nest `ForbiddenException` — `Missing permission: users.read.`
+   * — which is not an `AppError`, carries no `messageKey`, and never passes through the API's
+   * i18n rendering. A reviewer met it head-on: navigating to a screen they lacked the
+   * permission for produced an all-English alert on an all-Thai page.
+   *
+   * ⚠️ The codes survive into the Thai sentence on purpose. `rbac.guard.ts` names them
+   * deliberately — its own comment says that is the difference between "ask an administrator
+   * for orders.refund" and a support thread that starts with "it says forbidden".
+   */
+  it('renders the permission guard’s English refusal in Thai, codes intact', () => {
+    const refused = new ApiError({
+      status: 403,
+      code: 'FORBIDDEN',
+      message: 'Missing permission: users.read.',
+    });
+
+    expect(failureMessage(refused)).not.toContain('Missing permission');
+    expect(failureMessage(refused)).toContain('users.read');
+    expect(failureMessage(refused)).toContain('ผู้ดูแลระบบ');
+
+    /* More than one code is one refusal, not two. */
+    expect(
+      failureMessage(
+        new ApiError({
+          status: 403,
+          code: 'FORBIDDEN',
+          message: 'Missing permission: groups.read, groups.write.',
+        }),
+      ),
+    ).toContain('groups.read, groups.write');
+  });
+
+  /**
+   * ⚠️ …and every *other* forbidden answer is left exactly as the server wrote it.
+   *
+   * Most 403s from this API are Thai sentences from `AppError.forbidden` that say something
+   * specific — which quote, which account, which rule. Replacing those with a generic line
+   * because they share a code would throw away the only part a person can act on. The match is
+   * on the guard's shape, not on `FORBIDDEN`.
+   */
+  it('leaves a forbidden answer the API wrote for itself alone', () => {
+    const specific = 'คุณอนุมัติคำขอของตัวเองไม่ได้';
+    expect(
+      failureMessage(new ApiError({ status: 403, code: 'FORBIDDEN', message: specific })),
+    ).toBe(specific);
+
+    const notTheGuard = 'Missing permission for reasons';
+    expect(
+      failureMessage(new ApiError({ status: 403, code: 'FORBIDDEN', message: notTheGuard })),
+    ).toBe(notTheGuard);
   });
 
   it('has not lost any of the codes the app branches on', () => {

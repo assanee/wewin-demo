@@ -8,17 +8,19 @@ import { CurrentScope, RequirePermissions, type Scope } from '../../rbac';
 import {
   setAuthorityLimitSchema,
   type AuthorityAssessmentWire,
+  type AuthorityGroupListWire,
   type AuthorityLimitChangeListWire,
   type AuthorityLimitListWire,
   type SetAuthorityLimitWire,
 } from './authority.contract';
-import { assessmentWire, limitChangeWire, limitWire } from './authority.presenter';
+import { assessmentWire, groupWire, limitChangeWire, limitWire } from './authority.presenter';
 import { AuthorityService } from './authority.service';
 import type { AuthorityLimitRow } from './authority.repository';
 
 /**
  * The ceilings themselves, and what one quote concedes against them.
  *
+ *     GET    /quotes/authority/groups                             the roles a ceiling attaches to
  *     GET    /quotes/authority/limits                             who may concede how much
  *     PUT    /quotes/authority/limits                             grant, change or reinstate one
  *     DELETE /quotes/authority/limits/:groupId/:dimension         withdraw it (a flag, not a delete)
@@ -100,6 +102,30 @@ export class AuthorityController {
   @privateToTheCaller()
   async limits(): Promise<AuthorityLimitListWire> {
     return listWire(await this.authority.limits());
+  }
+
+  /**
+   * ⭐ The roles a ceiling can be granted to — the screen's picker, under `groups.read`.
+   *
+   * ⚠️ **This route exists because of a permission dead-end, and that is the whole of it.**
+   * The only list of groups was `GET /admin/groups`, gated on `users.read` — sight of the
+   * entire staff directory. So a person holding `groups.read` + `groups.write`, the permission
+   * that owns this very table, could not reach the ceiling screen at all: verified in a browser
+   * by a reviewer, who got a 403 on the group list and an English refusal on a Thai page.
+   * `groups.write` is held by nobody at boot, so the first person granted it landed there.
+   *
+   * Serving it here rather than relaxing `/admin/groups` is deliberate. `@RequirePermissions`
+   * means *every* code, not any, so widening that route would have taken the group tab away
+   * from `users.read` holders; and `/admin/groups` answers a richer question — permission
+   * grants and member counts — than a `<select>` has any business buying. This answers the
+   * narrow one: three columns that name a role, and nothing about any person.
+   */
+  @Get('groups')
+  @RequirePermissions('groups.read')
+  @contractVersion()
+  @privateToTheCaller()
+  async groups(): Promise<AuthorityGroupListWire> {
+    return { groups: (await this.authority.groups()).map(groupWire) };
   }
 
   /**

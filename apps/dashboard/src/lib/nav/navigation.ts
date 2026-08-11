@@ -6,6 +6,7 @@ import {
   MessageSquare,
   Receipt,
   RotateCcw,
+  ShieldCheck,
   UserCog,
   Users,
   Boxes,
@@ -209,6 +210,27 @@ export const NAVIGATION: readonly NavSection[] = [
         labelTh: 'ผู้ใช้และสิทธิ์',
         icon: Users,
         requires: ['users.read'],
+      },
+      {
+        /*
+         * ⭐ `groups.read` — **not** `users.read`, and that is the entry's whole reason to
+         * exist.
+         *
+         * The ceiling table began life as a tab on `/users`, which requires `users.read`:
+         * sight of the entire staff directory. So `groups.write` — the permission that owns
+         * the table, held by nobody at boot — could not be delegated without a PDPA-relevant
+         * disclosure, and the first person granted it had no route to the screen at all.
+         * Both of the page's reads are `groups.read` (`GET /quotes/authority/limits` and
+         * `/groups`), so this is the code the menu asks for.
+         *
+         * `groups.write` is decided per control inside the page, the same way `/users` decides
+         * `users.write`: reading which role may concede how much, and the history of who moved
+         * it, is exactly the thing that should not require the power to move it.
+         */
+        href: '/authority',
+        labelTh: 'เพดานอำนาจอนุมัติ',
+        icon: ShieldCheck,
+        requires: ['groups.read'],
       },
       {
         /*
