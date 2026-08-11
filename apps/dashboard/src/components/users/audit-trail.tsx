@@ -36,6 +36,8 @@ const ACTION_TH: Record<AdminEventAction, string> = {
   'user.sessions_revoked': 'บังคับออกจากระบบ',
   'user.password_link_sent': 'ส่งลิงก์ตั้งรหัสผ่าน',
   'user.mfa_disabled': 'ปิดการยืนยันสองขั้น',
+  'user.phone_verified': 'ยืนยันเบอร์โทร',
+  'user.phone_unverified': 'ยกเลิกการยืนยันเบอร์โทร',
   'group.created': 'สร้างกลุ่ม',
   'group.renamed': 'เปลี่ยนชื่อกลุ่ม',
   'group.deleted': 'ลบกลุ่ม',

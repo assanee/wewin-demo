@@ -854,6 +854,23 @@ export const userEmails = pgTable(
  * ⚠️ **Until then an unverified number cannot sign anybody in**, exactly as an unverified
  * address cannot: `findByVerifiedPhone` requires the column, for the reason
  * `password.repository.ts` gives at length. A claim is not an identity.
+ *
+ * ── ⚠️ A staff assertion can be undone; a proved one still cannot ────────────
+ *
+ * `user_phones_verification_is_final` (0025_user_phones.sql) refuses to null `verified_at`
+ * on any verified row at all — written when this table meant only proof of possession, where
+ * "un-verifying" would let a number that once carried proof be quietly downgraded and
+ * re-claimed. That is not what a staff assertion is: a person can be wrong, and wrong has to
+ * be undoable, which is exactly what this table's own paragraph above already promised and
+ * the original trigger never carved out room for.
+ *
+ * 0035_phone_verification_events.sql narrows the refusal rather than removing it: undoing is
+ * let through only when `verified_by_user_id` was set going in — a staff assertion, by
+ * construction — and both columns must return to null together, never the voucher alone
+ * (`user_phones_voucher_needs_a_verification` already makes the other combination
+ * unrepresentable). A row proved with no voucher — the future OTP this table was built to
+ * anticipate — keeps the original guarantee exactly as written: it cannot be un-verified,
+ * renumbered, or moved, only deleted.
  */
 export const userPhones = pgTable(
   'user_phones',
@@ -1443,6 +1460,23 @@ export const ADMIN_EVENT_ACTIONS = [
   'user.sessions_revoked',
   'user.password_link_sent',
   'user.mfa_disabled',
+  /*
+   * ⭐ Added for the staff-assertion phone flow (0035_phone_verification_events.sql).
+   *
+   * `user_phones.verified_at` / `.verified_by_user_id` already carry who and when — that is
+   * what makes a staff assertion distinguishable from a future OTP verification, per the
+   * schema comment on `userPhones`. So why also a row here, when the two columns are already
+   * the record?
+   *
+   * Because un-verifying (a number verified by mistake, undone) NULLs both columns —
+   * `user_phones_voucher_needs_a_verification` requires it — and that erases the very fact
+   * this pair exists to hold. Exactly the same shape as `suspended_at`: reinstating nulls it,
+   * and `user.reinstated` is what still answers "who suspended them, and when" afterwards.
+   * Without a row here, un-verifying a mistaken assertion would leave no trace that the
+   * mistake, or its correction, ever happened.
+   */
+  'user.phone_verified',
+  'user.phone_unverified',
   'group.created',
   'group.renamed',
   'group.deleted',

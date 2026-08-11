@@ -19,6 +19,36 @@ export interface UserGroupWire {
   readonly isSystem: boolean;
 }
 
+/**
+ * One telephone claim, verified or not.
+ *
+ * ⚠️ Unlike `emails` on the wire below, this is **every** claim, not only proven ones — the
+ * "verify" button has nothing to attach to if the unverified row is not on the screen at
+ * all. That is safe here in a way it would not be for `emails`: each entry carries its own
+ * `verifiedAt`, so the screen never presents a claim as though it were a fact the way a bare
+ * list of strings would.
+ */
+export interface UserPhoneWire {
+  readonly id: string;
+  readonly number: string;
+  readonly isPrimary: boolean;
+  /**
+   * Null until a member of staff vouched for it, or a future OTP proves possession.
+   *
+   * ⚠️ This alone cannot say *which* of those happened — see `verifiedByUserId`. A reader
+   * wanting to distinguish "staff assertion" from "proven possession" needs both fields, not
+   * this one on its own.
+   */
+  readonly verifiedAt: string | null;
+  /**
+   * Who vouched, when it was a person. Null for an unverified claim **and** null for a
+   * future OTP — a verification with no voucher is possession proved directly, needing no
+   * human to say so. Non-null is what makes a staff assertion legible as one from this row
+   * alone, without a join to `admin_events`.
+   */
+  readonly verifiedByUserId: string | null;
+}
+
 export interface UserSummaryWire {
   readonly id: string;
   readonly displayName: string | null;
@@ -32,6 +62,8 @@ export interface UserSummaryWire {
    * screen looking exactly like a fact.
    */
   readonly emails: readonly string[];
+  /** See `UserPhoneWire` — every claim, verified or not, each one saying which it is. */
+  readonly phones: readonly UserPhoneWire[];
   readonly groups: readonly UserGroupWire[];
   /** Derived from the groups. A user holds no permission directly. */
   readonly permissions: readonly PermissionCode[];

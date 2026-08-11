@@ -410,5 +410,14 @@ describe('what is still a Thai string, as a number', () => {
  * `assertTransferPlausible`'s literal Thai sentences in the very same file, none of which
  * `payments/slips/slip-errors.ts`'s "converted" list (below) claims, so keying only the new
  * one would be a smaller, inconsistent island inside a file the round otherwise left alone.
+ *
+ * ── 213 → 220: phone verification ────────────────────────────────────────────────
+ *
+ * Seven, all in `users/users.service.ts`'s new `verifyPhone`/`unverifyPhone` — the same
+ * argument the "179 → 197: user administration" note above already made for the rest of this
+ * module, applying unchanged: this screen is `/admin/users`, gated on `users.write`, and its
+ * one reader is Thai staff. A member of staff clicking "verify" or "ยกเลิกยืนยัน" and being
+ * told `เบอร์นี้ยืนยันแล้ว` is not a customer reading Thai they cannot read — the sentence
+ * that note already flags as the day this reasoning stops holding.
  */
-const RAW_LITERAL_CALL_SITES = 213;
+const RAW_LITERAL_CALL_SITES = 220;

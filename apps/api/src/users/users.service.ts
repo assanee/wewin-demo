@@ -92,6 +92,89 @@ export class UsersService {
     );
   }
 
+  /**
+   * A member of staff, having spoken to the customer, says this number belongs to them.
+   *
+   * ⚠️ This is **not** proof of possession — there is no SMS OTP here, deliberately (no
+   * provider, no per-message cost the owner has not agreed to pay). It is a weaker and
+   * different claim, and `verified_by_user_id` is what keeps a later reader from mistaking
+   * it for the stronger one: non-null means "a person at this company vouched", exactly as
+   * the phone table's schema comment argues. The day an OTP flow exists it sets
+   * `verified_at` alone and leaves this column null, and the two kinds stay distinguishable
+   * on the row without a join anywhere.
+   */
+  async verifyPhone(callerUserId: string, userId: string, phoneId: string): Promise<void> {
+    const phone = await this.repository.findPhone(phoneId);
+    if (phone === undefined || phone.userId !== userId) {
+      throw AppError.notFound('ไม่พบเบอร์นี้');
+    }
+
+    if (phone.verifiedAt !== null) {
+      /*
+       * ⚠️ Refused, not silently repeated. `verifyPhone`'s UPDATE is guarded by `verified_at
+       * is null`, so a second call here would already change nothing — this is what turns
+       * that into a sentence instead of a 204 that reports success over no-op, the same
+       * discipline `setSuspended` applies to suspending twice.
+       */
+      throw AppError.conflict(
+        'เบอร์นี้ยืนยันแล้ว — หากต้องการเปลี่ยนคนยืนยัน ให้ยกเลิกการยืนยันก่อนแล้วยืนยันใหม่',
+        { reason: 'already-verified' },
+      );
+    }
+
+    const verified = await this.repository.verifyPhone(phoneId, userId, callerUserId);
+    if (!verified) {
+      // Somebody else verified it between the read above and this write — the compare-and-
+      // set lost the race. Reported as a conflict rather than retried silently, so the
+      // screen reloads and shows who actually won it.
+      throw AppError.conflict('สถานะเบอร์นี้เปลี่ยนไปแล้ว — กรุณาโหลดข้อมูลใหม่', {
+        reason: 'state-changed',
+      });
+    }
+    this.logger.log(`phone ${phoneId} of ${userId} verified by ${callerUserId}`);
+  }
+
+  /**
+   * Undo a verification — a number vouched for by mistake, and mistakes have to be undoable.
+   *
+   * Both `verified_at` and `verified_by_user_id` return to null. Not one alone:
+   * `user_phones_voucher_needs_a_verification` refuses a voucher on an unverified row, so a
+   * half-cleared pair is not a state this table can hold. Un-verifying is the pair returning
+   * to exactly what a fresh, never-verified claim looks like — the mistake and its correction
+   * survive only in `admin_events`, which is why `user.phone_unverified` exists at all.
+   */
+  async unverifyPhone(callerUserId: string, userId: string, phoneId: string): Promise<void> {
+    const phone = await this.repository.findPhone(phoneId);
+    if (phone === undefined || phone.userId !== userId) {
+      throw AppError.notFound('ไม่พบเบอร์นี้');
+    }
+
+    if (phone.verifiedAt === null) {
+      throw AppError.conflict('เบอร์นี้ยังไม่ได้ยืนยัน', { reason: 'not-verified' });
+    }
+
+    /*
+     * `user_phones_primary_is_verified` demands a primary number stay verified — un-verifying
+     * one would either violate that CHECK outright or (if the primary flag also moved) change
+     * which number the account signs in and is found by, which is not what this button is
+     * for. Refused with a sentence rather than left to surface as a 500 from Postgres.
+     */
+    if (phone.isPrimary) {
+      throw AppError.conflict(
+        'ยกเลิกการยืนยันเบอร์หลักไม่ได้ — เบอร์หลักของบัญชีต้องเป็นเบอร์ที่ยืนยันแล้วเสมอ ตั้งเบอร์อื่นเป็นเบอร์หลักก่อน',
+        { reason: 'primary-number' },
+      );
+    }
+
+    const unverified = await this.repository.unverifyPhone(phoneId, userId, callerUserId);
+    if (!unverified) {
+      throw AppError.conflict('สถานะเบอร์นี้เปลี่ยนไปแล้ว — กรุณาโหลดข้อมูลใหม่', {
+        reason: 'state-changed',
+      });
+    }
+    this.logger.log(`phone ${phoneId} of ${userId} unverified by ${callerUserId}`);
+  }
+
   async setUserGroups(
     callerUserId: string,
     userId: string,

@@ -269,6 +269,11 @@ describe('boot-time route audit', () => {
        * correctly, and aiming it at yourself would be a door around that rule.
        */
       'DELETE /admin/users/:userId/mfa [permissions]',
+      /*
+       * ⭐ Undo a phone verification vouched for by mistake. Same permission as every other
+       * write on this account — see `POST` of the same path below for the assertion itself.
+       */
+      'DELETE /admin/users/:userId/phones/:phoneId/verification [permissions]',
       'DELETE /admin/users/:userId/suspension [permissions]',
       /*
        * ⚠️ The one action here that leaves the account *less* protected, and the only one
@@ -434,6 +439,12 @@ describe('boot-time route audit', () => {
       'POST /admin/reviews/:reviewId/unhide [permissions]',
       'POST /admin/users [permissions]',
       'POST /admin/users/:userId/password-link [permissions]',
+      /*
+       * ⭐ A member of staff, having spoken to the customer, vouches for a number — not proof
+       * of possession, and the owner's decision was no SMS OTP at all. `users.write`, the
+       * same authority that edits the rest of the account. See `UsersService.verifyPhone`.
+       */
+      'POST /admin/users/:userId/phones/:phoneId/verification [permissions]',
       'POST /admin/users/:userId/sessions/revocation [permissions]',
       'POST /admin/users/:userId/suspension [permissions]',
       'POST /auth/logout [authenticated]',
