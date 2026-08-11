@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { describe, expect, it } from 'vitest';
-import { printableQuotation, type PinnedDocument } from '@wewin/core/quotation';
+import { pinnedDocumentFrom, printableQuotation, type PinnedDocument } from '@wewin/core/quotation';
 
 import { LocaleProvider } from '@/state/LocaleProvider';
 import { QuotationIsland } from '@/components/quotation/QuotationIsland';
@@ -77,6 +77,49 @@ const BASE: PinnedDocument = {
   charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 100_000n }],
 };
 
+/*
+ * ⚠️ Wire-shaped, and used only by the footing test below. `BASE` above is a hand-built
+ * `PinnedDocument` — useful for asserting what `printableQuotation` does with a given
+ * document, but reducing over `BASE.lines`/`BASE.charges` directly never calls
+ * `pinnedDocumentFrom` or `printableQuotation` at all, so it cannot fail when either one
+ * does — a review round on this branch caught exactly that shape of test here and asked
+ * for a decode through the real functions instead. Same figures as `BASE` and as
+ * `packages/core/tests/quotation.test.ts`'s own destination-basis fixture, tagged the way
+ * the wire actually carries money (`satang()` in `quotation.ts` throws on anything else).
+ */
+const satangTag = (digits: string) => ({ unit: 'THB.satang', digits });
+
+const wireLine = (lineNo: number, nameTh: string, netDigits: string): Record<string, unknown> => ({
+  lineNo,
+  nameTh,
+  skuCode: `SKU-${String(lineNo)}`,
+  qty: 1,
+  customerDescriptionTh: null,
+  measures: {},
+  price: { lines: [] },
+  netMinor: satangTag(netDigits),
+});
+
+const wireDoc: Record<string, unknown> = {
+  documentSchemaVersion: 2,
+  revision: 1,
+  documentHash: 'inclusive-layout-wire-fixture',
+  currency: 'THB',
+  pinnedLocale: 'th',
+  pinnedCoreVersion: 'dev',
+  vat: { rateBp: 900, treatment: 'standard' },
+  lines: [wireLine(1, 'เก้าอี้อะลูมิเนียม', '2000000'), wireLine(2, 'โต๊ะอะลูมิเนียม', '900000')],
+  charges: [{ labelTh: 'ค่าติดตั้ง', amountThbMinor: satangTag('100000') }],
+  documentOverride: null,
+  netThbMinor: satangTag('2752294'),
+  vatThbMinor: satangTag('247706'),
+  grandTotalThbMinor: satangTag('3000000'),
+  leadTimeDays: 30,
+  taxBasis: 'inclusive',
+};
+
+const wireContext = { orderNo: 'WW-3000', contactName: null, submittedAt: '2026-08-07T00:00:00.000Z' };
+
 describe('⭐ vatIsIncluded, off the pinned document', () => {
   it('is true for an inclusive destination', () => {
     const inclusive = printableQuotation({ ...BASE, taxBasis: 'inclusive' });
@@ -102,12 +145,27 @@ describe('⭐ vatIsIncluded, off the pinned document', () => {
     );
   });
 
-  it('lines and charges together foot to the grand total, same as the core suite pins', () => {
-    const lineSum = BASE.lines.reduce((total, line) => total + line.netMinor, 0n);
-    const chargeSum = BASE.charges.reduce((total, charge) => total + charge.amountMinor, 0n);
+  it('⚠️ lines and charges together foot to the grand total, decoded through the real functions', () => {
+    /*
+     * Both halves of the pipeline, not a reduction over a hand-typed literal: decode with
+     * `pinnedDocumentFrom` (this is what actually failed, silently returning `undefined`
+     * for `vatIsIncluded`, the first time this suite ran against a stale `packages/core`
+     * build), then render with `printableQuotation`. A mutation that breaks either one
+     * — confirmed with the same "make `printableQuotation` throw unconditionally" check a
+     * review round used to prove the old version of this test never called it — reddens
+     * this test.
+     */
+    const pinned = pinnedDocumentFrom(wireDoc, wireContext);
 
-    expect(lineSum + chargeSum).toBe(BASE.grandTotalThbMinor);
-    expect(BASE.netThbMinor + BASE.vatThbMinor).toBe(BASE.grandTotalThbMinor);
+    const lineSum = pinned.lines.reduce((total, line) => total + line.netMinor, 0n);
+    const chargeSum = pinned.charges.reduce((total, charge) => total + charge.amountMinor, 0n);
+
+    expect(lineSum + chargeSum).toBe(pinned.grandTotalThbMinor);
+    expect(pinned.netThbMinor + pinned.vatThbMinor).toBe(pinned.grandTotalThbMinor);
+
+    /* Ties the minor-unit footing above to what a reader actually sees: the rendered grand
+     * total is the same ฿30,000.00 the lines and charges just summed to. */
+    expect(printableQuotation(pinned).grandTotalText).toBe('฿30,000.00');
   });
 });
 
