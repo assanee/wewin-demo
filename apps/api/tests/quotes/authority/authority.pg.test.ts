@@ -923,11 +923,47 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
         { token: owner.token },
       );
       expect(removed.status).toBe(200);
-      expect(
-        body<{ limits: readonly { groupId: string; dimension: string }[] }>(removed).limits.some(
-          (limit) => limit.groupId === approverGroupId && limit.dimension === 'cashflow',
-        ),
-      ).toBe(false);
+
+      /*
+       * ⚠️ **The row is still here, and this assertion was rewritten rather than deleted.**
+       *
+       * It read `.some(...)` `toBe(false)` while `DELETE` was a real delete. Migration 0038
+       * made withdrawal a flag — `authority_limits_block_delete` refuses the alternative,
+       * because the row is what records who granted this role its authority and deleting it
+       * took that name away with the number. So "taken away again" is now three facts rather
+       * than an absence, and all three are asserted: the row survives, it carries a revocation
+       * stamped with the person who made it, and it grants nothing.
+       *
+       * The third is the one that matters and it is checked against the *ceiling read* rather
+       * than against the list, because `ceiling()` is what actually decides. A list that dimmed
+       * the row while `ceiling()` kept honouring it would be fail-open with a tidy screen.
+       */
+      const withdrawn = body<{
+        limits: readonly {
+          groupId: string;
+          dimension: string;
+          revokedAt: string | null;
+          revokedByUserId: string | null;
+          grantedByUserId: string;
+        }[];
+        isFailClosed: boolean;
+      }>(removed).limits.find(
+        (limit) => limit.groupId === approverGroupId && limit.dimension === 'cashflow',
+      );
+
+      expect(withdrawn, 'the ceiling was deleted, not withdrawn').toBeDefined();
+      expect(withdrawn?.revokedAt).not.toBeNull();
+      expect(withdrawn?.revokedByUserId).toBe(owner.userId);
+      /* The granter's name survives the revocation — that is the whole reason the row does. */
+      expect(withdrawn?.grantedByUserId).toBe(owner.userId);
+
+      const approverScope = userScope({
+        userId: approver.userId,
+        sessionId: randomUUID(),
+        permissions: new Set(['quotes.read', 'quotes.write', 'quotes.approve']),
+        groupIds: [approverGroupId],
+      });
+      expect(await service.ceilingFor(approverScope, 'cashflow')).toBeUndefined();
     });
   });
 });

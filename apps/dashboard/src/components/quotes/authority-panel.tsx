@@ -224,7 +224,7 @@ function DimensionRow({
         </ul>
       )}
 
-      <CeilingLine ceilingThbMinor={dimension.ceilingThbMinor} />
+      <CeilingLine claim={ceilingClaim(dimension)} />
       <Outcome outcome={dimension.outcome} />
 
       {dimension.outcome !== 'needs_approval' ? null : (
@@ -256,8 +256,47 @@ function DimensionRow({
   );
 }
 
-function CeilingLine({ ceilingThbMinor }: { readonly ceilingThbMinor: bigint | null }) {
-  if (ceilingThbMinor === null) {
+/**
+ * ⭐ What this response actually says about the reader's ceiling — three answers, not two.
+ *
+ * ⚠️ **`ceilingThbMinor === null` does not mean "no ceiling".** It means *the API did not say*,
+ * and the two are only the same thing on one of the four outcomes. `authority.presenter.ts`
+ * fills the field for `within_authority` and for `needs_approval`, and leaves it `null` on
+ * `nothing_conceded` and `covered_by_approval` — because `AuthorityService.judge` returns
+ * before reading the table when nothing has been conceded, and because a covered concession is
+ * a fact about somebody else's authority rather than the reader's.
+ *
+ * Reading that `null` as "no ceiling" printed **ยังไม่มีการกำหนดเพดานอำนาจสำหรับบทบาทของคุณ** on
+ * every quote with no discount on it — which is most quotes — and kept printing it after an
+ * administrator had granted that very role a ceiling on `/users` → อำนาจอนุมัติ. Found by
+ * driving both screens in a browser: grant ฿5,000, open a quote, be told you have nothing.
+ * Nothing in the API could have caught it; the API was right and the sentence was invented
+ * here.
+ *
+ * So `none_granted` is claimed **only on `needs_approval`**, which is the one outcome whose
+ * `null` `judge` produces deliberately (`ceilingThbMinor: ceiling ?? null`) and where it does
+ * mean the role holds no live `authority_limits` row. Everywhere else the honest rendering of
+ * "the API did not say" is to say nothing.
+ */
+export type CeilingClaim =
+  | { readonly kind: 'ceiling'; readonly ceilingThbMinor: bigint }
+  | { readonly kind: 'none_granted' }
+  | { readonly kind: 'unknown' };
+
+export function ceilingClaim(
+  dimension: Pick<DimensionAssessmentView, 'ceilingThbMinor' | 'outcome'>,
+): CeilingClaim {
+  if (dimension.ceilingThbMinor !== null) {
+    return { kind: 'ceiling', ceilingThbMinor: dimension.ceilingThbMinor };
+  }
+  if (dimension.outcome === 'needs_approval') return { kind: 'none_granted' };
+  return { kind: 'unknown' };
+}
+
+function CeilingLine({ claim }: { readonly claim: CeilingClaim }) {
+  if (claim.kind === 'unknown') return null;
+
+  if (claim.kind === 'none_granted') {
     return (
       <p className="inline-flex items-start gap-1.5 text-sm text-destructive">
         <Lock className="mt-0.5 size-4 shrink-0" />
@@ -271,8 +310,8 @@ function CeilingLine({ ceilingThbMinor }: { readonly ceilingThbMinor: bigint | n
 
   return (
     <p className="text-sm text-muted-foreground">
-      เพดานของบทบาทคุณ {baht(ceilingThbMinor)}
-      {ceilingThbMinor === 0n ? ' — บันทึกส่วนลดได้ แต่ต้องให้คนอื่นอนุมัติทุกครั้ง' : ''}
+      เพดานของบทบาทคุณ {baht(claim.ceilingThbMinor)}
+      {claim.ceilingThbMinor === 0n ? ' — บันทึกส่วนลดได้ แต่ต้องให้คนอื่นอนุมัติทุกครั้ง' : ''}
     </p>
   );
 }

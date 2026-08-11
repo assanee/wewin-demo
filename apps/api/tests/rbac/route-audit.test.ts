@@ -411,6 +411,9 @@ describe('boot-time route audit', () => {
       'GET /quotes/approvals [permissions]',
       'GET /quotes/approvals/:approvalId [permissions]',
       'GET /quotes/authority/limits [permissions]',
+      /* The history read is `groups.read`, not `groups.write` — seeing that authority was
+       * widened for one deal and narrowed back must not require the power to do it. */
+      'GET /quotes/authority/limits/:groupId/:dimension/changes [permissions]',
       'GET /quotes/authority/orders/:orderId [permissions]',
       'GET /reviews/:reviewId [principal]',
       'GET /reviews/photos/:photoId [anonymous]',

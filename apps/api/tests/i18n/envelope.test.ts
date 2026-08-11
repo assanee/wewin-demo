@@ -427,5 +427,24 @@ describe('what is still a Thai string, as a number', () => {
  * `verified_at` and always sets both columns together. Same screen, same permission, same
  * argument as the seven immediately above: `/admin/users`, gated on `users.write`, one reader,
  * Thai staff.
+ *
+ * ── 221 → 224: the ceiling screen's three refusals ────────────────────────────────
+ *
+ * Three, all in `quotes/authority/authority.service.ts`, and all of them arrived with the
+ * screen that finally lets `authority_limits` be filled in:
+ *
+ *   `setLimit`     `ไม่พบบทบาทนี้` — `lockGroup` found no such group. It replaces a raw
+ *                  foreign-key violation, i.e. a 500 with a `DrizzleQueryError` in it, so this
+ *                  literal is a *net improvement* on what a client used to get.
+ *   `removeLimit`  the same sentence, for the same reason, on the withdrawal path.
+ *   `removeLimit`  a second `ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้` for a ceiling that is already
+ *                  withdrawn — `revokeLimit`'s own `revoked_at IS NULL` makes that update zero
+ *                  rows rather than restamping the first withdrawal with a new name, and the
+ *                  caller has to be told their act was not the one that did it.
+ *
+ * Same argument as the user-administration block above, and if anything narrower: the only
+ * screen that reaches these is `/users` → อำนาจอนุมัติ, gated on `groups.write` — a permission
+ * held by nobody at boot — and its reader is the person deciding what a Thai sales team may
+ * concede. No customer, in any locale, can reach a route that writes this table.
  */
-const RAW_LITERAL_CALL_SITES = 221;
+const RAW_LITERAL_CALL_SITES = 224;
