@@ -178,6 +178,133 @@ describeDb('tax_countries', () => {
     });
   });
 
+  /* ── The exchange-rate settings (migration 0036) ──────────────────────────────────
+   *
+   * Two settings per destination — a percentage spread off the mid-market rate, and a manual
+   * override taken from a bank — plus the currency that makes the second one mean anything.
+   * `packages/core/src/fx.ts` is the arithmetic and carries the argument for each; these tests
+   * are about what the table refuses to hold.
+   * ──────────────────────────────────────────────────────────────────────────────── */
+
+  it('leaves the seeded row converting nothing — the defaults are inert, so 0036 backfilled none', async () => {
+    await withConnection(async (db) => {
+      const rows = await db.execute(sql`
+        select fx_currency, fx_spread_bp, fx_manual_rate from tax_countries where code = 'TH'
+      `);
+      expect(rows.rows[0]).toStrictEqual({
+        fx_currency: null,
+        fx_spread_bp: 0,
+        fx_manual_rate: null,
+      });
+    });
+  });
+
+  /*
+   * The quietest way this feature could overcharge: a destination set to THB with a spread
+   * marks the *domestic* price up by that spread, and no figure on a Thai quotation would
+   * move to show it. `resolveFxRate` refuses the same pair, so neither guard is the only one.
+   */
+  it('refuses THB as a destination currency — baht to baht is not a conversion', async () => {
+    await withConnection(async (db) => {
+      await expectCheckViolation(
+        db.execute(sql`update tax_countries set fx_currency = 'THB' where code = 'TH'`),
+        'tax_countries_fx_currency_not_thb',
+      );
+    });
+  });
+
+  it('refuses a currency outside the list core knows', async () => {
+    await withConnection(async (db) => {
+      await expectCheckViolation(
+        db.execute(sql`update tax_countries set fx_currency = 'XBT' where code = 'TH'`),
+        'tax_countries_fx_currency_known',
+      );
+    });
+  });
+
+  /*
+   * 2 000 bp is the ceiling — five times the worst retail FX spread. `20` typed meaning twenty
+   * basis points and read as twenty per cent is the mistake; core's own bound is 100%, where
+   * the effective rate is zero and the division stops existing, so this is the business one.
+   */
+  it('refuses a spread above 20 per cent, which core would happily compute', async () => {
+    await withConnection(async (db) => {
+      await expectCheckViolation(
+        db.execute(sql`update tax_countries set fx_spread_bp = 2001 where code = 'TH'`),
+        'tax_countries_fx_spread_in_range',
+      );
+      await expectCheckViolation(
+        db.execute(sql`update tax_countries set fx_spread_bp = -1 where code = 'TH'`),
+        'tax_countries_fx_spread_in_range',
+      );
+    });
+  });
+
+  /*
+   * ⭐ The constraint with no zod equivalent, and the reason `pg-errors.ts` grew a fourth
+   * entry: `{ fxManualRate: '35.90' }` is a perfectly well-formed patch, and whether it is
+   * legal depends on the `fx_currency` already sitting on the row. A rate is baht per one
+   * unit of *something*.
+   */
+  it('refuses an override rate on a destination with no currency', async () => {
+    await withConnection(async (db) => {
+      await expectCheckViolation(
+        db.execute(sql`update tax_countries set fx_manual_rate = 35.9 where code = 'TH'`),
+        'tax_countries_fx_manual_rate_needs_currency',
+      );
+    });
+  });
+
+  it('refuses a zero or negative override rate', async () => {
+    await withConnection(async (db) => {
+      for (const rate of [0, -1]) {
+        await expectCheckViolation(
+          db.execute(sql`
+            insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax,
+                                       fx_currency, fx_manual_rate)
+            values ('JP', 'ญี่ปุ่น', 0, 'zero_rated', true, 'USD', ${rate})
+          `),
+          'tax_countries_fx_manual_rate_positive',
+        );
+      }
+    });
+  });
+
+  /*
+   * ⭐ The pair the constraints must NOT catch, and the one this whole feature exists to
+   * store: a destination carrying both settings at once. The table holds them side by side on
+   * purpose — `resolveFxRate` decides which applies (the override, exactly as typed), and the
+   * spread stays on the row so that clearing the override restores it. A CHECK that refused
+   * the pair would have made that impossible to express.
+   *
+   * ⚠️ Same rolled-back-transaction idiom as the `standard`-at-zero test above, and for the
+   * same reason: this insert is meant to succeed, and a committed 'AU' row would make `seeds
+   * exactly Thailand` depend on declaration order.
+   */
+  it('accepts a spread and an override together — which one wins is core’s decision, not a CHECK’s', async () => {
+    const pool = await connectPool();
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await expect(
+        client.query(
+          `insert into tax_countries (code, name_th, rate_bp, treatment, prices_include_tax,
+                                      fx_currency, fx_spread_bp, fx_manual_rate)
+           values ('AU', 'ออสเตรเลีย', 0, 'zero_rated', true, 'USD', 200, 35.9)`,
+        ),
+      ).resolves.toBeDefined();
+
+      const stored = await client.query<{ fx_manual_rate: string }>(
+        `select fx_manual_rate from tax_countries where code = 'AU'`,
+      );
+      // numeric, not a float: it comes back as exact digits, padded to the column's scale.
+      expect(stored.rows[0]?.fx_manual_rate).toBe('35.9000000000');
+    } finally {
+      await client.query('rollback').catch(() => undefined);
+      client.release();
+    }
+  });
+
   it('refuses a lower-case or three-letter code', async () => {
     await withConnection(async (db) => {
       await expectCheckViolation(

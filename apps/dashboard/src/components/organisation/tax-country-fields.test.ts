@@ -6,10 +6,15 @@ import type { TaxCountryWire } from '@wewin/contract/tax';
 import {
   basisLabelTh,
   fieldsFromTaxCountry,
+  fxCurrencyOptions,
+  fxSummaryTh,
   isTaxCountryCreation,
+  manualRateField,
   rateEditable,
   rateField,
+  readManualRate,
   readRateBp,
+  readSpreadBp,
   taxCountryChangedFields,
   taxCountryCreateFormErrors,
   taxCountryCreateFormReady,
@@ -19,6 +24,7 @@ import {
   taxCountryPatchRequest,
   treatmentOptions,
 } from './tax-country-fields';
+
 import type { TaxCountryChangeRow } from './organisation-api';
 import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
 
@@ -29,6 +35,15 @@ import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
  * checked below too, via `renderToStaticMarkup`, which needs no DOM and runs fine under this
  * suite's `environment: 'node'`.
  */
+
+/**
+ * The FX half of the edit form, at its "no conversion" default — spread into every fixture
+ * below that predates it, so those tests keep asserting exactly what they asserted before.
+ */
+const NO_FX = { fxCurrency: '', fxSpreadPercent: '0', fxManualRate: '' } as const;
+
+/** The same three, as one row of `tax_countries` reads back. */
+const NO_FX_WIRE = { fxCurrency: null, fxSpreadBp: 0, fxManualRate: null } as const;
 
 describe('the rate edits as a percentage and stores basis points', () => {
   it('round-trips whole and fractional rates', () => {
@@ -95,6 +110,7 @@ describe('the treatment/rate pairing — cleared for the person, not merely refu
      * produce that pair even if the box holding `ratePercent` was never disabled.
      */
     const request = taxCountryPatchRequest({
+      ...NO_FX,
       nameTh: 'สิงคโปร์',
       ratePercent: '7',
       treatment: 'zero_rated',
@@ -106,6 +122,7 @@ describe('the treatment/rate pairing — cleared for the person, not merely refu
 
   it('keeps the typed rate when the treatment is standard', () => {
     const request = taxCountryPatchRequest({
+      ...NO_FX,
       nameTh: 'ไทย',
       ratePercent: '8',
       treatment: 'standard',
@@ -116,7 +133,7 @@ describe('the treatment/rate pairing — cleared for the person, not merely refu
 });
 
 describe('taxCountryFormErrors and taxCountryFormReady', () => {
-  const VALID = { nameTh: 'ไทย', ratePercent: '7', treatment: 'standard', pricesIncludeTax: false };
+  const VALID = { ...NO_FX, nameTh: 'ไทย', ratePercent: '7', treatment: 'standard', pricesIncludeTax: false };
 
   it('accepts a well-shaped form', () => {
     expect(taxCountryFormErrors(VALID)).toEqual({});
@@ -140,6 +157,7 @@ describe('taxCountryFormErrors and taxCountryFormReady', () => {
 
 describe('taxCountryCreateFormErrors and taxCountryCreateFormReady — code added on top', () => {
   const VALID = {
+    ...NO_FX,
     code: 'sg',
     nameTh: 'สิงคโปร์',
     ratePercent: '9',
@@ -175,6 +193,7 @@ describe('taxCountryCreateFormErrors and taxCountryCreateFormReady — code adde
 describe('taxCountryCreateRequest', () => {
   it('upper-cases the code and trims the name', () => {
     const request = taxCountryCreateRequest({
+      ...NO_FX,
       code: 'sg',
       nameTh: '  สิงคโปร์  ',
       ratePercent: '9',
@@ -195,6 +214,7 @@ describe('taxCountryCreateRequest', () => {
      * rate before touching the treatment picker at all.
      */
     const request = taxCountryCreateRequest({
+      ...NO_FX,
       code: 'vn',
       nameTh: 'เวียดนาม',
       ratePercent: '10',
@@ -209,6 +229,7 @@ describe('taxCountryCreateRequest', () => {
 describe('fieldsFromTaxCountry — the dual of taxCountryPatchRequest', () => {
   it('reads a loaded row into editable fields', () => {
     const country: TaxCountryWire = {
+      ...NO_FX_WIRE,
       code: 'TH',
       nameTh: 'ไทย',
       rateBp: 700,
@@ -231,7 +252,16 @@ describe('the change history — one row for the paired rate and treatment', () 
     changedAt: '2026-08-09T10:00:00.000Z',
     changedByUserId: '00000000-0000-4000-8000-0000000000aa',
     before: null,
-    after: { code: 'TH', nameTh: 'ไทย', rateBp: 700, treatment: 'standard', pricesIncludeTax: false, isActive: true, sortOrder: 0 },
+    after: {
+      code: 'TH',
+      nameTh: 'ไทย',
+      rateBp: 700,
+      treatment: 'standard',
+      pricesIncludeTax: false,
+      ...NO_FX_WIRE,
+      isActive: true,
+      sortOrder: 0,
+    },
   };
 
   it('lists every recorded field for a creation, since there is nothing to diff against', () => {
@@ -242,6 +272,9 @@ describe('the change history — one row for the paired rate and treatment', () 
       'nameTh',
       'tax',
       'pricesIncludeTax',
+      'fxCurrency',
+      'fxSpreadBp',
+      'fxManualRate',
       'isActive',
       'sortOrder',
     ]);
@@ -267,10 +300,287 @@ describe('the change history — one row for the paired rate and treatment', () 
     const unchanged = { ...CREATE, before: CREATE.after, after: CREATE.after };
     expect(taxCountryChangedFields(unchanged)).toEqual([]);
   });
+
+  /**
+   * ⭐ A spread change is the quietest edit on this table: it moves what a customer pays
+   * without moving any figure a VAT return would print. If the history could not show it, the
+   * setting would be one nobody could audit — which is the whole reason the three FX columns
+   * are in `RECORDED`.
+   */
+  it('shows a spread change on its own line, before and after', () => {
+    const widened = {
+      ...CREATE,
+      before: { ...CREATE.after, fxCurrency: 'USD', fxSpreadBp: 200 },
+      after: { ...CREATE.after, fxCurrency: 'USD', fxSpreadBp: 350 },
+    };
+
+    const fields = taxCountryChangedFields(widened);
+    expect(fields).toHaveLength(1);
+    expect(fields[0]?.key).toBe('fxSpreadBp');
+    expect(fields[0]?.beforeText).toBe('2%');
+    expect(fields[0]?.afterText).toBe('3.5%');
+  });
+
+  /**
+   * ⭐ THE RULE, as a reviewer meets it. Typing an override does not touch `fx_spread_bp`, so
+   * a log that only diffed columns would say nothing about the spread — while in fact that
+   * write is the moment the spread stopped applying. The line appears, and says so.
+   */
+  it('says the spread stopped applying when an override arrives, though its column did not move', () => {
+    const overridden = {
+      ...CREATE,
+      before: { ...CREATE.after, fxCurrency: 'USD', fxSpreadBp: 200 },
+      after: { ...CREATE.after, fxCurrency: 'USD', fxSpreadBp: 200, fxManualRate: '35.9000000000' },
+    };
+
+    const fields = taxCountryChangedFields(overridden);
+    expect(fields.map((field) => field.key)).toEqual(['fxSpreadBp', 'fxManualRate']);
+
+    const spread = fields.find((field) => field.key === 'fxSpreadBp');
+    expect(spread?.beforeText).toBe('2%');
+    expect(spread?.afterText).toBe('2% (ไม่ใช้ เพราะมีอัตรากำหนดเอง)');
+
+    const manual = fields.find((field) => field.key === 'fxManualRate');
+    expect(manual?.beforeText).toBe('ใช้อัตรากลางตลาด');
+    // A rate is meaningless without the currency it is a rate of, so the log prints both.
+    expect(manual?.afterText).toBe('35.9 บาท/USD');
+  });
+
+  it('shows a destination switching to a foreign currency', () => {
+    const switched = {
+      ...CREATE,
+      before: CREATE.after,
+      after: { ...CREATE.after, fxCurrency: 'SGD' },
+    };
+
+    const fields = taxCountryChangedFields(switched);
+    expect(fields.map((field) => field.key)).toEqual(['fxCurrency']);
+    expect(fields[0]?.beforeText).toBe('ไม่แปลงสกุลเงิน');
+    expect(fields[0]?.afterText).toBe('SGD');
+  });
+});
+
+describe('the exchange-rate settings — the spread box, the override box, and their pairing', () => {
+  it('reads a spread as basis points, through the same codec the VAT rate uses', () => {
+    expect(readSpreadBp('2')).toBe(200);
+    expect(readSpreadBp('1.75')).toBe(175);
+    expect(readSpreadBp('0')).toBe(0);
+    expect(rateField(175)).toBe('1.75');
+  });
+
+  /*
+   * ⭐ The spread's box is narrower than the VAT box despite reading the same unit:
+   * `tax_countries_fx_spread_in_range` stops at 2 000 bp where `tax_countries_rate_in_range`
+   * goes to 10 000. `25` is a valid VAT rate and an impossible FX spread.
+   */
+  it('refuses a spread the CHECK would refuse, where the VAT box would have taken it', () => {
+    expect(readRateBp('25')).toBe(2_500);
+    expect(readSpreadBp('25')).toBeNull();
+    expect(readSpreadBp('20')).toBe(2_000);
+    expect(readSpreadBp('20.01')).toBeNull();
+  });
+
+  it('reads an override as digits, strips separators, and refuses what the API would refuse', () => {
+    expect(readManualRate('35.90')).toBe('35.90');
+    expect(readManualRate(' 27.05 ')).toBe('27.05');
+    expect(readManualRate('1,234.5')).toBe('1234.5');
+    expect(readManualRate('0.0014321')).toBe('0.0014321');
+
+    for (const bad of ['', '0', '0.00', '-1', 'abc', '.5', '12345678901']) {
+      expect(readManualRate(bad), `readManualRate(${JSON.stringify(bad)})`).toBeNull();
+    }
+  });
+
+  it('trims the padding numeric(20,10) reads back, so a saved rate round-trips unchanged', () => {
+    expect(manualRateField('35.9000000000')).toBe('35.9');
+    expect(manualRateField('36.0000000000')).toBe('36');
+    expect(manualRateField(null)).toBe('');
+    expect(readManualRate(manualRateField('27.0500000000'))).toBe('27.05');
+  });
+
+  it('offers every wire currency plus the real choice of not converting at all', () => {
+    const options = fxCurrencyOptions();
+    expect(options[0]?.value).toBe('');
+    expect(options.map((option) => option.value)).toContain('SGD');
+    expect(options.map((option) => option.value)).not.toContain('THB');
+  });
+
+  /**
+   * ⭐ The pairing, re-derived rather than trusted — the same belt-and-braces
+   * `taxCountryPatchRequest` applies to `rateBp` and `treatment`, for the same reason.
+   * `tax_countries_fx_manual_rate_needs_currency` has no zod equivalent and cannot have one.
+   */
+  it('drops an override when no currency is chosen, whatever text is left in the box', () => {
+    const request = taxCountryPatchRequest({
+      nameTh: 'ไทย',
+      ratePercent: '7',
+      treatment: 'standard',
+      pricesIncludeTax: false,
+      fxCurrency: '',
+      fxSpreadPercent: '2',
+      fxManualRate: '35.90',
+    });
+
+    expect(request.fxCurrency).toBeNull();
+    expect(request.fxManualRate).toBeNull();
+    // The spread survives: inert without a currency, not wrong, and worth keeping for later.
+    expect(request.fxSpreadBp).toBe(200);
+  });
+
+  it('sends both settings when a currency is chosen — the server decides which one wins', () => {
+    const request = taxCountryPatchRequest({
+      nameTh: 'สิงคโปร์',
+      ratePercent: '0',
+      treatment: 'zero_rated',
+      pricesIncludeTax: false,
+      fxCurrency: 'SGD',
+      fxSpreadPercent: '2',
+      fxManualRate: '27.05',
+    });
+
+    expect(request.fxCurrency).toBe('SGD');
+    expect(request.fxSpreadBp).toBe(200);
+    expect(request.fxManualRate).toBe('27.05');
+  });
+
+  it('treats a blank spread box as zero rather than as “leave it alone”', () => {
+    const request = taxCountryPatchRequest({
+      ...NO_FX,
+      nameTh: 'ไทย',
+      ratePercent: '7',
+      treatment: 'standard',
+      pricesIncludeTax: false,
+      fxSpreadPercent: '',
+    });
+    expect(request.fxSpreadBp).toBe(0);
+  });
+
+  /**
+   * ⚠️ A create spells "not set" by absence, not by null — `taxCountryCreateSchema` marks the
+   * FX fields `.optional()` with no `.nullable()`, because there is no prior value to clear.
+   */
+  it('omits the FX keys from a create with no currency, rather than sending null', () => {
+    const request = taxCountryCreateRequest({
+      ...NO_FX,
+      code: 'my',
+      nameTh: 'มาเลเซีย',
+      ratePercent: '0',
+      treatment: 'zero_rated',
+      pricesIncludeTax: false,
+    });
+
+    expect('fxCurrency' in request).toBe(false);
+    expect('fxManualRate' in request).toBe(false);
+    expect(request.fxSpreadBp).toBe(0);
+  });
+
+  it('carries the FX keys on a create that names a currency', () => {
+    const request = taxCountryCreateRequest({
+      code: 'sg',
+      nameTh: 'สิงคโปร์',
+      ratePercent: '0',
+      treatment: 'zero_rated',
+      pricesIncludeTax: false,
+      fxCurrency: 'SGD',
+      fxSpreadPercent: '2',
+      fxManualRate: '27.05',
+    });
+
+    expect(request.fxCurrency).toBe('SGD');
+    expect(request.fxSpreadBp).toBe(200);
+    expect(request.fxManualRate).toBe('27.05');
+  });
+
+  it('reads a stored row back into the three boxes', () => {
+    const fields = fieldsFromTaxCountry({
+      code: 'SG',
+      nameTh: 'สิงคโปร์',
+      rateBp: 0,
+      treatment: 'zero_rated',
+      pricesIncludeTax: false,
+      fxCurrency: 'SGD',
+      fxSpreadBp: 175,
+      fxManualRate: '27.0500000000',
+      isActive: true,
+      sortOrder: 1,
+      updatedAt: '2026-08-09T10:00:00.000Z',
+    });
+
+    expect(fields.fxCurrency).toBe('SGD');
+    expect(fields.fxSpreadPercent).toBe('1.75');
+    expect(fields.fxManualRate).toBe('27.05');
+  });
+
+  it('reports a spread and an override the API would refuse, before a request is sent', () => {
+    const errors = taxCountryFormErrors({
+      nameTh: 'ไทย',
+      ratePercent: '7',
+      treatment: 'standard',
+      pricesIncludeTax: false,
+      fxCurrency: 'USD',
+      fxSpreadPercent: '25',
+      fxManualRate: '0',
+    });
+
+    expect(errors.fxSpreadPercent).toBeDefined();
+    expect(errors.fxManualRate).toBeDefined();
+    expect(
+      taxCountryFormReady({
+        nameTh: 'ไทย',
+        ratePercent: '7',
+        treatment: 'standard',
+        pricesIncludeTax: false,
+        fxCurrency: 'USD',
+        fxSpreadPercent: '25',
+        fxManualRate: '',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('fxSummaryTh — the cell says what the destination will convert at', () => {
+  const row = (fx: Partial<TaxCountryWire>): TaxCountryWire => ({
+    ...NO_FX_WIRE,
+    code: 'SG',
+    nameTh: 'สิงคโปร์',
+    rateBp: 0,
+    treatment: 'zero_rated',
+    pricesIncludeTax: false,
+    isActive: true,
+    sortOrder: 1,
+    updatedAt: '2026-08-09T10:00:00.000Z',
+    ...fx,
+  });
+
+  it('names no conversion at all', () => {
+    expect(fxSummaryTh(row({}))).toBe('ไม่แปลงสกุลเงิน');
+  });
+
+  it('names the mid-market rate, with and without a spread', () => {
+    expect(fxSummaryTh(row({ fxCurrency: 'SGD' }))).toBe('SGD · อัตรากลางตลาด');
+    expect(fxSummaryTh(row({ fxCurrency: 'SGD', fxSpreadBp: 200 }))).toBe(
+      'SGD · อัตรากลางตลาด หัก 2%',
+    );
+  });
+
+  /**
+   * ⭐ THE RULE again, in the one place somebody scanning the table would otherwise get it
+   * wrong: a row carrying both settings converts at the override, so printing the spread
+   * beside it would say the opposite of what happens.
+   */
+  it('names only the override when one is set, never both', () => {
+    const summary = fxSummaryTh(
+      row({ fxCurrency: 'SGD', fxSpreadBp: 200, fxManualRate: '27.0500000000' }),
+    );
+
+    expect(summary).toBe('SGD · 27.05 บาท (กำหนดเอง)');
+    expect(summary).not.toContain('2%');
+  });
 });
 
 describe('TaxCountriesSection — the permission gate', () => {
   const THAILAND: TaxCountryWire = {
+    ...NO_FX_WIRE,
     code: 'TH',
     nameTh: 'ไทย',
     rateBp: 700,

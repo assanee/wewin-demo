@@ -23,6 +23,7 @@ import { createTaxCountry, patchTaxCountry } from './organisation-api';
 import {
   basisLabelTh,
   fieldsFromTaxCountry,
+  fxCurrencyOptions,
   rateEditable,
   readRateBp,
   taxCountryCreateFormErrors,
@@ -42,6 +43,9 @@ const EMPTY: TaxCountryCreateFields = {
   ratePercent: '',
   treatment: 'standard',
   pricesIncludeTax: false,
+  fxCurrency: '',
+  fxSpreadPercent: '0',
+  fxManualRate: '',
 };
 
 /**
@@ -112,6 +116,29 @@ export function TaxCountryDialog({
 
   const setPricesIncludeTax = (checked: boolean) =>
     setFields((current) => ({ ...current, pricesIncludeTax: checked }));
+
+  const setFxSpreadPercent = (value: string) =>
+    setFields((current) => ({ ...current, fxSpreadPercent: value }));
+  const setFxManualRate = (value: string) =>
+    setFields((current) => ({ ...current, fxManualRate: value }));
+
+  /*
+   * Dropping the currency clears the override in the same click, the same shape `setTreatment`
+   * above clears the rate box — and for the same reason. `tax_countries_fx_manual_rate_needs_
+   * currency` refuses an override with no currency, and a box left holding "35.90" under a
+   * picker that now says "ไม่แปลงสกุลเงิน" is the single most likely way to meet that 409. The
+   * spread is deliberately *not* cleared: it is inert without a currency, not wrong, and
+   * keeping it means choosing a currency again restores the policy that was already decided.
+   */
+  const setFxCurrency = (value: string) => {
+    setFields((current) => ({
+      ...current,
+      fxCurrency: value,
+      fxManualRate: value === '' ? '' : current.fxManualRate,
+    }));
+  };
+
+  const convertsCurrency = fields.fxCurrency !== '';
 
   async function submit(): Promise<void> {
     if (!ready) return;
@@ -202,6 +229,53 @@ export function TaxCountryDialog({
               <Label htmlFor="prices-include-tax">ราคาที่ลูกค้าเห็นรวมภาษีแล้ว</Label>
               <p className="text-muted-foreground text-sm">{basisLabelTh(fields.pricesIncludeTax)}</p>
             </div>
+          </div>
+
+          {/*
+            The exchange-rate settings. Nothing converts a quotation yet — the arithmetic lives
+            in `@wewin/core/fx` and is unwired on purpose — so these are settings being decided
+            ahead of the screen that will use them, which is why the descriptions say what each
+            one *means* rather than what it will look like.
+          */}
+          <div className="border-border/60 flex flex-col gap-4 border-t pt-4">
+            <SelectField
+              label="สกุลเงินปลายทาง"
+              description="สกุลเงินที่ใช้เสนอราคาลูกค้าประเทศนี้ — เลือก “ไม่แปลงสกุลเงิน” หากเสนอราคาเป็นบาทเท่านั้น"
+              value={fields.fxCurrency}
+              onChange={setFxCurrency}
+              options={fxCurrencyOptions()}
+              disabled={busy}
+            />
+
+            <TextField
+              label="ส่วนต่างอัตราแลกเปลี่ยน"
+              description={
+                convertsCurrency
+                  ? 'อัตรากลางตลาดไม่ใช่อัตราที่ธนาคารให้จริง — ส่วนต่างนี้จะถูกหักออกจากอัตรากลางก่อนคำนวณ เช่น 2% ทำให้ 36.50 กลายเป็น 35.77 บาท/USD'
+                  : 'เลือกสกุลเงินปลายทางก่อน จึงจะมีผล'
+              }
+              value={fields.fxSpreadPercent}
+              onChange={setFxSpreadPercent}
+              error={errors.fxSpreadPercent}
+              suffix="%"
+              mono
+              disabled={busy || !convertsCurrency}
+            />
+
+            <TextField
+              label="อัตราแลกเปลี่ยนกำหนดเอง"
+              description={
+                convertsCurrency
+                  ? `บาทต่อ 1 ${fields.fxCurrency} เช่น 35.90 — เว้นว่างไว้เพื่อใช้อัตรากลางตลาด ⚠️ หากกรอกช่องนี้ ระบบจะใช้อัตรานี้ตรง ๆ และจะไม่หักส่วนต่างข้างบนอีก เพราะอัตราที่ธนาคารเสนอรวมส่วนต่างของธนาคารไว้แล้ว`
+                  : 'เลือกสกุลเงินปลายทางก่อน จึงจะกรอกได้'
+              }
+              value={fields.fxManualRate}
+              onChange={setFxManualRate}
+              error={errors.fxManualRate}
+              mono
+              disabled={busy || !convertsCurrency}
+              placeholder="35.90"
+            />
           </div>
         </div>
 

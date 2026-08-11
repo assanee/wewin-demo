@@ -330,6 +330,14 @@ const PARAM_SHAPES = {
   'error.tax_country.code_taken': {},
   'error.tax_country.name_blank': {},
   'error.tax_country.rate_treatment_conflict': {},
+  /**
+   * The one FX constraint a validated body can still reach. `taxCountryPatchSchema` accepts
+   * `{ fxManualRate: '35.90' }` on its own, and whether that is legal depends on the row's own
+   * already-committed `fx_currency` — the identical shape as `rate_treatment_conflict` above,
+   * and answered the same way. The other four FX CHECKs are each mirrored exactly by zod; see
+   * `pg-errors.ts` for the one-by-one.
+   */
+  'error.tax_country.fx_rate_needs_currency': {},
   'error.tax_country.check_failed': {},
 
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */

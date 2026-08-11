@@ -136,6 +136,9 @@ const TAX_COUNTRY = {
   rateBp: 700,
   treatment: 'standard',
   pricesIncludeTax: false,
+  fxCurrency: null,
+  fxSpreadBp: 0,
+  fxManualRate: null,
   isActive: true,
   sortOrder: 0,
   updatedAt: '2026-08-09T10:00:00.000Z',
@@ -147,6 +150,40 @@ describe('decodeTaxCountry', () => {
     expect(country.code).toBe('TH');
     expect(country.rateBp).toBe(700);
     expect(country.treatment).toBe('standard');
+  });
+
+  it('reads a destination quoted in a foreign currency', () => {
+    const country = decodeTaxCountry({
+      ...TAX_COUNTRY,
+      code: 'SG',
+      fxCurrency: 'SGD',
+      fxSpreadBp: 200,
+      fxManualRate: '27.0500000000',
+    });
+
+    expect(country.fxCurrency).toBe('SGD');
+    expect(country.fxSpreadBp).toBe(200);
+    // ⚠️ Still a string. `numeric(20, 10)` crosses the wire as digits so that nothing on the
+    // way past turns a rate into a float — see `fxManualRateOf`.
+    expect(country.fxManualRate).toBe('27.0500000000');
+  });
+
+  it('refuses a currency this build has never heard of, naming the code', () => {
+    expect(() => decodeTaxCountry({ ...TAX_COUNTRY, fxCurrency: 'XBT' })).toThrow(/TH/);
+  });
+
+  /*
+   * ⚠️ An absent key is not the same as `null`, and this is the assertion that keeps them
+   * apart. `null` means somebody chose "baht only"; a missing key means a server that stopped
+   * sending it, and reading that as a cleared setting is how a destination silently stops
+   * converting.
+   */
+  it('refuses an absent FX field rather than reading it as “not set”', () => {
+    const { fxSpreadBp: _dropped, ...withoutSpread } = TAX_COUNTRY;
+    expect(() => decodeTaxCountry(withoutSpread)).toThrow(/fxSpreadBp/);
+
+    const { fxCurrency: _alsoDropped, ...withoutCurrency } = TAX_COUNTRY;
+    expect(() => decodeTaxCountry(withoutCurrency)).toThrow(/fxCurrency/);
   });
 
   it('does not hide a withdrawn destination behind a decode failure', () => {

@@ -32,6 +32,17 @@ const RECORDED = [
   'rateBp',
   'treatment',
   'pricesIncludeTax',
+  /*
+   * ⚠️ The three exchange-rate settings are on the chain for the same reason `rateBp` is, and
+   * the case for them is if anything stronger. A VAT rate at least shows up on a return; a
+   * spread moves what a customer pays without moving a single figure a filing would print, so
+   * widening it for one deal and narrowing it back afterwards leaves no trace anywhere else.
+   * A change to the spread nobody can see is a change nobody can question — see the amended
+   * header of `taxCountryChanges` in `packages/db/src/schema/tax.ts`.
+   */
+  'fxCurrency',
+  'fxSpreadBp',
+  'fxManualRate',
   'isActive',
   'sortOrder',
 ] as const;
@@ -50,6 +61,16 @@ interface TaxCountryRow {
   readonly rateBp: number;
   readonly treatment: string;
   readonly pricesIncludeTax: boolean;
+  /** `char(3)` narrowed by `enum: CURRENCIES`, so `TaxCountryWire`'s own union is narrower. */
+  readonly fxCurrency: string | null;
+  readonly fxSpreadBp: number;
+  /**
+   * `numeric(20, 10)`, which drizzle hands back as an exact decimal *string* — never a
+   * `number`. That is the whole reason the column is `numeric`: a rate that survives a float
+   * round-trip is luck, and `readRatio` (`@wewin/core/fx`) reads these digits rather than
+   * parsing them. Passing it straight to the wire keeps it digits end to end.
+   */
+  readonly fxManualRate: string | null;
   readonly isActive: boolean;
   readonly sortOrder: number;
   readonly updatedAt: Date;
@@ -61,6 +82,9 @@ const wire = (row: TaxCountryRow): TaxCountryWire => ({
   rateBp: row.rateBp,
   treatment: row.treatment as TaxCountryWire['treatment'],
   pricesIncludeTax: row.pricesIncludeTax,
+  fxCurrency: row.fxCurrency as TaxCountryWire['fxCurrency'],
+  fxSpreadBp: row.fxSpreadBp,
+  fxManualRate: row.fxManualRate,
   isActive: row.isActive,
   sortOrder: row.sortOrder,
   updatedAt: row.updatedAt.toISOString(),
@@ -76,6 +100,15 @@ const wire = (row: TaxCountryRow): TaxCountryWire => ({
  * `fromNet` or `fromGrand` itself.
  */
 export interface DestinationTax {
+  /**
+   * ⚠️ The row's three `fx_*` settings are deliberately **not** here, and their absence is
+   * the same kind of decision as `basis`'s presence. This envelope is what `priceOrderDocument`
+   * pins; a quotation document is frozen once issued (0018), and the question of how a foreign
+   * figure appears beside or instead of baht has not been answered. Carrying the settings here
+   * would put them one field access away from a document nobody can amend afterwards.
+   * `packages/core/src/fx.ts` is the arithmetic, tested and reachable, and nothing calls it —
+   * on purpose, until that answer exists.
+   */
   /** `null` when the order names no destination. */
   readonly code: string | null;
   readonly rule: TaxRule;

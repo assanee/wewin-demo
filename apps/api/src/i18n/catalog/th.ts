@@ -229,6 +229,13 @@ export const TH: Catalogue = {
    */
   'error.tax_country.rate_treatment_conflict':
     'ประเภทภาษีที่ไม่ใช่ standard ต้องมีอัตราภาษีเป็น 0 เสมอ — กรุณาล้างอัตราภาษีในคำขอเดียวกันด้วย',
+  /*
+   * ⭐ Same shape as the one above, and the same reason for saying what to do: an override
+   * rate is baht per one unit of *something*, and without a destination currency the figure
+   * has no unit at all.
+   */
+  'error.tax_country.fx_rate_needs_currency':
+    'อัตราแลกเปลี่ยนที่กำหนดเองต้องระบุสกุลเงินปลายทางด้วย — กรุณาเลือกสกุลเงินในคำขอเดียวกัน หรือล้างอัตราแลกเปลี่ยนที่กำหนดเอง',
   'error.tax_country.check_failed': 'ข้อมูลไม่ผ่านเงื่อนไขของประเทศปลายทาง',
 
   /* ── Staleness ───────────────────────────────────────────────────────────── */

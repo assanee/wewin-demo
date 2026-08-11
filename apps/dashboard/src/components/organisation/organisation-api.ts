@@ -10,6 +10,7 @@ import type {
   OrganisationProfileWire,
 } from '@wewin/contract/organisation';
 import {
+  FX_CURRENCIES_WIRE,
   TAX_TREATMENTS_WIRE,
   type TaxCountryAvailabilityRequest,
   type TaxCountryCreateRequest,
@@ -202,6 +203,33 @@ function treatmentOf(row: Record<string, unknown>, what: string): TaxCountryWire
   return value as TaxCountryWire['treatment'];
 }
 
+/**
+ * `null` is a real answer here — a destination quoted in baht only — so an absent key is the
+ * one thing this refuses. `nullableStr` cannot be reused: it folds `undefined` into `null`,
+ * which is right for an actor id that erasure may have scrubbed and wrong for a settings
+ * field, where a server that stopped sending the key must not read as "somebody cleared it".
+ */
+function fxCurrencyOf(row: Record<string, unknown>, what: string): TaxCountryWire['fxCurrency'] {
+  const value = row['fxCurrency'];
+  if (value === null) return null;
+  if (typeof value !== 'string' || !(FX_CURRENCIES_WIRE as readonly string[]).includes(value)) {
+    throw new TypeError(`${what} has an unrecognised fxCurrency`);
+  }
+  return value as NonNullable<TaxCountryWire['fxCurrency']>;
+}
+
+/**
+ * ⚠️ Kept as the string it arrived as. `numeric(20, 10)` crosses the wire as digits precisely
+ * so that nothing turns it into a `number` on the way past — the same rule
+ * `@wewin/core/money` states for amounts and `readRatio` repeats for rates.
+ */
+function fxManualRateOf(row: Record<string, unknown>, what: string): string | null {
+  const value = row['fxManualRate'];
+  if (value === null) return null;
+  if (typeof value !== 'string') throw new TypeError(`${what} has a non-string fxManualRate`);
+  return value;
+}
+
 export function decodeTaxCountry(input: unknown): TaxCountryWire {
   const row = asObject(input, 'tax country');
   const code = str(row, 'code', 'tax country');
@@ -212,6 +240,9 @@ export function decodeTaxCountry(input: unknown): TaxCountryWire {
     rateBp: num(row, 'rateBp', what),
     treatment: treatmentOf(row, what),
     pricesIncludeTax: bool(row, 'pricesIncludeTax', what),
+    fxCurrency: fxCurrencyOf(row, what),
+    fxSpreadBp: num(row, 'fxSpreadBp', what),
+    fxManualRate: fxManualRateOf(row, what),
     isActive: bool(row, 'isActive', what),
     sortOrder: num(row, 'sortOrder', what),
     updatedAt: str(row, 'updatedAt', what),

@@ -30,6 +30,7 @@
     "./fixtures": "./dist/data/catalog.js",
     "./money": "./dist/money.js",
     "./vat": "./dist/vat.js",
+    "./fx": "./dist/fx.js",
     "./quotation": "./dist/quotation.js",
     "./phone": "./dist/phone.js",
     "./promptpay": "./dist/promptpay.js"

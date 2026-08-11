@@ -32,6 +32,20 @@ import { message, type NullaryMessageKey } from '../i18n';
  *   - `tax_countries_pkey` (the primary key on `code`) is reachable the ordinary way: `create`
  *     with a code that already exists. Mapped.
  *
+ * The five FX constraints added by migration 0036 were put through the same exercise against
+ * the FX fields Task 2's schemas grew:
+ *
+ *   - `tax_countries_fx_currency_known` and `tax_countries_fx_currency_not_thb` are both
+ *     `z.enum(FX_CURRENCIES_WIRE)`, which *is* the currency list less THB. Unreachable.
+ *   - `tax_countries_fx_spread_in_range` (0..2000) is `z.int().min(0).max(2_000)`. Unreachable.
+ *   - `tax_countries_fx_manual_rate_positive` is the `/[1-9]/` refinement on `fxManualRate`,
+ *     and the regex caps the fraction at ten places — the same ten `numeric(20, 10)` keeps —
+ *     so nothing that passes zod can round to zero on the way in. Unreachable.
+ *   - `tax_countries_fx_manual_rate_needs_currency` has **no zod equivalent and cannot have
+ *     one**: `{ fxManualRate: '35.90' }` is a perfectly well-formed patch, and whether it is
+ *     legal depends on the `fx_currency` already committed on that row. Mapped, and answered
+ *     as a 409 for exactly the reason `rate_matches_treatment` is — see the switch below.
+ *
  * A foreign-key violation is not reachable from a request body at all: `taxCountryChanges`'s
  * FK to `taxCountries.code` is always populated from a code this service just inserted or
  * already locked, and the FK to `users.id` is populated from the authenticated actor, never
@@ -76,11 +90,27 @@ function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
   return undefined;
 }
 
-/** Thai for the three named constraints a validated body can still reach. */
+/** Thai for the four named constraints a validated body can still reach. */
 const EXPLANATIONS: ReadonlyMap<string, NullaryMessageKey> = new Map([
   ['tax_countries_pkey', 'error.tax_country.code_taken'],
   ['tax_countries_name_says_something', 'error.tax_country.name_blank'],
   ['tax_countries_rate_matches_treatment', 'error.tax_country.rate_treatment_conflict'],
+  ['tax_countries_fx_manual_rate_needs_currency', 'error.tax_country.fx_rate_needs_currency'],
+]);
+
+/**
+ * The CHECKs answered as a conflict rather than the usual 422.
+ *
+ * Both are refusals about the row's **own already-committed state** rather than about the
+ * shape of the body in isolation: zero-rating a destination without clearing its rate, and
+ * setting an override rate on a destination that has no currency yet. Both are mistakes a real
+ * administrator will make, and in both cases the message says which second field to send in
+ * the same request. Every other CHECK on this table really is about the body alone, so those
+ * stay 422.
+ */
+const CONFLICTS: ReadonlySet<string> = new Set([
+  'tax_countries_rate_matches_treatment',
+  'tax_countries_fx_manual_rate_needs_currency',
 ]);
 
 /**
@@ -106,16 +136,13 @@ export function translateOrganisationError(error: unknown): unknown {
 
     case CHECK_VIOLATION:
       /*
-       * ⚠️ `rate_matches_treatment` is answered as a 409, not the 422 every other CHECK here
-       * gets — the one deliberate exception to the usual "CHECK violation is a 422" rule every
-       * sibling translator follows. What refuses the request is not the shape of the body in
-       * isolation but the row's *own already-committed* rate: zero-rating a destination
-       * without clearing its rate in the same request is exactly the mistake a real admin will
-       * make, and the message below is what tells them to clear it rather than file a bug.
-       * Every other CHECK on this table (`name_says_something`, and the generic fallback for
-       * one this file does not yet know) really is about the body alone, so those stay 422.
+       * ⚠️ The two constraints in `CONFLICTS` are answered as a 409, not the 422 every other
+       * CHECK here gets — the deliberate exceptions to the usual "CHECK violation is a 422"
+       * rule every sibling translator follows. See that set's own note for why: what refuses
+       * the request is the row's already-committed state, not the shape of the body, and the
+       * message names the second field to send rather than reading as a bug report.
        */
-      if (named === 'tax_countries_rate_matches_treatment') {
+      if (named !== undefined && CONFLICTS.has(named)) {
         return AppError.conflict(say('error.tax_country.check_failed'), details);
       }
       return AppError.validationFailed(say('error.tax_country.check_failed'), details);

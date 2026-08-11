@@ -253,6 +253,13 @@
       "when": 1786400000006,
       "tag": "0035_phone_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786400000007,
+      "tag": "0036_tax_country_fx",
+      "breakpoints": true
     }
   ]
 }
