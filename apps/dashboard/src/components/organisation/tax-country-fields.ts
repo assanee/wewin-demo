@@ -123,6 +123,35 @@ export function readManualRate(text: string): string | null {
 }
 
 /**
+ * What the manual-rate box becomes when the currency picker changes.
+ *
+ * ⚠️ **Cleared on every real change, not only when the currency is dropped to "ไม่แปลงสกุลเงิน".**
+ * A rate is denominated in a currency — `35.90` was read off a bank screen *for* whichever
+ * currency was selected at the time — so switching the currency while leaving the number alone
+ * silently re-denominates it. Confirmed against Postgres: `fx_currency='USD', fx_manual_rate=
+ * 35.90` → set `fx_currency='SGD'` → accepted, row now reads `SGD 35.9000000000` against a true
+ * mid THB/SGD of about 27.04 — a 33% overstatement, and a plausible number rather than an
+ * absurd one, so nobody would notice from the figure alone. Every CHECK on the row passes; none
+ * of them know what a rate is *of*. That is exactly the hazard `fx_currency` exists to prevent,
+ * reopened through the one edit path that never asked the question — clearing the currency
+ * cleared the rate, switching it did not.
+ *
+ * A confirmation step was considered and rejected in its place: the number is wrong regardless
+ * of who clicks past a dialog affirming it, and this form already prefers clearing a
+ * now-meaningless box over asking and hoping — `setTreatment` in `tax-country-dialog.tsx`
+ * clears `ratePercent` the identical way the instant the treatment changes what that box means,
+ * with no confirmation either. Re-typing one number the admin has to look up again anyway is
+ * cheaper than a dialog that trains people to click it away.
+ */
+export function fxManualRateOnCurrencyChange(
+  currentCurrency: string,
+  currentManualRate: string,
+  nextCurrency: string,
+): string {
+  return nextCurrency === currentCurrency ? currentManualRate : '';
+}
+
+/**
  * One destination's exchange-rate setting, in a table cell.
  *
  * ⭐ Names the rule that actually applies rather than listing both columns. A row carrying an

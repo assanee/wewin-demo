@@ -241,15 +241,28 @@ export class OrganisationService {
    * A schedule that gates 30% judged against a floor of 100% is a 70% concession, fail-closed
    * refuses an approval it cannot grant, and the whole submit rolls back — so a second reader of
    * this column, with its own opinion about a missing row or its own default, would be plan
-   * 7.13's ฿12,902 seam in a new column. Both consumers arrive at this method.
+   * 7.13's ฿12,902 seam in a new column.
    *
-   * ⚠️ **One method is not one read, and the first version of this note said "both consumers
-   * arrive here" in a way that implied it was.** A submit calls this twice — once for the
-   * schedule, once inside `gate` — and this is a plain unlocked `SELECT` at READ COMMITTED, where
-   * each statement takes its own snapshot. A `putProfile` committing between the two is seen by
-   * the second and not the first. The window, its one harmful direction, and why a `FOR SHARE`
-   * was written and then rejected are set out at the call site in `orders.service.ts`; what
-   * belongs here is only that this method does **not** promise the two reads agree.
+   * ⚠️ **A submit calls this method once, not twice — and that was not always true.** This is a
+   * plain unlocked `SELECT` at READ COMMITTED, where every statement takes its own snapshot, so
+   * two live calls can disagree if a `putProfile` commits between them. That used to be exactly
+   * what a submit did: `pinsForSubmit` called this to plan the schedule and
+   * `AuthorityService.measureFor` called it again inside `gate` — each its own snapshot, and a
+   * `putProfile` landing between the two was seen by the second call and not the first. Commit
+   * `4a00bd0` closed that window without a lock: `applySubmission` pins this call's result onto
+   * the order, in the same transaction, as `orders.deposit_floor_bp`, and `measureFor` now reads
+   * `order.depositFloorBp ?? (await this.depositPolicy.depositBp(tx))` — so the pin short-circuits
+   * the second live read entirely, for any order that has one. See `orders.service.ts` — *"One
+   * definition is now also one read"* — for the full account of the window and why a `FOR SHARE`
+   * was rejected as its remedy.
+   *
+   * That guarantee is only as old as the pin. Every order submitted before it existed carries
+   * `deposit_floor_bp = null` forever — `0034_order_deposit_floor.sql` deliberately backfills
+   * nothing, because no column says which orders predate the setting they'd be backfilled to —
+   * so for those orders `measureFor`'s `??` still falls through to a live call here on every
+   * measurement: `assess`, `request`, an objection's `gate`. Each of those remains its own
+   * snapshot, unsynchronised with any other, exactly as this note used to describe for every
+   * order. The window is closed only where a pin exists to read instead.
    *
    * A missing profile row throws rather than defaulting to payment in full. It is the singleton
    * `id = 1` seeded by migration `0029`, so its absence is not a configuration state — and a

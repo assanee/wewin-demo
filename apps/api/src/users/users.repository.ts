@@ -520,6 +520,7 @@ export class UsersRepository {
         readonly id: string;
         readonly userId: string;
         readonly verifiedAt: Date | null;
+        readonly verifiedByUserId: string | null;
         readonly isPrimary: boolean;
       }
     | undefined
@@ -529,6 +530,7 @@ export class UsersRepository {
         id: userPhones.id,
         userId: userPhones.userId,
         verifiedAt: userPhones.verifiedAt,
+        verifiedByUserId: userPhones.verifiedByUserId,
         isPrimary: userPhones.isPrimary,
       })
       .from(userPhones)

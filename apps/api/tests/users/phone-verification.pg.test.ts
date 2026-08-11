@@ -72,6 +72,14 @@ describeWithPg('staff phone verification', () => {
   const insertPhone = async (options: {
     readonly verified?: boolean;
     readonly primary?: boolean;
+    /**
+     * Unset by default even when `verified` is true — a verified row with no voucher is
+     * exactly the "proved with no staff assertion" shape `verifyPhone` never actually
+     * produces (see the un-verify test that constructs it on purpose, below). Tests that want
+     * an ordinary staff-verified fixture pass this explicitly, the same way the real route
+     * always would.
+     */
+    readonly voucher?: string;
   } = {}): Promise<string> => {
     const [row] = await db
       .insert(userPhones)
@@ -80,6 +88,7 @@ describeWithPg('staff phone verification', () => {
         number: freshPhoneNumber(),
         ...(options.verified === true ? { verifiedAt: new Date() } : {}),
         ...(options.primary === true ? { isPrimary: true } : {}),
+        ...(options.voucher !== undefined ? { verifiedByUserId: options.voucher } : {}),
       })
       .returning({ id: userPhones.id });
     if (!row) throw new Error('fixture insert returned nothing');
@@ -216,8 +225,11 @@ describeWithPg('staff phone verification', () => {
 
   it('refuses to un-verify the primary number', async () => {
     // Primary implies verified (`user_phones_primary_is_verified`) — this is the one
-    // combination the schema will not let un-verify leave standing.
-    const phoneId = await insertPhone({ verified: true, primary: true });
+    // combination the schema will not let un-verify leave standing. Vouched for, like any
+    // ordinary staff-verified row, so this isolates the primary-number rule from the
+    // no-voucher rule the test below is about — without a voucher the no-voucher refusal
+    // would fire first and this would stop proving what its name says it proves.
+    const phoneId = await insertPhone({ verified: true, primary: true, voucher: admin.userId });
 
     const response = await call('DELETE', verificationPath(customer.userId, phoneId), {
       token: admin.token,
@@ -225,6 +237,30 @@ describeWithPg('staff phone verification', () => {
     expect(response.status).toBe(409);
     expect((response.body as { error?: { details?: { reason?: string } } }).error?.details?.reason).toBe(
       'primary-number',
+    );
+
+    // Refused, not partially applied.
+    const row = await readPhone(phoneId);
+    expect(row.verifiedAt).not.toBeNull();
+  });
+
+  it('refuses to un-verify a row proved with no voucher — a state no route writes today, built directly on the fixture', async () => {
+    // `verifyPhone` is the only writer of `verified_at`, and it always sets `verified_
+    // by_user_id` alongside it — so this shape (verified, no voucher: the future OTP this
+    // table was built to anticipate) is unreachable through today's routes. `insertPhone`
+    // constructs it directly rather than pretending a route can reach it. Without the
+    // service's own guard, this UPDATE still matches `verified_at is not null and not is_
+    // primary` and reaches `user_phones_verification_is_final`, which raises `restrict_
+    // violation` — and `users/` has no `pg-errors.ts` to translate that, so it would surface
+    // as a 500 rather than the 409 asserted below.
+    const phoneId = await insertPhone({ verified: true });
+
+    const response = await call('DELETE', verificationPath(customer.userId, phoneId), {
+      token: admin.token,
+    });
+    expect(response.status, JSON.stringify(response.body)).toBe(409);
+    expect((response.body as { error?: { details?: { reason?: string } } }).error?.details?.reason).toBe(
+      'not-staff-verified',
     );
 
     // Refused, not partially applied.

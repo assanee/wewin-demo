@@ -24,6 +24,7 @@ import {
   basisLabelTh,
   fieldsFromTaxCountry,
   fxCurrencyOptions,
+  fxManualRateOnCurrencyChange,
   rateEditable,
   readRateBp,
   taxCountryCreateFormErrors,
@@ -123,18 +124,21 @@ export function TaxCountryDialog({
     setFields((current) => ({ ...current, fxManualRate: value }));
 
   /*
-   * Dropping the currency clears the override in the same click, the same shape `setTreatment`
-   * above clears the rate box — and for the same reason. `tax_countries_fx_manual_rate_needs_
-   * currency` refuses an override with no currency, and a box left holding "35.90" under a
-   * picker that now says "ไม่แปลงสกุลเงิน" is the single most likely way to meet that 409. The
-   * spread is deliberately *not* cleared: it is inert without a currency, not wrong, and
-   * keeping it means choosing a currency again restores the policy that was already decided.
+   * Changing the currency clears the override in the same click — dropping it to "ไม่แปลง
+   * สกุลเงิน" exactly as `setTreatment` above clears the rate box, but now also *switching* it
+   * from one currency to another. `fxManualRateOnCurrencyChange` (`tax-country-fields.ts`) is
+   * the pure rule and carries the argument in full: a rate is baht per one unit of whatever
+   * currency was selected when it was typed, so carrying "35.90" across a switch from USD to
+   * SGD keeps the digits and throws away what they meant — confirmed against Postgres as a 33%
+   * overstatement that passes every CHECK on the row. The spread is still not touched by any of
+   * this: it is inert without a currency, not wrong, and survives both a clear and a switch so
+   * that picking a currency again restores the policy that was already decided.
    */
   const setFxCurrency = (value: string) => {
     setFields((current) => ({
       ...current,
       fxCurrency: value,
-      fxManualRate: value === '' ? '' : current.fxManualRate,
+      fxManualRate: fxManualRateOnCurrencyChange(current.fxCurrency, current.fxManualRate, value),
     }));
   };
 

@@ -7,6 +7,7 @@ import {
   basisLabelTh,
   fieldsFromTaxCountry,
   fxCurrencyOptions,
+  fxManualRateOnCurrencyChange,
   fxSummaryTh,
   isTaxCountryCreation,
   manualRateField,
@@ -535,6 +536,35 @@ describe('the exchange-rate settings — the spread box, the override box, and t
         fxManualRate: '',
       }),
     ).toBe(false);
+  });
+});
+
+describe('fxManualRateOnCurrencyChange — a rate is denominated in a currency', () => {
+  it('clears the rate when the currency is dropped to no conversion', () => {
+    expect(fxManualRateOnCurrencyChange('USD', '35.90', '')).toBe('');
+  });
+
+  it('clears the rate when the currency is chosen for the first time', () => {
+    expect(fxManualRateOnCurrencyChange('', '', 'USD')).toBe('');
+  });
+
+  /**
+   * ⭐ The bug this function exists to fix. Confirmed against Postgres before the fix: `fx_
+   * currency='USD', fx_manual_rate=35.90` → set `fx_currency='SGD'` → accepted, row reads `SGD
+   * 35.9000000000` against a true mid THB/SGD of about 27.04 — a plausible-looking 33%
+   * overstatement that passes every CHECK on the row. Switching, not only clearing, is the
+   * shape that used to carry the number across unchanged.
+   */
+  it('clears the rate when switching from one currency to a different one', () => {
+    expect(fxManualRateOnCurrencyChange('USD', '35.90', 'SGD')).toBe('');
+  });
+
+  it('leaves the rate alone when the picker fires with the currency already selected', () => {
+    expect(fxManualRateOnCurrencyChange('USD', '35.90', 'USD')).toBe('35.90');
+  });
+
+  it('has nothing to clear when there was never a currency to begin with', () => {
+    expect(fxManualRateOnCurrencyChange('', '', '')).toBe('');
   });
 });
 

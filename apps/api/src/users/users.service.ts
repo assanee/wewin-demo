@@ -154,6 +154,24 @@ export class UsersService {
     }
 
     /*
+     * `user_phones_verification_is_final` (0035_phone_verification.sql) only carves out room
+     * to un-verify a *staff assertion* — `verified_by_user_id` set going in. A row proved with
+     * no voucher (the future OTP this table was built to anticipate) keeps the original
+     * guarantee: it cannot be un-verified, full stop, and the trigger raises `restrict_
+     * violation` for it. Nothing writes that shape today — `verifyPhone` is the only
+     * `verified_at` writer, and it always sets both columns together — but the compare-and-set
+     * below matches it anyway (`verified_at is not null and not is_primary` says nothing about
+     * the voucher), so this is refused with a sentence here rather than left to surface as a
+     * 500 from Postgres the day it becomes reachable.
+     */
+    if (phone.verifiedByUserId === null) {
+      throw AppError.conflict(
+        'เบอร์นี้พิสูจน์ความเป็นเจ้าของแล้ว ไม่ใช่การยืนยันโดยพนักงาน จึงยกเลิกไม่ได้',
+        { reason: 'not-staff-verified' },
+      );
+    }
+
+    /*
      * `user_phones_primary_is_verified` demands a primary number stay verified — un-verifying
      * one would either violate that CHECK outright or (if the primary flag also moved) change
      * which number the account signs in and is found by, which is not what this button is

@@ -419,5 +419,13 @@ describe('what is still a Thai string, as a number', () => {
  * one reader is Thai staff. A member of staff clicking "verify" or "ยกเลิกยืนยัน" and being
  * told `เบอร์นี้ยืนยันแล้ว` is not a customer reading Thai they cannot read — the sentence
  * that note already flags as the day this reasoning stops holding.
+ *
+ * ── 220 → 221: un-verify's third refusal ──────────────────────────────────────────
+ *
+ * One, `unverifyPhone`'s new refusal for a row proved with no voucher — reachable today only
+ * by a test constructing the row directly, since `verifyPhone` is the only writer of
+ * `verified_at` and always sets both columns together. Same screen, same permission, same
+ * argument as the seven immediately above: `/admin/users`, gated on `users.write`, one reader,
+ * Thai staff.
  */
-const RAW_LITERAL_CALL_SITES = 220;
+const RAW_LITERAL_CALL_SITES = 221;
