@@ -142,7 +142,11 @@ describeWithPg('one quote, end to end', () => {
     orderId: string,
   ): Promise<{
     allowed: boolean;
-    margin: { outcome: string; concessionThbMinor: string; ceilingThbMinor: string | null };
+    margin: {
+      outcome: string;
+      concessionThbMinor: string;
+      ceiling: { known: boolean; thbMinor?: string | null };
+    };
   }> => {
     const read = await call('GET', `/quotes/authority/orders/${orderId}`, auth(sales));
     if (read.status !== 200) throw new Error(JSON.stringify(read.body));
@@ -220,9 +224,10 @@ describeWithPg('one quote, end to end', () => {
     say('   outcome', beforeCharge.margin.outcome);
     expect(beforeCharge.allowed).toBe(false);
     expect(beforeCharge.margin.outcome).toBe('needs_approval');
-    /* ⚠️ plan 13's fail-closed, and this null is what it looks like: not "a ceiling of zero",
-     * but "this role carries no authority row at all". */
-    expect(beforeCharge.margin.ceilingThbMinor).toBeNull();
+    /* ⚠️ plan 13's fail-closed, and this is what it looks like on the wire: the server says it
+     * *looked* (`known`) and found nothing (`thbMinor: null`). Not "a ceiling of zero", and not
+     * the `{ known: false }` it sends when an outcome never consulted the table at all. */
+    expect(beforeCharge.margin.ceiling).toEqual({ known: true, thbMinor: null });
 
     /* ── ③ add a charge ────────────────────────────────────────────── */
 

@@ -295,7 +295,17 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
 
       expect(listed.status).toBe(200);
       const wire = body<{ limits: readonly unknown[]; isFailClosed: boolean }>(listed);
-      expect(wire.isFailClosed).toBe(wire.limits.length === 0);
+
+      /*
+       * ⚠️ Not `toBe(wire.limits.length === 0)`. That was the same question while a withdrawal
+       * was a `DELETE`, and since 0038 it is a **tautology on this fixture**: this `describe`
+       * runs before any grant and `purgeAuthorityLimits` empties the table, so both sides are
+       * whatever the code says and the assertion pins nothing. Worse, it encodes the *old*
+       * meaning — the day a withdrawn row is visible here it would fail with the code correct.
+       * `isFailClosed` means "no live ceiling"; on an empty table that is `true`, stated.
+       */
+      expect(wire.limits).toEqual([]);
+      expect(wire.isFailClosed).toBe(true);
     });
 
     /**
@@ -321,8 +331,8 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       expect(assessed.status).toBe(200);
       const wire = body<{
         allowed: boolean;
-        margin: { concessionThbMinor: string; outcome: string };
-        cashflow: { concessionThbMinor: string; outcome: string };
+        margin: { concessionThbMinor: string; outcome: string; ceiling: unknown };
+        cashflow: { concessionThbMinor: string; outcome: string; ceiling: unknown };
       }>(assessed);
 
       expect(wire.margin.concessionThbMinor).toBe('0');
@@ -330,6 +340,19 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       expect(wire.margin.outcome).toBe('nothing_conceded');
       expect(wire.cashflow.outcome).toBe('nothing_conceded');
       expect(wire.allowed).toBe(true);
+
+      /*
+       * ⭐ …and the response says **nothing** about this reader's ceiling, out loud.
+       *
+       * `judge` returns before it reads `authority_limits` when nothing has been conceded, so
+       * there is no ceiling to report — and the wire says so with `{ known: false }` rather
+       * than a `null` that also spells "you have no authority". Reading that `null` as the
+       * second sentence is the bug a browser caught: every quote with no discount on it told
+       * the salesperson they had no authority at all, including right after they were granted
+       * one. The distinction is on the wire now, so no client has to rebuild it from `outcome`.
+       */
+      expect(wire.margin.ceiling).toEqual({ known: false });
+      expect(wire.cashflow.ceiling).toEqual({ known: false });
 
       /* And the gate the submit path calls agrees, which is the half a screen cannot prove. */
       await expect(
@@ -482,12 +505,16 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       });
       const wire = body<{
         allowed: boolean;
-        margin: { outcome: string; ceilingThbMinor: string; concessionThbMinor: string };
+        margin: {
+          outcome: string;
+          ceiling: { known: boolean; thbMinor?: string | null };
+          concessionThbMinor: string;
+        };
       }>(assessed);
 
       expect(wire.margin.concessionThbMinor).toBe('107000');
       expect(wire.margin.outcome).toBe('within_authority');
-      expect(wire.margin.ceilingThbMinor).toBe('500000');
+      expect(wire.margin.ceiling).toEqual({ known: true, thbMinor: '500000' });
       expect(wire.allowed).toBe(true);
 
       await expect(
@@ -508,12 +535,13 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       const tooSmall = await call('GET', `/quotes/authority/orders/${order.id}`, {
         token: sales.token,
       });
-      const narrowed = body<{ allowed: boolean; margin: { outcome: string; ceilingThbMinor: string } }>(
-        tooSmall,
-      );
+      const narrowed = body<{
+        allowed: boolean;
+        margin: { outcome: string; ceiling: { known: boolean; thbMinor?: string | null } };
+      }>(tooSmall);
 
       expect(narrowed.margin.outcome).toBe('needs_approval');
-      expect(narrowed.margin.ceilingThbMinor).toBe('106999');
+      expect(narrowed.margin.ceiling).toEqual({ known: true, thbMinor: '106999' });
       expect(narrowed.allowed).toBe(false);
 
       await purgeAuthorityLimits(db, salesGroupId);
@@ -730,11 +758,22 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       const assessed = await call('GET', `/quotes/authority/orders/${order.id}`, {
         token: sales.token,
       });
-      const wire = body<{ allowed: boolean; margin: { outcome: string; approvalId: string } }>(assessed);
+      const wire = body<{
+        allowed: boolean;
+        margin: { outcome: string; approvalId: string; ceiling: unknown };
+      }>(assessed);
 
       expect(wire.margin.outcome).toBe('covered_by_approval');
       expect(wire.margin.approvalId).toBe(approvalId);
       expect(wire.allowed).toBe(true);
+
+      /*
+       * The sales role's own ceiling is ฿1,000 here and it did not cover this concession —
+       * somebody else's approval did. So the response reports no ceiling: putting the
+       * requester's number beside "approved" invites exactly the comparison the approval has
+       * already settled, and `{ known: false }` is the wire refusing to invite it.
+       */
+      expect(wire.margin.ceiling).toEqual({ known: false });
 
       /* And the gate agrees — the same measurement, not a second one. */
       await expect(

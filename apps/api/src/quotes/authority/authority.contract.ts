@@ -86,13 +86,41 @@ export interface ConcessionSourceWire {
   readonly reasonCode: string | null;
 }
 
+/**
+ * ⭐ What this response says about the **caller's** ceiling — and on most outcomes it says
+ * nothing, which is a different sentence from "you have none".
+ *
+ * This was a bare `ceilingThbMinor: string | null`, and `null` carried two meanings split by a
+ * branch no client can see: *"your roles hold no live `authority_limits` row"* on
+ * `needs_approval`, and *"this outcome never consulted the table"* on the other three.
+ * `AuthorityService.judge` returns before reading the ceiling when nothing has been conceded,
+ * and a covered concession is a fact about somebody else's authority rather than the caller's.
+ *
+ * The dashboard read that `null` as "no ceiling" and printed **ยังไม่มีการกำหนดเพดานอำนาจ
+ * สำหรับบทบาทของคุณ** on every quote carrying no discount — which is most quotes — including
+ * for roles that had just been granted one. It was fixed on that client by reconstructing the
+ * distinction from `outcome`, which left the trap armed for the next client and made a wire
+ * field mean something only one reader knew. So the wire says it itself:
+ *
+ *     { known: false }                     this response reports no ceiling — conclude nothing
+ *     { known: true, thbMinor: '500000' }  the caller's roles may concede up to ฿5,000
+ *     { known: true, thbMinor: null }      the caller's roles hold no live ceiling at all
+ *
+ * ⚠️ `known: true` with `thbMinor: '0'` is a **real grant** and not the absence of one — the
+ * distinction `authority_limits`' own schema note exists for: `0` may record a concession and
+ * approve none of its own; no row has no authority at all.
+ */
+export type CeilingWire =
+  | { readonly known: false }
+  | { readonly known: true; readonly thbMinor: string | null };
+
 export interface DimensionAssessmentWire {
   readonly dimension: 'margin' | 'cashflow';
   readonly concessionThbMinor: string;
   readonly sources: readonly ConcessionSourceWire[];
   /** `nothing_conceded` · `within_authority` · `covered_by_approval` · `needs_approval`. */
   readonly outcome: string;
-  readonly ceilingThbMinor: string | null;
+  readonly ceiling: CeilingWire;
   readonly approvalId: string | null;
 }
 

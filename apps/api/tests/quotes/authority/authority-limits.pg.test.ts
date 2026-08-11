@@ -6,6 +6,7 @@ import { and, eq, sql } from '@wewin/db/sql';
 import { authorityLimitChanges, authorityLimits, groups, userGroups } from '@wewin/db/schema';
 
 /* The files, not the directory: `src/quotes/authority.ts` shadows `authority/index.ts`. */
+import { AuthorityRepository } from '../../../src/quotes/authority/authority.repository';
 import { AuthorityService } from '../../../src/quotes/authority/authority.service';
 import { userScope } from '../../../src/rbac';
 import { client, makeActor, type Actor, type Json } from '../../payments/support/payments-app';
@@ -376,6 +377,54 @@ describeWithPg('authority limits — the screen that fills the table in', () => 
           ),
         );
       expect(unchanged?.revokedAt?.toISOString()).toBe(stamped?.revokedAt?.toISOString());
+    });
+
+    /**
+     * ⭐ The database-side half of the double-withdrawal guard, driven with no service in front.
+     *
+     * ⚠️ **This test exists because the two guards were hiding each other.** `removeLimit`
+     * checks the locked pre-image, and `revokeLimit` carries `revoked_at IS NULL` in its own
+     * WHERE. Over HTTP either one alone produces the same answer, so a review deleted each in
+     * turn and the whole suite stayed green — two documented guards, neither of them tested.
+     *
+     * The other arm is now distinguishable at the service (`removeLimit` reports a zero-row
+     * UPDATE under the lock as a broken invariant, not a 404 — so deleting the pre-image check
+     * turns the HTTP test below from 404 into 500). This arm is the WHERE clause itself, and it
+     * can only be reached by calling the repository directly: the point of it is what still
+     * holds if a future path arrives here *without* the group lock, and no service-level test
+     * can construct that. Restamping is the failure it prevents — a second withdrawal writing a
+     * new name and time over the record of who actually took the authority away.
+     */
+    it('refuses a second withdrawal at the repository, without restamping the first', async () => {
+      const repository = app.app.get(AuthorityRepository);
+
+      await grant(salesGroupId, 'margin', '750000', 'สำหรับทดสอบ WHERE');
+
+      const first = await repository.transaction(async (tx) =>
+        repository.revokeLimit(tx, {
+          groupId: salesGroupId,
+          dimension: 'margin',
+          revokedByUserId: owner.userId,
+        }),
+      );
+      expect(first).toBe(true);
+
+      const stamped = await limitOf(salesGroupId, 'margin');
+      expect(stamped?.revokedAt).not.toBeNull();
+
+      /* The second call names a *different* actor, so a restamp would be visible by name. */
+      const second = await repository.transaction(async (tx) =>
+        repository.revokeLimit(tx, {
+          groupId: salesGroupId,
+          dimension: 'margin',
+          revokedByUserId: sales.userId,
+        }),
+      );
+      expect(second, 'a withdrawn ceiling was withdrawn a second time').toBe(false);
+
+      const unchanged = await limitOf(salesGroupId, 'margin');
+      expect(unchanged?.revokedAt).toBe(stamped?.revokedAt);
+      expect(unchanged?.revokedByUserId).toBe(owner.userId);
     });
 
     /**

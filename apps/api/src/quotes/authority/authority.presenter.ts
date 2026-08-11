@@ -10,6 +10,7 @@ import type {
   AuthorityAssessmentWire,
   AuthorityLimitChangeWire,
   AuthorityLimitWire,
+  CeilingWire,
   DimensionAssessmentWire,
 } from './authority.contract';
 
@@ -24,6 +25,41 @@ import type {
  * all — it throws — so this is not a style preference, it is the boundary where the choice has
  * to be made, and making it once means it is made the same way everywhere.
  */
+
+/**
+ * ⭐ Say which of the two `null`s this is, here, once — rather than letting every client
+ * reconstruct it from an unrelated field.
+ *
+ * `DimensionOutcome` already knows: `within_authority` carries the ceiling that covered the
+ * concession, `needs_approval` carries `bigint | null` where `null` genuinely means the actor's
+ * roles hold no live row, and the other two carry nothing because the answer they give is not
+ * about the caller's ceiling at all — `judge` returns before reading the table when nothing has
+ * been conceded, and a covered concession is a fact about the *approver's* authority.
+ *
+ * Flattening all of that into one `string | null` is what produced the bug the browser caught:
+ * the dashboard read "the API did not say" as "you have none" and told salespeople they had no
+ * authority on every quote with no discount on it. Fixing that on the client left the wire as
+ * ambiguous as it was. `known: false` is this function refusing to pretend it looked.
+ *
+ * ⚠️ `covered_by_approval` is `known: false` on purpose even though `judge` *did* read the
+ * ceiling on the way past. It read it, found it did not cover the concession, and then answered
+ * a different question. Reporting a ceiling beside "somebody else approved this" would invite
+ * exactly the arithmetic — comparing the two — that the approval exists to have already
+ * settled. If a screen ever needs the caller's headroom here, it belongs on the outcome first.
+ */
+function ceilingWire(outcome: DimensionAssessment['outcome'] | undefined): CeilingWire {
+  if (outcome === undefined) return { known: false };
+
+  switch (outcome.kind) {
+    case 'within_authority':
+      return { known: true, thbMinor: outcome.ceilingThbMinor.toString() };
+    case 'needs_approval':
+      return { known: true, thbMinor: outcome.ceilingThbMinor?.toString() ?? null };
+    case 'nothing_conceded':
+    case 'covered_by_approval':
+      return { known: false };
+  }
+}
 
 function measurementWire(
   measurement: DimensionMeasurement,
@@ -40,14 +76,7 @@ function measurementWire(
       reasonCode: source.reasonCode,
     })),
     outcome: outcome?.kind ?? 'unassessed',
-    ceilingThbMinor:
-      outcome === undefined
-        ? null
-        : outcome.kind === 'within_authority'
-          ? outcome.ceilingThbMinor.toString()
-          : outcome.kind === 'needs_approval' && outcome.ceilingThbMinor !== null
-            ? outcome.ceilingThbMinor.toString()
-            : null,
+    ceiling: ceilingWire(outcome),
     approvalId:
       outcome === undefined
         ? null

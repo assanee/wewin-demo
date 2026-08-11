@@ -438,13 +438,21 @@ describe('what is still a Thai string, as a number', () => {
  *                  literal is a *net improvement* on what a client used to get.
  *   `removeLimit`  the same sentence, for the same reason, on the withdrawal path.
  *   `removeLimit`  a second `ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้` for a ceiling that is already
- *                  withdrawn — `revokeLimit`'s own `revoked_at IS NULL` makes that update zero
- *                  rows rather than restamping the first withdrawal with a new name, and the
- *                  caller has to be told their act was not the one that did it.
+ *                  withdrawn — the caller has to be told their act was not the one that did it.
  *
  * Same argument as the user-administration block above, and if anything narrower: the only
- * screen that reaches these is `/users` → อำนาจอนุมัติ, gated on `groups.write` — a permission
- * held by nobody at boot — and its reader is the person deciding what a Thai sales team may
- * concede. No customer, in any locale, can reach a route that writes this table.
+ * screen that reaches these is the authority-limits page, gated on `groups.write` — a
+ * permission held by nobody at boot — and its reader is the person deciding what a Thai sales
+ * team may concede. No customer, in any locale, can reach a route that writes this table.
+ *
+ * ── 224 → 223: one refusal that was never a refusal ───────────────────────────────
+ *
+ * `removeLimit` carried a *fourth* `AppError.notFound`, for `revokeLimit` reporting that it
+ * updated no rows. It is gone, and not by being keyed: the pre-image immediately above it has
+ * already established that the ceiling is live, under `lockGroup`'s row lock, so a zero-row
+ * UPDATE there means the lock did not hold. That is a broken invariant and it now throws a
+ * plain `Error` — a 500, which is the honest answer, because nothing about the caller's
+ * request was wrong. It also un-hid the two guards from each other: while both spelled the
+ * same 404, a review found either could be deleted with the whole suite green.
  */
-const RAW_LITERAL_CALL_SITES = 224;
+const RAW_LITERAL_CALL_SITES = 223;

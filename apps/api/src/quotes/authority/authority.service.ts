@@ -728,9 +728,7 @@ export class AuthorityService {
       /*
        * A ceiling that is already withdrawn is `notFound` and not a silent success, for the
        * same reason a missing one is: the caller asked to take authority away and needs to know
-       * whether their act is the one that did it. `revokeLimit`'s own `revoked_at IS NULL`
-       * makes the second attempt update zero rows rather than restamping the first withdrawal
-       * with a new name.
+       * whether their act is the one that did it.
        */
       if (before === undefined || before.revokedAt !== null) {
         throw AppError.notFound('ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้');
@@ -741,7 +739,29 @@ export class AuthorityService {
         dimension,
         revokedByUserId: actor,
       });
-      if (!revoked) throw AppError.notFound('ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้');
+
+      /*
+       * ⚠️ **Not a 404 — an invariant failure, and the difference is what makes both guards
+       * testable.**
+       *
+       * `revokeLimit` carries `revoked_at IS NULL` in its own WHERE, so a second withdrawal
+       * updates zero rows rather than restamping the first one with a new name and time. That
+       * guard and the pre-image check above are genuinely redundant *for a caller holding the
+       * group lock*, which is why a review found that either one could be deleted with the
+       * whole suite still green: each was hiding the other's absence behind an identical 404.
+       *
+       * They are kept — the WHERE clause is the one that still holds if a future path reaches
+       * the repository without the lock — but they no longer say the same thing. Reaching here
+       * means the pre-image said *live* and the UPDATE then matched nothing, under a lock that
+       * exists precisely to make that impossible. That is a broken lock, not a missing row, and
+       * reporting it as `notFound` would tell the caller their request was wrong when the
+       * database is. `tests/quotes/authority/authority-limits.pg.test.ts` pins both arms: the
+       * HTTP test wants a 404 from the check above, and a repository-level test drives
+       * `revokeLimit` twice with no service in front of it.
+       */
+      if (!revoked) {
+        throw new Error('authority_limits revoke matched no live row under the group lock');
+      }
 
       const after = await this.repository.readLimit(tx, groupId, dimension);
       if (after === undefined) throw new Error('authority_limits revoke lost the row');

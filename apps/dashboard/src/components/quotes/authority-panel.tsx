@@ -52,9 +52,16 @@ import type { QuoteEditor } from './use-quote';
  *
  * `authority_limits` ships with **zero rows**, because nobody has asked the owner what the
  * limits are and plan 13's rule is that a placeholder must never be shipped wearing the
- * costume of an answer. `null` means *no row*: fail-closed, this role may concede nothing at
- * all. `0n` means a row exists saying "may record concessions, may approve none of its own".
- * Two different sentences, printed as two.
+ * costume of an answer. So the screen has three sentences, not two, and the wire gives it
+ * three answers rather than making it guess — see `ceilingClaim` below and `CeilingWire`:
+ *
+ *     { known: false }                  this response says nothing about your ceiling
+ *     { known: true, thbMinor: null }   no row: fail-closed, this role may concede nothing
+ *     { known: true, thbMinor: 0n }     a row saying "may record concessions, approve none"
+ *
+ * ⚠️ The middle and the last are different grants and are printed differently. The first is
+ * printed as nothing at all, and getting *that* wrong is what told salespeople they had no
+ * authority on every quote that conceded nothing.
  *
  * ### There is a request button and no approve button
  *
@@ -257,40 +264,34 @@ function DimensionRow({
 }
 
 /**
- * ⭐ What this response actually says about the reader's ceiling — three answers, not two.
+ * ⭐ What this response says about the reader's ceiling — three answers, not two.
  *
- * ⚠️ **`ceilingThbMinor === null` does not mean "no ceiling".** It means *the API did not say*,
- * and the two are only the same thing on one of the four outcomes. `authority.presenter.ts`
- * fills the field for `within_authority` and for `needs_approval`, and leaves it `null` on
- * `nothing_conceded` and `covered_by_approval` — because `AuthorityService.judge` returns
- * before reading the table when nothing has been conceded, and because a covered concession is
- * a fact about somebody else's authority rather than the reader's.
+ * ⚠️ **This function used to be the bug, and the fix is that it no longer decides anything.**
  *
- * Reading that `null` as "no ceiling" printed **ยังไม่มีการกำหนดเพดานอำนาจสำหรับบทบาทของคุณ** on
- * every quote with no discount on it — which is most quotes — and kept printing it after an
- * administrator had granted that very role a ceiling on `/users` → อำนาจอนุมัติ. Found by
- * driving both screens in a browser: grant ฿5,000, open a quote, be told you have nothing.
- * Nothing in the API could have caught it; the API was right and the sentence was invented
- * here.
+ * The wire once carried a bare `ceilingThbMinor: string | null` whose `null` meant "your role
+ * has no ceiling" on `needs_approval` and "this outcome never consulted the table" on the other
+ * three — a split produced by a branch inside `AuthorityService.judge` that no client can see.
+ * Reading it as "no ceiling" printed **ยังไม่มีการกำหนดเพดานอำนาจสำหรับบทบาทของคุณ** on every
+ * quote with no discount on it — which is most quotes — and kept printing it after an
+ * administrator had granted that very role a ceiling. Found by driving both screens in a
+ * browser; nothing in the API could have caught it, because the API was right and the sentence
+ * was invented here.
  *
- * So `none_granted` is claimed **only on `needs_approval`**, which is the one outcome whose
- * `null` `judge` produces deliberately (`ceilingThbMinor: ceiling ?? null`) and where it does
- * mean the role holds no live `authority_limits` row. Everywhere else the honest rendering of
- * "the API did not say" is to say nothing.
+ * The first fix rebuilt the distinction here, from `outcome`. That worked and was the wrong
+ * place: it left a wire field meaning two things, correct on exactly one client, and the
+ * dashboard is only the first. `CeilingWire` now carries `known` and the server sets it — so
+ * this is a rename of the server's three answers into the three sentences the screen prints,
+ * and there is nothing left here to get wrong.
  */
 export type CeilingClaim =
   | { readonly kind: 'ceiling'; readonly ceilingThbMinor: bigint }
   | { readonly kind: 'none_granted' }
   | { readonly kind: 'unknown' };
 
-export function ceilingClaim(
-  dimension: Pick<DimensionAssessmentView, 'ceilingThbMinor' | 'outcome'>,
-): CeilingClaim {
-  if (dimension.ceilingThbMinor !== null) {
-    return { kind: 'ceiling', ceilingThbMinor: dimension.ceilingThbMinor };
-  }
-  if (dimension.outcome === 'needs_approval') return { kind: 'none_granted' };
-  return { kind: 'unknown' };
+export function ceilingClaim(dimension: Pick<DimensionAssessmentView, 'ceiling'>): CeilingClaim {
+  if (!dimension.ceiling.known) return { kind: 'unknown' };
+  if (dimension.ceiling.thbMinor === null) return { kind: 'none_granted' };
+  return { kind: 'ceiling', ceilingThbMinor: dimension.ceiling.thbMinor };
 }
 
 function CeilingLine({ claim }: { readonly claim: CeilingClaim }) {
