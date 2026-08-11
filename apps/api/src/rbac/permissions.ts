@@ -53,13 +53,25 @@ export const PERMISSIONS = {
   'payments.verify': 'Accept or reject a payment slip.',
 
   /*
-   * The company's own profile and the bank accounts it is paid into — settings, not a
-   * customer-facing resource. Placed next to `payments.*` rather than at the end of the
-   * list: `payment_slips.received_bank_account_id` points at a row this permission
-   * governs, so a payments admin reads this permission where they would look for it.
+   * The company's own profile, the bank accounts it is paid into, and — since the tax-
+   * country round — the destinations it sells to and the deposit percentage that prices
+   * every schedule. Settings, not a customer-facing resource. Placed next to `payments.*`
+   * rather than at the end of the list: `payment_slips.received_bank_account_id` points at
+   * a row this permission governs, so a payments admin reads this permission where they
+   * would look for it.
    */
-  'organisation.read': "Read the company's profile and its receiving bank accounts.",
-  'organisation.write': "Edit the company's profile and its receiving bank accounts.",
+  'organisation.read':
+    "Read the company's profile, its receiving bank accounts, and its per-destination tax settings and deposit percentage.",
+  /*
+   * Grants more than "letterhead and bank accounts" reads: the five tax-country routes
+   * (`organisation.controller.ts`) reuse this code for the rate, treatment and basis of
+   * every destination, and `putProfile` writes `organisation_profile.deposit_bp` — which
+   * `AuthorityService` reads as the `cashflow` floor every schedule is measured against.
+   * Lowering it lowers what counts as a concession needing approval, so granting this is
+   * granting that too, not merely a name and an address.
+   */
+  'organisation.write':
+    "Edit the company's profile, its receiving bank accounts, the tax rate, treatment and basis for every destination, and the deposit percentage — the floor a schedule's cashflow concession is measured against.",
 
   'users.read': 'Read user accounts, their addresses and their sign-in methods.',
   'users.write': 'Suspend, reinstate, close and edit user accounts.',

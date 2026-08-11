@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DestinationSelect } from '@/components/quote/DestinationSelect';
 import {
   destinationIsSubmittable,
-  fetchDestinations,
   isKnownDestination,
   readDestinations,
 } from '@/lib/quote/destinations';
@@ -26,73 +25,11 @@ import {
 const thailand = () => ({ code: 'TH', nameTh: 'ไทย' });
 const singapore = () => ({ code: 'SG', nameTh: 'สิงคโปร์' });
 
-describe('the destinations read', () => {
-  const originalBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  beforeEach(() => {
-    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example';
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    if (originalBase === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
-    else process.env.NEXT_PUBLIC_API_BASE_URL = originalBase;
-  });
-
-  const respond = (body: unknown, status = 200) =>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
-      ),
-    );
-
-  it('returns what the API published, in the order it published it', async () => {
-    respond({ destinations: [thailand(), singapore()] });
-
-    /* Server-side order is `sort_order`; the browser must not re-sort it. */
-    expect(await fetchDestinations()).toStrictEqual([thailand(), singapore()]);
-  });
-
-  it('degrades to Thailand alone when the read fails, rather than throwing', async () => {
-    /* A settings endpoint being down must not stop somebody asking for a price. */
-    respond({}, 503);
-
-    expect(await fetchDestinations()).toStrictEqual([thailand()]);
-  });
-
-  it('degrades to Thailand alone on a network failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-
-    expect(await fetchDestinations()).toStrictEqual([thailand()]);
-  });
-
-  it('degrades to Thailand alone on a body it cannot read', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{not json', { status: 200 })));
-
-    expect(await fetchDestinations()).toStrictEqual([thailand()]);
-  });
-
-  it('degrades to Thailand alone without a network call when no API is configured', async () => {
-    delete process.env.NEXT_PUBLIC_API_BASE_URL;
-    vi.stubEnv('NODE_ENV', 'production');
-    const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
-
-    expect(await fetchDestinations()).toStrictEqual([thailand()]);
-    expect(fetchSpy).not.toHaveBeenCalled();
-
-    vi.unstubAllEnvs();
-  });
-});
-
 describe('readDestinations — the tri-state read the guard actually needs', () => {
   /*
-   * `fetchDestinations` collapses success and failure into the same shape on purpose, for the
-   * caller that only wants something to render. `readDestinations` is the one the guard needs:
-   * it says whether the list it is handing back is `ready` (a real answer) or `failed` (the
-   * degrade) — a distinction `fetchDestinations`'s bare array cannot make, and the one the race
-   * described below turns on.
+   * The one read every caller uses. It says whether the list it is handing back is `ready` (a
+   * real answer) or `failed` (the Thailand-only degrade) — a distinction a bare array cannot
+   * make, and the one the race described below turns on.
    */
   const originalBase = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -129,6 +66,18 @@ describe('readDestinations — the tri-state read the guard actually needs', () 
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{not json', { status: 200 })));
     expect(await readDestinations()).toEqual({ kind: 'failed', options: [thailand()] });
+  });
+
+  it('reports failed, without a network call, when no API is configured', async () => {
+    delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    vi.stubEnv('NODE_ENV', 'production');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    expect(await readDestinations()).toEqual({ kind: 'failed', options: [thailand()] });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
   });
 
   /*

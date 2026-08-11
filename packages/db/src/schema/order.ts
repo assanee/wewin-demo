@@ -201,12 +201,14 @@ export const VAT_TREATMENTS = ['standard', 'zero_rated', 'exempt', 'out_of_scope
 /**
  * ⚠️ A DEFAULT, NOT A DECISION — plan 13.
  *
- * 700 bp is what the plan says to use *until the owner answers*, and the two questions it
- * is standing in for are still open: whether an overseas customer is zero-rated, and
- * whether delivery and installation are taxable. It is deliberately not a column default:
- * a `DEFAULT 700` in the schema is how a placeholder becomes a fact nobody remembers
- * choosing. The API passes it, pins it per document, and the pinned value is what a
- * reprint of that document renders forever after.
+ * 700 bp is Thailand's own rate and the fallback for an order naming no destination. Of the
+ * two questions it used to stand in for, migration 0029's `tax_countries` answered the
+ * first — whether an overseas customer is zero-rated is now a per-destination fact, not one
+ * rate for everybody — and cites this very comment while doing it. Whether delivery and
+ * installation are taxable is still open. It is deliberately not a column default: a
+ * `DEFAULT 700` in the schema is how a placeholder becomes a fact nobody remembers choosing.
+ * The API passes it, pins it per document, and the pinned value is what a reprint of that
+ * document renders forever after.
  */
 export const VAT_RATE_BP_DEFAULT = 700;
 

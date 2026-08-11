@@ -11,25 +11,27 @@ import { planSchedule, scheduledDepositMinor } from '../../../src/payments/sched
 import { depositPercentTerms, payInFullTerms } from '../../../src/payments/schedule/terms';
 
 /**
- * ⚠️ THE SEAM PLAN 7.13 NAMES, WITH BOTH IMPLEMENTATIONS STILL IN THE TREE.
+ * ⚠️ THE SEAM PLAN 7.13 NAMED — CLOSED, AND THIS IS THE GUARD AGAINST IT REOPENING.
  *
  * `scheduledDepositMinor` is supposed to be **one** function. It decides how much of a
  * customer's money may be kept when they walk away, and three designs produced ฿5,530 and
  * ฿18,432 for the same 30/70 order — a difference of ฿12,902 on one small window.
  *
- * Today there are two:
+ * There used to be two:
  *
- *   `orders.service.ts`  pins `divRoundHalfUp(grandTotal × SCHEDULED_DEPOSIT_BP_DEFAULT, 10000)`
+ *   `orders.service.ts`  pinned `divRoundHalfUp(grandTotal × SCHEDULED_DEPOSIT_BP_DEFAULT, 10000)`
  *   this module          folds the gated prefix of the schedule
  *
- * They agree, and they agree **only because the default gate coverage is payment in full**.
- * The first two tests hold that agreement in place. The third states the exposure as an
- * executable fact rather than as a paragraph: on a 30/70 the two formulas answer differently,
- * and the answer the forfeit reads is the pinned one.
+ * They agreed, and only because the default gate coverage was payment in full. `orders.
+ * service.ts` no longer computes its own figure — it calls `LifecycleService.pinsForSubmit`,
+ * which calls this module and nothing else, so `SCHEDULED_DEPOSIT_BP_DEFAULT` is not read by
+ * any live arithmetic today. It survives here, compared against `GATE_COVERAGE_BP_DEFAULT`,
+ * so that if a future shortcut reintroduces a second formula it disagrees with immediately
+ * rather than agreeing by coincidence for as long as the two constants happen to match.
  *
- * The fix is one line in `apps/api/src/orders/orders.service.ts` — pin what this module
- * returns — and that file belongs to another part of this phase. Until it lands, a schedule
- * with a real deposit pins a forfeit ceiling of 100% of the order.
+ * The third test is kept as the executable record of the exposure that made this worth
+ * guarding: on a 30/70 the two formulas answer differently, and the answer the forfeit
+ * reads is the schedule's, never the shortcut's.
  */
 
 const TOTALS = [1_843_200n, 940_637n, 1n, 999_999_999n];

@@ -31,7 +31,7 @@ import type { TaxCountryChangeRow } from './organisation-api';
  * (`error.tax_country.rate_treatment_conflict`). Two ways to honour that: refuse locally until
  * the person clears the box themselves, or clear it for them. This picks the second — the
  * form clears and disables the rate box the moment a non-`standard` treatment is chosen
- * (`tax-countries.tsx`'s `TaxCountryDialog`) — because the server's own sentence is telling the
+ * (`tax-country-dialog.tsx`'s `TaxCountryDialog`) — because the server's own sentence is telling the
  * client what to do, not asking it to double-check with the person first; a box that greys out
  * and reads "0%" the instant "ยกเว้นภาษี" is picked is a clearer signal than a red error under a
  * field the person never touched. `taxCountryPatchRequest` below re-derives `rateBp` from

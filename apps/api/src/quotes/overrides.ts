@@ -114,7 +114,15 @@ export interface LiveOverride {
 export interface EffectiveLine {
   readonly lineId: string;
   readonly seq: number;
-  /** VAT-exclusive, after this line's own override if it has one. */
+  /**
+   * What this line costs after its own override, if it has one.
+   *
+   * ⚠️ Not always VAT-exclusive. Whether it already contains the tax is `basis` above
+   * (`ApplyOverridesInput.basis`): under `exclusive` this is the tax base and line totals sum
+   * to the net; under `inclusive` it already contains the tax and they sum to the grand total
+   * instead. Same identity as `QuoteDestinationWire.basis` (`@wewin/contract/quote`), which is
+   * where this figure ends up on the wire.
+   */
   readonly effectiveTotalThbMinor: bigint;
   /** What it would have been with no override: the computed figure, or the typed charge. */
   readonly baselineTotalThbMinor: bigint;

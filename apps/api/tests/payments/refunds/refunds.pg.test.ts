@@ -50,11 +50,15 @@ import {
  * A fabricated order row would be a ceiling this suite chose rather than the one the contract
  * did, which is precisely the ฿5,530-versus-฿18,432 confusion plan 7.13 records.
  *
- * ⚠️ `SCHEDULED_DEPOSIT_BP_DEFAULT` is 10,000 bp today — plan 13's *"gate coverage = payment in
- * full"* default — so the pinned deposit equals the grand total and `least(held, obligation)`
- * cannot be told apart from `held` on these orders. The one test that *can* tell them apart is
- * marked below, and it produces the gap by paying in full against a smaller obligation written
- * directly onto the order, because no API can currently set a 30% deposit.
+ * ⚠️ Every order in this file submits at plan 13's *"gate coverage = payment in full"*
+ * default, so the pinned deposit equals the grand total and `least(held, obligation)` cannot
+ * be told apart from `held` on these orders. `PUT /admin/organisation` can set a real
+ * percentage now (`organisation_profile.deposit_bp`, task 12) — but it is one singleton row
+ * shared by the whole database this `beforeAll` boots once, so flipping it for one test would
+ * reschedule every other order this file submits, before and after. The one test that needs
+ * the gap is marked below, and it still produces it by paying in full against a smaller
+ * obligation written directly onto the order, for that isolation rather than for want of a
+ * route.
  */
 
 const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL'];
@@ -132,9 +136,11 @@ describeWithPg('refunds by ordinary bank transfer', () => {
        * Overwrite the pinned deposit obligation **before** the cancellation.
        *
        * Before, not after: the forfeit is now priced in the cancellation's own transaction, so a
-       * ceiling written afterwards would be a ceiling nothing ever read. No route can author a
-       * 30% deposit in 5b — the authoring layer is 5c — so plan 7.8's worked example is produced
-       * by writing the obligation the contract would have carried.
+       * ceiling written afterwards would be a ceiling nothing ever read. Task 12 gave the
+       * company-wide default an authoring route (`PUT /admin/organisation`'s `depositBp`), but
+       * it is a singleton this suite's whole `beforeAll` would feel, not a per-order figure —
+       * so plan 7.8's worked example is still produced by writing the obligation the contract
+       * would have carried, the same isolation every other order in this file relies on.
        */
       readonly pinnedDepositThbMinor?: bigint;
     } = {},
@@ -593,9 +599,9 @@ describeWithPg('refunds by ordinary bank transfer', () => {
      * A customer who pays the whole contract up front and then cancels must not lose a forfeit
      * computed on everything they happened to send: the ceiling is the deposit they *agreed to*.
      * The pinned obligation is written down here rather than produced through the API because
-     * `SCHEDULED_DEPOSIT_BP_DEFAULT` is 10,000 bp and no route can currently set a 30% deposit —
-     * which is the instalments module's to provide. Bounding by cash instead of by the obligation
-     * makes this test fail by a factor of more than three.
+     * `PUT /admin/organisation`'s `depositBp` sets one company-wide row, not this order's own —
+     * changing it here would reschedule every other order this `beforeAll` submits. Bounding by
+     * cash instead of by the obligation makes this test fail by a factor of more than three.
      */
     it('bounds the forfeit by the pinned deposit, not by the cash that happened to arrive', async () => {
       const grandTotalGuess = toBigInt((await submittedOrder(call, customer, line, {

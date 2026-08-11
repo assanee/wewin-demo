@@ -322,7 +322,17 @@ export interface QuoteLineWire {
   readonly computedTotalThbMinor: MoneyWire<'THB'> | null;
   /** The typed charge on a free-form line, and null on a configured one — and null for a customer. */
   readonly chargeTotalThbMinor: MoneyWire<'THB'> | null;
-  /** ⓶ What this line costs after its own override, if it has one. VAT-exclusive. */
+  /**
+   * ⓶ What this line costs after its own override, if it has one — what the customer is
+   * charged for this line.
+   *
+   * ⚠️ Not always VAT-exclusive. Whether this figure already contains the tax depends on the
+   * destination's basis, carried beside it on `QuoteWire.destination.basis`: under `exclusive`
+   * it is the tax base and effective line totals sum to `money.netThbMinor`; under `inclusive`
+   * it already contains the tax and they sum to `money.grandTotalThbMinor` instead. See
+   * `QuoteDestinationWire.basis` for the full identity — a reader who assumes exclusive on an
+   * inclusive quote gets a total that looks like it does not foot by exactly the VAT.
+   */
   readonly effectiveTotalThbMinor: MoneyWire<'THB'>;
 }
 

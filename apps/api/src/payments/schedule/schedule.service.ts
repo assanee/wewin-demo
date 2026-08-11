@@ -51,14 +51,14 @@ import { payInFullTerms, type ScheduleTerm } from './terms';
  * definition of it, because three implementations differed by ฿12,902 on the same 30/70
  * order and it is the ceiling on what a customer gets back.
  *
- * ⚠️ AND THERE IS A SECOND ONE IN THE TREE TODAY. `orders.service.ts` pins the deposit with
- * `divRoundHalfUp(grandTotal × SCHEDULED_DEPOSIT_BP_DEFAULT, 10000)`, which is the whole
- * total because the default gate coverage is payment in full. The two agree *only* while
- * that default holds — the day sales authors a 30/70, that path pins 100% of the order as
- * the forfeit ceiling while the schedule says 30%, which is plan 7.8's ฿18,432-instead-of-
- * ฿5,530 exactly. `tests/payments/schedule/deposit-seam.test.ts` fails the moment the two
- * stop agreeing, which is the intended way to notice; the fix is for the submit path to call
- * this module, and that file is not this agent's to edit.
+ * ⚠️ AND THERE USED TO BE A SECOND ONE. `orders.service.ts` used to pin the deposit with
+ * `divRoundHalfUp(grandTotal × SCHEDULED_DEPOSIT_BP_DEFAULT, 10000)`, which agreed with this
+ * module's fold *only* while the default gate coverage was payment in full — the day sales
+ * authored a 30/70, that path pinned 100% of the order as the forfeit ceiling while the
+ * schedule said 30%, plan 7.8's ฿18,432-instead-of-฿5,530 exactly. `orders.service.ts` now
+ * calls `LifecycleService.pinsForSubmit`, which calls this module and nothing else — that
+ * function is gone, and `tests/payments/schedule/deposit-seam.test.ts` is the regression
+ * guard against its shortcut coming back, not evidence that it is still in the tree.
  */
 
 export interface ScheduleContext {

@@ -204,6 +204,38 @@ describeWithPg('the destination, pinned into the document and its columns', () =
     expect(row.document.vat).toStrictEqual({ rateBp: 900, treatment: 'standard' });
   }, 60_000);
 
+  /**
+   * ⭐ Spec §11 test 5's other half — a withdrawn country must not brick a cart that already
+   * carries it.
+   *
+   * `destination-tax.pg.test.ts` proves this at `resolveDestination`'s level, against a service
+   * call with no HTTP and no pin. Nothing before this test carried it all the way through a real
+   * submit: create a destination, withdraw it with `setAvailability` — exactly the admin action
+   * of taking a country off the storefront's list — then submit an order naming it and check
+   * that it still prices at that country's own rate and pins normally, the same shape as the
+   * first test above. `isActive` governs which destinations a *new* customer is offered
+   * (`list(true)`), never whether an order that already named one is still valid; a submit that
+   * refused here would turn a routine withdrawal into a customer-facing outage on every cart
+   * already mid-checkout with the country the admin just took off the list.
+   */
+  it("still prices and pins at the withdrawn country's own rate, when the cart already named it", async () => {
+    const { submit, admin, taxCountries, documentRow } = await harness();
+    await taxCountries.create(
+      { code: 'SG', nameTh: 'สิงคโปร์', rateBp: 900, treatment: 'standard', pricesIncludeTax: true },
+      admin.id,
+    );
+    await taxCountries.setAvailability('SG', false, admin.id);
+
+    const { orderId } = await submit({ contact: { email: 'a@b.co', destinationCountry: 'SG' } });
+    const row = await documentRow(orderId);
+
+    expect(row.pinnedVatRateBp).toBe(900);
+    expect(row.pinnedVatTreatment).toBe('standard');
+    expect(row.document.destinationCountry).toBe('SG');
+    expect(row.document.taxBasis).toBe('inclusive');
+    expect(row.document.vat).toStrictEqual({ rateBp: 900, treatment: 'standard' });
+  }, 60_000);
+
   it('survives the read path, which is where a missing schema declaration would eat it', async () => {
     const { submit, admin, taxCountries, readDocument } = await harness();
     await taxCountries.create(

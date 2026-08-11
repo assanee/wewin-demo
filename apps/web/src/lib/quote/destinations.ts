@@ -115,15 +115,6 @@ async function readRaw(): Promise<RawRead> {
 }
 
 /**
- * `readRaw`, with `ok` collapsed away — every failure already carries `THAILAND_ONLY`, so a
- * caller that only renders a list (never guards a submit against it) never needs to ask which
- * happened. Kept for exactly that caller and for the tests that already pin its shape.
- */
-export async function fetchDestinations(): Promise<readonly Destination[]> {
-  return (await readRaw()).options;
-}
-
-/**
  * Where the destinations read stands, as a state a guard can act on — not inferred from the
  * content of an options array, which cannot tell "nothing has come back yet" apart from "the
  * read failed and this is the degrade". See the module note for the bug this shape replaced.
@@ -134,10 +125,11 @@ export type DestinationsRead =
   | { readonly kind: 'failed'; readonly options: readonly Destination[] };
 
 /**
- * The same read as `fetchDestinations`, without collapsing success and failure into the same
- * shape. Never itself resolves to `{kind: 'loading'}` — that is the caller's own state before
- * this promise settles, which is the whole point: the caller decides what "still waiting" means
- * to it, this module only ever reports what actually came back.
+ * The read every caller now uses — `DestinationSelect`'s data and the submit guard both come
+ * from here rather than from a bare array, so success and failure are never collapsed into the
+ * same shape. Never itself resolves to `{kind: 'loading'}` — that is the caller's own state
+ * before this promise settles, which is the whole point: the caller decides what "still
+ * waiting" means to it, this module only ever reports what actually came back.
  */
 export async function readDestinations(): Promise<Exclude<DestinationsRead, { readonly kind: 'loading' }>> {
   const { ok, options } = await readRaw();

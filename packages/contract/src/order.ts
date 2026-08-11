@@ -163,11 +163,17 @@ export interface OrderDocumentLineWire extends CatalogRef {
   readonly measures: Readonly<Record<string, LengthWire>>;
   readonly qty: number;
   /**
-   * VAT-exclusive line total — **what the customer is charged for this line**.
+   * The line total — **what the customer is charged for this line**.
    *
    * Equal to `computedNetMinor` unless a human overrode it, in which case this is the human's
    * figure and that one is the machine's. Plan 4.3(ข): the number on the contract is the line
    * total, and there is one of it.
+   *
+   * ⚠️ Not always VAT-exclusive, despite the name. Whether this figure already contains the
+   * tax depends on the destination's basis this document pinned — see `taxBasis` below and
+   * `QuoteDestinationWire.basis` (`quote.ts`) for the identity: under `exclusive` line totals
+   * sum to the net; under `inclusive` they already contain the tax and sum to the grand total
+   * instead.
    */
   readonly netMinor: MoneyWire<'THB'>;
   /** ⓵ `calcPrice(...).totalMinor`, always, whether or not it is what was charged. */

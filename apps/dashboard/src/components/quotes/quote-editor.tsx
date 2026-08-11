@@ -132,8 +132,11 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
           <Badge variant="destructive">ต้องยืนยันราคา {view.staleLines.length} บรรทัด</Badge>
         )}
         {view.unrecognisedDestination === null ? null : (
-          /* In the strip as well as the banner, because the banner scrolls away and this row
-             does not — and the fact it carries survives the whole editing session. */
+          /* In the strip as well as the banner below — not because either is pinned in place:
+             nothing in this dashboard is `sticky` or `fixed`, so both scroll away together
+             with the rest of the page. It sits here for the same reason the other summary
+             badges do (the revision token, "แก้ราคาแล้ว", "ต้องยืนยันราคา") — visible at a
+             glance beside them, not because it survives scrolling that they do not. */
           <Badge variant="destructive" title="ยอดที่แสดงคิดจากอัตราภาษีเริ่มต้น ไม่ใช่ของประเทศปลายทางนี้">
             ประเทศปลายทาง &quot;{view.unrecognisedDestination}&quot; ไม่มีในระบบ
           </Badge>

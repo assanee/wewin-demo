@@ -34,10 +34,14 @@ export const FREEZE_GATE_STATUS: OrderStatus = 'production_confirmed';
  * silently caps the company's protection; one that is too high cannot over-charge anybody,
  * because the forfeit is clamped a second time by money actually held.
  *
- * Nothing in 5b *enforces* this. It is the input to `cashflowConcessionMinor`, which
- * measures how far below the floor a proposed schedule sits — the figure an `approvals` row
- * carries in the `cashflow` dimension. Enforcement belongs with the authoring route, and
- * authoring is 5c (plan 7.10).
+ * ⚠️ No longer what production measures against. Task 12 (plan 7.10) answered the authoring
+ * question this constant used to stand in for: the floor `cashflowConcessionMinor` measures
+ * a proposed schedule against is `organisation_profile.deposit_bp`, one row, read through
+ * `DepositPolicyPort` on every measurement — `AuthorityService.measureFor` requires the
+ * caller to pass it rather than falling back here. This constant survives only as
+ * `cashflowConcessionMinor`'s own default parameter (reachable from `plan.test.ts` and from
+ * nowhere else in `src`) and as the value migration 0029 seeded that column with, so the two
+ * cannot disagree on day one.
  */
 export const GATE_COVERAGE_BP_DEFAULT = 10_000;
 
