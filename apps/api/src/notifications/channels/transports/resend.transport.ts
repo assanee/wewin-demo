@@ -1,188 +1,175 @@
 import { Logger } from '@nestjs/common';
+import { Resend, type CreateEmailRequestOptions, type CreateEmailResponse } from 'resend';
 
 import { PermanentTransportError, type EmailTransport, type OutgoingEmail } from './email-transport';
 
 /**
- * Resend — the transport that actually leaves the building.
+ * Resend — the transport that actually leaves the building, via the official SDK.
  *
- * `file` writes an `.eml` nobody reads unless they go looking; `smtp` has never spoken to a
- * real MTA (see smtp.transport.ts). This one is a REST call to a provider the owner has
- * already chosen, with a key already sitting in `.env`.
+ * ── Why the SDK and not another hand-rolled client ────────────────────────────────────
  *
- * ── Which of this repo's outbound-client shapes applies here ─────────────────────────
+ * `auth/oauth/http.ts` and `fx/fx-http.ts` are hand-rolled on purpose: each talks to one
+ * endpoint, sends one shape of request, and a fifty-line client the team owns end to end is
+ * less risk than a dependency for that little surface. This one *was* hand-rolled the same
+ * way — see git history — and was deliberately swapped for `resend` (`apps/api/package.json`)
+ * for a reason specific to this provider: **quotation PDFs will need to be attached to
+ * emails**, and Resend's attachment shape (`content`/`filename`/`path`, base64 or a
+ * `Buffer`, multipart under the hood) is exactly the part not worth re-implementing by hand.
+ * The pattern here differs from its two siblings for that one reason, not because the key
+ * discipline below matters any less — it doesn't, and every protection those two files
+ * apply by writing `fetch` calls by hand, this file re-establishes by threading the same
+ * options through the SDK's escape hatch (see `send`).
  *
- * `auth/oauth/http.ts` never lets a caught error carry the *response body*, because a token
- * endpoint can echo back the parameters it was sent — including `client_secret`.
- * `fx/fx-http.ts` goes one step further and never lets an error carry the *URL*, because
- * Open Exchange Rates puts its key in the query string, so the URL itself is the secret.
+ * ── The SDK's error shape — audited, not assumed ──────────────────────────────────────
  *
- * Resend is a third shape, not a copy of either. The key travels in the `Authorization`
- * header and nowhere else: there is no query string (`RESEND_API_URL` is a fixed constant,
- * never built from anything secret) and the request body below (`from`/`to`/`subject`/…)
- * never contains it either. So the URL is safe to name in a log line, and — unlike the
- * OAuth case — there is no evidence the response body ever echoes the key back (see the
- * observed shapes below, none of which mention it). The one thing that must never reach a
- * log or a thrown error here is this class's own *request* headers, because the
- * `Authorization` line is the only place the key is ever written down. Nothing below reads
- * `init.headers` back out of the request it built, formats them, or otherwise lets them
- * leak into `describeThrown`-style diagnostics — that is the whole of the discipline this
- * class has to keep, and it is why the tests for this file assert it directly rather than
- * trusting the description above.
+ * `resend@6.19.0`'s `dist/index.mjs` (`Resend.fetchRequest`) never throws: every path —
+ * a non-2xx response, a response body that fails to parse, and a **network failure or an
+ * aborted request** — is caught internally and turned into `{ data: null, error, headers }`.
+ * `error` is always the SDK's own typed `ErrorResponse` shape, `{ message, statusCode, name }`
+ * — confirmed against the SDK's own `RESEND_ERROR_CODE_KEY` union in `dist/index.d.mts`,
+ * which is a more authoritative source than the public docs page this file's previous
+ * version had to fall back on. Crucially, **on a network failure or an abort the SDK
+ * discards the real underlying error entirely** and returns a fixed generic message
+ * (`"Unable to fetch data. The request could not be resolved."`) — verified live, including
+ * with `.cause` inspected by dumping every enumerable property of the thrown/returned value.
+ * There is no `.cause` anywhere in what this SDK hands back, because there is no original
+ * error left by the time it does. Net effect: **the key cannot reach this file's error or
+ * log output via the SDK's error object, because the object structurally has nowhere to
+ * carry a request header** — `error.headers` in the raw HTTP sense doesn't exist on
+ * `ErrorResponse` at all, and the *response* headers the SDK does expose
+ * (`Object.fromEntries(response.headers.entries())`) are never read here regardless (see
+ * `send`, below). This was proved by triggering a real 401 with a deliberately wrong key and
+ * a real network failure against the live API and inspecting the whole result object,
+ * `JSON.stringify`'d and `String()`'d — the key was in neither, in either case.
  *
- * ── The error shape, from observation ─────────────────────────────────────────────────
+ * ── What the SDK does *not* do, proved rather than assumed ───────────────────────────
  *
- * `resend.com/docs/api-reference/errors` lists status codes and short `name`s but not a
- * body schema. Sending real requests at the real API with this deployment's key (redacted
- * in every case) found the shape to be `{"statusCode": number, "name": string, "message":
- * string}` — for example:
+ *   timeout       none. A black-hole server (accepts the connection, never responds) left a
+ *                 bare `resend.emails.send(...)` unresolved past a two-second watchdog in
+ *                 testing. `CreateEmailRequestOptions` has no typed `signal` field, but the
+ *                 SDK's `post()` spreads its `options` parameter directly into the object it
+ *                 hands `fetch()` — so a `signal` an object literal doesn't declare a type
+ *                 for still reaches `fetch` unchanged. Verified live: the same black-hole
+ *                 server aborted at ~300ms once `signal: AbortSignal.timeout(300)` was passed
+ *                 through `options`. `send`, below, does this on every call.
+ *   redirects     followed by default — verified live with a 302 to a second local server,
+ *                 whose response came back as if it were Resend's own. `redirect` is exactly
+ *                 as absent from the typed options as `signal` is, and reaches `fetch` the
+ *                 same way; `redirect: 'error'` passed through `options` was verified to
+ *                 block it (the call failed instead of silently returning the second
+ *                 server's body). This is `auth/oauth/http.ts`'s exact concern — an endpoint
+ *                 answering `3xx` sends whatever the client sends next to wherever it names —
+ *                 and it applies here unchanged, so `send` sets it on every call too.
+ *   retries       none anywhere in the bundle (`grep -i retry` over the whole of
+ *                 `dist/index.mjs` returns nothing). A failure means exactly one attempt was
+ *                 made, which is what makes `Idempotency-Key` (below) meaningful rather than
+ *                 redundant with something the SDK might already be doing.
+ *   size ceiling  none, and — unlike the two gaps above — this file cannot supply one. The
+ *                 SDK owns the `fetch` call and the `response.text()`/`JSON.parse` after it;
+ *                 nothing in `ResendOptions` or `CreateEmailRequestOptions` exposes a hook to
+ *                 read the stream ourselves, and building one would mean re-implementing the
+ *                 exact HTTP client the SDK exists to replace. Accepted as-is: Resend's own
+ *                 success body is one field (`{"id": "…"}`) and this is Resend's server
+ *                 answering, not arbitrary third-party content.
  *
- *   422  {"statusCode":422,"name":"missing_required_field","message":"Missing `to` field."}
- *   403  {"statusCode":403,"name":"validation_error","message":"The wewin.local domain is
- *         not verified. Please, add and verify your domain on https://resend.com/domains"}
- *   401  {"statusCode":401,"name":"validation_error","message":"API key is invalid"}
+ * ── The one thing this file must keep doing regardless of the transport underneath ───
  *
- * (That last one is worth flagging on its own: the docs list `invalid_api_key` as the 401
- * `name`, but the live API answered `validation_error` — the reference is not exact, which
- * is exactly why this was checked by observation rather than typed in from the docs.) A
- * success is `{"id": "<uuid>"}`, matching the brief's contract precisely.
- *
- * None of the three error bodies above is ever read by this class. Not because the body is
- * known to be safe forever — a provider's undocumented shape can change — but because the
- * status code alone is enough to classify the failure (below), and a body this file does
- * not need is a body it does not have to reason about the safety of.
- *
- * ── Classification: the mirror image of SmtpEmailTransport's ─────────────────────────
- *
- * SMTP's "5xx is permanent" rule is about who is complaining: a 5xx reply is the *server*
- * refusing this exact message, so retrying is pointless. Resend's REST codes read the other
- * way around: a 4xx here means *this request* — its key, its `from` address, its shape —
- * was wrong, and none of that changes by retrying the same message five times inside an
- * hour. A 5xx means Resend's own service had a bad moment, which is what the outbox exists
- * to absorb. `429` is the one 4xx carved out: a rate or quota limit is not a statement about
- * this message and can clear before the next attempt, so — per `channel.ts`'s own rule,
- * "when in doubt an adapter says retryable: true" — it is treated as transient.
+ * Never read `error.message` or `error.name` into a log line or a thrown error, even though
+ * live testing found both safe today. An SDK's error vocabulary is not this file's contract
+ * to rely on forever — the status code alone is enough to classify the failure (see `send`),
+ * and a field this file does not need is a field it does not have to keep re-auditing.
  */
 
 const DEFAULT_TIMEOUT_MS = 8_000;
-const MAX_RESPONSE_BYTES = 256 * 1024;
-const RESEND_API_URL = 'https://api.resend.com/emails';
 
 export class ResendEmailTransport implements EmailTransport {
   readonly name = 'resend';
   private readonly logger = new Logger('ResendEmailTransport');
+  private readonly client: Resend;
 
   constructor(
-    private readonly apiKey: string,
+    apiKey: string,
     /** Overridden in tests so a hostile server never costs a real timeout. */
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
-  ) {}
+  ) {
+    this.client = new Resend(apiKey);
+  }
 
   async send(email: OutgoingEmail): Promise<string | undefined> {
-    let response: Response;
+    /*
+     * `signal` and `redirect` are not in `CreateEmailRequestOptions`'s declared shape — see
+     * the header for why they are still required, and why assigning to this explicitly-typed
+     * local (rather than passing an object literal straight to `emails.send`) is what lets
+     * TypeScript accept the extra fields without a cast: excess-property checking only
+     * applies to object literals at the call site, and a supertype of the declared options
+     * is assignable wherever the declared type is expected.
+     */
+    const options: CreateEmailRequestOptions & { signal: AbortSignal; redirect: RequestInit['redirect'] } = {
+      idempotencyKey: idempotencyKeyFor(email.messageId),
+      signal: AbortSignal.timeout(this.timeoutMs),
+      redirect: 'error',
+    };
+
+    let result: CreateEmailResponse;
     try {
-      response = await fetch(RESEND_API_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKeyFor(email.messageId),
-        },
-        body: JSON.stringify({
+      result = await this.client.emails.send(
+        {
           from: email.from,
           to: email.to,
           subject: email.subject,
           text: email.body,
-          headers: email.headers,
-        }),
-        redirect: 'error',
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
+          headers: { ...email.headers },
+        },
+        options,
+      );
     } catch (error) {
-      // `.name` only, exactly as auth/oauth/http.ts and fx/fx-http.ts already do — a
-      // `fetch` failure's `.message` (and `.cause`) has been observed to carry request
-      // detail neither of those files is willing to repeat into a log line.
+      /*
+       * Defensive, not expected: `Resend.fetchRequest` catches everything that reaches it
+       * and never rethrows (see the header). What is *not* wrapped in that catch is
+       * `JSON.stringify(entity)` inside the SDK's own `post()`, called before `fetchRequest`
+       * — unreachable with the plain-string payload this file always sends, but "verified
+       * today" is not "guaranteed by the SDK's contract". `.name` only, never `.message` or
+       * `.cause` — the same rule every other client in this codebase applies to a caught
+       * `fetch` failure, for the same reason: a message or a cause chain can carry request
+       * detail this file has not audited.
+       */
       const reason = error instanceof Error ? error.name : 'unknown error';
-      this.logger.warn(`POST api.resend.com/emails failed: ${reason}`);
+      this.logger.warn(`resend emails.send threw: ${reason}`);
       throw new Error('resend request failed');
     }
 
-    if (!response.ok) {
-      // The body is deliberately never read here — see the header. A connection left with
-      // an unconsumed body is still worth releasing.
-      await response.body?.cancel().catch(() => undefined);
-      this.logger.warn(`POST api.resend.com/emails returned ${String(response.status)}`);
-      const description = `resend request returned ${String(response.status)}`;
-      if (response.status === 429 || response.status >= 500) throw new Error(description);
+    if (result.error !== null) {
+      const status = result.error.statusCode;
+      this.logger.warn(`resend emails.send returned ${status === null ? 'no response' : String(status)}`);
+      const description = `resend request returned ${status === null ? 'no response' : String(status)}`;
+
+      /*
+       * The mirror of SmtpEmailTransport's 5xx-is-permanent rule (see that file). SMTP's 5xx
+       * is the *server* refusing this exact message; Resend's REST 4xx means *this request*
+       * — key, `from`, shape — was wrong, and none of that changes by retrying five times in
+       * an hour, so it is permanent. `null` covers a network failure, a timeout, and a
+       * blocked redirect alike (the SDK does not distinguish them — see the header) and is
+       * treated as transient, same as any 5xx: "when in doubt an adapter says retryable:
+       * true" (channel.ts). `429` is the one 4xx carved out, because a rate or quota limit is
+       * not a statement about this message and can clear before the next attempt.
+       */
+      if (status === null || status === 429 || status >= 500) throw new Error(description);
       throw new PermanentTransportError(description);
     }
 
-    const text = await readCapped(response);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // A 200 is Resend saying the message was accepted; a body it did not promise is a
-      // detail lost, not a delivery that failed. See the interface: "the provider's id when
-      // there is one, or undefined".
-      this.logger.warn('POST api.resend.com/emails returned 200 with an unparseable body');
-      return undefined;
-    }
-
-    const id = isIdBody(parsed) ? parsed.id : undefined;
-    if (id === undefined) this.logger.warn('POST api.resend.com/emails returned 200 without an id');
-    return id;
+    return result.data.id;
   }
-}
-
-function isIdBody(value: unknown): value is { id: string } {
-  return typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'string';
 }
 
 /**
  * `wewin:` plus the message id `EmailChannelAdapter` and `PasswordResetService` already use
- * for `Message-ID` — stable across every retry of *this* message (the outbox reclaims the
- * same notification id; a password reset reuses the same token hash within one `send`) and
- * different for every other one. That is exactly what stops a password-reset email from
- * arriving twice with two links and no way to tell which is still live: a retry within
- * Resend's 24-hour idempotency window replays the first attempt's result instead of sending
- * again. `wewin:` namespaces the key inside Resend's own dashboard, where every send across
- * every application on the account shares one 24-hour idempotency space. The slice is
- * defensive: every messageId in this codebase today is a UUID or a short hash, far under
- * Resend's 256-character ceiling, but nothing enforces that at the type level.
+ * for `Message-ID` — stable across every retry of *this* message and different for every
+ * other one, so a retry within Resend's 24-hour idempotency window replays the first
+ * attempt's result instead of sending a second, different password-reset link. Unchanged by
+ * the SDK swap: `IdempotentRequest.idempotencyKey` maps straight onto the same
+ * `Idempotency-Key` header the hand-rolled version set directly. The slice is defensive —
+ * every messageId in this codebase today is far under Resend's 256-character ceiling.
  */
 function idempotencyKeyFor(messageId: string): string {
   return `wewin:${messageId}`.slice(0, 256);
-}
-
-/**
- * Reads at most `MAX_RESPONSE_BYTES` and refuses the rest.
- *
- * Copied from `auth/oauth/http.ts`'s `readCapped` rather than imported, as `fx-http.ts`
- * already does for the same reason: that function is a private implementation detail of a
- * sibling class, and this one is only ever called on a 2xx response — Resend's success body
- * is a one-field object, so the ceiling is pure defence against a misbehaving proxy, not
- * something this endpoint is expected to hit.
- */
-async function readCapped(response: Response): Promise<string> {
-  const body = response.body;
-  if (body === null) return '';
-
-  const decoder = new TextDecoder();
-  const reader = body.getReader();
-  let received = 0;
-  let text = '';
-
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      received += chunk.value.byteLength;
-      if (received > MAX_RESPONSE_BYTES) throw new Error('resend response exceeded the size ceiling');
-      text += decoder.decode(chunk.value, { stream: true });
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-
-  return text + decoder.decode();
 }
