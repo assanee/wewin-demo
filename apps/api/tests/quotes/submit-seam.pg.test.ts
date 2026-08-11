@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { and, eq } from '@wewin/db/sql';
-import { approvals, authorityLimits, orders, quoteLines, userGroups } from '@wewin/db/schema';
+import { approvals, orders, quoteLines, userGroups } from '@wewin/db/schema';
 import { products } from '@wewin/core/fixtures';
 import type { Product } from '@wewin/core';
 import { encodeUm } from '@wewin/contract/measure';
@@ -14,6 +14,7 @@ import type { QuoteWire } from '@wewin/contract/quote';
 
 import { client, makeActor, type Actor, type Json } from '../orders/support/lifecycle-app';
 import { bootQuotesApp, quotesEnv, type QuotesApp } from './support/quotes-app';
+import { purgeAuthorityLimits } from './support/authority-reset';
 
 /**
  * ⭐ THE SEAM 5c SHIPPED WITHOUT: the quote is what gets pinned.
@@ -82,8 +83,8 @@ describeWithPg('the submit seam — the quote is the document', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, approverGroupId));
+    await purgeAuthorityLimits(db, salesGroupId);
+    await purgeAuthorityLimits(db, approverGroupId);
     await app.close();
     await pool.end();
   });
@@ -311,7 +312,7 @@ describeWithPg('the submit seam — the quote is the document', () => {
   };
 
   const revokeCeiling = async (groupId: string): Promise<void> => {
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, groupId));
+    await purgeAuthorityLimits(db, groupId);
   };
 
   /**

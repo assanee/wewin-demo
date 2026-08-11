@@ -370,6 +370,24 @@ export const ERASURE_TREATMENTS = {
   'quote_overrides.superseded_by_user_id': 'keep',
   'quote_lines.removed_by_user_id': 'keep',
   'authority_limits.granted_by_user_id': 'keep',
+  /*
+   * ── Phase 13, the ceiling that can be withdrawn (migration 0038) ────────────────
+   *
+   * Two more, both `keep`, and both the same argument as `granted_by_user_id` immediately
+   * above rather than a new one. Revoking a ceiling and recording that somebody moved one are
+   * acts by a member of *staff*: a customer cannot hold authority, cannot grant it and cannot
+   * take it away, so neither column can ever name the person an erasure is about.
+   *
+   * ⚠️ They are `keep` and not `scrub` even though the three settings-history tables
+   * (`bank_account_changes`, `tax_country_changes`, `organisation_profile_changes`) are
+   * `scrub`. Those carry a nullable `changed_by_user_id`; this family does not, and the
+   * difference is deliberate — see `authorityLimitChanges` in schema/quote.ts. A history of
+   * who may concede money whose actor can be nulled is a weaker record than the ceiling row it
+   * describes, which is the wrong way round for the only control the module has. `keep` also
+   * means `erase_user()` is untouched by this phase: there is no new statement to forget.
+   */
+  'authority_limits.revoked_by_user_id': 'keep',
+  'authority_limit_changes.changed_by_user_id': 'keep',
 
   /*
    * ── Phase 7, reviews and the profile (schema/review.ts, schema/profile.ts) ──────

@@ -267,6 +267,13 @@
       "when": 1786400000008,
       "tag": "0037_deposit_floor_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786400000009,
+      "tag": "0038_authority_limit_history",
+      "breakpoints": true
     }
   ]
 }

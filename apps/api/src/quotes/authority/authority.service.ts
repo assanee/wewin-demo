@@ -17,7 +17,9 @@ import {
 import {
   AuthorityRepository,
   type ApprovalRow,
+  type AuthorityLimitChangeRow,
   type AuthorityLimitRow,
+  type AuthorityLimitSnapshot,
   type AuthorityTx,
   type OrderFacts,
 } from './authority.repository';
@@ -649,12 +651,19 @@ export class AuthorityService {
   }
 
   /**
-   * Grant or change a ceiling.
+   * Grant, change or reinstate a ceiling.
    *
    * Behind `groups.write` and not `quotes.write`, and the reason is the obvious attack:
    * authority attaches to a group, so a salesperson who could edit this table could raise their
    * own ceiling and then need nobody's approval for anything. Changing what a role may do is
    * group administration.
+   *
+   * ⚠️ **One transaction, and the history row is its last statement.** The same essential rule
+   * `TaxCountryService` and `OrganisationService` state about their own tables:
+   * `authority_limit_changes_append_only` (0038) stops a history row being edited or deleted
+   * after the fact, and nothing in the database stops one being *skipped*. That half is this
+   * method's job. The order is fixed — lock the group, read the pre-image, write, record —
+   * and each step exists for a reason written on it in the repository.
    */
   async setLimit(
     scope: Scope,
@@ -665,18 +674,116 @@ export class AuthorityService {
       readonly noteTh: string | null;
     },
   ): Promise<readonly AuthorityLimitRow[]> {
-    const grantedByUserId = staffUserId(scope);
+    const actor = staffUserId(scope);
 
-    await this.repository.setLimit({ ...input, grantedByUserId });
+    await this.repository.transaction(async (tx) => {
+      const group = await this.repository.lockGroup(tx, input.groupId);
+      if (group === undefined) throw AppError.notFound('ไม่พบบทบาทนี้');
+
+      const before = await this.repository.readLimit(tx, input.groupId, input.dimension);
+
+      await this.repository.upsertLimit(tx, { ...input, grantedByUserId: actor });
+
+      const after = await this.repository.readLimit(tx, input.groupId, input.dimension);
+      if (after === undefined) throw new Error('authority_limits upsert wrote nothing');
+
+      /* Last statement, always. See `insertLimitChange` for why the clock is not the default. */
+      await this.repository.insertLimitChange(tx, {
+        groupId: input.groupId,
+        groupCode: group.code,
+        dimension: input.dimension,
+        changedByUserId: actor,
+        before: before === undefined ? null : snapshot(before),
+        after: snapshot(after),
+      });
+    });
+
     return this.limits();
   }
 
-  /** Revoking is the fail-closed direction, so it needs no ceremony beyond the permission. */
-  async removeLimit(groupId: string, dimension: ApprovalDimension): Promise<readonly AuthorityLimitRow[]> {
-    const removed = await this.repository.deleteLimit(groupId, dimension);
-    if (!removed) throw AppError.notFound('ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้');
+  /**
+   * Withdraw a ceiling.
+   *
+   * ⭐ **Not a delete, and not merely by convention** — `authority_limits_block_delete` (0038)
+   * refuses one at the database. The row is what records who granted this role its authority;
+   * `approvals.decided_ceiling_thb_minor` answers *"what was the number?"*, and nothing
+   * answered *"who gave it, and who took it away?"* while a `DELETE` removed the granter along
+   * with the ceiling.
+   *
+   * Revoking is still the fail-closed direction, so it needs no second person — but it does
+   * need a record, and it is written in the same transaction as the flag.
+   */
+  async removeLimit(
+    scope: Scope,
+    groupId: string,
+    dimension: ApprovalDimension,
+  ): Promise<readonly AuthorityLimitRow[]> {
+    const actor = staffUserId(scope);
+
+    await this.repository.transaction(async (tx) => {
+      const group = await this.repository.lockGroup(tx, groupId);
+      if (group === undefined) throw AppError.notFound('ไม่พบบทบาทนี้');
+
+      const before = await this.repository.readLimit(tx, groupId, dimension);
+      /*
+       * A ceiling that is already withdrawn is `notFound` and not a silent success, for the
+       * same reason a missing one is: the caller asked to take authority away and needs to know
+       * whether their act is the one that did it. `revokeLimit`'s own `revoked_at IS NULL`
+       * makes the second attempt update zero rows rather than restamping the first withdrawal
+       * with a new name.
+       */
+      if (before === undefined || before.revokedAt !== null) {
+        throw AppError.notFound('ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้');
+      }
+
+      const revoked = await this.repository.revokeLimit(tx, {
+        groupId,
+        dimension,
+        revokedByUserId: actor,
+      });
+      if (!revoked) throw AppError.notFound('ไม่พบเพดานอำนาจของบทบาทนี้ในมิตินี้');
+
+      const after = await this.repository.readLimit(tx, groupId, dimension);
+      if (after === undefined) throw new Error('authority_limits revoke lost the row');
+
+      await this.repository.insertLimitChange(tx, {
+        groupId,
+        groupCode: group.code,
+        dimension,
+        changedByUserId: actor,
+        before: snapshot(before),
+        after: snapshot(after),
+      });
+    });
+
     return this.limits();
   }
+
+  /** Oldest first — the repository orders by `changed_at` ascending, and a chain reads forwards. */
+  async limitChanges(
+    groupId: string,
+    dimension: ApprovalDimension,
+  ): Promise<readonly AuthorityLimitChangeRow[]> {
+    return this.repository.limitChanges(groupId, dimension);
+  }
+}
+
+/**
+ * What a change records. Ordering, timestamps and `granted_by_user_id` are deliberately absent:
+ * the first two are not changes worth keeping (the same call `tax-country.service.ts`'s
+ * `RECORDED` makes), and the actor is already a column on the history row itself — recording it
+ * twice would let the two disagree.
+ *
+ * `maxConcessionThbMinor` becomes a decimal string because `JSON.stringify` cannot serialise a
+ * `bigint` at all — it throws — and `isRevoked` is a boolean rather than the instant, because
+ * *that* a ceiling was withdrawn is the change and *when* is `changed_at`.
+ */
+function snapshot(row: AuthorityLimitRow): AuthorityLimitSnapshot {
+  return {
+    maxConcessionThbMinor: row.maxConcessionThbMinor.toString(),
+    noteTh: row.noteTh,
+    isRevoked: row.revokedAt !== null,
+  };
 }
 
 /** The two dimensions, for a caller that wants to iterate them without re-declaring the list. */

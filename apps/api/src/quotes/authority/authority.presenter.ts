@@ -1,9 +1,14 @@
-import type { ApprovalRow, AuthorityLimitRow } from './authority.repository';
+import type {
+  ApprovalRow,
+  AuthorityLimitChangeRow,
+  AuthorityLimitRow,
+} from './authority.repository';
 import type { AuthorityAssessment, DimensionAssessment } from './authority.service';
 import type { DimensionMeasurement } from './concession';
 import type {
   ApprovalWire,
   AuthorityAssessmentWire,
+  AuthorityLimitChangeWire,
   AuthorityLimitWire,
   DimensionAssessmentWire,
 } from './authority.contract';
@@ -106,5 +111,20 @@ export function limitWire(row: AuthorityLimitRow): AuthorityLimitWire {
     grantedByUserId: row.grantedByUserId,
     updatedAt: row.updatedAt.toISOString(),
     noteTh: row.noteTh,
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+    revokedByUserId: row.revokedByUserId,
+  };
+}
+
+export function limitChangeWire(row: AuthorityLimitChangeRow): AuthorityLimitChangeWire {
+  return {
+    id: row.id,
+    groupId: row.groupId,
+    groupCode: row.groupCode,
+    dimension: row.dimension,
+    changedByUserId: row.changedByUserId,
+    changedAt: row.changedAt.toISOString(),
+    before: row.before,
+    after: row.after,
   };
 }

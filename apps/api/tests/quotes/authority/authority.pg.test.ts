@@ -23,6 +23,7 @@ import {
   type Json,
 } from '../../payments/support/payments-app';
 import { authorityEnv, bootAuthorityApp, type AuthorityApp } from './support/authority-app';
+import { purgeAuthorityLimits } from '../support/authority-reset';
 
 /**
  * Who may reduce what the customer pays — over real HTTP, against a real Postgres.
@@ -132,8 +133,8 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
 
   afterAll(async () => {
     /* Leave the ceiling table exactly as it was found: empty is the assertion of another test. */
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, approverGroupId));
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
+    await purgeAuthorityLimits(db, approverGroupId);
+    await purgeAuthorityLimits(db, salesGroupId);
     await app.close();
     await pool.end();
   });
@@ -515,7 +516,7 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       expect(narrowed.margin.ceilingThbMinor).toBe('106999');
       expect(narrowed.allowed).toBe(false);
 
-      await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
+      await purgeAuthorityLimits(db, salesGroupId);
     });
 
     /** The gate refuses, and it refuses inside the transaction the submit path hands it. */
@@ -657,9 +658,7 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       });
 
     const revokeCeiling = async (groupId: string): Promise<void> => {
-      await db
-        .delete(authorityLimits)
-        .where(eq(authorityLimits.groupId, groupId));
+      await purgeAuthorityLimits(db, groupId);
     };
 
     it('refuses the requester as their own approver — the rule that already existed', async () => {
@@ -840,7 +839,7 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       });
       expect(allowed.status).toBe(200);
 
-      await db.delete(authorityLimits).where(eq(authorityLimits.groupId, second.id));
+      await purgeAuthorityLimits(db, second.id);
       await revokeCeiling(approverGroupId);
       await db.delete(userGroups).where(eq(userGroups.groupId, second.id));
       await db.delete(groups).where(eq(groups.id, second.id));

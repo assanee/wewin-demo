@@ -761,6 +761,28 @@ export const authorityLimits = pgTable(
       .notNull()
       .references(() => users.id, { onUpdate: 'cascade', onDelete: 'restrict' }),
     noteTh: text('note_th'),
+
+    /**
+     * ⭐ Withdrawn, not deleted — migration 0038, and `authority_limits_block_delete` refuses
+     * the alternative.
+     *
+     * ⚠️ **A revoked row must read as "no row", never as a ceiling of `0`.** The distinction two
+     * paragraphs up is the whole of fail-closed: `0` is a role that may record a concession and
+     * approve none of its own; absent is a role with no authority at all, and the two produce
+     * different sentences. So `AuthorityRepository.ceiling()` — the single read that decides
+     * whether a concession needs somebody else's yes — carries `revoked_at IS NULL` in its
+     * WHERE and lets `max()` over no rows return NULL, rather than coercing a withdrawn ceiling
+     * to zero and quietly granting the weaker of the two authorities.
+     *
+     * The row survives because `approvals.decided_ceiling_thb_minor` answers *"what was the
+     * number?"* and nothing answered *"who granted this role its authority, and who took it
+     * away?"*. A `DELETE` took the granter's name with the ceiling.
+     */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedByUserId: uuid('revoked_by_user_id').references(() => users.id, {
+      onUpdate: 'cascade',
+      onDelete: 'restrict',
+    }),
     ...timestamps,
   },
   (table) => [
@@ -768,6 +790,78 @@ export const authorityLimits = pgTable(
     check('authority_limits_dimension_known', sql`${table.dimension} in ${inList(APPROVAL_DIMENSIONS)}`),
     /* Negative authority is not a smaller ceiling, it is a sentence nobody can read. */
     check('authority_limits_ceiling_nonnegative', sql`${table.maxConcessionThbMinor} >= 0`),
+    /* Same idiom as `quote_lines_removal_shape`: a withdrawal has a time and a person, or it
+     * did not happen. Half of one is a row nobody can read. */
+    check(
+      'authority_limits_revocation_shape',
+      sql`num_nonnulls(${table.revokedAt}, ${table.revokedByUserId}) in (0, 2)`,
+    ),
     index('authority_limits_dimension_idx').on(table.dimension),
+    /* What `ceiling()` actually reads: one dimension, a handful of groups, live rows only. */
+    index('authority_limits_live_idx')
+      .on(table.dimension, table.groupId)
+      .where(sql`${table.revokedAt} is null`),
+  ],
+);
+
+/**
+ * ⭐ Who moved a ceiling, from what, and when.
+ *
+ * The table `tax_country_changes` and `bank_account_changes` are, for the reason those two
+ * give: a policy that can be widened for one deal and narrowed back afterwards leaves no trace
+ * anywhere else, and a change nobody can see is a change nobody can question. Authority is the
+ * sharpest case of that in the schema — the number here is precisely *how much a role may give
+ * away without asking anybody* — and until 0038 it had no history at all.
+ *
+ * ── ⚠️ The write discipline this table cannot enforce, and who does ──────────────
+ *
+ * `authority_limit_changes_append_only` stops a row being edited or deleted after the fact.
+ * Nothing in the database stops one being **skipped**. That half is `AuthorityService`'s job:
+ * every write to `authority_limits` is a single transaction whose last statement is the INSERT
+ * here, with `changedAt: sql\`clock_timestamp()\`` rather than this column's own default. See
+ * that file — `now()` is the transaction's *start*, so with a row lock held an earlier-starting
+ * transaction can commit later and the history reads out of order.
+ *
+ * ── ⚠️ No foreign key on `groupId`, deliberately ─────────────────────────────────
+ *
+ * `groups` is deletable and `authority_limits` cascades away with it (0015 defends that as the
+ * fail-closed direction). A `restrict` FK here would make any group that ever held a ceiling
+ * permanently undeletable; a `cascade` FK would destroy the history at the moment it becomes
+ * the only surviving record. So this table outlives its subject, and `groupCode` is carried
+ * denormalised so a row still names something a human recognises once the group is gone.
+ */
+export const authorityLimitChanges = pgTable(
+  'authority_limit_changes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    groupId: uuid('group_id').notNull(),
+    /** The group's code as it read when the change was made. See the header: there is no FK. */
+    groupCode: text('group_code').notNull(),
+    dimension: text('dimension', { enum: APPROVAL_DIMENSIONS }).notNull(),
+    /**
+     * NOT NULL and `restrict`, following `authorityLimits.grantedByUserId` beside it rather
+     * than the three settings tables' nullable + `scrub`. `ERASURE_TREATMENTS` declares it
+     * `keep` for the reason it already gives about this family: a staff column recording that
+     * a control was exercised, naming nobody once `display_name` is NULL, and a customer can
+     * neither hold nor grant a ceiling. A history whose actor can become NULL would be a
+     * weaker record than the row it describes.
+     */
+    changedByUserId: uuid('changed_by_user_id')
+      .notNull()
+      .references(() => users.id, { onUpdate: 'cascade', onDelete: 'restrict' }),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+    before: jsonb('before'),
+    after: jsonb('after').notNull(),
+  },
+  (table) => [
+    check(
+      'authority_limit_changes_dimension_known',
+      sql`${table.dimension} in ${inList(APPROVAL_DIMENSIONS)}`,
+    ),
+    index('authority_limit_changes_subject_idx').on(
+      table.groupId,
+      table.dimension,
+      table.changedAt,
+    ),
   ],
 );

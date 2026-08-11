@@ -8,20 +8,22 @@ import { CurrentScope, RequirePermissions, type Scope } from '../../rbac';
 import {
   setAuthorityLimitSchema,
   type AuthorityAssessmentWire,
+  type AuthorityLimitChangeListWire,
   type AuthorityLimitListWire,
   type SetAuthorityLimitWire,
 } from './authority.contract';
-import { assessmentWire, limitWire } from './authority.presenter';
+import { assessmentWire, limitChangeWire, limitWire } from './authority.presenter';
 import { AuthorityService } from './authority.service';
 import type { AuthorityLimitRow } from './authority.repository';
 
 /**
  * The ceilings themselves, and what one quote concedes against them.
  *
- *     GET    /quotes/authority/limits                        who may concede how much
- *     PUT    /quotes/authority/limits                        grant or change a ceiling
- *     DELETE /quotes/authority/limits/:groupId/:dimension    take it away
- *     GET    /quotes/authority/orders/:orderId               what this quote concedes, and may I
+ *     GET    /quotes/authority/limits                             who may concede how much
+ *     PUT    /quotes/authority/limits                             grant, change or reinstate one
+ *     DELETE /quotes/authority/limits/:groupId/:dimension         withdraw it (a flag, not a delete)
+ *     GET    /quotes/authority/limits/:groupId/:dimension/changes who moved it, and from what
+ *     GET    /quotes/authority/orders/:orderId                    what this quote concedes, and may I
  *
  * ── Why the ceilings are behind `groups.write` and not `quotes.write` ────────────
  *
@@ -59,8 +61,33 @@ function uuidOrNotFound(value: string, message: string): string {
   return value;
 }
 
+/**
+ * A path segment narrowed to the two dimensions `approvals` already has.
+ *
+ * A 404 and not a 422: `margin`/`cashflow` is part of the row's identity — it is half the
+ * primary key — so a third word names a ceiling that cannot exist rather than a badly-formed
+ * request. Same reading as `uuidOrNotFound` above.
+ */
+function knownDimension(value: string): 'margin' | 'cashflow' {
+  if (value !== 'margin' && value !== 'cashflow') {
+    throw AppError.notFound('ไม่พบมิติอำนาจอนุมัตินี้');
+  }
+  return value;
+}
+
+/**
+ * ⚠️ `isFailClosed` counts **live** ceilings, not rows.
+ *
+ * It was `rows.length === 0`, which was the same question while a revocation was a `DELETE`.
+ * Since 0038 a withdrawn ceiling stays in the table, so a company that had switched every limit
+ * off would have been told the feature was on — the flag exists precisely so a dashboard can
+ * say "nobody may concede anything" out loud, and that sentence is about authority, not rows.
+ */
 function listWire(rows: readonly AuthorityLimitRow[]): AuthorityLimitListWire {
-  return { limits: rows.map(limitWire), isFailClosed: rows.length === 0 };
+  return {
+    limits: rows.map(limitWire),
+    isFailClosed: rows.every((row) => row.revokedAt !== null),
+  };
 }
 
 @Controller('quotes/authority')
@@ -99,25 +126,53 @@ export class AuthorityController {
     return listWire(rows);
   }
 
-  /** Revoking is the fail-closed direction. It needs no second person and gets none. */
+  /**
+   * Revoking is the fail-closed direction. It needs no second person and gets none.
+   *
+   * ⭐ It is a `DELETE` on the wire and a **flag** in the database — `revoked_at`, with
+   * `authority_limits_block_delete` refusing the alternative. The row is who granted this role
+   * its authority; taking the ceiling away must not take that with it. The response still lists
+   * the row, dimmed, and `PUT`ting a number on it is how it comes back.
+   */
   @Delete('limits/:groupId/:dimension')
   @HttpCode(200)
   @RequirePermissions('groups.write')
   @contractVersion()
   @privateToTheCaller()
   async removeLimit(
+    @CurrentScope() scope: Scope,
     @Param('groupId') groupId: string,
     @Param('dimension') dimension: string,
   ): Promise<AuthorityLimitListWire> {
-    if (dimension !== 'margin' && dimension !== 'cashflow') {
-      throw AppError.notFound('ไม่พบมิติอำนาจอนุมัตินี้');
-    }
-
     const rows = await this.authority.removeLimit(
+      scope,
       uuidOrNotFound(groupId, 'ไม่พบบทบาทนี้'),
-      dimension,
+      knownDimension(dimension),
     );
     return listWire(rows);
+  }
+
+  /**
+   * Who moved this ceiling, from what, and when.
+   *
+   * Behind `groups.read` and not `groups.write`, matching every other history read in the
+   * dashboard (`GET …/tax-countries/:code/changes`, `…/bank-accounts/:id/changes`): being able
+   * to see that authority was widened for one deal and narrowed back afterwards is exactly the
+   * thing that should *not* require the permission to do it.
+   */
+  @Get('limits/:groupId/:dimension/changes')
+  @RequirePermissions('groups.read')
+  @contractVersion()
+  @privateToTheCaller()
+  async limitChanges(
+    @Param('groupId') groupId: string,
+    @Param('dimension') dimension: string,
+  ): Promise<AuthorityLimitChangeListWire> {
+    const rows = await this.authority.limitChanges(
+      uuidOrNotFound(groupId, 'ไม่พบบทบาทนี้'),
+      knownDimension(dimension),
+    );
+    return { changes: rows.map(limitChangeWire) };
   }
 
   /**

@@ -4,13 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq } from '@wewin/db/sql';
-import { authorityLimits, orders, userGroups } from '@wewin/db/schema';
+import { orders, userGroups } from '@wewin/db/schema';
 import { toBigInt } from '@wewin/contract/exact';
 import type { OrderDocumentResponseWire, OrderWire } from '@wewin/contract';
 import type { QuoteWire } from '@wewin/contract/quote';
 
 import { client, makeActor, type Actor, type Json } from '../orders/support/lifecycle-app';
 import { bootQuotesApp, quotesEnv, type QuotesApp } from './support/quotes-app';
+import { purgeAuthorityLimits } from './support/authority-reset';
 
 /**
  * ⭐ ONE QUOTE, END TO END, WITH THE NUMBERS PRINTED — plan 7.9 and plan 13's smoke path.
@@ -107,7 +108,7 @@ describeWithPg('one quote, end to end', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
+    await purgeAuthorityLimits(db, salesGroupId);
     await app.close();
     await pool.end();
   });

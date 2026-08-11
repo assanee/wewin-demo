@@ -3,6 +3,7 @@ import type { Database } from '@wewin/db/client';
 import { and, asc, desc, eq, inArray, sql } from '@wewin/db/sql';
 import {
   approvals,
+  authorityLimitChanges,
   authorityLimits,
   groups,
   orderDocuments,
@@ -104,6 +105,41 @@ export interface AuthorityLimitRow {
   readonly grantedByUserId: string;
   readonly updatedAt: Date;
   readonly noteTh: string | null;
+  /**
+   * ⭐ NULL is live. A revoked row is still a row — see `authority_limits.revoked_at` in
+   * `packages/db/src/schema/quote.ts` — and it is listed rather than filtered out, so that a
+   * screen can show a withdrawn ceiling greyed rather than pretending it never existed. What
+   * must never happen is a revoked row being read as authority: that is `ceiling()`'s job.
+   */
+  readonly revokedAt: Date | null;
+  readonly revokedByUserId: string | null;
+}
+
+/** The `authority_limits` fields a change is worth recording. Timestamps are not changes. */
+export interface AuthorityLimitSnapshot {
+  /** A decimal string, because `JSON.stringify` cannot serialise a `bigint` — it throws. */
+  readonly maxConcessionThbMinor: string;
+  readonly noteTh: string | null;
+  /** The flag, not the instant: *that* it was withdrawn is the change, not when. */
+  readonly isRevoked: boolean;
+}
+
+export interface AuthorityLimitChangeRow {
+  readonly id: string;
+  readonly groupId: string;
+  readonly groupCode: string;
+  readonly dimension: ApprovalDimension;
+  readonly changedByUserId: string;
+  readonly changedAt: Date;
+  readonly before: AuthorityLimitSnapshot | null;
+  readonly after: AuthorityLimitSnapshot;
+}
+
+/** The group a ceiling attaches to, locked. `undefined` from `lockGroup` means no such group. */
+export interface GroupFacts {
+  readonly id: string;
+  readonly code: string;
+  readonly nameTh: string;
 }
 
 @Injectable()
@@ -318,6 +354,20 @@ export class AuthorityRepository {
         and(
           eq(authorityLimits.dimension, dimension),
           inArray(authorityLimits.groupId, [...groupIds]),
+          /*
+           * ⭐ THE PREDICATE THAT MAKES REVOCATION MEAN ANYTHING.
+           *
+           * Migration 0038 made withdrawal a flag rather than a `DELETE`, and this is the one
+           * read in the application that decides whether a concession needs somebody else's
+           * yes. Without this line a revoked ceiling still grants — which is fail-*open*, on
+           * the single control the module has.
+           *
+           * ⚠️ It filters, rather than coercing a withdrawn row to `0`, and the difference is
+           * the whole of the note above: `0` is a role that may record a concession and approve
+           * none of its own; absent is a role with no authority at all. A revoked ceiling is
+           * the second, and the sentence a salesperson reads depends on which one it is.
+           */
+          sql`${authorityLimits.revokedAt} is null`,
         ),
       );
 
@@ -326,24 +376,98 @@ export class AuthorityRepository {
     return BigInt(row.ceiling);
   }
 
+  private limitColumns() {
+    return {
+      groupId: authorityLimits.groupId,
+      groupCode: groups.code,
+      groupNameTh: groups.nameTh,
+      dimension: authorityLimits.dimension,
+      maxConcessionThbMinor: authorityLimits.maxConcessionThbMinor,
+      grantedByUserId: authorityLimits.grantedByUserId,
+      updatedAt: authorityLimits.updatedAt,
+      noteTh: authorityLimits.noteTh,
+      revokedAt: authorityLimits.revokedAt,
+      revokedByUserId: authorityLimits.revokedByUserId,
+    };
+  }
+
+  /**
+   * Every ceiling, **withdrawn ones included**.
+   *
+   * The screen dims a revoked row rather than hiding it — the same call `tax_countries` makes
+   * about `is_active` — because a ceiling somebody took away last week is a thing an
+   * administrator needs to see in order to put back, and a list that silently omitted it would
+   * make the restore look like a fresh grant. `ceiling()` is where the filter belongs, and it
+   * is the only place it belongs.
+   */
   async listLimits(tx?: AuthorityTx): Promise<readonly AuthorityLimitRow[]> {
     return this.executor(tx)
-      .select({
-        groupId: authorityLimits.groupId,
-        groupCode: groups.code,
-        groupNameTh: groups.nameTh,
-        dimension: authorityLimits.dimension,
-        maxConcessionThbMinor: authorityLimits.maxConcessionThbMinor,
-        grantedByUserId: authorityLimits.grantedByUserId,
-        updatedAt: authorityLimits.updatedAt,
-        noteTh: authorityLimits.noteTh,
-      })
+      .select(this.limitColumns())
       .from(authorityLimits)
       .innerJoin(groups, eq(groups.id, authorityLimits.groupId))
       .orderBy(asc(groups.code), asc(authorityLimits.dimension));
   }
 
-  async setLimit(
+  /**
+   * The group, locked, before anything is written against it.
+   *
+   * ⚠️ Two reasons, and the first is the one that is easy to miss. `authority_limits` has a
+   * composite primary key, so a `SELECT … FOR UPDATE` on a ceiling that does not exist yet
+   * locks **nothing** — two concurrent grants of the same first ceiling would both read "no
+   * row", both write `before: null`, and the history would carry two creations for one row.
+   * Locking the group instead locks a row that is certain to exist, which serialises every
+   * write to every ceiling that group holds and makes entry N's `before` equal entry N−1's
+   * `after` by construction. Same reasoning as `TaxCountryRepository.lockCountry`; the
+   * difference is only which row can be relied upon to be there.
+   *
+   * ⚠️ `FOR NO KEY UPDATE` and not `FOR UPDATE`. Adding somebody to a group takes a `FOR KEY
+   * SHARE` lock on `groups` through `user_groups`' foreign key, which conflicts with `FOR
+   * UPDATE` and not with this. A ceiling write must not block a colleague being added to a
+   * team.
+   *
+   * The second reason is the error message: `undefined` here becomes a 404 naming the group,
+   * where the bare upsert produced a raw foreign-key violation and therefore a 500.
+   */
+  async lockGroup(tx: AuthorityTx, groupId: string): Promise<GroupFacts | undefined> {
+    const [row] = await tx
+      .select({ id: groups.id, code: groups.code, nameTh: groups.nameTh })
+      .from(groups)
+      .where(eq(groups.id, groupId))
+      .for('no key update');
+
+    return row;
+  }
+
+  /** The ceiling as it stands, inside the transaction that is about to move it. */
+  async readLimit(
+    tx: AuthorityTx,
+    groupId: string,
+    dimension: ApprovalDimension,
+  ): Promise<AuthorityLimitRow | undefined> {
+    const [row] = await tx
+      .select(this.limitColumns())
+      .from(authorityLimits)
+      .innerJoin(groups, eq(groups.id, authorityLimits.groupId))
+      .where(and(eq(authorityLimits.groupId, groupId), eq(authorityLimits.dimension, dimension)));
+
+    return row;
+  }
+
+  /**
+   * Grant, change, or reinstate a ceiling.
+   *
+   * `ON CONFLICT DO UPDATE` because the row is identified by `(group, dimension)` and the
+   * endpoint is a `PUT`: sending it twice must leave one ceiling and not a 23505 for the
+   * ordinary act of correcting a number.
+   *
+   * ⭐ It clears `revoked_at`/`revoked_by_user_id`. Setting a number on a withdrawn ceiling is
+   * how it comes back — there is no separate "reinstate" route, for the reason
+   * `TaxCountryService.setAvailability` gives about reusing `patch`: a second write path would
+   * need its own history-writing discipline proven separately, and one of the two would
+   * eventually forget.
+   */
+  async upsertLimit(
+    tx: AuthorityTx,
     input: {
       readonly groupId: string;
       readonly dimension: ApprovalDimension;
@@ -351,9 +475,8 @@ export class AuthorityRepository {
       readonly grantedByUserId: string;
       readonly noteTh: string | null;
     },
-    tx?: AuthorityTx,
   ): Promise<void> {
-    await this.executor(tx)
+    await tx
       .insert(authorityLimits)
       .values({
         groupId: input.groupId,
@@ -369,24 +492,115 @@ export class AuthorityRepository {
           /* Raising a ceiling is an act with a name on it, so the name moves with the number. */
           grantedByUserId: input.grantedByUserId,
           noteTh: input.noteTh,
+          revokedAt: null,
+          revokedByUserId: null,
           updatedAt: new Date(),
         },
       });
   }
 
-  async deleteLimit(
-    groupId: string,
-    dimension: ApprovalDimension,
-    tx?: AuthorityTx,
+  /**
+   * Withdraw a ceiling — a flag, never a `DELETE`.
+   *
+   * `authority_limits_block_delete` (0038) refuses the alternative at the database, so this is
+   * not a convention the application is trusted to keep. The `revoked_at IS NULL` in the WHERE
+   * makes a second revocation update **zero rows** rather than restamping the first one with a
+   * new name and time, which would quietly rewrite who withdrew the authority.
+   */
+  async revokeLimit(
+    tx: AuthorityTx,
+    input: {
+      readonly groupId: string;
+      readonly dimension: ApprovalDimension;
+      readonly revokedByUserId: string;
+    },
   ): Promise<boolean> {
-    const removed = await this.executor(tx)
-      .delete(authorityLimits)
+    const revoked = await tx
+      .update(authorityLimits)
+      .set({
+        revokedAt: new Date(),
+        revokedByUserId: input.revokedByUserId,
+        updatedAt: new Date(),
+      })
       .where(
-        and(eq(authorityLimits.groupId, groupId), eq(authorityLimits.dimension, dimension)),
+        and(
+          eq(authorityLimits.groupId, input.groupId),
+          eq(authorityLimits.dimension, input.dimension),
+          sql`${authorityLimits.revokedAt} is null`,
+        ),
       )
       .returning({ groupId: authorityLimits.groupId });
 
-    return removed.length > 0;
+    return revoked.length > 0;
+  }
+
+  /**
+   * ⚠️ **The last statement of the transaction that moved the ceiling, and `clock_timestamp()`
+   * rather than the column's `DEFAULT now()`.**
+   *
+   * `now()` is `transaction_timestamp()` — fixed at BEGIN and frozen for the whole transaction.
+   * Two concurrent writes to one ceiling both open before either reaches `lockGroup`, so the
+   * one that blocks on the lock can easily hold the *earlier* `now()` while committing
+   * *second*. A history sorted by `changed_at` then reads out of order and entry N's `before`
+   * no longer equals entry N−1's `after` — which is the single property this table exists to
+   * prove. `clock_timestamp()` reads the wall clock at the moment this INSERT executes, after
+   * the lock has already forced any earlier writer to commit.
+   *
+   * ⚠️ `clock_timestamp()` on its own orders nothing: it is a value, not a lock. What actually
+   * guarantees contiguity is that this runs inside the *same* transaction as `lockGroup`'s row
+   * lock. A history row written afterwards, or outside, would be a promise instead of a fact.
+   *
+   * Same rule, same words, as `tax-country.service.ts` and `organisation.service.ts`. It has
+   * been reintroduced three times on this repository; it is written down here so the fourth
+   * reader does not have to rediscover it.
+   */
+  async insertLimitChange(
+    tx: AuthorityTx,
+    input: {
+      readonly groupId: string;
+      readonly groupCode: string;
+      readonly dimension: ApprovalDimension;
+      readonly changedByUserId: string;
+      readonly before: AuthorityLimitSnapshot | null;
+      readonly after: AuthorityLimitSnapshot;
+    },
+  ): Promise<void> {
+    await tx.insert(authorityLimitChanges).values({
+      groupId: input.groupId,
+      groupCode: input.groupCode,
+      dimension: input.dimension,
+      changedByUserId: input.changedByUserId,
+      changedAt: sql`clock_timestamp()`,
+      before: input.before,
+      after: input.after,
+    });
+  }
+
+  /** Oldest first: a chain is read forwards, and `before`/`after` only line up in that order. */
+  async limitChanges(
+    groupId: string,
+    dimension: ApprovalDimension,
+    tx?: AuthorityTx,
+  ): Promise<readonly AuthorityLimitChangeRow[]> {
+    return this.executor(tx)
+      .select({
+        id: authorityLimitChanges.id,
+        groupId: authorityLimitChanges.groupId,
+        groupCode: authorityLimitChanges.groupCode,
+        dimension: authorityLimitChanges.dimension,
+        changedByUserId: authorityLimitChanges.changedByUserId,
+        changedAt: authorityLimitChanges.changedAt,
+        before: sql<AuthorityLimitSnapshot | null>`${authorityLimitChanges.before}`,
+        after: sql<AuthorityLimitSnapshot>`${authorityLimitChanges.after}`,
+      })
+      .from(authorityLimitChanges)
+      .where(
+        and(
+          eq(authorityLimitChanges.groupId, groupId),
+          eq(authorityLimitChanges.dimension, dimension),
+        ),
+      )
+      .orderBy(asc(authorityLimitChanges.changedAt), asc(authorityLimitChanges.id));
   }
 
   /* ---------------------------------------------------------------- *
