@@ -43,6 +43,18 @@ import { parseLatestRates } from './latest-rates';
  * hands this class a URL or a response body to log (see that file), so what gets logged
  * here is a status code at most — never anything that could carry `app_id`.
  *
+ * **The database calls get the identical trade, on purpose.** `onModuleInit`'s "is the
+ * table empty" read and `fetchAndStore`'s insert are both wrapped rather than left to
+ * throw — the same reasoning `DatabaseService.probe` (`database/database.service.ts`)
+ * already states for the connection itself: "an unreachable database is usually a
+ * database that is still starting, and a service that exits on it turns a ten-second
+ * outage into a crash loop." `OnModuleInit` is awaited by Nest, so an uncaught rejection
+ * here would propagate out of `NestFactory.create()` and take the whole app down at boot
+ * — over a table nothing reads. Wrapping the insert also matters for the hourly tick:
+ * unguarded, `@nestjs/schedule`'s own explorer would still catch it, but through a
+ * generic `'Scheduler'` logger carrying the raw driver error, not through the deliberately
+ * narrow logging the rest of this class uses. Both paths report through `this.logger`.
+ *
  * ── The missing-key case ──────────────────────────────────────────────────────────
  *
  * `OPENEXCHANGERATES_APP_ID` is optional (`config/env.ts`): a developer without an OXR
@@ -73,7 +85,18 @@ export class FxRatesService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     if (this.appId === undefined) return;
 
-    const existing = await this.db.select({ id: fxRates.id }).from(fxRates).limit(1);
+    let existing: { id: string }[];
+    try {
+      existing = await this.db.select({ id: fxRates.id }).from(fxRates).limit(1);
+    } catch (error) {
+      // See the class header: refusing to boot over this would turn a database that is
+      // still starting into a crash loop, over a table nothing reads. The regular hourly
+      // tick still runs and will fill an empty table once the database is reachable.
+      this.logger.warn(
+        `could not check whether fx_rates is empty (${dbFailureReason(error)}); skipping the startup fetch`,
+      );
+      return;
+    }
     if (existing.length > 0) return;
 
     this.logger.log(
@@ -106,11 +129,37 @@ export class FxRatesService implements OnModuleInit {
       return;
     }
 
-    await this.db.insert(fxRates).values({
-      rateTimestamp: new Date(parsed.value.timestamp * 1000),
-      base: parsed.value.base,
-      rates: parsed.value.rates,
-      source: 'openexchangerates',
-    });
+    try {
+      await this.db.insert(fxRates).values({
+        rateTimestamp: new Date(parsed.value.timestamp * 1000),
+        base: parsed.value.base,
+        rates: parsed.value.rates,
+        source: 'openexchangerates',
+      });
+    } catch (error) {
+      this.logger.warn(`could not store the fetched rates (${dbFailureReason(error)}); will retry on the next tick`);
+    }
   }
+}
+
+/**
+ * A short, safe-to-log reason for a database failure — the SQLSTATE or driver errno if
+ * one is available (drizzle wraps the driver's error one level down on `.cause`, the same
+ * place `packages/db/tests/support/db.ts`'s `errorCode` walks for the identical reason),
+ * the error's own name otherwise. Never the query text and never a value that was being
+ * written — a DB failure here carries no `app_id` to begin with, but there is no reason to
+ * start logging query parameters just because this path happens to be safe today.
+ */
+function dbFailureReason(error: unknown): string {
+  let current: unknown = error;
+
+  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth += 1) {
+    if ('code' in current) {
+      const { code } = current as { code: unknown };
+      if (typeof code === 'string') return code;
+    }
+    current = 'cause' in current ? (current as { cause: unknown }).cause : undefined;
+  }
+
+  return error instanceof Error ? error.name : 'unknown error';
 }

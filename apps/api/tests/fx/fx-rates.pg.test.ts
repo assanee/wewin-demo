@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { FxHttp } from '../../src/fx/fx-http';
 import { FxRatesService } from '../../src/fx/fx-rates.service';
-import { testEnv } from '../support/app';
+import { testEnv, UNREACHABLE_DATABASE_URL } from '../support/app';
 
 /**
  * `FxRatesService` against a real Postgres, stubbing only the one thing that has to be
@@ -171,5 +171,69 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
     expect(await rowCount()).toBe(before);
 
     warn.mockRestore();
+  });
+
+  /**
+   * The finding from review: a database that refuses the connection must not take the
+   * whole app down with it, at boot or on a tick — `DatabaseService.probe`
+   * (`database/database.service.ts`) already makes this trade for the connection itself,
+   * and `FxRatesService` has to make the identical one for its own two queries. Both
+   * `it`s use a second service instance wired to `UNREACHABLE_DATABASE_URL` — "connects
+   * fast enough to fail, never fast enough to succeed" (`support/app.ts`) — so neither
+   * test waits on a real timeout, and neither touches the `db`/`service` the rest of this
+   * file shares.
+   */
+  describe('when the database itself is unavailable', () => {
+    let unreachablePool: Pool;
+    let unreachableDb: Database;
+    let unreachableService: FxRatesService;
+
+    beforeAll(() => {
+      unreachablePool = createPool(UNREACHABLE_DATABASE_URL);
+      unreachableDb = createDatabase(unreachablePool);
+      unreachableService = new FxRatesService(
+        testEnv({ OPENEXCHANGERATES_APP_ID: APP_ID }),
+        unreachableDb,
+        new FxHttp(),
+      );
+    });
+
+    afterAll(async () => {
+      await unreachablePool.end();
+    });
+
+    it('does not abort startup — the "is it empty" read is guarded, not thrown', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+
+      // The claim under test: this resolves. Nest awaits OnModuleInit, so an unguarded
+      // rejection here would propagate out of NestFactory.create() and the app would
+      // never boot — over a table nothing reads.
+      await expect(unreachableService.onModuleInit()).resolves.toBeUndefined();
+      vi.unstubAllGlobals();
+
+      // Never got far enough to ask the provider — the read failed first.
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      const logged = warn.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(logged).toContain('fx_rates is empty');
+
+      warn.mockRestore();
+    });
+
+    it('does not crash the process on a tick — the insert is guarded, not thrown', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, GOOD_BODY)));
+
+      await expect(unreachableService.fetchHourly()).resolves.toBeUndefined();
+      vi.unstubAllGlobals();
+
+      expect(warn).toHaveBeenCalled();
+      const logged = warn.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(logged).toContain('could not store the fetched rates');
+
+      warn.mockRestore();
+    });
   });
 });
