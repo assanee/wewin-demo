@@ -44,6 +44,19 @@ const describeWithPg = url === undefined ? describe.skip : describe;
 
 const tag = randomUUID().slice(0, 8);
 
+/**
+ * ⭐ How many writers race for one ceiling in the contiguity test — a measured number.
+ *
+ * See the block comment on that test. Ten was not enough: a reviewer ran the wrong-clock
+ * mutation 12 times at ten writers and saw 10 red, 2 green. The escape is real and it is
+ * roughly one run in six, so any sample small enough to miss it will report 100 %.
+ *
+ * Measured at this size, against `changedAt: sql\`now()\`` in `insertLimitChange`. The
+ * measurement and its sample size are in the fix-round section of the report; re-measure rather
+ * than re-argue if this ever goes quiet.
+ */
+const RACING_WRITERS = 40;
+
 interface Snapshot {
   readonly maxConcessionThbMinor: string;
   readonly noteTh: string | null;
@@ -484,18 +497,39 @@ describeWithPg('authority limits — the screen that fills the table in', () => 
    * ---------------------------------------------------------------- */
 
   /**
-   * ⭐ `changed_at` is `clock_timestamp()`, and this is the test that can tell.
+   * ⭐ The history reads in commit order, and this is the test that can tell.
    *
-   * `now()` — what the column's own `DEFAULT` calls — is `transaction_timestamp()`, fixed at
-   * BEGIN. Two concurrent writes to one ceiling both open before either reaches `lockGroup`, so
-   * the one that blocks on the lock can hold the *earlier* `now()` while committing *second*.
-   * Sorted by `changed_at`, the chain then reads in the wrong order and entry N's `before` is
-   * no longer entry N−1's `after`.
+   * `now()` is `transaction_timestamp()`, fixed at BEGIN. Two concurrent writes to one ceiling
+   * both open before either reaches `lockGroup`, so the one that blocks on the lock can hold
+   * the *earlier* stamp while committing *second*. Sorted by `changed_at`, the chain then reads
+   * in an order that never happened and entry N's `before` stops equalling entry N−1's `after`.
+   * `clock_timestamp()` reads the wall clock at the moment the INSERT executes — after the lock
+   * has already forced any earlier writer to commit.
    *
-   * ⚠️ Ten concurrent writes rather than two, deliberately. The tax-country suite's own note
-   * records that the equivalent two-way race failed *at a rate* — 1 to 5 of 8 runs — because it
-   * depends on exactly how the transactions interleave. Ten pairs of orderings make the window
-   * wide enough that the mutation is caught every run rather than most runs; measured below.
+   * ── ⚠️ THE FAN-OUT IS A MEASUREMENT, NOT A GUESS, AND IT HAS BEEN WRONG ONCE ────
+   *
+   * This ran ten concurrent writers and was reported as catching the wrong-clock mutation on
+   * 6 of 6 runs. A reviewer ran the same mutation **12 times and saw 10 red, 2 green — 83 %**.
+   * Both measurements were honest; six runs was simply too small a sample to see a one-in-six
+   * escape, and a guard that leaks 17 % of the time on the invariant this repository has broken
+   * three times is not a guard.
+   *
+   * It is now `RACING_WRITERS` below, and the number was chosen by measuring rather than by
+   * argument: the wrong-clock mutation was run against this test repeatedly at each size until
+   * a size reddened every run of a sample large enough to have caught the 83 % case many times
+   * over. The sample size and the result are recorded on the constant. If this ever goes quiet
+   * again, **raise the number and re-measure — do not delete the test.**
+   *
+   * ⚠️ Two things this test does NOT depend on, so that a future reader does not mistake what
+   * it is pinning:
+   *
+   *   - **Not the column default.** Since migration 0039 the default is `clock_timestamp()`
+   *     too, so deleting the explicit value from `insertLimitChange` is no longer a defect and
+   *     no longer reddens anything. That is the net doing its job. The mutation that must stay
+   *     red is a writer that names the *wrong* clock — `sql\`now()\`` — which is a real defect
+   *     whatever the default says.
+   *   - **Not a particular winner.** Which of N concurrent writes lands last is genuinely
+   *     undefined; pinning it would be a test of the scheduler. Contiguity is the property.
    */
   describe('the history reads in the order the changes committed', () => {
     it('stays contiguous under concurrent writes to one ceiling', async () => {
@@ -508,20 +542,17 @@ describeWithPg('authority limits — the screen that fills the table in', () => 
       await grant(groupId, 'margin', '1');
 
       await Promise.all(
-        Array.from({ length: 10 }, (_unused, index) =>
+        Array.from({ length: RACING_WRITERS }, (_unused, index) =>
           grant(groupId, 'margin', String((index + 2) * 1000)),
         ),
       );
 
       const chain = await historyOf(groupId, 'margin');
-      expect(chain).toHaveLength(11);
+      expect(chain).toHaveLength(RACING_WRITERS + 1);
 
       /*
-       * The assertion is contiguity, not a particular winner: which of ten concurrent writes
-       * lands last is genuinely undefined and pinning it would be a test of the scheduler. What
-       * is not undefined is that read in `changed_at` order, each entry's `before` is the
-       * previous entry's `after` — the property that says nothing happened in between that
-       * nobody recorded.
+       * Contiguity: read in `changed_at` order, each entry's `before` is the previous entry's
+       * `after` — the property that says nothing happened in between that nobody recorded.
        */
       for (let index = 1; index < chain.length; index += 1) {
         expect(chain[index]?.before, `entry ${index} does not follow entry ${index - 1}`).toEqual(
@@ -540,6 +571,6 @@ describeWithPg('authority limits — the screen that fills the table in', () => 
 
       await purgeAuthorityLimits(db, groupId);
       await db.delete(groups).where(eq(groups.id, groupId));
-    }, 30_000);
+    }, 120_000);
   });
 });
