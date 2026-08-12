@@ -503,6 +503,25 @@ export interface UiParamsByKey {
   'notFound.body': Plain;
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  /**
+   * ⭐ The way *to* the payment screen — the only key in this block rendered by screens
+   * other than that one. `QuotationIsland` puts it under the totals and `MyQuotations`
+   * puts it on each payable row, so both doors are labelled with one string and cannot
+   * drift apart in seven languages.
+   *
+   * ⚠️ **It must not name an amount, and it must not claim money moves.** The screen it
+   * opens asks for `outstandingThbMinor`, folded live — which on a fresh order equals the
+   * grand total rather than the deposit shown beside this button, and after a deposit is
+   * paid equals neither of the two figures the quotation can see. So the label promises
+   * the screen and lets the screen state the figure.
+   *
+   * The second half is why this is not "confirm payment" in any locale: there is no
+   * gateway behind it. The customer transfers at their own bank and attaches a slip —
+   * hence `payment.heading` reading "แจ้งชำระเงิน" / "Notify us of a payment" on arrival.
+   * This label is the *intent* ("go and pay this"), which is what a customer is looking
+   * for when they scan a quotation, and the heading immediately says how.
+   */
+  'payment.action': Plain;
   'payment.meta.title': Plain;
   'payment.heading': Plain;
   'payment.loading': Plain;

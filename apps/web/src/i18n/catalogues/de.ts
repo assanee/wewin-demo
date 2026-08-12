@@ -543,6 +543,7 @@ export const de: PartialUiCatalogue = {
     'Der Link hat sich möglicherweise geändert. Beginnen Sie bei der Produktliste.',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'Jetzt bezahlen',
   'payment.meta.title': 'Zahlung mitteilen',
   'payment.heading': 'Zahlung mitteilen',
   'payment.loading': 'Ihre Zahlungsdetails werden geöffnet…',

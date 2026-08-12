@@ -471,6 +471,7 @@ export const th: UiCatalogue = {
   'notFound.body': 'ลิงก์อาจเปลี่ยนไปแล้ว ลองเริ่มจากรายการสินค้า',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'ชำระเงิน',
   'payment.meta.title': 'แจ้งชำระเงิน',
   'payment.heading': 'แจ้งชำระเงิน',
   'payment.loading': 'กำลังเปิดข้อมูลการชำระเงิน…',

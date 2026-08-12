@@ -501,6 +501,7 @@ export const my: PartialUiCatalogue = {
   'notFound.body': 'လင့်ခ် ပြောင်းလဲသွားနိုင်သည်။ ကုန်ပစ္စည်းစာရင်းမှ စတင်ကြည့်ပါ။',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'ငွေပေးချေရန်',
   'payment.meta.title': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.heading': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.loading': 'သင့်ငွေပေးချေမှုအချက်အလက်များ ဖွင့်နေသည်…',

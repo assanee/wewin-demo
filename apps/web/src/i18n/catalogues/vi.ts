@@ -502,6 +502,7 @@ export const vi: PartialUiCatalogue = {
     'Liên kết có thể đã thay đổi. Hãy bắt đầu lại từ danh sách sản phẩm.',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'Thanh toán',
   'payment.meta.title': 'Báo cho chúng tôi biết bạn đã thanh toán',
   'payment.heading': 'Báo cho chúng tôi biết bạn đã thanh toán',
   'payment.loading': 'Đang mở thông tin thanh toán của bạn…',

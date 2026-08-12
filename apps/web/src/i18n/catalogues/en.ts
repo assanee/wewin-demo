@@ -503,6 +503,7 @@ export const en: PartialUiCatalogue = {
   'notFound.body': 'The link may have changed. Try starting from the product list.',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'Make a payment',
   'payment.meta.title': 'Notify us of a payment',
   'payment.heading': 'Notify us of a payment',
   'payment.loading': 'Opening your payment details…',

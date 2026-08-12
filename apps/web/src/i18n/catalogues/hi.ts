@@ -518,6 +518,7 @@ export const hi: PartialUiCatalogue = {
   'notFound.body': 'लिंक बदल गया हो सकता है। उत्पाद सूची से शुरू कीजिए।',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'भुगतान करें',
   'payment.meta.title': 'भुगतान की सूचना दें',
   'payment.heading': 'भुगतान की सूचना दें',
   'payment.loading': 'आपके भुगतान का विवरण खोला जा रहा है…',

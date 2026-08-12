@@ -460,6 +460,7 @@ export const zh: PartialUiCatalogue = {
   'notFound.body': '链接可能已更改。请从产品列表重新开始。',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': '去付款',
   'payment.meta.title': '通知一笔付款',
   'payment.heading': '通知一笔付款',
   'payment.loading': '正在打开付款信息…',

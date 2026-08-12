@@ -5,8 +5,12 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { printableQuotation, type PrintableQuotation } from '@wewin/core/quotation';
 
 import { currentSession } from '../../lib/auth/account';
+import { acceptsPayment } from '../../lib/payment/payable';
 import { fetchQuotation, quotationSource, type QuotationFailure, type Seller } from '../../lib/quotation/api';
+import { localeHref } from '../../lib/routing';
+import type { Locale } from '../../i18n/locales';
 import { useLocale } from '../../state/localeContext';
+import { ButtonLink } from '../common/Button';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -55,10 +59,36 @@ type Phase =
        * `null` when the API answered with none — see `sellerFrom`.
        */
       readonly seller: Seller | null;
+      /**
+       * ⭐ The order's live status, which this component decoded and then threw away.
+       *
+       * `LinkedQuotation.status` has been on the wire and read by `decodeQuotation` since the
+       * page was written; the `ready` phase simply did not carry it, so the one fact that
+       * decides whether there is anything left to pay never reached a render. See
+       * `lib/payment/payable.ts`.
+       *
+       * ⚠️ Live, and therefore *not* part of `quotation` — `PrintableQuotation` is a pure
+       * function of the pinned document and must stay one, exactly as `seller` is kept beside
+       * it rather than folded in. A status inside the document would make a reprint of an
+       * August quotation say the order is still awaiting payment forever.
+       */
+      readonly status: string;
+      /**
+       * ⚠️ The order's UUID, and **only on the `?order=` half of this page**.
+       *
+       * `null` for every quotation opened from an emailed `?t=` link, because there is no id
+       * to have: `LinkedDocumentWire` carries `orderNo`, `status`, `contactName`,
+       * `submittedAt`, `document` and `seller` — and deliberately no `id`. The route's own
+       * header states the rule ("the token names the order; nothing else needs to"), and
+       * `document-link.controller.ts` refuses the handler shape that would take an id beside
+       * a signature. Adding one to that response to light up a button here would undo the
+       * property the whole design is built on, so the button is absent on that half instead.
+       */
+      readonly orderId: string | null;
     };
 
 export function QuotationIsland(): ReactElement {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [phase, setPhase] = useState<Phase>({ kind: 'reading' });
   const [attempt, setAttempt] = useState(0);
 
@@ -96,6 +126,10 @@ export function QuotationIsland(): ReactElement {
               quotation: printableQuotation(result.data.document),
               orderNo: result.data.orderNo,
               seller: result.data.seller,
+              status: result.data.status,
+              /* The id this page was opened with, never one derived from the response — the
+               * token half has none, and `source` is the only place either half is known. */
+              orderId: source.kind === 'owned' ? source.orderId : null,
             }
           : { kind: 'failed', reason: result.reason },
       );
@@ -146,7 +180,25 @@ export function QuotationIsland(): ReactElement {
     );
   }
 
-  return <Sheet quotation={phase.quotation} orderNo={phase.orderNo} seller={phase.seller} t={t} />;
+  return (
+    <Sheet
+      quotation={phase.quotation}
+      orderNo={phase.orderNo}
+      seller={phase.seller}
+      /*
+       * ⭐ The pay action's two conditions, resolved here rather than inside `Sheet`.
+       *
+       * `Sheet` renders a document; whether this customer may act on it is a fact about the
+       * live order and about how the page was opened, and neither belongs in a component
+       * whose job is to print pinned figures. So it receives an id or `null` and asks no
+       * questions — `null` covers both "opened from an email, no id to link with" and
+       * "finished, nothing to pay".
+       */
+      payOrderId={acceptsPayment(phase.status) ? phase.orderId : null}
+      locale={locale}
+      t={t}
+    />
+  );
 }
 
 type Translate = ReturnType<typeof useLocale>['t'];
@@ -155,11 +207,16 @@ function Sheet({
   quotation,
   orderNo,
   seller,
+  payOrderId,
+  locale,
   t,
 }: {
   readonly quotation: PrintableQuotation;
   readonly orderNo: string | null;
   readonly seller: Seller | null;
+  /** The order to pay, or `null` when this quotation offers no payment. See the call site. */
+  readonly payOrderId: string | null;
+  readonly locale: Locale;
   readonly t: Translate;
 }): ReactElement {
   return (
@@ -327,6 +384,67 @@ function Sheet({
               ? ` · ${t('quotation.fx.manual')}`
               : ` · ${t('quotation.fx.observedAt', { observedAt: quotation.fxRate.observedAtText })}`}
           </p>
+        </div>
+      )}
+
+      {/*
+       * ─────────────────────────────────────────────────────────────────────────
+       * ⭐ THE WAY OUT OF THIS PAGE — task: payment entry points.
+       * ─────────────────────────────────────────────────────────────────────────
+       *
+       * `PaymentIsland` has been finished since task 10 and **nothing linked to it**: a
+       * customer read `ยอดที่ต้องชำระ ฿14,400.00` two lines above this and had no way to act
+       * on it. This is the way to act on it.
+       *
+       * ── ⚠️ Outside the fx block, and that is not a formatting choice ─────────
+       *
+       * The baht rows above live under `quotation.fxRate === null ? null : …` — they exist
+       * only for a *foreign* destination, where the price is quoted in SGD and settled in
+       * baht. A Thai order has no fx rate, renders none of that, and needs to pay just the
+       * same. Nested one level up this button would have been invisible to every domestic
+       * customer, which is most of them. It sits after the whole totals stack instead, so it
+       * follows `quotation.total` for a domestic order and `quotation.fx.payable` for a
+       * foreign one — under the last figure either way, which is the reasoning the fx block's
+       * own comment sets out: both amounts belong on the page, and the action belongs under
+       * the amounts rather than in a header away from them.
+       *
+       * ── ⚠️ THE LABEL CARRIES NO NUMBER, ON PURPOSE ──────────────────────────
+       *
+       * This page can see two figures and the payment screen asks for a third.
+       * `quotation.fx.payable` is the pinned grand total and `quotation.fx.deposit` the
+       * scheduled deposit, both frozen at submit; `PaymentIsland` opens on
+       * `outstandingThbMinor` — `grand_total − order_settled_thb_minor()`, folded live — and
+       * prefills its amount field with it. On a fresh order that equals the grand total and
+       * not the deposit; on an order whose deposit has been paid it equals neither. A button
+       * promising "ชำระมัดจำ ฿4,320.00" would therefore land on a form reading ฿14,400.00,
+       * and one promising the total would be wrong the day after the first transfer. So it
+       * promises the *screen* and the screen states the figure, which is the only one of the
+       * three that is authoritative at the moment the customer reads it.
+       *
+       * ── `print:hidden`, like the print button ────────────────────────────────
+       *
+       * A saved PDF is the contract. A button in it is a dead rectangle.
+       *
+       * ── ⚠️ Where the order id does and does not go ──────────────────────────
+       *
+       * Into an `href` built in the browser, and nowhere else. This markup exists only after
+       * `fetchQuotation` resolves, and the first render — the only one Next prerenders into
+       * the eight static shells — is always `reading`, so no id is ever in the built HTML, a
+       * cache key or a build log. The destination sets `robots: {index: false}` and declares
+       * no hreflang alternates, so there is no crawlable or localised copy of this URL to
+       * leak into either. `ButtonLink` is a plain `<a>` rather than `next/link` — see its own
+       * note — which also means no prefetch carries the id into the network log of a page the
+       * customer has not chosen to open yet.
+       */}
+      {payOrderId === null ? null : (
+        <div className="mt-4 ml-auto max-w-[320px] print:hidden">
+          <ButtonLink
+            variant="primary"
+            className="w-full"
+            href={`${localeHref(locale, '/payment')}?order=${payOrderId}`}
+          >
+            {t('payment.action')}
+          </ButtonLink>
         </div>
       )}
 

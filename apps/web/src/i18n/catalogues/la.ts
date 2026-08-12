@@ -486,6 +486,7 @@ export const la: PartialUiCatalogue = {
   'notFound.body': 'ລິ້ງອາດປ່ຽນໄປແລ້ວ. ລອງເລີ່ມຈາກລາຍການສິນຄ້າ.',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'ຊຳລະເງິນ',
   'payment.meta.title': 'ແຈ້ງການຊຳລະເງິນ',
   'payment.heading': 'ແຈ້ງການຊຳລະເງິນ',
   'payment.loading': 'ກຳລັງເປີດຂໍ້ມູນການຊຳລະເງິນ…',
