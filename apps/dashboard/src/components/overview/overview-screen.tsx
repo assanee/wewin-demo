@@ -138,7 +138,21 @@ export function OverviewScreen() {
             label: 'ใบเสนอราคารออนุมัติ',
             count: overview.quotes.approvalsPending,
             icon: FileText,
-            href: '/quotes' as Route,
+            /*
+             * ⚠️ **`/approvals`, and it pointed at `/quotes` for a whole round.**
+             *
+             * `/quotes` is the editor's list: it can neither show an approval request nor action
+             * one, so the card counted a queue and then sent the reader to a screen with no trace
+             * of it. That is the softer form of the `ยังไม่มีหน้าจัดการ` case below — a number that
+             * leads *somewhere*, which is worse, because the reader concludes the count is wrong
+             * rather than that the screen is missing.
+             *
+             * The count is company-wide pending; `/approvals` shows what this reader may decide and
+             * accounts for the rest, so the two figures reconcile rather than contradict. The card
+             * now sits behind `quotes.read` + `quotes.approve` (`overview/sections.ts`), which is
+             * what that page and its queue endpoint ask for.
+             */
+            href: '/approvals' as Route,
             action: 'มีส่วนลดเกินอำนาจที่พนักงานขายตั้งไว้',
           },
         ]

@@ -49,7 +49,8 @@ describe('the section table', () => {
      *   slips           payments.read + orders.read     slip-review.controller.ts
      *   refunds         payments.read                   refunds.controller.ts
      *   money           payments.read                   the ledger is a payments surface
-     *   quotes          quotes.read                     approvals.controller.ts
+     *   quotes          quotes.read + quotes.approve    approvals.controller.ts' queue route,
+     *                                                   which is where the card now links
      *   reviews         reviews.moderate                reviews-admin.controller.ts
      *   notifications   orders.read                     notifications.controller.ts, borrowed
      *   catalog         catalog.read                    catalog-admin.controller.ts
@@ -60,7 +61,7 @@ describe('the section table', () => {
       slips: ['payments.read', 'orders.read'],
       refunds: ['payments.read'],
       money: ['payments.read'],
-      quotes: ['quotes.read'],
+      quotes: ['quotes.read', 'quotes.approve'],
       reviews: ['reviews.moderate'],
       notifications: ['orders.read'],
       catalog: ['catalog.read'],

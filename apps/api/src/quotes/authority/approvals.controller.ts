@@ -12,18 +12,25 @@ import {
   type ApprovalDetailWire,
   type ApprovalListWire,
   type ApprovalQuery,
+  type ApprovalQueueWire,
   type ApprovalWire,
   type DecideApprovalWire,
   type RequestApprovalWire,
 } from './authority.contract';
-import { approvalWire, bareMeasurementWire } from './authority.presenter';
+import {
+  approvalQueueWire,
+  approvalRightsWire,
+  approvalWire,
+  bareMeasurementWire,
+} from './authority.presenter';
 import { AuthorityService } from './authority.service';
 
 /**
  * Concessions waiting for an answer — plan 7.13's *"กล่องขาเข้าของผู้อนุมัติ"*.
  *
  *     POST /quotes/approvals                  ask — the size is measured, never sent
- *     GET  /quotes/approvals                  the queue, oldest first, `?status=pending`
+ *     GET  /quotes/approvals                  everything waiting, oldest first, `?status=pending`
+ *     GET  /quotes/approvals/queue            ⭐ what **the caller** may decide, and what they may not
  *     GET  /quotes/approvals/:id              one request, with what the quote concedes *now*
  *     POST /quotes/approvals/:id/decision     approve or refuse
  *
@@ -35,6 +42,14 @@ import { AuthorityService } from './authority.service';
  * telephoning somebody. `GET /quotes/approvals` is the fix and it reads
  * `approvals_pending_idx` — the index that was created for a screen that did not exist.
  *
+ * ⚠️ For a whole round that was the *entire* fix, and it was half of one: the list is unfiltered,
+ * so an approver opened it onto every pending request in the company, most of which their own
+ * ceiling did not cover, and the only way to learn which was which was to press the button and
+ * read the 403. `GET /quotes/approvals/queue` is the other half — `approval-rights.ts` decides,
+ * once, what `decide` would accept, and the queue is the rows that pass. The unfiltered list
+ * stays, because a requester checking on their own ask and an auditor reading the backlog are
+ * both real readers and neither has a ceiling to filter by.
+ *
  * ⚠️ It is a queue and **not a notification**. Nothing here tells an approver that something
  * arrived; the module writes no `order_events` row and has no outbox (plan 10.1 makes
  * notifications consumers of the spine, and a concession is not a status change). So an
@@ -44,7 +59,8 @@ import { AuthorityService } from './authority.service';
  * ── The permission, and the one that should exist ────────────────────────────────
  *
  * Reading is `quotes.read`, asking is `quotes.write`, and **deciding is `quotes.approve`** —
- * its own code, held by nobody at boot.
+ * its own code, held by nobody at boot. The queue asks for **both** read codes, because it is a
+ * work list rather than a report: see `queue` below.
  *
  * Deciding was `quotes.write` for one round, which every salesperson holds, so the permission
  * system did not separate the approver from the requester at all: what separated them was the
@@ -120,13 +136,54 @@ export class ApprovalsController {
     return { approvals: rows.map(approvalWire) };
   }
 
+  /**
+   * ⭐ THE QUEUE THIS PERSON MAY ACTUALLY DECIDE — the screen plan 7.13 asks for.
+   *
+   * ── Why a route of its own rather than a flag on the list above ───────────────────
+   *
+   * The two answer different questions and one of them takes the caller as an argument.
+   * `GET /quotes/approvals` is *"what is waiting?"*, unfiltered, for anybody who may read a
+   * quotation — a requester checking their own ask, somebody reading the backlog. This is
+   * *"what is waiting for me?"*, and it is filtered by the caller's own ceiling. A `?mine=true`
+   * on one endpoint would make the response's meaning depend on a query parameter, which is how
+   * a client ends up reading an audit list as a work queue.
+   *
+   * ⚠️ **Declared before `:approvalId`, and that is load-bearing.** Nest matches in declaration
+   * order, so `queue` below the parameterised route would be swallowed by it. The `UUID` guard on
+   * that handler would then answer 404 — a screen that "does not exist" while its code is right
+   * there. Moving this method down the file is enough to break it, which is why
+   * `authority.pg.test.ts` asks for the queue by path and not through a service call.
+   *
+   * ── The permission is BOTH codes, and neither is decoration ──────────────────────
+   *
+   * `quotes.read` because this serves `approvals` rows, exactly as the list above does, and
+   * `quotes.approve` because a queue is a work list: it is filtered to what the caller may decide,
+   * so serving it to somebody who may decide nothing would be serving a list whose every row is a
+   * lie. Same shape as the slip queue asking for two codes — see `overview/sections.ts`, which now
+   * gates the pending-approvals card on this pair for the same reason.
+   *
+   * ⚠️ `@RequirePermissions` means **every** listed code. A holder of `quotes.approve` alone gets
+   * 403 here, deliberately: they could not read the request they were being asked to judge.
+   */
+  @Get('queue')
+  @RequirePermissions('quotes.read', 'quotes.approve')
+  @contractVersion()
+  @privateToTheCaller()
+  async queue(@CurrentScope() scope: Scope): Promise<ApprovalQueueWire> {
+    return approvalQueueWire(await this.authority.queue(scope));
+  }
+
   /** One request, plus the concession as it stands right now. The two can differ — see the contract. */
   @Get(':approvalId')
   @RequirePermissions('quotes.read')
   @contractVersion()
   @privateToTheCaller()
-  async get(@Param('approvalId') approvalId: string): Promise<ApprovalDetailWire> {
-    const { row, live, quoteRevisionNow } = await this.authority.approval(
+  async get(
+    @CurrentScope() scope: Scope,
+    @Param('approvalId') approvalId: string,
+  ): Promise<ApprovalDetailWire> {
+    const { row, live, quoteRevisionNow, rights, ceilingThbMinor } = await this.authority.approval(
+      scope,
       approvalIdOrNotFound(approvalId),
     );
 
@@ -135,6 +192,12 @@ export class ApprovalsController {
 
     return {
       approval: approvalWire(row),
+      /*
+       * What the caller may do, decided by the same function `decide` and the queue use. A
+       * screen that worked this out from `concessionThbMinor` and a ceiling it fetched elsewhere
+       * would be a second implementation of the one rule this module has.
+       */
+      rights: approvalRightsWire(rights, ceilingThbMinor),
       /*
        * The sharper warning than `hasMovedSinceRequest`, and the one an approver can act on:
        * when this differs from `approval.quoteRevision`, saying yes grants nothing at all,

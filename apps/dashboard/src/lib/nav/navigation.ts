@@ -2,6 +2,7 @@ import type { Route } from 'next';
 import {
   Building2,
   ClipboardList,
+  Gavel,
   Inbox,
   MessageSquare,
   Receipt,
@@ -131,15 +132,51 @@ export const NAVIGATION: readonly NavSection[] = [
       },
       {
         /*
-         * `quotes.read` and not `quotes.write`: the list and the customer-facing document are
-         * readable by anyone who may see a quotation at all, and every editing control on the
-         * screen is decided per action beside the thing it would have done — the same rule the
-         * product screens follow.
+         * ⚠️ **`orders.read` beside `quotes.read`, and the missing one was the bug.**
+         *
+         * This entry asked for `quotes.read` alone for several rounds. There is no `GET /quotes`
+         * — a quote is the editable face of an order — so `QuoteListScreen` lists
+         * `GET /orders?status=draft,awaiting_payment,redesign`, and that route is
+         * `@RequirePrincipal()` with the reach decided *in the query*: `orderReach` widens to every
+         * order only for a caller holding `orders.read`, and otherwise returns the caller's **own**
+         * orders, which for a member of staff is none. So a salesperson holding `quotes.read` and
+         * not `orders.read` saw ใบเสนอราคา in the menu, opened it, and got an empty table with a
+         * 200 — the failure mode that looks like "there is no work today" rather than like a
+         * missing grant. Nothing 403s, so nothing said so.
+         *
+         * `quotes.read` stays because it is what makes the screen a *sales* screen: the editor's
+         * sales block — the overrides, their reason codes, the concession and the ceiling — is
+         * derived from that code inside `QuotesService.getQuote` and never from the request. A
+         * reader with `orders.read` alone would reach a customer-shaped document, which is what
+         * `/orders` is already for.
+         *
+         * Every editing control needs more still (`quotes.write` + `orders.read` + `orders.write`,
+         * written once as `RequireQuoteWrite`) and is decided per action beside the thing it would
+         * have done — the same rule the product screens follow.
          */
         href: '/quotes',
         labelTh: 'ใบเสนอราคา',
         icon: FileText,
-        requires: ['quotes.read'],
+        requires: ['orders.read', 'quotes.read'],
+      },
+      {
+        /*
+         * ⭐ The approver's inbox — **two codes, and both are what the queue asks for.**
+         *
+         * `GET /quotes/approvals/queue` is `@RequirePermissions('quotes.read', 'quotes.approve')`:
+         * the first because it serves `approvals` rows, the second because the queue is *filtered
+         * to what the caller may decide*, so a reader who may decide nothing would be handed a
+         * list whose every row is a claim that is false. The menu asks for exactly that pair — the
+         * same shape สลิปรอตรวจ has, for the same reason.
+         *
+         * ⚠️ `quotes.approve` is held by **nobody at boot** (plan 13: the code exists, the grant
+         * does not, and the answer is a decision rather than a default). So this entry is invisible
+         * until an administrator grants it — which is the intended state, not a wiring failure.
+         */
+        href: '/approvals',
+        labelTh: 'คำขออนุมัติส่วนลด',
+        icon: Gavel,
+        requires: ['quotes.read', 'quotes.approve'],
       },
     ],
   },

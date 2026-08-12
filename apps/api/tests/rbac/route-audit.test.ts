@@ -226,11 +226,13 @@ describe('boot-time route audit', () => {
      * to fix in it. `describeAccess` says so in words on every principal route; the sweep in
      * `tests/orders/scope/cross-tenant-routes.pg.test.ts` is what actually walks them.
      *
-     * ── The seventeen 5c routes, and the reason this list moved at all ──────────
+     * ── The twenty 5c routes, and the reason this list moved at all ─────────────
      *
-     * Eight `/orders/:orderId/quote/*` writes, one `/orders/:orderId/quote` read, six under
-     * `/quotes/*` for approvals and ceilings, and two more for the ceiling table. **This audit
-     * is what noticed they existed.** For a whole round both modules were built, tested and
+     * Eight `/orders/:orderId/quote/*` writes, one `/orders/:orderId/quote` read, five under
+     * `/quotes/approvals` and six under `/quotes/authority`. (The count in this paragraph was
+     * three short for two rounds — `groups`, `changes` and now `queue` each landed with the list
+     * below updated and the prose above it not. It is counted from the list, not from memory.)
+     * **This audit is what noticed they existed.** For a whole round both modules were built, tested and
      * absent from `AppModule.forRoot`, so every one of these was a 404 in the assembled
      * application while their own suites passed against a graph they booted by hand — the same
      * failure 5b had with `SlipsModule` and `RefundsModule`, and the same alarm caught it.
@@ -411,6 +413,17 @@ describe('boot-time route audit', () => {
       'GET /products/:productId/reviews [anonymous]',
       'GET /quotes/approvals [permissions]',
       'GET /quotes/approvals/:approvalId [permissions]',
+      /*
+       * ⭐ The approver's own queue, and the only route in this list that asks for **two** quote
+       * codes: `quotes.read` because it serves `approvals` rows like the two above, and
+       * `quotes.approve` because every row it returns is filtered to what this caller may decide
+       * — a list served to somebody who may decide nothing would be a list of rows that all lie.
+       * Same argument the slip queue makes for its pair. See `approvals.controller.ts`.
+       *
+       * ⚠️ It is declared *above* `:approvalId` in the controller. Nest matches in declaration
+       * order, so the reverse would make this path a 404 with the code present and correct.
+       */
+      'GET /quotes/approvals/queue [permissions]',
       /* The role picker's source, `groups.read`. It exists because the only other list of
        * groups is `GET /admin/groups` behind `users.read`, which made `groups.write` — the
        * permission that owns the ceiling table — undelegatable without handing over the staff

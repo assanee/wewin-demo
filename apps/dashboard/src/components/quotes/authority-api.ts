@@ -43,19 +43,33 @@ export const APPROVAL_DIMENSIONS_WIRE = ['margin', 'cashflow'] as const;
 export type ApprovalDimensionWire = (typeof APPROVAL_DIMENSIONS_WIRE)[number];
 
 /**
- * The four things an assessment can conclude.
+ * The five things a measurement can conclude.
  *
  *   `nothing_conceded`     nobody gave anything away, so no authority is in play.
  *   `within_authority`     under this role's ceiling. Send it.
  *   `covered_by_approval`  over the ceiling and somebody else already said yes.
  *   `needs_approval`       over the ceiling with nobody's yes — including the fail-closed
  *                          case where the ceiling is absent because no row exists.
+ *   `unassessed`           **a measurement with nobody's authority applied to it.**
+ *
+ * ⚠️ `unassessed` was missing from this list for as long as the list existed, and the browser is
+ * what found it: `GET /quotes/approvals/:id` serves `liveConcession` through the API's
+ * `bareMeasurementWire`, which is `measurementWire(measurement, undefined)` and spells the absent
+ * outcome exactly that way — so the approver's detail read decoded as MALFORMED and the dialog
+ * showed *"เนื้อหาไม่ตรงกับที่แดชบอร์ดรู้จัก"* instead of the request.
+ *
+ * It was never reachable from *this* module's own endpoint (`/quotes/authority/orders/:orderId`
+ * always assesses, so every dimension carries a real outcome), which is why nothing noticed. The
+ * decoder refusing rather than rendering is the behaviour this file argues for — a strict list
+ * turned a silently-wrong screen into a named failure — and the fix is the value, not the
+ * strictness.
  */
 export const ASSESSMENT_OUTCOMES_WIRE = [
   'nothing_conceded',
   'within_authority',
   'covered_by_approval',
   'needs_approval',
+  'unassessed',
 ] as const;
 export type AssessmentOutcomeWire = (typeof ASSESSMENT_OUTCOMES_WIRE)[number];
 
@@ -169,7 +183,7 @@ const oneOf = <T extends string>(
  * safe-looking thing" fold that made `revokedAt` fail open one screen away. The server sends
  * this discriminator deliberately, so a response without it is malformed, not permissive.
  */
-function decodeCeiling(input: unknown, what: string): CeilingView {
+export function decodeCeiling(input: unknown, what: string): CeilingView {
   const row = object(input, what);
   const known = row['known'];
   if (typeof known !== 'boolean') throw new TypeError(`${what}.known is not a boolean`);
@@ -178,7 +192,16 @@ function decodeCeiling(input: unknown, what: string): CeilingView {
   return { known: true, thbMinor: nullableMinorOf(row, 'thbMinor', what) };
 }
 
-function decodeDimension(input: unknown, what: string): DimensionAssessmentView {
+/**
+ * Exported for `components/approvals/approvals-api.ts`, which reads the same shape.
+ *
+ * `GET /quotes/approvals/:id` serves `DimensionAssessmentWire` for the concession as it stands
+ * *now*, which is the same wire type this endpoint serves — so the approver's screen decodes it
+ * with this function rather than a second one. The `outcome` enum and the three-way ceiling above
+ * are rules, not boilerplate, and two copies of a rule is what the module's own header complains
+ * about having already.
+ */
+export function decodeDimension(input: unknown, what: string): DimensionAssessmentView {
   const row = object(input, what);
   const sources = row['sources'];
   if (!Array.isArray(sources)) throw new TypeError(`${what}.sources is not an array`);

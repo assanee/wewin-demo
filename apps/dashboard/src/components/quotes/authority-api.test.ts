@@ -111,6 +111,31 @@ describe('decoding an assessment', () => {
     ).toThrow(/escalated/);
   });
 
+  /**
+   * ⭐ `unassessed` is a real outcome, and it was missing from the list for as long as the list
+   * existed.
+   *
+   * The API's `bareMeasurementWire` — `measurementWire(measurement, undefined)` — spells the absent
+   * verdict exactly this way, and it reaches a client on `GET /quotes/approvals/:id`'s
+   * `liveConcession`, which the approver's inbox reads through `decodeDimension`. Nothing noticed
+   * because *this* endpoint always assesses, so the value never arrived here; the browser found it
+   * as *"เนื้อหาไม่ตรงกับที่แดชบอร์ดรู้จัก"* in the decision dialog on the day the inbox first
+   * opened one.
+   *
+   * Pinned here rather than only in the approvals folder, because this is the module that owns the
+   * list, and the next value the presenter learns to send will arrive the same way.
+   */
+  it('⭐ accepts `unassessed` — a measurement with nobody’s authority applied to it', () => {
+    const assessment = decodeAssessment({
+      ...ASSESSMENT,
+      margin: { ...DIMENSION, outcome: 'unassessed', ceiling: { known: false } },
+    });
+
+    expect(assessment.margin.outcome).toBe('unassessed');
+    /* And the figures still arrive — an unjudged measurement is still a measurement. */
+    expect(assessment.margin.concessionThbMinor).toBe(29_100n);
+  });
+
   it('refuses a verdict that is not a boolean rather than reading it as false', () => {
     /*
      * The dangerous coercion: `allowed: 'false'` is truthy and `allowed: undefined` is not, so
