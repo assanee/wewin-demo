@@ -37,6 +37,7 @@ export const EN: PartialCatalogue = {
   /* The four generic refusals, one per vocabulary. Same four sentences, four audiences. */
   'error.catalog.duplicate': 'This already exists.',
   'error.catalog.missing_reference': 'This refers to something that does not exist.',
+  'error.order.not_cancellable_from_status': 'This order cannot be cancelled from its current status.',
   'error.order.duplicate': 'This already exists.',
   'error.order.missing_reference': 'This refers to something that does not exist.',
   'error.quote.duplicate': 'This already exists.',

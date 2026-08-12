@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { OrderStatus } from '@wewin/db/schema';
 import { encodeThb } from '@wewin/contract/order';
 import {
+  type CancellationPreviewWire,
   type ChangeRequestWire,
   type CreateChangeRequestWire,
   type CreateOrderRequestWire,
@@ -36,6 +37,7 @@ import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
  */
 import { DEFAULT_LOCALE, MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT } from './defaults';
 import {
+  encodeCancellationPreview,
   encodeChangeRequest,
   encodeDocumentResponse,
   encodeEvent,
@@ -333,6 +335,71 @@ export class OrdersService {
       nextDueThbMinor: encodeThb(money.nextDueThbMinor),
       accounts: accounts.map(encodeAccountPublic),
     };
+  }
+
+  /**
+   * What cancelling this order right now would cost — asked before it is done.
+   *
+   * ── Why this route exists at all ─────────────────────────────────────────────────
+   *
+   * Because the storefront now has a cancel button, and a cancel button that forfeits money
+   * without saying how much is the worst version of this feature. The customer has to be told
+   * the figure *before* they confirm, and the figure has to be the real one: `forfeit_bp` comes
+   * from the policy the order pinned at submit and `held` is a fold of ledger postings, so there
+   * is no arithmetic a browser could do to arrive at it. It is asked for, or it is guessed.
+   *
+   * ── Why it cannot disagree with the cancellation ─────────────────────────────────
+   *
+   * It calls `PaymentLifecycleService.priceCancellation`, which is what the cancellation itself
+   * calls. Not the same formula written twice — the same method. See its comment for the
+   * plan-7.13 history that makes this the only acceptable arrangement.
+   *
+   * ── `'read'`, and no lock ────────────────────────────────────────────────────────
+   *
+   * A preview is a read: it must not take `FOR UPDATE` on a row because a caller asked what
+   * something would cost. The money is read inside one transaction so `held`, the pinned policy
+   * and the priced forfeit are one consistent snapshot, and `fromStatus` rides back on the
+   * response so a client can see which status it describes.
+   *
+   * ⚠️ Availability is decided by `order_status_transitions` through `assertActorMayMove` — the
+   * same function the transition itself is gated by — and not by a list of cancellable statuses
+   * retyped here. An order that cannot be cancelled from where it stands has no cancellation to
+   * price, and saying so is a 409; an actor whose kind may not make the move gets the 403 they
+   * would get from attempting it.
+   */
+  async previewCancellation(scope: Scope, orderId: string): Promise<CancellationPreviewWire> {
+    const actor = requireActor(scope);
+    const order = await this.scoped.findOrFail(scope, orderId, 'read');
+
+    const row = (await this.orders.transitionsFrom(order.status)).find(
+      (candidate) => candidate.toStatus === 'cancelled',
+    );
+
+    if (row === undefined) {
+      throw AppError.conflict(message('error.order.not_cancellable_from_status'), {
+        status: order.status,
+      });
+    }
+
+    assertActorMayMove(row, actor);
+
+    /*
+     * 🔒 `'customer'`, and it is not a parameter this route accepts.
+     *
+     * `faultFor` gives every non-staff actor `'customer'`, and `CancelOrderRequestWire` has no
+     * field through which a customer could claim otherwise — so for the caller this route is
+     * built for, this is not one of two possible answers, it is the answer. Taking `fault` from
+     * the query string would be the request-body hole plan 7.8 closed, reopened on a GET.
+     */
+    const price = await this.orders.transaction((tx) =>
+      this.payments.priceCancellation(tx, {
+        orderId: order.id,
+        fromStatus: order.status,
+        fault: 'customer',
+      }),
+    );
+
+    return encodeCancellationPreview({ fromStatus: order.status, ...price });
   }
 
   /* ---------------------------------------------------------------- *

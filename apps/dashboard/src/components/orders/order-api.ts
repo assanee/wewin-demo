@@ -49,11 +49,26 @@ export interface AvailableTransition {
   readonly descriptionTh: string;
 }
 
+/**
+ * A customer's objection, as this screen reads it.
+ *
+ * ⚠️ `openedAt`, spelled the way the wire spells it. It was `createdAt` here against an API that
+ * has always sent `openedAt` (`encodeChangeRequest`), and because `asText` throws on `undefined`
+ * the whole of `decodeDetail` raised `TypeError: changeRequest.createdAt: expected a string` for
+ * every order carrying an open objection — which `OrderDetail.reload()` caught and rendered as
+ * "เปิดออเดอร์นี้ไม่ได้". The resolution card was therefore unreachable, and so were the transition
+ * buttons on the same page: one field name made the objection loop impossible to close from the
+ * only screen that can close it. The names match now so the next reader cannot repeat it.
+ *
+ * `noteTh` is nullable because the column is and the wire says so. Nothing the API accepts today
+ * can produce a null one — `createChangeRequestSchema` requires the note — but a decoder that
+ * throws on a shape the contract permits is the same bug one release later.
+ */
 export interface ChangeRequest {
   readonly id: string;
-  readonly noteTh: string;
+  readonly noteTh: string | null;
   readonly resolution: string | null;
-  readonly createdAt: string;
+  readonly openedAt: string;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -150,7 +165,15 @@ const decodeSummary = (raw: unknown): OrderSummary => {
   };
 };
 
-const decodeDetail = (raw: unknown): OrderDetail => {
+/**
+ * Exported for `tests/change-request-decode.test.ts` and for nothing else.
+ *
+ * The one bug this decoder has actually shipped was a field name that did not match the wire,
+ * and the only way to catch that class without a browser is to hand the function a payload the
+ * contract has validated. Reaching it through `getOrder` would need a stubbed session and a
+ * stubbed fetch to test a pure function.
+ */
+export const decodeDetail = (raw: unknown): OrderDetail => {
   const order = asRecord(raw, 'ออเดอร์');
   const contact = asRecord(order['contact'] ?? {}, 'order.contact');
   const money = order['money'] === null || order['money'] === undefined ? null : asRecord(order['money'], 'order.money');
@@ -199,9 +222,9 @@ const decodeDetail = (raw: unknown): OrderDetail => {
             const request = asRecord(change, 'changeRequest');
             return {
               id: asText(request['id'], 'changeRequest.id'),
-              noteTh: asText(request['noteTh'], 'changeRequest.noteTh'),
+              noteTh: asTextOrNull(request['noteTh'], 'changeRequest.noteTh'),
               resolution: asTextOrNull(request['resolution'], 'changeRequest.resolution'),
-              createdAt: asText(request['createdAt'], 'changeRequest.createdAt'),
+              openedAt: asText(request['openedAt'], 'changeRequest.openedAt'),
             };
           })(),
   };

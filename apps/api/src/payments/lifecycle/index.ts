@@ -6,4 +6,4 @@
  */
 
 export { PaymentLifecycleModule } from './lifecycle.module';
-export { PaymentLifecycleService } from './lifecycle.service';
+export { PaymentLifecycleService, type CancellationPrice } from './lifecycle.service';

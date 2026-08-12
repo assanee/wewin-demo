@@ -432,6 +432,61 @@ export interface UiParamsByKey {
   'quotation.seller.phone': Plain;
   'quotation.seller.taxId': Plain;
 
+  /* ---- Acting on your own order --------------------------------------------
+   *
+   * `order_status_transitions` grants `customer` and `guest` six cancellations and nothing in
+   * this application posted any of them, so a customer who changed their mind telephoned
+   * somebody. These are the strings for the two doors that fixes: objecting, which blocks the
+   * order from entering production and costs nothing, and cancelling, which is terminal and may
+   * keep money.
+   *
+   * ⭐ **`orderActions.cancel.forfeit` and `.refund` carry their own param names.** The figure is priced by
+   * the server for this order's pinned policy and the money it actually holds, and it is
+   * rendered by the catalogue entry through `f.baht` — never spliced in as a formatted substring,
+   * which is `keys.ts`'s standing rule and matters more here than anywhere: this is the number
+   * somebody reads before giving up a deposit.
+   *
+   * ⚠️ `.freeCancellation` exists because ฿0.00 is the *shipped* answer — `plan13_default`
+   * forfeits nothing in all twelve cells while the owner has not yet set a rate — and a screen
+   * that rendered "you will forfeit ฿0.00" would be technically true and read as a threat. The
+   * two cases are two sentences, chosen from the priced figure and not from a guess about it.
+   */
+  'orderActions.heading': Plain;
+  'orderActions.object.title': Plain;
+  'orderActions.object.body': Plain;
+  'orderActions.object.noteLabel': Plain;
+  'orderActions.object.notePlaceholder': Plain;
+  'orderActions.object.submit': Plain;
+  'orderActions.object.sending': Plain;
+  'orderActions.object.sent': Plain;
+  'orderActions.object.open': { readonly openedAt: string };
+  'orderActions.object.openBody': Plain;
+  'orderActions.object.withdraw': Plain;
+  'orderActions.object.withdrawing': Plain;
+  'orderActions.object.withdrawn': Plain;
+  'orderActions.cancel.title': Plain;
+  'orderActions.cancel.body': Plain;
+  'orderActions.cancel.start': Plain;
+  'orderActions.cancel.preFreezeNote': Plain;
+  'orderActions.cancel.postFreezeNote': Plain;
+  'orderActions.cancel.pricing': Plain;
+  'orderActions.cancel.held': { readonly heldMinor: bigint };
+  'orderActions.cancel.forfeit': { readonly forfeitMinor: bigint };
+  'orderActions.cancel.refund': { readonly refundMinor: bigint };
+  'orderActions.cancel.freeCancellation': Plain;
+  'orderActions.cancel.noMoney': Plain;
+  'orderActions.cancel.reasonLabel': Plain;
+  'orderActions.cancel.reasonPlaceholder': Plain;
+  'orderActions.cancel.confirm': Plain;
+  'orderActions.cancel.cancelling': Plain;
+  'orderActions.cancel.keep': Plain;
+  'orderActions.cancel.done': Plain;
+  'orderActions.problem.unconfigured': Plain;
+  'orderActions.problem.unreachable': Plain;
+  'orderActions.problem.unauthorized': Plain;
+  'orderActions.problem.refused': Plain;
+  'orderActions.problem.malformed': Plain;
+
   /* ---- Display settings — plan 4.1/4.2, 8.2 trap 3 and 10.6 -------------------
    *
    * The screen where a reader states how they want the site written, and — the half that

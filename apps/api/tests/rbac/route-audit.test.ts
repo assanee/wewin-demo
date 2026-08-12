@@ -352,6 +352,14 @@ describe('boot-time route audit', () => {
       'GET /orders [principal]',
       'GET /orders/:orderId [principal]',
       /*
+       * `[principal]` because the customer and the guest whose order it is are exactly who needs
+       * it: the storefront's cancel button states the forfeit before it confirms, and this is
+       * where that figure comes from. It prices the cancellation the *caller* could make — no
+       * company-fault claim — so there is no parameter here through which somebody could price a
+       * refund they are not entitled to.
+       */
+      'GET /orders/:orderId/cancellation-preview [principal]',
+      /*
        * ⚠️ The route that *mints* the anonymous link route below, and therefore the opposite policy.
        *
        * `orders.read` and not `[principal]`: a principal policy would admit the customer —

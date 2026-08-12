@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { printableQuotation, type PrintableQuotation } from '@wewin/core/quotation';
 
 import { currentSession } from '../../lib/auth/account';
+import type { OrderActions as OrderActionOffers } from '../../lib/orders/actions';
 import { acceptsPayment } from '../../lib/payment/payable';
 import { fetchQuotation, quotationSource, type QuotationFailure, type Seller } from '../../lib/quotation/api';
 import { localeHref } from '../../lib/routing';
 import type { Locale } from '../../i18n/locales';
 import { useLocale } from '../../state/localeContext';
 import { ButtonLink } from '../common/Button';
+import { OrderActions } from './OrderActions';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +87,23 @@ type Phase =
        * property the whole design is built on, so the button is absent on that half instead.
        */
       readonly orderId: string | null;
+      /**
+       * ⭐ What this reader may *do* — and `null` on the `?t=` half, for the reason above.
+       *
+       * `availableTransitions` and `openChangeRequest` arrive on the same `GET /orders/:id`
+       * response the heading is already read from, so this costs no extra request. The emailed
+       * link half has no order id and therefore no actions, which keeps that route exactly as
+       * read-only as `document-link.controller.ts` designed it.
+       */
+      readonly actions: OrderActionOffers | null;
+      /**
+       * ⚠️ The access token this page's single `currentSession()` call returned.
+       *
+       * Carried rather than re-fetched: that call spends and **rotates** the `__Host-` refresh
+       * cookie, so a second one a moment later is a sign-out. `null` whenever there is no
+       * session, which is every `?t=` reader.
+       */
+      readonly accessToken: string | null;
     };
 
 export function QuotationIsland(): ReactElement {
@@ -115,8 +134,8 @@ export function QuotationIsland(): ReactElement {
         : Promise.resolve(undefined);
 
     void withSession
-      .then((accessToken) => fetchQuotation(source, accessToken))
-      .then((result) => {
+      .then(async (accessToken) => ({ accessToken, result: await fetchQuotation(source, accessToken) }))
+      .then(({ accessToken, result }) => {
       if (cancelled) return;
 
       setPhase(
@@ -130,6 +149,8 @@ export function QuotationIsland(): ReactElement {
               /* The id this page was opened with, never one derived from the response — the
                * token half has none, and `source` is the only place either half is known. */
               orderId: source.kind === 'owned' ? source.orderId : null,
+              actions: result.data.actions,
+              accessToken: accessToken ?? null,
             }
           : { kind: 'failed', reason: result.reason },
       );
@@ -181,6 +202,7 @@ export function QuotationIsland(): ReactElement {
   }
 
   return (
+    <>
     <Sheet
       quotation={phase.quotation}
       orderNo={phase.orderNo}
@@ -198,6 +220,23 @@ export function QuotationIsland(): ReactElement {
       locale={locale}
       t={t}
     />
+    {/*
+      * ⭐ Both conditions are about how the page was opened, not about the order.
+      *
+      * `actions` is null for every `?t=` reader (no order id exists on that response, on
+      * purpose) and `accessToken` is null for every reader with no session. Either one absent
+      * means there is nobody here whose order this can be shown to be, so nothing is rendered
+      * — the alternative would be buttons that 404.
+      */}
+    {phase.actions === null || phase.accessToken === null ? null : (
+      <OrderActions
+        offers={phase.actions}
+        accessToken={phase.accessToken}
+        /* The order moved, so the page must re-read it — the same path `retry` already owns. */
+        onChanged={retry}
+      />
+    )}
+    </>
   );
 }
 
