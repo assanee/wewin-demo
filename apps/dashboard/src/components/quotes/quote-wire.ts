@@ -47,6 +47,16 @@ export type {
   OverrideAnchorWire,
   OverrideEntryModeWire,
   OverrideReasonWire,
+  /**
+   * ⭐ The indicative destination-currency figure. `null` for every domestic quotation.
+   *
+   * Re-exported like every other shape here rather than imported from the contract at the one
+   * component that renders it: this file's header is that the shapes are the contract's and that
+   * there is no second reading of the same payload anywhere in the folder. `fx-preview.ts` and
+   * `totals-card.tsx` both need the type, and two import paths for one interface is how a folder
+   * ends up with two of them.
+   */
+  QuoteFxPreviewWire,
   QuoteLineKindWire,
   QuoteLineWire,
   QuoteMoneyWire,
