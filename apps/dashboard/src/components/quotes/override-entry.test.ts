@@ -1,3 +1,4 @@
+import { priceAfterPercentDiscount } from '@wewin/core/discount';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -62,10 +63,10 @@ describe('four boxes, one anchor', () => {
   });
 
   it('shows a percentage as the absolute figure it produces, never as the percentage', () => {
-    /* ฿8,791 less 5% = ฿8,791 − ฿439.55 = ฿8,351.45, and ฿8,351.45 is the promise. */
+    /* ฿8,791 less 5% = ฿8,791 − ฿439.55 = ฿8,351.45, on the whole baht ฿8,351. */
     const entry = shown(preview(LINE, 'percent_discount', '5'));
 
-    expect(entry.anchorThbMinor).toBe(835_145n);
+    expect(entry.anchorThbMinor).toBe(835_100n);
     expect(entry.enteredAs).toBe('percent_discount');
     /*
      * The delta appears nowhere. Plan 7.9(ก): a stored −฿439.55 would silently become a
@@ -84,11 +85,12 @@ describe('four boxes, one anchor', () => {
     const entry = shown(preview(LINE, 'percent_discount', '  -15%  '));
     expect(entry.enteredValueText).toBe('-15%');
     /*
-     * A negative discount raises the price: ฿8,791 + 15% = ฿10,109.65. Plan 7.2 says a
-     * redesign after a factory bounce is usually *more* expensive, so this direction is real
-     * and taking the magnitude would turn it into a giveaway.
+     * ⚠️ ฿7,472 and not ฿10,109.65. This assertion used to read `1_010_965n`, on the reasoning
+     * that a negative discount raises the price — and `apps/api/src/quotes/entry.ts` stored
+     * ฿7,472 for the same keystroke the whole time. A discount box only discounts; a redesign
+     * after a factory bounce is priced with an absolute line total or a new charge line.
      */
-    expect(entry.anchorThbMinor).toBe(1_010_965n);
+    expect(entry.anchorThbMinor).toBe(747_200n);
   });
 
   it('rounds half away from zero, which Math.round does not — plan 7.9(ง)(4)', () => {
@@ -96,6 +98,67 @@ describe('four boxes, one anchor', () => {
     const entry = shown(preview(context, 'percent_discount', '50'));
     /* 100001 × 5000 / 10000 = 50000.5 → 50001 (away from zero), so 100001 − 50001 = 50000. */
     expect(entry.anchorThbMinor).toBe(50_000n);
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE NUMBER ON THE SCREEN IS THE NUMBER THE SERVER APPLIES
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The bug these cover was not a wrong figure; it was **two right figures**. This screen read the
+ * sign as a direction and `apps/api/src/quotes/entry.ts` read it as a magnitude, each with a
+ * comment saying so, and `-5%` on a ฿8,791.00 line therefore promised ฿9,230.55 and stored
+ * ฿8,351.00 — ฿879.55 apart, silently, against the company.
+ *
+ * So these assert **delegation**, not arithmetic. Every expectation is
+ * `priceAfterPercentDiscount(...)`, the function `normaliseEntry` calls with the same arguments;
+ * the literals it produces are pinned once in `packages/core/tests/discount.test.ts`. A preview
+ * that goes back to doing its own arithmetic fails here even if its arithmetic is *correct*,
+ * because being correct separately is what went wrong.
+ */
+describe('the preview and the write cannot disagree', () => {
+  it('reads a discount the same whether or not the salesperson typed the minus', () => {
+    for (const typed of ['5%', '-5%']) {
+      expect(shown(preview(LINE, 'percent_discount', typed)).anchorThbMinor).toBe(
+        priceAfterPercentDiscount(LINE.computedThbMinor, 500n),
+      );
+    }
+  });
+
+  /*
+   * ⭐ The direction that used to be silent. `-5%` is a *discount*, so the figure previewed is
+   * below the baseline — not the ฿9,230.55 above it that this screen used to show.
+   */
+  it('previews a figure below the baseline for a negative percentage, not above it', () => {
+    const entry = shown(preview(LINE, 'percent_discount', '-5%'));
+    expect(entry.anchorThbMinor).toBeLessThan(LINE.computedThbMinor);
+    expect(entry.anchorThbMinor).toBe(835_100n);
+  });
+
+  it('refuses a surcharge in the percent box by name, rather than as an unreadable number', () => {
+    expect(refusal(preview(LINE, 'percent_discount', '+5'))).toContain('เพิ่มราคาไม่ได้');
+  });
+
+  it('refuses a surcharge in the money-discount box by name too', () => {
+    expect(refusal(preview(LINE, 'discount_amount', '+291'))).toContain('เพิ่มราคาไม่ได้');
+  });
+
+  it('reads a money discount the same whether or not the salesperson typed the minus', () => {
+    for (const typed of ['291', '-291']) {
+      expect(shown(preview(LINE, 'discount_amount', typed)).anchorThbMinor).toBe(850_000n);
+    }
+  });
+
+  it('previews on the whole baht, because that is the unit the write stores', () => {
+    /* The 45 satang that used to separate the preview from the record. */
+    const entry = shown(preview(LINE, 'percent_discount', '5%'));
+    expect(entry.anchorThbMinor).not.toBe(835_145n);
+    expect((entry.anchorThbMinor ?? 0n) % 100n).toBe(0n);
+  });
+
+  it('still refuses more than the whole price', () => {
+    expect(refusal(preview(LINE, 'percent_discount', '-150%'))).toContain('เกิน 100%');
   });
 });
 

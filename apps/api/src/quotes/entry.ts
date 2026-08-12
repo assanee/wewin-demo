@@ -1,4 +1,11 @@
-import { divRoundHalfUp, roundToUnit } from '@wewin/core/money';
+import {
+  discountBp as discountBpRule,
+  discountMinor,
+  priceAfterPercentDiscount,
+  type DiscountRefusal,
+  type DiscountRule,
+  type TypedSign,
+} from '@wewin/core/discount';
 import { asciiNumerals } from '@wewin/i18n/numerals';
 import type { OverrideAnchorWire, OverrideEntryModeWire } from '@wewin/contract/quote';
 
@@ -26,19 +33,21 @@ import type { OverrideAnchorWire, OverrideEntryModeWire } from '@wewin/contract/
  *   moves to ฿9,500, having promised ฿8,500) and `entered_value_text` keeps `'-15%'` so the
  *   conversation is still reconstructable.
  *
- *   **A discount mode may only discount.** `percent_discount` and `discount_amount` both
- *   accept `'15%'` and `'-15%'` — a salesperson writes either and means the same thing — and
- *   both refuse `'+15%'`. A mode that could also *raise* the price would be a surcharge
- *   wearing a discount's name, and a surcharge is a new line with its own description, not a
- *   negative discount nobody can explain to the customer. It would also arrive at plan
- *   7.13's `margin` dimension as a negative concession and quietly buy headroom under the
- *   ceiling for the next real discount.
+ *   **A discount mode may only discount, and this file no longer decides that.**
+ *   `@wewin/core/discount` does, because the rule was stated here *and* in the dashboard's
+ *   `amounts.ts` and the two statements were opposites: `-5%` previewed a five percent surcharge
+ *   and stored a five percent discount, ฿879.55 apart on a ฿8,791.00 line. Both halves of that
+ *   now call `discountBp`, `discountMinor` and `priceAfterPercentDiscount`, so the sign and the
+ *   arithmetic are one implementation rather than two agreeing paragraphs. What stays here is
+ *   the *scanning* — numerals, comma placement, the `%` — and the Thai prose for each refusal.
  */
 
-/** THB presents on the whole baht — the same policy constant `pricing.ts` applies, restated. */
-const THB_ROUND_TO_MINOR = 100n;
-
-const BP = 10_000n;
+/*
+ * The 100% ceiling that used to sit here as `const BP = 10_000n` is `FULL_DISCOUNT_BP` in
+ * `@wewin/core/discount`, checked by the rule rather than by this file. It was the third copy of
+ * the same number — the dashboard held one too — and a ceiling stated three times is a ceiling
+ * that can be raised in two places.
+ */
 
 /** Two decimal places of a *percent* is exactly one basis point, so `15.25%` is 1525 bp. */
 const BP_DECIMALS = 2;
@@ -89,11 +98,9 @@ function clean(text: string): string {
 /** Thousands groups, exactly: `8,500` and `1,234,567`, never `85,00`. */
 const GROUPED = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
 
-/** `-` explicit, `+` explicit, or neither. Kept apart from the digits so a mode can refuse one. */
-type Sign = 'negative' | 'positive' | 'unsigned';
-
 interface Scanned {
-  readonly sign: Sign;
+  /** `-` explicit, `+` explicit, or neither — `TypedSign`, so the rule that reads it is shared. */
+  readonly sign: TypedSign;
   readonly digits: string;
   readonly isPercent: boolean;
 }
@@ -101,7 +108,7 @@ interface Scanned {
 function scan(raw: string, whatTh: string): Scanned {
   const text = clean(raw);
 
-  const sign: Sign = text.startsWith('-') ? 'negative' : text.startsWith('+') ? 'positive' : 'unsigned';
+  const sign: TypedSign = text.startsWith('-') ? 'negative' : text.startsWith('+') ? 'positive' : 'unsigned';
   const unsigned = sign === 'unsigned' ? text : text.slice(1);
 
   const isPercent = unsigned.endsWith('%');
@@ -196,18 +203,13 @@ export function normaliseEntry(input: NormaliseInput): NormalisedEntry {
        */
       return { kind: 'money', overrideThbMinor: absolute(input) * BigInt(input.qty) };
 
-    case 'percent_discount': {
-      const bp = discountBp(input);
+    case 'percent_discount':
       /*
-       * Rounded to the whole baht, which is `pricing.ts`'s presentation unit for THB and not
-       * a rule invented here: every computed line total already lands there, so a percentage
-       * that produced ฿7,472.35 would be the only figure on the document with satang in it.
-       * An *absolute* entry is not rounded — ฿8,500.50 is what the human promised, and the
-       * system's job is to record promises, not to tidy them.
+       * The sign rule and the arithmetic — including the rounding to the whole baht — are both
+       * `@wewin/core/discount`'s, so the dashboard's preview of this same keystroke is the same
+       * function and not a second opinion about it.
        */
-      const reduced = computed - divRoundHalfUp(computed * BigInt(bp), BP);
-      return { kind: 'money', overrideThbMinor: roundToUnit(reduced, THB_ROUND_TO_MINOR) };
-    }
+      return { kind: 'money', overrideThbMinor: priceAfterPercentDiscount(computed, percentBp(input)) };
 
     case 'discount_amount': {
       const off = magnitude(input);
@@ -234,26 +236,36 @@ function absolute(input: NormaliseInput): bigint {
 function magnitude(input: NormaliseInput): bigint {
   const { sign, digits, isPercent } = scan(input.enteredValueText, 'ส่วนลด');
   if (isPercent) throw new EntryError('ช่องนี้รับส่วนลดเป็นจำนวนเงิน ไม่ใช่เปอร์เซ็นต์');
-  refuseASurcharge(sign);
-  return scaled(digits, MINOR_DECIMALS, 'ส่วนลด');
+
+  return ruled(discountMinor(sign, scaled(digits, MINOR_DECIMALS, 'ส่วนลด')));
 }
 
 /** A discount written as a percentage, in basis points. */
-function discountBp(input: NormaliseInput): number {
+function percentBp(input: NormaliseInput): bigint {
   const { sign, digits, isPercent } = scan(input.enteredValueText, 'ส่วนลด');
   if (!isPercent) throw new EntryError('ช่องนี้รับส่วนลดเป็นเปอร์เซ็นต์ เช่น "-15%"');
-  refuseASurcharge(sign);
 
-  const bp = Number(scaled(digits, BP_DECIMALS, 'ส่วนลด'));
-  if (bp > Number(BP)) throw new EntryError('ส่วนลดเกิน 100% — ยอดติดลบเป็นการคืนเงิน ไม่ใช่ส่วนลด');
-  return bp;
+  return ruled(discountBpRule(sign, scaled(digits, BP_DECIMALS, 'ส่วนลด')));
 }
 
-function refuseASurcharge(sign: Sign): void {
-  if (sign === 'positive') {
-    throw new EntryError('ช่องส่วนลดใช้เพิ่มราคาไม่ได้ — ค่าบริการเพิ่มเติมให้เปิดเป็นรายการใหม่');
-  }
+/**
+ * The shared rule's verdict, in this file's voice.
+ *
+ * `@wewin/core/discount` returns a reason code and no prose, deliberately: the same refusal has
+ * to arrive under a text box in the dashboard as a Thai sentence and out of a route here as a
+ * 422. One rule, two voices — and the mapping is exhaustive over `DiscountRefusal`, so a third
+ * reason added to the rule fails to compile here rather than falling through as a generic error.
+ */
+function ruled(result: DiscountRule<bigint>): bigint {
+  if (result.ok) return result.value;
+
+  throw new EntryError(REFUSAL_TH[result.refusal]);
 }
+
+const REFUSAL_TH: Readonly<Record<DiscountRefusal, string>> = {
+  surcharge: 'ช่องส่วนลดใช้เพิ่มราคาไม่ได้ — ค่าบริการเพิ่มเติมให้เปิดเป็นรายการใหม่',
+  above_full: 'ส่วนลดเกิน 100% — ยอดติดลบเป็นการคืนเงิน ไม่ใช่ส่วนลด',
+};
 
 function days(input: NormaliseInput): number {
   const { sign, digits, isPercent } = scan(input.enteredValueText, 'จำนวนวัน');

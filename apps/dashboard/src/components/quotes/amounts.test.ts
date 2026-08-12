@@ -8,6 +8,7 @@ import {
   readBaht,
   readCharge,
   readDays,
+  readDiscountBaht,
   readPercentBp,
   readQty,
   readSignedBaht,
@@ -105,13 +106,38 @@ describe('percent', () => {
     expect(value(readPercentBp('100'))).toBe(10_000n);
   });
 
-  it('keeps the sign, because an edit after a factory bounce is usually more expensive', () => {
-    expect(value(readPercentBp('-5'))).toBe(-500n);
+  /*
+   * ⚠️ This test used to assert `-500n`, on the reasoning that a minus means "raise the price"
+   * — and `apps/api/src/quotes/entry.ts` read the same `-5` as five percent *off*. Two green
+   * suites, one money bug: `-5%` previewed a surcharge and stored a discount. The sign rule is
+   * `@wewin/core/discount`'s now, and a discount box only discounts.
+   */
+  it('takes the magnitude, because a discount box only discounts', () => {
+    expect(value(readPercentBp('-5'))).toBe(500n);
+    expect(value(readPercentBp('-7.5'))).toBe(750n);
+    expect(value(readPercentBp('-5'))).toBe(value(readPercentBp('5')));
+  });
+
+  it('refuses an explicit surcharge by name rather than as an unreadable figure', () => {
+    const refused = readPercentBp('+5');
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reasonTh).toContain('เพิ่มราคาไม่ได้');
   });
 
   it('refuses a discount that changes nothing and one that would go below zero', () => {
     expect(readPercentBp('0').ok).toBe(false);
     expect(readPercentBp('101').ok).toBe(false);
+    expect(readPercentBp('-101').ok).toBe(false);
+  });
+
+  it('reads a money discount as a magnitude too, and refuses a surcharge in that box', () => {
+    expect(value(readDiscountBaht('291'))).toBe(29_100n);
+    expect(value(readDiscountBaht('-291'))).toBe(29_100n);
+    expect(value(readDiscountBaht('1,234.50'))).toBe(123_450n);
+
+    const refused = readDiscountBaht('+291');
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reasonTh).toContain('เพิ่มราคาไม่ได้');
   });
 
   it('renders basis points without inventing trailing zeros', () => {

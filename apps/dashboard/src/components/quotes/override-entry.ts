@@ -1,6 +1,15 @@
+import { priceAfterPercentDiscount } from '@wewin/core/discount';
 import { divRoundHalfUp } from '@wewin/core/money';
 
-import { baht, percentText, readBaht, readDays, readPercentBp, type ParseResult } from './amounts';
+import {
+  baht,
+  percentText,
+  readBaht,
+  readDays,
+  readDiscountBaht,
+  readPercentBp,
+  type ParseResult,
+} from './amounts';
 import { ENTRY_MODES_BY_ANCHOR, type OverrideAnchorWire, type OverrideEntryModeWire } from './quote-wire';
 
 /**
@@ -23,9 +32,14 @@ import { ENTRY_MODES_BY_ANCHOR, type OverrideAnchorWire, type OverrideEntryModeW
  *   CHECK in `packages/db/src/schema/quote.ts`. Without them the same refusal arrives as
  *   SQLSTATE 23514 translated into prose, attached to no field.
  *
- *   **a preview** — typing `5` into a percent box and watching `฿8,351.45` appear is what
+ *   **a preview** — typing `5` into a percent box and watching `฿8,351` appear is what
  *   makes plan 7.9(ก)'s "absolute, never a delta" self-evident rather than a paragraph
  *   somebody has to be told. It is also what makes the per-unit box safe to offer.
+ *
+ *   ⚠️ That figure read `฿8,351.45` here for as long as the preview did its own arithmetic, and
+ *   the write stored `฿8,351.00`. A preview is allowed to be *superseded* by the server — see
+ *   below — but it is not allowed to be computed differently, and the difference between those
+ *   two sentences is `@wewin/core/discount`.
  *
  * ⚠️ **If this preview and the server ever disagree, the server is right and the screen will
  * show it on the next render**, because every write answers with the whole quote. That is the
@@ -106,6 +120,7 @@ export interface EntryPreview {
 const fail = <T>(reasonTh: string): ParseResult<T> => ({ ok: false, reasonTh });
 const ok = <T>(value: T): ParseResult<T> => ({ ok: true, value });
 
+/** Only `concessionText` still needs this — the discount arithmetic moved to `@wewin/core/discount`. */
 const BP_PER_UNIT = 10_000n;
 
 /**
@@ -118,17 +133,6 @@ const BP_PER_UNIT = 10_000n;
  * fails in.
  */
 const ENTERED_TEXT_MAX = 32;
-
-/**
- * The price after a percentage has been taken off it.
- *
- * `divRoundHalfUp` and not `Math.round`, for the reason plan 7.9(ง)(4) records with a number:
- * `Math.round(-1432.5)` is −1432 because it rounds toward +Infinity, and half_up means −1433.
- * Negative money is new in this phase — credits, reversals, a discount typed with the wrong
- * sign — so the rule is taken from core rather than restated.
- */
-const afterPercent = (computedMinor: bigint, bp: bigint): bigint =>
-  computedMinor - divRoundHalfUp(computedMinor * bp, BP_PER_UNIT);
 
 /**
  * What one entry mode means against one baseline.
@@ -233,11 +237,22 @@ function readMoneyEntry(
     case 'percent_discount': {
       const parsed = readPercentBp(text);
       if (!parsed.ok) return parsed;
-      return ok(afterPercent(context.computedThbMinor, parsed.value));
+      /*
+       * ⭐ THE PREVIEW AND THE WRITE ARE THE SAME FUNCTION, and that is the point of the import.
+       *
+       * This line used to be a local `afterPercent`, and it disagreed with the server twice over:
+       * on the sign (it read `-5` as "add five percent") and on the rounding (it stopped at
+       * ฿8,351.45 where the write stored ฿8,351.00). `priceAfterPercentDiscount` is what
+       * `apps/api/src/quotes/entry.ts` calls with the same two arguments, so the preview cannot
+       * promise a figure the write will not produce.
+       */
+      return ok(priceAfterPercentDiscount(context.computedThbMinor, parsed.value));
     }
 
     case 'discount_amount': {
-      const parsed = readBaht(text);
+      /* `readDiscountBaht` and not `readBaht`: `-291` is ฿291 off, which is the server's reading
+       * of the same keystroke and was not this screen's. */
+      const parsed = readDiscountBaht(text);
       if (!parsed.ok) return parsed;
       return ok(context.computedThbMinor - parsed.value);
     }

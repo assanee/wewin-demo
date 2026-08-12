@@ -1,3 +1,4 @@
+import { priceAfterPercentDiscount } from '@wewin/core/discount';
 import { describe, expect, it } from 'vitest';
 
 import { EntryError, normaliseCharge, normaliseEntry } from '../../src/quotes/entry';
@@ -142,6 +143,29 @@ describe('a discount may only discount', () => {
   it('rounds a percentage to the whole baht, which is what every computed total already is', () => {
     /* 7% of ฿8,791.00 is ฿615.37 exactly; ฿8,175.63 rounds half-up to ฿8,176. */
     expect(money('percent_discount', '7%')).toEqual({ kind: 'money', overrideThbMinor: 817_600n });
+  });
+
+  /**
+   * ⭐ The other half of the pair in `apps/dashboard/.../override-entry.test.ts`.
+   *
+   * The convention above was stated here in a comment *and* in the dashboard's `amounts.ts`, in
+   * opposite directions, and both suites were green: `-5%` on a ฿8,791.00 line previewed ฿9,230.55
+   * and stored ฿8,351.00. This asserts the figure comes out of `@wewin/core/discount` rather than
+   * out of arithmetic in this file that happens to agree with it today — the screen asserts the
+   * same call with the same arguments, so the two cannot drift apart again without one failing.
+   */
+  it('takes its figure from the shared rule, not from arithmetic of its own', () => {
+    for (const typed of ['5%', '-5%']) {
+      expect(money('percent_discount', typed)).toEqual({
+        kind: 'money',
+        overrideThbMinor: priceAfterPercentDiscount(879_100n, 500n),
+      });
+    }
+
+    expect(money('percent_discount', '-5%')).toEqual({
+      kind: 'money',
+      overrideThbMinor: 835_100n,
+    });
   });
 });
 

@@ -29,6 +29,7 @@
     "./rules": "./dist/data/ruleBuilders.js",
     "./fixtures": "./dist/data/catalog.js",
     "./money": "./dist/money.js",
+    "./discount": "./dist/discount.js",
     "./vat": "./dist/vat.js",
     "./fx": "./dist/fx.js",
     "./quotation": "./dist/quotation.js",

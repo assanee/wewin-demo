@@ -1,4 +1,5 @@
 import { MAX_QTY, MIN_QTY } from '@wewin/core/constants';
+import { discountBp, discountMinor, type DiscountRefusal, type TypedSign } from '@wewin/core/discount';
 import { formatLength } from '@wewin/core/format';
 import type { AuthoredUnit } from '@wewin/core';
 
@@ -45,6 +46,25 @@ const fail = <T>(reasonTh: string): ParseResult<T> => ({ ok: false, reasonTh });
 
 const MINOR_PER_BAHT = 100n;
 const BP_PER_PERCENT = 100n;
+
+/* ------------------------------------------------------------------ *
+ * The discount convention, borrowed whole from @wewin/core
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⚠️ **Both discount boxes on this screen defer to `@wewin/core/discount` for what a sign
+ * means.** They used to decide it here, in a comment, in the opposite direction from the server's
+ * comment — which is how `-5%` came to preview a five percent surcharge and store a five percent
+ * discount. The two functions below are the whole of this file's remaining involvement: turn a
+ * matched sign into the rule's vocabulary, and turn the rule's verdict into a Thai sentence.
+ */
+const signOf = (sign: string): TypedSign =>
+  sign === '-' ? 'negative' : sign === '+' ? 'positive' : 'unsigned';
+
+const REFUSAL_TH: Readonly<Record<DiscountRefusal, string>> = {
+  surcharge: 'ช่องส่วนลดใช้เพิ่มราคาไม่ได้ — ค่าบริการเพิ่มเติมให้เปิดเป็นรายการใหม่',
+  above_full: 'ส่วนลดเกิน 100% จะทำให้ยอดติดลบ',
+};
 
 /* ------------------------------------------------------------------ *
  * Money — satang stored, baht typed
@@ -111,6 +131,31 @@ export function readCharge(text: string): ParseResult<bigint> {
   return parsed;
 }
 
+/** As `MONEY`, but `+` is matched so the shared rule can refuse it by name rather than as a typo. */
+const DISCOUNT_MONEY = /^([-+]?)(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{1,2}))?$/;
+
+/**
+ * Satang **off**, from a discount typed as money.
+ *
+ * `'291'` and `'-291'` are both ฿291 off, and `'+291'` is a surcharge. That is `discountMinor`'s
+ * rule and not this file's, for the same reason `readPercentBp` no longer owns the percentage
+ * one: `readBaht` used to refuse `-291` outright here while the server read it as ฿291 off, so
+ * the two discount boxes disagreed about a minus sign in opposite directions.
+ */
+export function readDiscountBaht(text: string): ParseResult<bigint> {
+  const trimmed = clean(text);
+  if (trimmed === '') return fail('กรอกจำนวนเงิน');
+
+  const match = DISCOUNT_MONEY.exec(trimmed);
+  if (match === null) return fail('กรอกเป็นจำนวนเงินบาท ทศนิยมไม่เกิน 2 ตำแหน่ง');
+
+  const [, sign = '', whole = '0', fraction = ''] = match;
+  const magnitude = BigInt(whole.replace(/,/g, '')) * MINOR_PER_BAHT + BigInt(fraction.padEnd(2, '0'));
+
+  const ruled = discountMinor(signOf(sign), magnitude);
+  return ruled.ok ? ok(ruled.value) : fail(REFUSAL_TH[ruled.refusal]);
+}
+
 const groups = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /**
@@ -151,18 +196,25 @@ export function bahtInput(minor: bigint): string {
 }
 
 /* ------------------------------------------------------------------ *
- * Percent — basis points, and the sign means something
+ * Percent — basis points, and @wewin/core decides what the sign means
  * ------------------------------------------------------------------ */
 
-const PERCENT = /^(-?)(\d+)(?:\.(\d{1,2}))?$/;
+/**
+ * A sign, a whole part and at most two decimals. `+` is *matched* rather than rejected by the
+ * regex, so that an explicit surcharge is refused by the shared rule with the reason that names
+ * it — see `readPercentBp`. Left out, `+5` failed as "not a percentage", which is a lie about
+ * what is wrong with it.
+ */
+const PERCENT = /^([-+]?)(\d+)(?:\.(\d{1,2}))?$/;
 
 /**
  * Basis points, from a percentage typed into a box labelled **ส่วนลด**.
  *
- * ⚠️ The sign is not decoration. A positive figure reduces the price and a negative one
- * raises it, because plan 7.2 says an edit after a factory bounce is usually *more*
- * expensive, and a discount field that silently took the magnitude would turn "−5" — a
- * salesperson's shorthand for adding five percent — into a five percent giveaway.
+ * ⚠️ **The sign rule is not this file's, and it used to be.** It read the sign as a *direction* —
+ * `-5` meaning "add five percent" — while `apps/api/src/quotes/entry.ts` read the same keystroke
+ * as five percent off. Each file carried a comment asserting its own reading, and on a ฿8,791.00
+ * line `-5%` therefore previewed ฿9,230.55 and stored ฿8,351.00. `@wewin/core/discount` holds the
+ * rule now, this function only reports what was typed, and the disagreement is not expressible.
  *
  * Two decimal places, because 7.5% is an ordinary thing to agree and 750 bp is the figure
  * the rest of this system counts in.
@@ -175,16 +227,11 @@ export function readPercentBp(text: string): ParseResult<bigint> {
   if (match === null) return fail('กรอกเป็นเปอร์เซ็นต์ ทศนิยมไม่เกิน 2 ตำแหน่ง');
 
   const [, sign = '', whole = '0', fraction = ''] = match;
-  const bp = BigInt(whole) * BP_PER_PERCENT + BigInt(fraction.padEnd(2, '0'));
-  if (bp === 0n) return fail('ส่วนลด 0% ไม่เปลี่ยนอะไร');
-  /*
-   * A hundred percent off is a free window, which is a decision somebody may genuinely
-   * make — but past it the price is negative, and `readBaht` above says why that is not a
-   * price. Refusing here means the message names the percentage rather than the satang.
-   */
-  if (bp > 10_000n) return fail('ส่วนลดเกิน 100% จะทำให้ยอดติดลบ');
+  const magnitude = BigInt(whole) * BP_PER_PERCENT + BigInt(fraction.padEnd(2, '0'));
+  if (magnitude === 0n) return fail('ส่วนลด 0% ไม่เปลี่ยนอะไร');
 
-  return ok(sign === '-' ? -bp : bp);
+  const ruled = discountBp(signOf(sign), magnitude);
+  return ruled.ok ? ok(ruled.value) : fail(REFUSAL_TH[ruled.refusal]);
 }
 
 /** `750` → `7.5`. Trailing zeros dropped, so 500 bp reads as `5` and not `5.00`. */
