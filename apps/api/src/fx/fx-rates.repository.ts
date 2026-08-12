@@ -19,8 +19,13 @@ export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
  *
  * `id` is not used by the arithmetic and is selected anyway: it is the only thing that names
  * *which* row a pinned figure came from, and a quotation that cannot be traced back to a row
- * in an append-only table is a figure nobody can re-check. `source` and `fetchedAt` are left
- * off because neither changes an answer — `fetchedAt` is the ordering key, not an input.
+ * in an append-only table is a figure nobody can re-check. `source` is still left off, because
+ * it changes no answer.
+ *
+ * ⚠️ `fetchedAt` **was** left off, on the same "changes no answer" reasoning and with the note
+ * *"the ordering key, not an input"*. That was right while nothing measured age and wrong the
+ * moment something did — not because age is measured on it (it is not; see `staleness.ts`) but
+ * because it is half of the *diagnosis*. See the field's own note below.
  */
 export interface FxSnapshotRow {
   readonly id: string;
