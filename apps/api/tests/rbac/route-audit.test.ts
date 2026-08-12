@@ -437,6 +437,7 @@ describe('boot-time route audit', () => {
       'POST /admin/catalog/products [permissions]',
       'POST /admin/catalog/products/:productId/draft [permissions]',
       'POST /admin/catalog/products/:productId/draft/publish [permissions]',
+      'POST /admin/fx/sync [permissions]',
       'POST /admin/groups [permissions]',
       'POST /admin/media [permissions]',
       'POST /admin/notifications/:notificationId/retry [permissions]',
