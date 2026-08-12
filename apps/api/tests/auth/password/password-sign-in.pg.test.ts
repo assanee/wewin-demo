@@ -219,7 +219,13 @@ describeWithPg('signing in with a password', () => {
     const body = answer.body as { error?: { messageKey?: string; message?: string } };
 
     expect(body.error?.messageKey).toBe('error.auth.credentials_rejected');
-    expect(body.error?.message).toBe('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+    /*
+     * ⚠️ Was 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'. The sentence names both namespaces now, because this
+     * field takes either and the storefront registers telephone numbers only — a customer with no
+     * email on the account was being told their email was wrong. It still names neither *as the
+     * one that failed*, which is the property `username.ts` requires.
+     */
+    expect(body.error?.message).toBe('เบอร์โทรศัพท์ อีเมล หรือรหัสผ่านไม่ถูกต้อง');
   });
 
   it('upgrades a weak hash in the database, and the new one still opens the account', async () => {

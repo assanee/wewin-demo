@@ -165,7 +165,8 @@ export const de: PartialUiCatalogue = {
   'configure.area.line': (p, f) =>
     `Fläche ${f.area(p.areaSqUm)} m² · mindestens berechnet ${f.area(p.minBillableSqUm)} m²`,
   'configure.group.affectsSku': 'wirkt sich auf die Artikelnummer aus',
-  'configure.futureQuote': 'Die Angebotsanfrage folgt in der nächsten Version.',
+  'configure.quoteNext':
+    'Fügen Sie es Ihrer Angebotsliste hinzu und fordern Sie dort ein Angebot an.',
   'configure.breakdown.title': 'Preisaufstellung',
   'configure.qty': 'Menge',
   'configure.qty.decrease': 'Ein Stück entfernen',
@@ -490,7 +491,7 @@ export const de: PartialUiCatalogue = {
   'settings.nav': 'Darstellung',
   'settings.heading': 'Darstellungseinstellungen',
   'settings.intro':
-    'Wählen Sie, wie diese Website für Sie geschrieben wird: Sprache, Maßeinheit und Währung. Alle drei betreffen nur die Darstellung — die Maße, die Sie eingeben, und die Preise, die wir berechnen, ändern sich dadurch nicht.',
+    'Wählen Sie, wie diese Website für Sie geschrieben wird: Sprache und Maßeinheit. Beide betreffen nur die Darstellung — die Maße, die Sie eingeben, und die Preise, die wir berechnen, ändern sich dadurch nicht. Die Währung lässt sich auf dieser Seite nicht wählen; die Begründung steht weiter unten.',
   'settings.meta.title': 'Darstellungseinstellungen',
 
   'settings.language.legend': 'Sprache, in der diese Website geschrieben ist',
@@ -500,7 +501,7 @@ export const de: PartialUiCatalogue = {
   'settings.currency.legend': 'Währung, in der Preise angezeigt werden',
   'settings.currency.fixed': (p) => `Immer ${p.currency}, in jeder Sprache`,
   'settings.currency.why':
-    'Jeder Preis wird in Thai-Baht berechnet und gespeichert, und Produktseiten werden einmal erzeugt und von allen Besuchenden geteilt — eine personenbezogene Währung lässt sich darauf nicht anwenden. Ein Angebot für Kundschaft im Ausland in deren eigener Währung ist eine eigene Sache und noch nicht freigeschaltet.',
+    'Jeder Preis wird in Thai-Baht berechnet und gespeichert, und Produktseiten werden einmal erzeugt und von allen Besuchenden geteilt — eine personenbezogene Währung lässt sich darauf nicht anwenden. Beim Angebot ist es anders: Für ein Zielland, das wir in einer anderen Währung anbieten, wird es in dieser Währung ausgestellt, zum auf dem Dokument festgeschriebenen Kurs, und in Baht bezahlt.',
 
   'settings.storage.local': 'Nur in diesem Browser gespeichert',
   'settings.storage.account': (p, f) => `Am ${f.date(p.at)} in Ihrem Konto gespeichert`,

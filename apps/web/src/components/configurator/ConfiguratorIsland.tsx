@@ -540,7 +540,15 @@ function ConfigureProduct({
 
           <div className="md:hidden">{specTable}</div>
 
-          <p className="text-caption text-chalk-3">{t('configure.futureQuote')}</p>
+          {/*
+            ⚠️ This line said `configure.futureQuote` — *"requesting a quotation will be added
+            in the next version"* — for the whole of the round after that step shipped, on all
+            81 product pages, directly under the button that adds the piece to the list it is
+            requested from. `QuoteScreen` removed its own copy of the apology and this one was
+            missed, which is the ordinary way a sentence outlives what it describes: nothing
+            fails, and the only reader who can tell is the customer being talked out of buying.
+          */}
+          <p className="text-caption text-chalk-3">{t('configure.quoteNext')}</p>
 
           <div>
             {/* A document load, not a client transition — `ButtonLink` is a plain `<a>`

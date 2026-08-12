@@ -16,11 +16,17 @@ import { ProfileService } from './profile.service';
  * Nothing is exported either. Two features will eventually want to *read* a preference and
  * neither should do it through this module:
  *
- *   **the notification worker** (plan 10.6, live half) fills
- *   `RecipientLocaleSources.accountLocale`, which is a column in its own query. That seam is
- *   named in `src/i18n/locales.ts` and its own comment says the change is "a repository query
- *   and not this file's shape" — a join, not an injected service, because the worker reads
- *   rows in batches and a per-row service call is a per-row round trip.
+ *   **the notification worker** will one day fill `RecipientLocaleSources.accountLocale`, which
+ *   is a column in its own query. That seam is named in `src/i18n/locales.ts` and its own
+ *   comment says the change is "a repository query and not this file's shape" — a join, not an
+ *   injected service, because the worker reads rows in batches and a per-row service call is a
+ *   per-row round trip.
+ *
+ *   ⚠️ **"Plan 10.6, live half" is what this used to call it, and it is not live.** The join has
+ *   never been written: `NotificationsRepository` selects `contact_locale` and nothing from
+ *   `user_preferences`, and `deliver` passes only `contactLocale`. `preference-effects.ts`
+ *   reported that seam as `honoured: true` for a round, which put a tick on a customer's
+ *   settings page beside "the language of emails we send you". That cell is `false` now.
  *
  *   **`order-document.ts`** must not read it at all. A document uses the locale pinned at
  *   `submit_for_payment` (plan 10.6, frozen half), and an exported `ProfileService` is

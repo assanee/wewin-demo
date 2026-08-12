@@ -9,7 +9,7 @@ import {
 /**
  * ─────────────────────────────────────────────────────────────────────────────
  * WHAT A PREFERENCE ACTUALLY CHANGES — three preferences × four surfaces, all
- * twelve stated, including the eight that are `false`.
+ * twelve stated, including the ten that are `false`.
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * This table exists because of one failure mode, and it is the likeliest thing this round
@@ -40,6 +40,19 @@ import {
  *   into a shared cache entry is served to everybody behind them, and nothing errors — the
  *   numbers are all correct, they are just answers to a question the second reader did not
  *   ask.
+ *
+ * ── ⚠️ A third rule, learnt the hard way: `true` means *today* ────────────────────
+ *
+ * Eight was ten. `locale/notification` and `locale/dashboard` were both `true` on the strength
+ * of a mechanism that was **one line away** rather than one that existed — a column that was
+ * ready to be joined, a `setPreferredLocale` that was ready to be called. Each cell carried an
+ * honest comment saying so, and each rendered a tick on a customer's settings page all the
+ * same. Nobody reads this file from that page.
+ *
+ * So: a cell is `true` when a value stored by `PUT /me/preferences` is read, at runtime, by the
+ * code that produces that surface — traceable from this line to the read. "Would work once
+ * somebody joins the column" is `false` with the reason in the comment, which is the state this
+ * table is *for*.
  */
 
 /** `true` when a preference of this kind changes what this surface shows. */
@@ -51,17 +64,27 @@ const EFFECTS: EffectTable = {
    */
   locale: {
     /*
-     * ✅ Plan 10.6's live half, and the seam it was written against is now fillable.
+     * ❌ **Was `true`, and the row was the lie this whole table exists to prevent.**
      *
-     * `RecipientLocaleSources.accountLocale` in `src/i18n/locales.ts` carries the comment
-     * *"SEAM: `users.preferred_locale`, which does not exist yet"*. It exists now, as
-     * `user_preferences.preferred_locale`. Filling that seam is a change to
-     * `NotificationsRepository`'s query and to nothing else — by that file's own design —
-     * and that repository is not this round's to edit. **Reported, not claimed:** this row
-     * is `true` because the preference is the highest-priority source `preferredLocaleOf`
-     * consults, and the join that hands it in is the one line still owed.
+     * The previous comment argued it this way: the column exists, `preferredLocaleOf` consults
+     * `accountLocale` first, and "the join that hands it in is the one line still owed" —
+     * *"reported, not claimed"*. But this table is not read by an engineer tracking owed work.
+     * It is rendered, row by row, on `/[locale]/settings`, where `honoured: true` draws a tick
+     * beside *"ภาษาในอีเมลแจ้งเตือน"*. A tick is a promise in the present tense, and the
+     * present tense was wrong: `NotificationWorkerService.deliver` calls
+     * `preferredLocaleOf({ contactLocale })` and passes **no `accountLocale` at all**, because
+     * `NotificationsRepository` never selects `user_preferences.preferred_locale`. A signed-in
+     * customer who sets `en` here is still written to in the language of the form they filled.
+     *
+     * So the row states what happens rather than what is nearly true, and the screen prints
+     * "ยังไม่มีผล" — which is a sentence the reader can act on, where the tick was not.
+     *
+     * ⚠️ The one line to change is still one line, and it is **not in this file**: select
+     * `preferred_locale` in `NotificationsRepository`'s claim query, carry it on
+     * `ClaimedNotification`, and pass it as `accountLocale` in `deliver`. Flip this cell in the
+     * commit that does that — and not before, which is the mistake being corrected here.
      */
-    notification: true,
+    notification: false,
     /*
      * ❌ Never. Plan 10.6, and the one row in this table that must not change without a
      * lawyer and an accountant in the room: a document is a promise made in a language, and
@@ -81,11 +104,26 @@ const EFFECTS: EffectTable = {
      */
     storefront: true,
     /*
-     * ✅ The dashboard sends `x-wewin-locale` on every call and renders its own chrome in
-     * Thai. `lib/i18n/locale.ts` has carried a ⚠️ for a round saying `setPreferredLocale`
-     * is called by nothing; the profile screen is what calls it.
+     * ❌ **Was `true` on a claim that never landed.** The old comment said the dashboard sends
+     * `x-wewin-locale` on every call and that "the profile screen is what calls
+     * `setPreferredLocale`". Neither half survives being checked:
+     *
+     *   · `apps/dashboard/src/lib/i18n/locale.ts` still carries its own ⚠️ — *"today it can
+     *     only ever return Thai"* — and `setPreferredLocale` is called by **nothing** in that
+     *     app. There is no language control on any dashboard screen. `grep` is the whole proof.
+     *
+     *   · Even if there were, this preference could not reach it. `preferredLocale()` reads
+     *     `localStorage['wewin.dashboard.locale']` in a staff browser; this row is a *customer's*
+     *     `user_preferences.preferred_locale` in Postgres. They are not the same storage and
+     *     nothing copies one into the other — and a customer's language is not the language a
+     *     Thai salesperson wants their own screen in anyway.
+     *
+     * That app argues its own reason for not shipping the control yet: the API's English
+     * catalogue covers ~12 of ~100 keys, so a staff member who picked English would get twelve
+     * English sentences among ninety Thai ones. That reasoning is sound; the tick claiming it
+     * had already happened was not.
      */
-    dashboard: true,
+    dashboard: false,
   },
 
   /**
@@ -94,15 +132,26 @@ const EFFECTS: EffectTable = {
    * Nine currencies are storable and not one of them is rendered anywhere today. This is
    * not an oversight to be fixed in the screen; it is four separate decisions that happen to
    * agree, and a preferences form that implied otherwise would be lying in a currency.
+   *
+   * ⚠️ Not to be confused with the foreign-currency *quotation*, which ships. A destination with
+   * `tax_countries.fx_currency` set is quoted in that currency at a rate frozen on the document.
+   * That is the destination's currency, chosen by the company; `display_currency` is the
+   * reader's, and no surface consults it. Four `false`s, unchanged by that feature landing.
    */
   currency: {
     /*
      * ❌ Every amount in this system is THB minor units in `bigint` (`orders_currency_is_thb`),
-     * and plan 13 keeps the whole foreign-currency line closed until the owner answers five
-     * questions — whether an account exists at all, the real spread per currency measured
-     * from five to ten actual transfers, the tolerance, the quote lifetime, OUR/SHA/BEN.
-     * Rendering a converted amount in a notification would require a rate, and inventing one
-     * is precisely what plan 13 exists to stop.
+     * and rendering a converted amount in a notification would require a rate this message does
+     * not have.
+     *
+     * ⚠️ This comment used to say "plan 13 keeps the whole foreign-currency line closed until
+     * the owner answers five questions". Half of that shipped: `tax_countries.fx_currency` +
+     * `QuotationRateService` do quote a configured destination in its own currency, and SG is
+     * live. It changes nothing about this cell, and the distinction is worth keeping straight —
+     * **a document's currency is a property of the destination, not of whoever is reading it.**
+     * A rate is resolved once, inside the submit, and frozen on the document; a notification
+     * re-rendered in the recipient's preferred currency would need a rate at *send* time, which
+     * is a different and later number. That is why this stays `false` even now.
      */
     notification: false,
     /* ❌ Pinned with the other seven things frozen at submit (plan 7.13). */

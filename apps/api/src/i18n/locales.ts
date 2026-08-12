@@ -119,10 +119,19 @@ export function pinnedLocaleOf(pinned: string): SupportedLocale {
  */
 export interface RecipientLocaleSources {
   /**
-   * SEAM: `users.preferred_locale`, which does not exist yet.
+   * SEAM: the signed-in customer's stored language — `user_preferences.preferred_locale`.
    *
-   * An explicit nullable input rather than an omitted one, so that adding the column is a
-   * change to a repository query and not to this file's shape.
+   * An explicit nullable input rather than an omitted one, so that filling it is a change to a
+   * repository query and not to this file's shape.
+   *
+   * ⚠️ **The column exists; nothing passes it.** This said "which does not exist yet" until the
+   * preferences resource shipped it. What is still owed is the *join*:
+   * `NotificationsRepository` selects `contact_locale` and no preference, and
+   * `NotificationWorkerService.deliver` calls `preferredLocaleOf({ contactLocale })` alone. So
+   * every caller of this interface leaves this field `undefined` today, and
+   * `profile/preference-effects.ts` says `locale/notification: false` because of it — it said
+   * `true` for a round on the strength of this seam being fillable, which put a tick on a
+   * customer's settings page beside a promise nothing kept.
    */
   readonly accountLocale?: string | null;
   /** `orders.contact_locale` — `NOT NULL DEFAULT 'th'`; a guest has no account to hold one. */

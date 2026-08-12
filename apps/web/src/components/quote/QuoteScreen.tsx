@@ -178,9 +178,13 @@ export function QuoteScreen() {
         <span className="numeric text-display text-lime">{f.baht(total)}</span>
       </div>
       {/*
-        ⭐ `configure.futureQuote` used to be here, and it was telling the truth: everything
+        ⭐ The old `configure.futureQuote` used to be here, and it was telling the truth: everything
         downstream of a submit existed and there was no way to reach it. The form below is the
         step that was missing, so the apology is gone.
+
+        ⚠️ It was removed *here only*. The product page kept rendering the same key for another
+        round — see `ConfiguratorIsland`, where it is now `configure.quoteNext`. Deleting one
+        copy of a sentence is not the same as retiring it.
       */}
     </>
   );
