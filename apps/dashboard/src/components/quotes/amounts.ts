@@ -215,13 +215,28 @@ export function bahtInput(minor: bigint): string {
  * Percent — basis points, and @wewin/core decides what the sign means
  * ------------------------------------------------------------------ */
 
-/** Thai prose for `normalisePercentEntry`'s reasons. The rule is arithmetic; this is the sentence. */
+/**
+ * Thai prose for `normalisePercentEntry`'s reasons. The rule is arithmetic; this is the sentence.
+ *
+ * ⚠️ **Every one of these says what to type.** The owner's instruction was
+ * *"ถ้าใส่ผิดให้ขึ้นแดงเลยจะได้กรอกรูปแบบเดียว ไม่งงด้วย"*, and a refusal that only reports that the
+ * input is wrong leaves the person guessing at the format — which is the confusion being named, not
+ * a smaller version of it. So each message ends in the example `5` and what it means, and the two
+ * commonest mistakes get the specific instruction rather than a generic one.
+ */
 const PERCENT_REFUSAL_TH: Readonly<Record<PercentEntryRefusal, string>> = {
-  empty: 'กรอกเปอร์เซ็นต์',
-  unreadable: 'กรอกเป็นเปอร์เซ็นต์ ทศนิยมไม่เกิน 2 ตำแหน่ง',
-  no_change: 'ส่วนลด 0% ไม่เปลี่ยนอะไร',
+  empty: 'กรอกเป็นตัวเลขเท่านั้น เช่น 5 = ลด 5%',
+  signed: 'ไม่ต้องใส่เครื่องหมาย + หรือ − — ช่องนี้เป็นส่วนลดอยู่แล้ว กรอก 5 = ลด 5%',
+  percent_typed: 'ไม่ต้องพิมพ์ % — ช่องนี้เป็น % อยู่แล้ว กรอก 5 = ลด 5%',
+  unreadable: 'กรอกเป็นตัวเลขเท่านั้น ทศนิยมไม่เกิน 2 ตำแหน่ง เช่น 5 หรือ 7.5',
+  no_change: 'ส่วนลด 0% ไม่เปลี่ยนอะไร — กรอกตัวเลขมากกว่า 0 เช่น 5 = ลด 5%',
+  above_full: 'ส่วนลดเกิน 100% จะทำให้ยอดติดลบ — กรอกระหว่าง 0.01 ถึง 100',
+  /*
+   * Unreachable through `normalisePercentEntry`: `signed` catches a `+` first. Present because
+   * `discountBp` is typed to be able to say it, and an exhaustive map is what makes a new reason
+   * code fail to compile here rather than fall through as a blank sentence under the box.
+   */
   surcharge: SURCHARGE_TH,
-  above_full: 'ส่วนลดเกิน 100% จะทำให้ยอดติดลบ',
 };
 
 /**

@@ -182,7 +182,11 @@ describe('a discount may only discount', () => {
    * is where "the number shown equals the number applied" is nailed down for the real inputs.
    */
   it('accepts every wire text the dashboard produces, and agrees on the figure', () => {
-    for (const typed of ['5', '-5', '5%', '-5%', ' 5 ', '5 %', '7.5', '-3.31', '100']) {
+    /*
+     * The accepted format is one: a plain positive number. `-5`, `5%` and `-5%` are refused by the
+     * screen now — see the refusal test below — so the forms walked here are the forms that exist.
+     */
+    for (const typed of ['5', ' 5 ', '7.5', '3.31', '0.05', '15', '100']) {
       const entry = normalisePercentEntry(typed);
       if (!entry.ok) throw new Error(`the screen would refuse ${typed}: ${entry.refusal}`);
 
@@ -197,7 +201,26 @@ describe('a discount may only discount', () => {
     }
   });
 
-  /* The forms the screen refuses never reach here — but if one did, it must not become a discount. */
+  /**
+   * ⚠️ **The server stays lenient and that is deliberate.** It still reads `-15%` as fifteen percent
+   * off, because `entered_value_text` rows written before the screen tightened say exactly that, and
+   * because a guard that only holds when the client is well-behaved is not a guard.
+   *
+   * The strictness is the *screen's*: one format, so a salesperson never has to hold a theory about
+   * what a minus means. This asserts the two layers disagree in the safe direction — the screen
+   * refuses more than the server does, so nothing the screen accepts can surprise the server.
+   */
+  it('still reads the signed forms the screen no longer sends', () => {
+    for (const typed of ['-5%', '5%']) {
+      expect(normalisePercentEntry(typed).ok, typed).toBe(false);
+      expect(money('percent_discount', typed), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: 835_100n,
+      });
+    }
+  });
+
+  /* A surcharge is refused at both layers, and always was. */
   it('refuses the surcharge form the screen also refuses', () => {
     for (const typed of ['+5', '+5%']) {
       expect(normalisePercentEntry(typed).ok, typed).toBe(false);

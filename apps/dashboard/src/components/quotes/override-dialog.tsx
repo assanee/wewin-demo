@@ -84,9 +84,22 @@ export function OverrideDialog({
   const [reasonCode, setReasonCode] = useState<OverrideReasonWire>('price_match');
   const [noteTh, setNoteTh] = useState('');
 
-  const parsed = text.trim() === '' ? null : preview(context, enteredAs, text);
-  const ready: EntryPreview | null = parsed !== null && parsed.ok ? parsed.value : null;
-  const error = parsed !== null && !parsed.ok ? parsed.reasonTh : undefined;
+  /*
+   * ⚠️ **No touched-tracking, so a wrong entry is red as it is typed rather than at save.**
+   *
+   * This read `text.trim() === '' ? null : preview(...)`, which meant an empty box showed nothing
+   * and a mistyped one only turned red once something parseable had been in it. The owner's
+   * instruction is that anything outside the accepted format goes red immediately —
+   * *"ถ้าใส่ผิดให้ขึ้นแดงเลย"* — and discovering the format at submit is the thing being fixed.
+   *
+   * `organisation/bank-account-dialog.tsx` is the precedent and states the same reasoning: it reads
+   * every field out of state "rather than tracking which one the person actually touched", so an
+   * empty new-account form opens red with Save already disabled. That is what caught a bad
+   * PromptPay id. `ready` is null for every refusal, and the Save button below is disabled on it.
+   */
+  const parsed = preview(context, enteredAs, text);
+  const ready: EntryPreview | null = parsed.ok ? parsed.value : null;
+  const error = parsed.ok ? undefined : parsed.reasonTh;
   /* `other` is a prompt for a sentence, not a way past the vocabulary — mirrors the CHECK. */
   const noteMissing = reasonCode === 'other' && noteTh.trim() === '';
 

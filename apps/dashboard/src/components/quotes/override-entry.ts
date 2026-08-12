@@ -170,7 +170,13 @@ export function preview(
   }
 
   const enteredValueText = text.trim();
-  if (enteredValueText === '') return fail('ยังไม่ได้กรอกค่า');
+  /*
+   * An empty box is refused by whichever reader the mode selects, not here. The blanket
+   * `ยังไม่ได้กรอกค่า` that used to sit at this line preempted all four of them, so the percent field
+   * could not say what to type — and since the dialog now shows a refusal from the moment it opens,
+   * that first sentence is the one doing the teaching. `readPercentEntry('')` answers
+   * "กรอกเป็นตัวเลขเท่านั้น เช่น 5 = ลด 5%"; `readBaht('')` answers "กรอกจำนวนเงิน".
+   */
   if (enteredValueText.length > ENTERED_TEXT_MAX) {
     return fail(`ยาวเกิน ${String(ENTERED_TEXT_MAX)} ตัวอักษร — ช่องนี้เก็บราคา ไม่ใช่คำอธิบาย`);
   }

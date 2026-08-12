@@ -108,53 +108,65 @@ describe('percent', () => {
     expect(bp('100')).toBe(10_000n);
   });
 
-  /*
-   * ⚠️ This test used to assert `-500n`, on the reasoning that a minus means "raise the price"
-   * — and `apps/api/src/quotes/entry.ts` read the same `-5` as five percent *off*. Two green
-   * suites, one money bug: `-5%` previewed a surcharge and stored a discount. The sign rule is
-   * `@wewin/core/discount`'s now, and a discount box only discounts.
-   */
-  it('takes the magnitude, because a discount box only discounts', () => {
-    expect(bp('-5')).toBe(500n);
-    expect(bp('-7.5')).toBe(750n);
-    expect(bp('-5')).toBe(bp('5'));
-  });
-
   /**
-   * ⭐ The `%` is a decoration on the field, so a salesperson sends `5`; the server requires a
+   * ⭐ The `%` is a decoration on the field, so a salesperson types `5`; the server requires a
    * literal `%`. The append happens in `@wewin/core/discount` and this asserts the screen gets the
-   * benefit of it — including that a sign is **never invented**, since `entered_value_text` is the
-   * record of what a person said.
+   * benefit of it — and that nothing else is added, since `entered_value_text` is the record of
+   * what a person said.
    */
-  it('sends the % the field only draws, and no sign the person did not type', () => {
+  it('sends the % the field only draws, and nothing else', () => {
     expect(value(readPercentEntry('5')).wireText).toBe('5%');
-    expect(value(readPercentEntry('-5')).wireText).toBe('-5%');
-    expect(value(readPercentEntry('5%')).wireText).toBe('5%');
     expect(value(readPercentEntry('7.5')).wireText).toBe('7.5%');
+    expect(value(readPercentEntry('  5  ')).wireText).toBe('5%');
     expect(value(readPercentEntry('5')).wireText).not.toContain('-');
   });
 
-  it('refuses an explicit surcharge and names the two routes that do raise a price', () => {
-    for (const typed of ['+5', '+5%']) {
+  /**
+   * ⚠️ **Two rounds of this file accepted a sign here, in both directions, and it now refuses one.**
+   *
+   * First it read `-5` as "raise the price by five percent"; then, once the convention was settled,
+   * as "five percent off" — the same figure as `5`. The owner has since asked for a single format
+   * with a visible refusal, because two spellings are two things a salesperson can believe about
+   * what they typed. The message has to *teach*, so it names the sign rather than reporting that the
+   * input is invalid.
+   */
+  it('refuses a sign and tells the person to drop it', () => {
+    for (const typed of ['-5', '+5', '-5%', '-7.5']) {
       const refused = readPercentEntry(typed);
       expect(refused.ok, typed).toBe(false);
       if (!refused.ok) {
-        expect(refused.reasonTh).toContain('เพิ่มราคาไม่ได้');
-        expect(refused.reasonTh).toContain('จำนวนเงิน');
-        expect(refused.reasonTh).toContain('รายการใหม่');
+        expect(refused.reasonTh, typed).toContain('ไม่ต้องใส่เครื่องหมาย');
+        expect(refused.reasonTh, typed).toContain('5');
       }
+    }
+  });
+
+  it('refuses a typed % and says the field already has one', () => {
+    for (const typed of ['5%', '5 %', '7.5%']) {
+      const refused = readPercentEntry(typed);
+      expect(refused.ok, typed).toBe(false);
+      if (!refused.ok) expect(refused.reasonTh, typed).toContain('ไม่ต้องพิมพ์ %');
     }
   });
 
   it('refuses a discount that changes nothing and one that would go below zero', () => {
     expect(readPercentEntry('0').ok).toBe(false);
-    expect(readPercentEntry('0%').ok).toBe(false);
+    expect(readPercentEntry('0.00').ok).toBe(false);
     expect(readPercentEntry('101').ok).toBe(false);
-    expect(readPercentEntry('-101').ok).toBe(false);
+    expect(readPercentEntry('100.01').ok).toBe(false);
   });
 
-  it('refuses a blank box and something that is not a number, each with its own sentence', () => {
-    for (const typed of ['', '   ', '%', 'abc', '5.123']) {
+  it('refuses a blank box with a sentence that names the format, not the emptiness', () => {
+    for (const typed of ['', '   ']) {
+      const refused = readPercentEntry(typed);
+      expect(refused.ok, typed).toBe(false);
+      /* This is the first thing the dialog shows on open, so it has to teach. */
+      if (!refused.ok) expect(refused.reasonTh, typed).toContain('กรอกเป็นตัวเลขเท่านั้น');
+    }
+  });
+
+  it('refuses something that is not a number', () => {
+    for (const typed of ['abc', '5.123', '1 5', '.5', '5.']) {
       expect(readPercentEntry(typed).ok, typed).toBe(false);
     }
   });

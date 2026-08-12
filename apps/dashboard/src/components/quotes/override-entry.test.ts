@@ -81,15 +81,20 @@ describe('four boxes, one anchor', () => {
     expect(entry.enteredValueText).toBe('291');
   });
 
-  it('keeps what was typed verbatim, including a sign and a percent symbol', () => {
-    const entry = shown(preview(LINE, 'percent_discount', '  -15%  '));
-    expect(entry.enteredValueText).toBe('-15%');
-    /*
-     * ⚠️ ฿7,472 and not ฿10,109.65. This assertion used to read `1_010_965n`, on the reasoning
-     * that a negative discount raises the price — and `apps/api/src/quotes/entry.ts` stored
-     * ฿7,472 for the same keystroke the whole time. A discount box only discounts; a redesign
-     * after a factory bounce is priced with an absolute line total or a new charge line.
-     */
+  /**
+   * ⚠️ **The history of this one assertion is the history of the whole bug.**
+   *
+   * `preview(LINE, 'percent_discount', '  -15%  ')` first expected `1_010_965n` — a fifteen percent
+   * *surcharge* — while the server stored ฿7,472 for the same keystroke. Then it expected
+   * `747_200n`, once the magnitude convention was settled. Now `-15%` is **refused**: the owner
+   * asked for one accepted format so that no salesperson has to hold a theory about what a minus
+   * means in a discount box. The figure it used to argue about is asserted from `15` instead.
+   */
+  it('refuses a signed percentage outright, and prices the same discount from a plain number', () => {
+    expect(refusal(preview(LINE, 'percent_discount', '  -15%  '))).toContain('ไม่ต้องใส่เครื่องหมาย');
+
+    const entry = shown(preview(LINE, 'percent_discount', '15'));
+    expect(entry.enteredValueText).toBe('15%');
     expect(entry.anchorThbMinor).toBe(747_200n);
   });
 
@@ -118,28 +123,33 @@ describe('four boxes, one anchor', () => {
  * because being correct separately is what went wrong.
  */
 describe('the preview and the write cannot disagree', () => {
-  it('reads a discount the same whether or not the salesperson typed the minus', () => {
-    for (const typed of ['5%', '-5%']) {
-      expect(shown(preview(LINE, 'percent_discount', typed)).anchorThbMinor).toBe(
-        priceAfterPercentDiscount(LINE.computedThbMinor, 500n),
-      );
-    }
+  it('derives the previewed figure from the shared rule and not from arithmetic of its own', () => {
+    expect(shown(preview(LINE, 'percent_discount', '5')).anchorThbMinor).toBe(
+      priceAfterPercentDiscount(LINE.computedThbMinor, 500n),
+    );
   });
 
   /*
-   * ⭐ The direction that used to be silent. `-5%` is a *discount*, so the figure previewed is
-   * below the baseline — not the ฿9,230.55 above it that this screen used to show.
+   * ⭐ The direction that used to be silent. A discount goes *below* the baseline — not the
+   * ฿9,230.55 above it that this screen once showed for the same intent.
    */
-  it('previews a figure below the baseline for a negative percentage, not above it', () => {
-    const entry = shown(preview(LINE, 'percent_discount', '-5%'));
+  it('previews a figure below the baseline, never above it', () => {
+    const entry = shown(preview(LINE, 'percent_discount', '5'));
     expect(entry.anchorThbMinor).toBeLessThan(LINE.computedThbMinor);
     expect(entry.anchorThbMinor).toBe(835_100n);
   });
 
-  it('refuses a surcharge in the percent box by name, rather than as an unreadable number', () => {
-    expect(refusal(preview(LINE, 'percent_discount', '+5'))).toContain('เพิ่มราคาไม่ได้');
+  it('refuses a sign in the percent box with the instruction, not with "invalid"', () => {
+    expect(refusal(preview(LINE, 'percent_discount', '+5'))).toContain('ไม่ต้องใส่เครื่องหมาย');
+    expect(refusal(preview(LINE, 'percent_discount', '-5'))).toContain('ไม่ต้องใส่เครื่องหมาย');
   });
 
+  /*
+   * ⚠️ The **money**-discount box is deliberately left as it was: `-291` and `291` are both ฿291
+   * off, and `+291` is refused. That box draws `฿` rather than a sign, and a minus in front of an
+   * amount is not the demonstrated ambiguity a minus in front of a percentage was. Flagged for the
+   * owner rather than changed unasked — the instruction named the percentage field.
+   */
   it('refuses a surcharge in the money-discount box by name too', () => {
     expect(refusal(preview(LINE, 'discount_amount', '+291'))).toContain('เพิ่มราคาไม่ได้');
   });
@@ -152,13 +162,13 @@ describe('the preview and the write cannot disagree', () => {
 
   it('previews on the whole baht, because that is the unit the write stores', () => {
     /* The 45 satang that used to separate the preview from the record. */
-    const entry = shown(preview(LINE, 'percent_discount', '5%'));
+    const entry = shown(preview(LINE, 'percent_discount', '5'));
     expect(entry.anchorThbMinor).not.toBe(835_145n);
     expect((entry.anchorThbMinor ?? 0n) % 100n).toBe(0n);
   });
 
   it('still refuses more than the whole price', () => {
-    expect(refusal(preview(LINE, 'percent_discount', '-150%'))).toContain('เกิน 100%');
+    expect(refusal(preview(LINE, 'percent_discount', '150'))).toContain('เกิน 100%');
   });
 });
 
@@ -172,36 +182,33 @@ describe('the preview and the write cannot disagree', () => {
  * 291 percent. Its 422 then advised `เช่น "-15%"`, and `-15%` is what previewed a surcharge and
  * stored a discount. The guard stays; the client sends what the guard requires.
  *
- * What these assert is the property from the round before, extended over the forms a real person
- * types: **whatever is typed, the figure previewed is the figure the sent text produces.**
+ * What these assert is the property from the round before, now over **one** accepted format: the
+ * figure previewed is the figure the sent text produces, and every other spelling is refused with a
+ * sentence that says what to type.
  */
 describe('what a person types reaches the server as something it accepts', () => {
-  /* Every accepted spelling of five percent off, previewing one figure and sending a `%`. */
-  const FIVE_PERCENT_OFF = ['5', '-5', '5%', '-5%', ' 5 ', '5 %'] as const;
-
-  it('previews the same discount for every way of writing it', () => {
-    for (const typed of FIVE_PERCENT_OFF) {
+  it('prices a plain number and sends it with the % the field only drew', () => {
+    for (const [typed, expected] of [
+      ['5', 835_100n],
+      ['  5  ', 835_100n],
+      ['7.5', 813_200n],
+      ['15', 747_200n],
+    ] as const) {
       const entry = shown(preview(LINE, 'percent_discount', typed));
-      expect(entry.anchorThbMinor, typed).toBe(priceAfterPercentDiscount(LINE.computedThbMinor, 500n));
-      expect(entry.anchorThbMinor, typed).toBe(835_100n);
-    }
-  });
-
-  it('always sends text carrying a literal %, which is what the server parses', () => {
-    for (const typed of FIVE_PERCENT_OFF) {
-      expect(shown(preview(LINE, 'percent_discount', typed)).enteredValueText, typed).toMatch(/%$/);
+      expect(entry.anchorThbMinor, typed).toBe(expected);
+      expect(entry.enteredValueText, typed).toMatch(/^\d+(\.\d{1,2})?%$/);
     }
   });
 
   /*
-   * ⚠️ `entered_value_text` is plan 7.9(ก)'s record of what the salesperson said. A `-` survives
-   * because it was typed; one is never added.
+   * ⚠️ `entered_value_text` is plan 7.9(ก)'s record of what the salesperson said. The `%` is the
+   * only addition, and with one accepted format it is the only addition possible.
    */
-  it('appends the % and nothing else — no invented sign', () => {
+  it('appends the % and nothing else', () => {
     expect(shown(preview(LINE, 'percent_discount', '5')).enteredValueText).toBe('5%');
-    expect(shown(preview(LINE, 'percent_discount', '-5')).enteredValueText).toBe('-5%');
     expect(shown(preview(LINE, 'percent_discount', '7.5')).enteredValueText).toBe('7.5%');
-    expect(shown(preview(LINE, 'percent_discount', '  -15%  ')).enteredValueText).toBe('-15%');
+    expect(shown(preview(LINE, 'percent_discount', ' 15 ')).enteredValueText).toBe('15%');
+    expect(shown(preview(LINE, 'percent_discount', '5')).enteredValueText).not.toContain('-');
   });
 
   /* The other three modes are already in the form the server parses, so nothing is added to them. */
@@ -211,10 +218,32 @@ describe('what a person types reaches the server as something it accepts', () =>
     expect(shown(preview(LINE, 'discount_amount', '-291')).enteredValueText).toBe('-291');
   });
 
-  it('refuses a blank percent box and a percentage that is not a number', () => {
-    expect(refusal(preview(LINE, 'percent_discount', '   '))).toContain('ยังไม่ได้กรอก');
+  /**
+   * ⭐ Every spelling the previous round accepted must now refuse — otherwise the strictness has
+   * come undone and a suite that only checks `5` would never notice.
+   */
+  it('refuses every spelling that used to be accepted', () => {
+    for (const typed of ['-5', '+5', '5%', '-5%', '5 %']) {
+      expect(preview(LINE, 'percent_discount', typed).ok, typed).toBe(false);
+    }
+  });
+
+  it('refuses a blank box with the format, which is what the dialog shows on open', () => {
+    expect(refusal(preview(LINE, 'percent_discount', '   '))).toContain('กรอกเป็นตัวเลขเท่านั้น');
+    expect(refusal(preview(LINE, 'percent_discount', ''))).toContain('กรอกเป็นตัวเลขเท่านั้น');
+  });
+
+  it('refuses a percentage that is not a number, and zero', () => {
     expect(refusal(preview(LINE, 'percent_discount', '5.123'))).toContain('ทศนิยม');
     expect(refusal(preview(LINE, 'percent_discount', '0'))).toContain('0%');
+  });
+
+  /* The other modes keep their own blank sentences, now that no blanket one preempts them. */
+  it('still refuses a blank box in the money modes, in their own words', () => {
+    expect(refusal(preview(LINE, 'line_total', ''))).toContain('กรอกจำนวนเงิน');
+    expect(refusal(preview(LINE, 'discount_amount', '  '))).toContain('กรอกจำนวนเงิน');
+    const lead: OverrideContext = { anchor: 'lead_time_days', computedDays: 30 };
+    expect(refusal(preview(lead, 'lead_time_days', ''))).toContain('กรอกจำนวนวัน');
   });
 
   /*
@@ -250,8 +279,13 @@ describe('refusals that mirror a CHECK in packages/db', () => {
     expect(refusal(preview(grand, 'unit_price', '9000'))).toContain('ไม่ได้');
   });
 
+  /*
+   * The blanket `ยังไม่ได้กรอกค่า` that used to answer this is gone: each reader now names what its
+   * own box wants, so the percent field can teach its format on open instead of saying only that it
+   * is empty. `readBaht` answers for the money modes.
+   */
   it('refuses an empty box before it becomes a price', () => {
-    expect(refusal(preview(LINE, 'line_total', '   '))).toContain('ยังไม่ได้กรอก');
+    expect(refusal(preview(LINE, 'line_total', '   '))).toContain('กรอกจำนวนเงิน');
   });
 
   it('refuses text longer than the contract will accept — enteredValueTextSchema is max 32', () => {

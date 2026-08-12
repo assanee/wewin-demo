@@ -89,13 +89,19 @@ describe('the price a percentage produces', () => {
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * EVERY SHAPE A PERSON TYPES A PERCENTAGE IN
+ * ONE ACCEPTED FORMAT, AND EVERY OTHER SPELLING REFUSED BY NAME
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * The field renders `%` as a decoration, so `5` is what a salesperson sends when the caption says
- * ส่วนลด and the box shows `%`. The server requires a literal `%`. This function closes that gap,
- * and the property that matters is that **all four accepted spellings mean the same discount** —
- * because the last defect here was two spellings meaning opposite things.
+ * The field renders `%` as a decoration and the caption says ส่วนลด, so the accepted format is a
+ * plain positive number: `5` means five percent off. The server requires a literal `%`, which this
+ * function appends — that part is plumbing nobody sees.
+ *
+ * ⚠️ **An earlier round of this file accepted `5`, `-5`, `5%`, `-5%` and `5 %` as the same
+ * discount, and those tests are now inverted on purpose.** Five spellings are five things a
+ * salesperson might believe about what they typed; the owner asked for one spelling and a visible
+ * refusal. So the assertions below are mostly about what is *rejected* — a suite that only checked
+ * `5` would pass against a function that accepted everything, which is precisely the state being
+ * left behind.
  */
 const entry = (result: Ruled<PercentEntry, PercentEntryRefusal>): PercentEntry => {
   if (!result.ok) throw new Error(`expected success, got refusal: ${result.refusal}`);
@@ -107,86 +113,111 @@ const refused = (result: Ruled<PercentEntry, PercentEntryRefusal>): PercentEntry
   return result.refusal;
 };
 
-describe('a typed percentage, in every shape a person types it', () => {
-  /*
-   * ⭐ The assertion the owner's ruling turns on. Four spellings, one discount — and one of them
-   * (`-5`) is the exact string that used to mean "add five percent" on this screen.
-   */
-  it('reads 5, -5, 5% and -5% as the same five percent off', () => {
-    for (const typed of ['5', '-5', '5%', '-5%', ' 5 % ', '-5 %']) {
-      expect(entry(normalisePercentEntry(typed)).bp, typed).toBe(500n);
-    }
-  });
-
-  it('sends a literal % in every case, because the server refuses a bare number', () => {
-    expect(entry(normalisePercentEntry('5')).wireText).toBe('5%');
-    expect(entry(normalisePercentEntry('-5')).wireText).toBe('-5%');
-    expect(entry(normalisePercentEntry('5%')).wireText).toBe('5%');
-    expect(entry(normalisePercentEntry('-5%')).wireText).toBe('-5%');
-    expect(entry(normalisePercentEntry('  7.50  ')).wireText).toBe('7.50%');
-  });
-
-  /*
-   * `entered_value_text` is the record of what a human said (plan 7.9(ก)). A `-` survives because
-   * it was typed; one is never added, because the server reads `5%` and `-5%` identically and an
-   * invented character in an audit column buys nothing.
-   */
-  it('never invents a sign the person did not type', () => {
-    expect(entry(normalisePercentEntry('5')).wireText).not.toContain('-');
-    expect(entry(normalisePercentEntry('7.5')).wireText).not.toContain('-');
-  });
-
-  it('keeps two decimal places exactly, in the figure and on the wire', () => {
+describe('a typed percentage: one accepted format', () => {
+  it('accepts a plain positive number, whole or to two decimals', () => {
+    expect(entry(normalisePercentEntry('5')).bp).toBe(500n);
     expect(entry(normalisePercentEntry('7.5')).bp).toBe(750n);
-    expect(entry(normalisePercentEntry('-3.31')).bp).toBe(331n);
-    expect(entry(normalisePercentEntry('-3.31')).wireText).toBe('-3.31%');
+    expect(entry(normalisePercentEntry('3.31')).bp).toBe(331n);
     expect(entry(normalisePercentEntry('0.05')).bp).toBe(5n);
+    expect(entry(normalisePercentEntry('100')).bp).toBe(FULL_DISCOUNT_BP);
   });
 
-  it('refuses an explicit surcharge, whichever way it is spelled', () => {
-    expect(refused(normalisePercentEntry('+5'))).toBe('surcharge');
-    expect(refused(normalisePercentEntry('+5%'))).toBe('surcharge');
+  it('trims outer whitespace, because a paste carries it and the contract trims too', () => {
+    expect(entry(normalisePercentEntry('  5  ')).bp).toBe(500n);
+    expect(entry(normalisePercentEntry('\t7.5\n')).wireText).toBe('7.5%');
+  });
+
+  it('appends the % the field only draws, and adds nothing else', () => {
+    expect(entry(normalisePercentEntry('5')).wireText).toBe('5%');
+    expect(entry(normalisePercentEntry('7.50')).wireText).toBe('7.50%');
+    /* `entered_value_text` is plan 7.9(ก)'s record of what was typed — no sign is invented. */
+    expect(entry(normalisePercentEntry('5')).wireText).not.toContain('-');
+  });
+});
+
+/**
+ * ⭐ THE REFUSALS ARE THE FEATURE.
+ *
+ * Each rejected spelling must actually be rejected, and with the reason that names it — `signed`
+ * and `percent_typed` are distinct codes so the prose can say "drop the minus" and "drop the %"
+ * rather than a shared "invalid" that teaches nothing.
+ */
+describe('a typed percentage: everything else is refused, by name', () => {
+  it('refuses a sign, which is the character this whole defect began with', () => {
+    expect(refused(normalisePercentEntry('-5'))).toBe('signed');
+    expect(refused(normalisePercentEntry('+5'))).toBe('signed');
+    expect(refused(normalisePercentEntry('-5%'))).toBe('signed');
+    expect(refused(normalisePercentEntry('+5%'))).toBe('signed');
+    expect(refused(normalisePercentEntry('-7.5'))).toBe('signed');
+    /* `--5` is nonsense, but a leading sign is still the most useful thing to name about it. */
+    expect(refused(normalisePercentEntry('--5'))).toBe('signed');
+  });
+
+  it('refuses a typed %, because the field already shows one', () => {
+    expect(refused(normalisePercentEntry('5%'))).toBe('percent_typed');
+    expect(refused(normalisePercentEntry('5 %'))).toBe('percent_typed');
+    expect(refused(normalisePercentEntry('7.5%'))).toBe('percent_typed');
+    expect(refused(normalisePercentEntry('%5'))).toBe('percent_typed');
+  });
+
+  it('refuses a space inside the number', () => {
+    expect(refused(normalisePercentEntry('1 5'))).toBe('unreadable');
+    expect(refused(normalisePercentEntry('7 . 5'))).toBe('unreadable');
   });
 
   it('refuses a discount that changes nothing', () => {
     expect(refused(normalisePercentEntry('0'))).toBe('no_change');
-    expect(refused(normalisePercentEntry('0%'))).toBe('no_change');
-    expect(refused(normalisePercentEntry('-0'))).toBe('no_change');
     expect(refused(normalisePercentEntry('0.00'))).toBe('no_change');
+    expect(refused(normalisePercentEntry('00'))).toBe('no_change');
   });
 
-  it('refuses an empty box before it becomes a price', () => {
+  it('refuses a blank box, which is what the dialog shows on open', () => {
     expect(refused(normalisePercentEntry(''))).toBe('empty');
     expect(refused(normalisePercentEntry('   '))).toBe('empty');
-    expect(refused(normalisePercentEntry('%'))).toBe('empty');
   });
 
-  it('refuses more than the whole price, signed or not', () => {
+  it('refuses more than the whole price', () => {
     expect(refused(normalisePercentEntry('101'))).toBe('above_full');
-    expect(refused(normalisePercentEntry('-101%'))).toBe('above_full');
-    expect(refused(normalisePercentEntry('-150%'))).toBe('above_full');
-    expect(entry(normalisePercentEntry('100')).bp).toBe(FULL_DISCOUNT_BP);
+    expect(refused(normalisePercentEntry('100.01'))).toBe('above_full');
+    expect(refused(normalisePercentEntry('150'))).toBe('above_full');
   });
 
   it('refuses what is not a number, rather than guessing at it', () => {
-    for (const typed of ['abc', '5.123', '5%5', '--5', '1,5', '5-', '', ' - ']) {
-      expect(refused(normalisePercentEntry(typed)), typed).toMatch(/unreadable|empty/);
+    for (const typed of ['abc', '5.123', '1,5', '5-', '5..5', '.5', '5.']) {
+      expect(refused(normalisePercentEntry(typed)), typed).toBe('unreadable');
     }
   });
 
   /*
-   * The end-to-end property, stated as arithmetic: whatever a person types, the figure the screen
-   * derives from `bp` is the figure the server derives from `wireText`. The two sides of that are
-   * asserted in the dashboard and api suites; this pins that one parse feeds both.
+   * The regression guard for the round being reversed here: these five spellings all used to be
+   * accepted and all used to mean five percent off. Every one of them must now refuse, or the
+   * strictness has quietly come undone.
    */
-  it('produces a figure and a wire text that describe the same discount', () => {
-    for (const typed of ['5', '-5', '5%', '-5%', '7.5', '-3.31', '100']) {
+  it('refuses every spelling the lenient version accepted', () => {
+    for (const typed of ['-5', '5%', '-5%', '5 %', '-5 %']) {
+      expect(normalisePercentEntry(typed).ok, typed).toBe(false);
+    }
+    expect(normalisePercentEntry('5').ok).toBe(true);
+  });
+
+  /*
+   * The end-to-end property, stated as arithmetic: the figure the screen derives from `bp` is the
+   * figure the server derives from `wireText`. The two halves are asserted in the dashboard and api
+   * suites; this pins that one parse feeds both.
+   */
+  it('produces a wire text that still describes the same discount', () => {
+    for (const typed of ['5', '7.5', '3.31', '0.05', '100']) {
       const value = entry(normalisePercentEntry(typed));
-      const fromWire = entry(normalisePercentEntry(value.wireText));
-      expect(fromWire.bp, typed).toBe(value.bp);
-      expect(priceAfterPercentDiscount(COMPUTED, fromWire.bp), typed).toBe(
-        priceAfterPercentDiscount(COMPUTED, value.bp),
-      );
+
+      /*
+       * The wire form carries a `%`, so this function refuses it — that is the strictness working,
+       * not a defect. Take the `%` back off and the number has to read as the same discount, which
+       * is what proves the append changed the spelling and not the figure. The other half of the
+       * loop — the server parsing `wireText` — is `apps/api/tests/quotes/entry.test.ts`.
+       */
+      expect(normalisePercentEntry(value.wireText).ok, typed).toBe(false);
+      expect(entry(normalisePercentEntry(value.wireText.replace(/%$/, ''))).bp, typed).toBe(value.bp);
+      expect(value.wireText).toBe(`${typed}%`);
     }
   });
 });
