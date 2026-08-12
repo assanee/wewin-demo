@@ -139,9 +139,13 @@ export function OrganisationScreen() {
     <div className="flex flex-col gap-6">
       <ProfileCard state={profileState} editable={editable} onSaved={reloadProfile} />
       <AccountsCard state={accountsState} editable={editable} onChanged={reloadAccounts} />
-      {/* No `editable` and no `onChanged`: nothing on this card writes anything, so there is no
-          permission to gate and nothing to reload after. See its own header. */}
-      <FxHealthCard state={fxHealthState} />
+      {/* ⚠️ This used to carry neither prop, with the note *"nothing on this card writes
+          anything, so there is no permission to gate and nothing to reload after"*. It now
+          carries both, and the reason is one control: ซิงก์เดี๋ยวนี้ asks the provider for a rate
+          on demand. It still *sets* nothing — see the card's own header — but it is gated on
+          `organisation.write` like every other action on this page, and a sync that brought a new
+          observation in has to redraw the figures it moved, which is `reloadFxHealth`. */}
+      <FxHealthCard state={fxHealthState} editable={editable} onSynced={reloadFxHealth} />
       <TaxCountriesSection state={taxCountriesState} editable={editable} onChanged={reloadTaxCountries} />
     </div>
   );

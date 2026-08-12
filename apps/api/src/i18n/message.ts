@@ -367,6 +367,22 @@ const PARAM_SHAPES = {
    * `error.stale.destination_changed_under_promise` both give.
    */
   'error.fx.rate_too_stale': { hours: 'count', limitHours: 'count' },
+  /*
+   * ⭐ The manual sync button, refused — two keys, because the two limits are two different
+   * facts and the reader's next action differs completely between them.
+   *
+   * `too_soon` is over in under a minute and the answer is to wait. `quota_spent` is the
+   * provider's monthly budget, the answer is to stop for the day, and the sentence has to say
+   * *why* stopping matters — the scheduled sync draws on the same 1,000 requests, so spending
+   * them here is what makes next week's quotation refuse. That consequence is a week away from
+   * the click, which is exactly why it has to be written down rather than left to be inferred.
+   *
+   * Both `count`, both bounded numbers this file's own params can carry. `retryAfterSeconds`,
+   * `usedToday` and `nextAllowedAt` travel in `details` instead, for the reason
+   * `error.fx.rate_unavailable` gives: `ServerParamKind` is `'money' | 'count'` on purpose.
+   */
+  'error.fx.manual_sync_too_soon': { seconds: 'count' },
+  'error.fx.manual_sync_quota_spent': { limit: 'count', hours: 'count' },
 
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},

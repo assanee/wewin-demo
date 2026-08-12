@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
-import { count, desc, gt, max } from '@wewin/db/sql';
+import { and, count, desc, eq, gt, max, min } from '@wewin/db/sql';
 import { fxRates, fxSyncFailures } from '@wewin/db/schema';
 
 import { DRIZZLE } from '../database/database.tokens';
+import { FX_MANUAL_SYNC_WINDOW_HOURS, type FxManualSyncUsage } from './manual-sync';
 
 /**
  * Drizzle names the transaction type nowhere public, so it is read off the callback exactly
@@ -70,6 +71,15 @@ export interface FxSyncHealth {
 
 /** How far a sync got before it gave up. Mirrors the `fx_sync_failures_stage_known` CHECK. */
 export type FxSyncStage = 'fetch' | 'parse' | 'store';
+
+/**
+ * What made a sync happen. Mirrors the `*_trigger_kind_known` CHECK on both tables (0041).
+ *
+ * `'startup'` is separate from `'scheduled'` because `onModuleInit` fetches only into an empty
+ * table and a fleet restarting is not a fleet on a schedule; `'manual'` is separate from both
+ * because it is the only one a person causes and the only one with a budget attached.
+ */
+export type FxSyncTriggerKind = 'scheduled' | 'startup' | 'manual';
 
 /**
  * Reading `fx_rates`, which until now nothing did.
@@ -143,8 +153,82 @@ export class FxRatesRepository {
    * everything it passes to a status code or a SQLSTATE — this is the second wall, not the
    * first.
    */
-  async recordFailure(stage: FxSyncStage, detail: string): Promise<void> {
-    await this.db.insert(fxSyncFailures).values({ stage, detail: detail.slice(0, 500) });
+  async recordFailure(
+    stage: FxSyncStage,
+    detail: string,
+    /*
+     * ⭐ Defaulted to `'scheduled'`, so the three existing call sites read exactly as they did
+     * and the one new one has to say `'manual'` out loud. A required parameter would have been
+     * the tidier signature and the worse one here: the failure path is the one a manual sync
+     * shares with the cron, and the whole point of migration 0041 is that the two stop being
+     * indistinguishable — which is a distinction worth making at the call site rather than
+     * threading through a default nobody sees.
+     */
+    triggerKind: FxSyncTriggerKind = 'scheduled',
+  ): Promise<void> {
+    await this.db
+      .insert(fxSyncFailures)
+      .values({ stage, detail: detail.slice(0, 500), triggerKind });
+  }
+
+  /**
+   * ⭐ How much of the manual sync's budget has been spent — counted from the rows themselves.
+   *
+   * ⚠️ **Both tables, and the failures are the half that matters.** A manual sync that failed
+   * still spent a provider request: the quota is charged on the request, not on the answer. A
+   * count over `fx_rates` alone would let somebody hold the button down through a provider
+   * outage and burn the month's allowance while the guard watched a number that never moved —
+   * which is the fastest way this quota can actually disappear, not a corner case.
+   *
+   * ⚠️ `lastAttemptAt` is deliberately **not** bounded by the window while the count is. The
+   * count answers "how much is left", which is a question about the window; the minimum interval
+   * answers "was the last press a moment ago", which is a question about the newest row and
+   * nothing else. Bounding both the same way would have been symmetrical and wrong — an attempt
+   * that has just aged out of the window is still the last one that happened.
+   *
+   * See `manual-sync.ts` for why this count lives in the database at all, where every other
+   * limiter in this app keeps its own in memory.
+   */
+  async manualSyncUsage(now: Date): Promise<FxManualSyncUsage> {
+    const since = new Date(now.getTime() - FX_MANUAL_SYNC_WINDOW_HOURS * 60 * 60 * 1000);
+
+    const [stored, failed] = await Promise.all([
+      this.db
+        .select({
+          attempts: count(),
+          oldest: min(fxRates.fetchedAt),
+          newest: max(fxRates.fetchedAt),
+        })
+        .from(fxRates)
+        .where(and(eq(fxRates.triggerKind, 'manual'), gt(fxRates.fetchedAt, since))),
+      this.db
+        .select({
+          attempts: count(),
+          oldest: min(fxSyncFailures.attemptedAt),
+          newest: max(fxSyncFailures.attemptedAt),
+        })
+        .from(fxSyncFailures)
+        .where(
+          and(eq(fxSyncFailures.triggerKind, 'manual'), gt(fxSyncFailures.attemptedAt, since)),
+        ),
+    ]);
+
+    /*
+     * ⚠️ `newest` here is the newest *inside the window*, where `FxManualSyncUsage.lastAttemptAt`
+     * is documented as the newest at all. The two agree for every value the minimum interval can
+     * act on: the window is 24 hours and the interval is a minute, so an attempt old enough to
+     * have left the window is old enough that the interval has long since elapsed. Reading it
+     * from the same bounded aggregate keeps this to two round trips instead of four, and the
+     * only value it can lose is one that would have produced `nextAllowedAt: null` regardless.
+     */
+    const newest = latestOf(stored[0]?.newest, failed[0]?.newest);
+    const oldest = earliestOf(stored[0]?.oldest, failed[0]?.oldest);
+
+    return {
+      attemptsInWindow: (stored[0]?.attempts ?? 0) + (failed[0]?.attempts ?? 0),
+      lastAttemptAt: newest,
+      oldestAttemptInWindowAt: oldest,
+    };
   }
 
   /**
@@ -177,4 +261,34 @@ export class FxRatesRepository {
       lastFailureAt: tally?.lastFailureAt ?? undefined,
     };
   }
+}
+
+/*
+ * `min`/`max` over two tables, resolved in TypeScript rather than in a `UNION ALL`.
+ *
+ * The alternative is one hand-written `sql` fragment unioning both tables and aggregating over
+ * the result, which is a real query and about as long. This stays inside the query builder — the
+ * reason `packages/db/src/sql.ts` exists — and the two aggregates already run concurrently, so
+ * the union would save a round trip this code does not spend.
+ *
+ * `null` and `undefined` both mean "no rows": drizzle's `max`/`min` answer `null` for an empty
+ * aggregate, and the array itself can be empty. Both collapse to `undefined`, which is the
+ * absence `FxManualSyncUsage` is typed with — the same choice `health` above makes for
+ * `lastFailureAt`.
+ */
+const earliestOf = (left: Date | null | undefined, right: Date | null | undefined): Date | undefined =>
+  pick(left, right, (a, b) => (a.getTime() <= b.getTime() ? a : b));
+
+const latestOf = (left: Date | null | undefined, right: Date | null | undefined): Date | undefined =>
+  pick(left, right, (a, b) => (a.getTime() >= b.getTime() ? a : b));
+
+function pick(
+  left: Date | null | undefined,
+  right: Date | null | undefined,
+  better: (a: Date, b: Date) => Date,
+): Date | undefined {
+  if (left === null || left === undefined) return right ?? undefined;
+  if (right === null || right === undefined) return left;
+
+  return better(left, right);
 }

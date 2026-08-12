@@ -288,6 +288,13 @@
       "when": 1786400000011,
       "tag": "0040_fx_sync_failures",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786400000012,
+      "tag": "0041_fx_sync_trigger_kind",
+      "breakpoints": true
     }
   ]
 }

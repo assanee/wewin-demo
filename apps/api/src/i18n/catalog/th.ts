@@ -267,6 +267,25 @@ export const TH: Catalogue = {
     `อัตราแลกเปลี่ยนล่าสุดในระบบเก่าเกินไป (เก่ากว่า ${f.count(p.hours)} ชั่วโมง เกินเพดาน ${f.count(p.limitHours)} ชั่วโมง) — ` +
     'ระบบจึงไม่ออกใบเสนอราคาสกุลเงินต่างประเทศให้ เพราะเอกสารที่ออกแล้วจะถูกแช่แข็งและแก้อัตราภายหลังไม่ได้ — ' +
     'กรุณาให้ผู้ดูแลระบบกรอก “อัตราแลกเปลี่ยนกำหนดเอง” ที่ประเทศปลายทางนี้ แล้วส่งใหม่อีกครั้ง',
+  /*
+   * ⭐ The short one. Said to somebody who just pressed the button and pressed it again, so it
+   * is deliberately undramatic: a number of seconds and the reason there is a gap at all.
+   */
+  'error.fx.manual_sync_too_soon': (p, f) =>
+    `เพิ่งซิงก์อัตราแลกเปลี่ยนไปเมื่อครู่ กรุณารออีก ${f.count(p.seconds)} วินาทีแล้วลองใหม่ — ` +
+    'ระบบเว้นระยะไว้เพื่อไม่ให้การกดซ้ำเร็ว ๆ ใช้โควตาการดึงของทั้งระบบหมดในคราวเดียว',
+  /*
+   * ⭐ The one that matters. The cost of ignoring it lands a week later, on somebody else, as a
+   * refused quotation — so the sentence names that chain outright instead of saying "limit
+   * reached". A reader who does not know that the daily 01:00 sync spends the same budget has no
+   * way to understand why a button they were given is refusing them, and will reasonably assume
+   * it is broken.
+   */
+  'error.fx.manual_sync_quota_spent': (p, f) =>
+    `ใช้สิทธิ์ซิงก์อัตราแลกเปลี่ยนด้วยตนเองครบ ${f.count(p.limit)} ครั้งในรอบ ${f.count(p.hours)} ชั่วโมงแล้ว — ` +
+    'โควตาการดึงจากผู้ให้บริการเป็นของทั้งระบบร่วมกัน และรอบดึงอัตโนมัติตอนตีหนึ่งก็ใช้โควตาก้อนเดียวกันนี้ ' +
+    'ถ้าใช้หมดวันนี้ รอบอัตโนมัติจะดึงไม่ได้ตามไปด้วย แล้วอัตราจะเก่าจนออกใบเสนอราคาสกุลเงินต่างประเทศไม่ได้ในสัปดาห์หน้า — ' +
+    'ถ้าต้องใช้อัตราใหม่เดี๋ยวนี้ ให้กรอก “อัตราแลกเปลี่ยนกำหนดเอง” ที่ประเทศปลายทางแทน',
 
   /* ── Staleness ───────────────────────────────────────────────────────────── */
   /*

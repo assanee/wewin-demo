@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { FxRateHealthWire } from '@wewin/contract/organisation';
+import type {
+  FxConfiguredRateWire,
+  FxManualSyncBudgetWire,
+  FxManualSyncResultWire,
+  FxRateHealthWire,
+} from '@wewin/contract/organisation';
 
-import { decodeFxRateHealth } from './fx-health-api';
+import { decodeFxManualSyncResult, decodeFxRateHealth } from './fx-health-api';
 import {
   fxAgeTh,
   fxClockTh,
@@ -14,10 +19,23 @@ import {
   fxHealthTitleTh,
   fxHealthVerdict,
   fxHoursTh,
+  fxManualOverrideNoteTh,
+  fxMidRateTh,
+  fxNoConfiguredRatesTh,
   fxNoRecipientsTh,
+  fxProviderRawTh,
+  fxRateProblemTh,
+  fxRateSourceTh,
+  fxRateTh,
   fxRecipientsTh,
+  fxSpreadTh,
+  fxSyncBlockedTh,
+  fxSyncBudgetTh,
+  fxSyncOutcomeTh,
+  fxSyncOutcomeTitleTh,
+  fxSyncOutcomeVariant,
   fxThresholdsTh,
-} from './fx-health';
+} from './fx-health-copy';
 
 /**
  * The words on the exchange-rate health card, asserted as the pure functions that produce them.
@@ -60,6 +78,21 @@ const health = (overrides: Readonly<Partial<FxRateHealthWire>> = {}): FxRateHeal
   warnAfterHours: 10,
   refuseAfterHours: 20,
   warningRecipients: 4,
+  /*
+   * Empty by default, and `dailyLimit: 5` rather than the server's real 10 — the same discipline
+   * the two thresholds above are held to, and for the same reason. A card that hardcoded the real
+   * daily limit would pass a test written against 10 and fail this one, which is exactly the
+   * failure worth catching: a screen promising a budget the server does not enforce.
+   */
+  configuredRates: [],
+  base: 'USD',
+  manualSync: {
+    dailyLimit: 5,
+    usedToday: 0,
+    remainingToday: 5,
+    minIntervalSeconds: 30,
+    nextAllowedAt: null,
+  },
   ...overrides,
 });
 
@@ -462,6 +495,29 @@ describe('the decoder refuses a payload this card would misread', () => {
     warnAfterHours: 36,
     refuseAfterHours: 72,
     warningRecipients: 3,
+    configuredRates: [
+      {
+        countryCode: 'SG',
+        countryNameTh: 'สิงคโปร์',
+        currency: 'SGD',
+        isActive: true,
+        source: 'mid_market',
+        effectiveThbPerUnit: '26.496296',
+        midThbPerUnit: '27.037037',
+        spreadBp: 200,
+        spreadApplied: true,
+        provider: { unitPerBase: 1.35, thbPerBase: 36.5 },
+        problem: null,
+      },
+    ],
+    base: 'USD',
+    manualSync: {
+      dailyLimit: 10,
+      usedToday: 1,
+      remainingToday: 9,
+      minIntervalSeconds: 60,
+      nextAllowedAt: null,
+    },
   };
 
   it('reads a well-formed row field for field', () => {
@@ -517,5 +573,463 @@ describe('the decoder refuses a payload this card would misread', () => {
        clocks and the failure count. The word passes through; `fxHealthVerdict` decides what to say
        about it. */
     expect(decodeFxRateHealth({ ...WIRE, status: 'degraded' }).status).toBe('degraded');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The figures, and keeping them apart from the provider's
+ * ------------------------------------------------------------------ */
+
+const rate = (overrides: Readonly<Partial<FxConfiguredRateWire>> = {}): FxConfiguredRateWire => ({
+  countryCode: 'SG',
+  countryNameTh: 'สิงคโปร์',
+  currency: 'SGD',
+  isActive: true,
+  source: 'mid_market',
+  effectiveThbPerUnit: '26.496296',
+  midThbPerUnit: '27.037037',
+  spreadBp: 200,
+  spreadApplied: true,
+  provider: { unitPerBase: 1.35, thbPerBase: 36.5 },
+  problem: null,
+  ...overrides,
+});
+
+const MANUAL = rate({
+  source: 'manual',
+  effectiveThbPerUnit: '27.050000',
+  midThbPerUnit: null,
+  spreadApplied: false,
+});
+
+describe('a rate is never printed without the unit it is in', () => {
+  /**
+   * ⭐⭐ THE ASSERTION THIS WHOLE SECTION EXISTS FOR.
+   *
+   * The provider holds `1.35` for Singapore, meaning 1.35 SGD per USD. The figure staff compare
+   * against a search engine is ~27 baht per Singapore dollar. A card that printed a bare
+   * `26.496296` under a heading would let a reader supply their own units, and the units they
+   * supply are whichever ones they were already thinking about.
+   *
+   * The unit is welded into the value so the string survives being read at speed, on a phone with
+   * the heading scrolled away, or pasted into a chat message.
+   */
+  it('welds baht-per-unit into the value itself', () => {
+    expect(fxRateTh(rate())).toBe('26.496296 บาท ต่อ 1 SGD');
+  });
+
+  it('renders the pre-spread figure in the same units, so the two are comparable', () => {
+    expect(fxMidRateTh(rate())).toBe('ก่อนหักส่วนต่าง: 27.037037 บาท ต่อ 1 SGD');
+  });
+
+  /**
+   * ⭐⭐ The provider's raw pair is a full equation naming the base — never a bare number.
+   *
+   * `1 USD = 1.35 SGD` cannot be silently re-unitised by a reader; `1.35` under a column heading
+   * can. And the string ends by saying it is not the pricing rate, because a label above a value
+   * is the first thing skipped on a settings page.
+   */
+  it('renders the provider figures as equations naming the base, and disclaims them', () => {
+    const raw = fxProviderRawTh(rate(), 'USD');
+
+    expect(raw).toContain('1 USD = 1.35 SGD');
+    expect(raw).toContain('1 USD = 36.5 THB');
+    expect(raw).toContain('ไม่ใช่อัตราที่ระบบใช้เสนอราคา');
+  });
+
+  /**
+   * ⚠️ The two numbers must never be interchangeable in the output. `1.35` is a *substring* of
+   * nothing in the effective rate, and the effective rate is not a substring of the raw line —
+   * this is what would break first if somebody "simplified" one into the other.
+   */
+  it('never lets the raw figure stand where the pricing rate belongs', () => {
+    expect(fxRateTh(rate())).not.toContain('1.35');
+    expect(fxProviderRawTh(rate(), 'USD')).not.toContain('26.496296');
+  });
+
+  it('says nothing at all when there is no observation for that currency', () => {
+    expect(fxProviderRawTh(rate({ provider: null }), 'USD')).toBeNull();
+    /* No base means the equations have nothing to be denominated against. */
+    expect(fxProviderRawTh(rate(), null)).toBeNull();
+  });
+
+  it('has no rate line to print when nothing resolved', () => {
+    expect(fxRateTh(rate({ effectiveThbPerUnit: null }))).toBeNull();
+  });
+});
+
+describe('where the rate came from, and what the spread did', () => {
+  it('reads basis points as a percentage', () => {
+    expect(fxSpreadTh(200)).toBe('2%');
+    expect(fxSpreadTh(250)).toBe('2.5%');
+    expect(fxSpreadTh(0)).toBe('0%');
+  });
+
+  it('names the market source and the spread that was applied to it', () => {
+    expect(fxRateSourceTh(rate())).toContain('หักส่วนต่าง 2%');
+  });
+
+  it('does not claim a spread was applied when none is configured', () => {
+    expect(fxRateSourceTh(rate({ spreadBp: 0 }))).toContain('ไม่ได้ตั้งส่วนต่าง');
+  });
+
+  /**
+   * ⭐ THE RULE is genuinely surprising the first time: an administrator who set a spread and then
+   * typed an override reasonably expects both to be in force. A screen that stays silent lets that
+   * expectation survive contact with a figure that contradicts it, so the manual line says the
+   * configured spread is not reused — naming the percentage that is sitting there doing nothing.
+   */
+  it('says out loud that a configured spread is not applied on top of an override', () => {
+    const said = fxRateSourceTh(MANUAL);
+
+    expect(said).toContain('กำหนดเอง');
+    expect(said).toContain('2%');
+    expect(said).toContain('ไม่ถูกนำมาใช้ซ้ำ');
+  });
+});
+
+describe('a destination with a typed override', () => {
+  /**
+   * ⭐⭐ THE OWNER'S INSTRUCTION, ASSERTED: the feed's number is not what gets used, said on
+   * screen, rather than a figure being shown that is never applied.
+   */
+  it('states that the feed is not used for that country, and how to give it back control', () => {
+    const note = fxManualOverrideNoteTh(MANUAL);
+
+    expect(note).toContain('ไม่ได้ใช้ตัวเลขที่ดึงมาจากผู้ให้บริการกับประเทศนี้');
+    expect(note).toContain('27.050000');
+    /* Naming the way back is what makes the state intelligible rather than looking like a fault. */
+    expect(note).toContain('อัตราแลกเปลี่ยนกำหนดเอง');
+  });
+
+  /** Nothing surprising to explain for a market rate, so nothing is said. */
+  it('says nothing for a destination quoting off the market rate', () => {
+    expect(fxManualOverrideNoteTh(rate())).toBeNull();
+  });
+
+  /**
+   * ⭐ And no derived mid-market figure is rendered — the server sends `null` deliberately, and
+   * this function's job is not to invent one from the raw pair sitting beside it.
+   */
+  it('prints no pre-spread line, because there is no mid-market rate in play', () => {
+    expect(fxMidRateTh(MANUAL)).toBeNull();
+  });
+});
+
+describe('why a destination has no rate', () => {
+  it('says nothing when there is one', () => {
+    expect(fxRateProblemTh(rate())).toBeNull();
+  });
+
+  /** The four causes are worded apart because the fixes are different. */
+  it('tells the four causes apart in words', () => {
+    const said = (problem: string): string =>
+      fxRateProblemTh(rate({ problem, effectiveThbPerUnit: null })) ?? '';
+
+    expect(said('no_snapshot')).toContain('ยังไม่มีอัตราแลกเปลี่ยนในระบบ');
+    /* One country's problem — and it says so, so nobody goes looking for a system-wide outage. */
+    expect(said('destination_rate_missing')).toContain('เฉพาะประเทศนี้');
+    expect(said('destination_rate_missing')).toContain('SGD');
+    /* Every country's problem at once — the opposite reassurance. */
+    expect(said('baht_rate_missing')).toContain('ทุกประเทศ');
+    expect(said('manual_rate_unreadable')).toContain('อ่านเป็นตัวเลขไม่ได้');
+
+    expect(new Set([
+      said('no_snapshot'),
+      said('destination_rate_missing'),
+      said('baht_rate_missing'),
+      said('manual_rate_unreadable'),
+    ]).size).toBe(4);
+  });
+
+  /**
+   * ⚠️ An unrecognised cause resolves toward "unusable", never toward silence — the same stance
+   * `fxHealthVerdict` takes about an unknown `status`. A blank where a rate belongs reads as
+   * "loading", and this row is not loading, it is refusing.
+   */
+  it('resolves an unknown cause toward unusable rather than toward a blank', () => {
+    const said = fxRateProblemTh(rate({ problem: 'something_new', effectiveThbPerUnit: null }));
+
+    expect(said).toContain('something_new');
+    expect(said).toContain('ใช้ไม่ได้');
+  });
+});
+
+describe('an empty list of destinations', () => {
+  it('says why it is empty rather than printing nothing', () => {
+    const said = fxNoConfiguredRatesTh(health());
+
+    expect(said).toContain('เงินบาทอย่างเดียว');
+    expect(said).toContain('ไม่ได้ถูกนำไปใช้');
+  });
+
+  it('says nothing once there is a destination to show', () => {
+    expect(fxNoConfiguredRatesTh(health({ configuredRates: [rate()] }))).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The manual sync
+ * ------------------------------------------------------------------ */
+
+const budget = (
+  overrides: Readonly<Partial<FxManualSyncBudgetWire>> = {},
+): FxManualSyncBudgetWire => ({
+  dailyLimit: 5,
+  usedToday: 0,
+  remainingToday: 5,
+  minIntervalSeconds: 30,
+  nextAllowedAt: null,
+  ...overrides,
+});
+
+describe('the quota is printed before the button is pressed', () => {
+  /**
+   * ⭐ The whole difficulty with this guard is that its cost is displaced in time: spending the
+   * month's quota today hurts next week, as a rate that stops moving and a quotation refused.
+   * Nobody makes that connection unprompted, so the sentence makes it — every time, not only
+   * when the budget is nearly gone.
+   */
+  it('names the shared pool and the consequence, not just a number', () => {
+    const said = fxSyncBudgetTh(budget({ usedToday: 1, remainingToday: 4 }));
+
+    expect(said).toContain('4 จาก 5');
+    expect(said).toContain('ทั้งระบบ');
+    expect(said).toContain('สัปดาห์หน้า');
+  });
+
+  /**
+   * ⚠️ Every figure comes from the response — `dailyLimit: 5` here is not the server's real 10,
+   * exactly as `warnAfterHours: 10` is not the real 36. A screen holding its own copy would
+   * promise a budget the server does not enforce.
+   */
+  it('quotes the limit the server sent, never a copy of its own', () => {
+    expect(fxSyncBudgetTh(budget({ dailyLimit: 3, remainingToday: 3 }))).toContain('3 จาก 3');
+    expect(fxSyncBudgetTh(budget())).not.toContain('10');
+  });
+});
+
+describe('the two refusals are told apart', () => {
+  const stamp = (iso: string): string => `AT(${iso})`;
+
+  it('says nothing while a press would be accepted', () => {
+    expect(fxSyncBlockedTh(budget(), stamp)).toBeNull();
+  });
+
+  /**
+   * ⭐ A spent quota and a sixty-second gap both arrive as a non-null `nextAllowedAt`, and the
+   * reader's next move is completely different: stop until tomorrow, or wait under a minute.
+   * `remainingToday` is what separates them.
+   */
+  it('names the interval when the quota is not what is holding', () => {
+    const said = fxSyncBlockedTh(
+      budget({ usedToday: 1, remainingToday: 4, nextAllowedAt: '2026-08-09T01:01:00.000Z' }),
+      stamp,
+    ) ?? '';
+
+    expect(said).toContain('30 วินาที');
+    expect(said).toContain('AT(2026-08-09T01:01:00.000Z)');
+    /* Must not tell somebody with four presses left that they are out for the day. */
+    expect(said).not.toContain('ครบ');
+  });
+
+  it('names the quota when it is spent, and offers the override as the way out', () => {
+    const said = fxSyncBlockedTh(
+      budget({ usedToday: 5, remainingToday: 0, nextAllowedAt: '2026-08-10T01:00:00.000Z' }),
+      stamp,
+    ) ?? '';
+
+    expect(said).toContain('ครบ 5 ครั้ง');
+    expect(said).toContain('อัตราแลกเปลี่ยนกำหนดเอง');
+  });
+});
+
+describe('what the sync did — and the outcome that looks like success', () => {
+  const result = (
+    overrides: Readonly<Partial<FxManualSyncResultWire>> = {},
+  ): FxManualSyncResultWire => ({
+    outcome: 'stored',
+    observedAt: '2026-08-09T01:00:00.000Z',
+    previousObservedAt: '2026-08-08T01:00:00.000Z',
+    failureStage: null,
+    manualSync: budget({ usedToday: 1, remainingToday: 4 }),
+    ...overrides,
+  });
+
+  /**
+   * ⭐⭐ THE ASSERTION THIS FEATURE EXISTS FOR.
+   *
+   * The free plan updates hourly, so a manual sync minutes after the last one gets the identical
+   * observation back. That is the *ordinary* outcome. The sentence has three jobs and each is one
+   * somebody would leave out: the number did not move; that is normal and here is why; and it was
+   * not free — a request was spent.
+   */
+  it('says plainly that an unchanged sync moved nothing, why that is normal, and that it still cost', () => {
+    const said = fxSyncOutcomeTh(result({ outcome: 'unchanged' }));
+
+    expect(said).toContain('ได้ตัวเลขชุดเดิม');
+    expect(said).toContain('อัตราไม่ได้ขยับ');
+    expect(said).toContain('ชั่วโมงละครั้ง');
+    expect(said).toContain('ใช้โควตา');
+  });
+
+  /** ⚠️ And it is not dressed as a success, because a green tick over a number that did not move
+      is the exact mis-signal this round removes. */
+  it('does not title an unchanged sync as a success', () => {
+    expect(fxSyncOutcomeTitleTh(result({ outcome: 'unchanged' }))).toContain('ไม่ขยับ');
+    expect(fxSyncOutcomeTitleTh(result({ outcome: 'stored' }))).not.toContain('ไม่ขยับ');
+    /* Four outcomes, four distinct headings: two that read alike could not be told apart. */
+    expect(
+      new Set(
+        (['stored', 'unchanged', 'failed', 'disabled'] as const).map((outcome) =>
+          fxSyncOutcomeTitleTh(result({ outcome })),
+        ),
+      ).size,
+    ).toBe(4);
+  });
+
+  it('says a stored sync actually moved the observation', () => {
+    expect(fxSyncOutcomeTh(result())).toContain('ได้ตัวเลขชุดใหม่จริง');
+  });
+
+  /**
+   * ⚠️ A failure names the STAGE and nothing else. `app_id` travels in the provider URL, so a
+   * sentence carrying a URL or a provider message would put the credential on a screen somebody
+   * screenshots. It also says the cached rate still works, because the first question on seeing
+   * red is "is the whole thing down".
+   */
+  it('names only the stage on a failure, and says the cached rate still works', () => {
+    const said = fxSyncOutcomeTh(result({ outcome: 'failed', failureStage: 'fetch' }));
+
+    expect(said).toContain('"fetch"');
+    expect(said).toContain('ยังใช้งานได้ตามปกติ');
+    expect(said).not.toContain('http');
+    expect(said).not.toContain('app_id');
+  });
+
+  /** A failed manual sync is recorded like a scheduled one, and the copy says so — otherwise the
+      failure count moving looks like a second, unrelated fault. */
+  it('says a failed manual sync is recorded the same way a scheduled one is', () => {
+    expect(fxSyncOutcomeTh(result({ outcome: 'failed', failureStage: 'parse' }))).toContain(
+      'ดึงไม่สำเร็จติดต่อกัน',
+    );
+  });
+
+  /** No key configured is not an outage: nothing was attempted and nothing was spent. */
+  it('tells a missing provider key apart from a failure, and says nothing was spent', () => {
+    const said = fxSyncOutcomeTh(result({ outcome: 'disabled' }));
+
+    expect(said).toContain('ไม่มีการใช้โควตา');
+    expect(said).toContain('OPENEXCHANGERATES_APP_ID');
+  });
+
+  /**
+   * ⚠️ Only `failed` is destructive. `unchanged` must not be red — nothing is wrong — and must not
+   * be styled as a plain success either; the icon does that work in the component.
+   */
+  it('reddens only a real failure', () => {
+    expect(fxSyncOutcomeVariant(result({ outcome: 'failed' }))).toBe('destructive');
+    expect(fxSyncOutcomeVariant(result({ outcome: 'unchanged' }))).toBe('default');
+    expect(fxSyncOutcomeVariant(result())).toBe('default');
+  });
+});
+
+describe('the sync result decoder', () => {
+  const WIRE = {
+    outcome: 'unchanged',
+    observedAt: '2026-08-09T01:00:00.000Z',
+    previousObservedAt: '2026-08-09T01:00:00.000Z',
+    failureStage: null,
+    manualSync: {
+      dailyLimit: 10,
+      usedToday: 2,
+      remainingToday: 8,
+      minIntervalSeconds: 60,
+      nextAllowedAt: '2026-08-09T01:01:00.000Z',
+    },
+  };
+
+  it('reads a well-formed result field for field', () => {
+    expect(decodeFxManualSyncResult(WIRE)).toStrictEqual(WIRE);
+  });
+
+  /**
+   * ⚠️ An unknown outcome throws rather than defaulting. Every branch that reads it — the icon,
+   * the variant, the sentence — is written against four answers, and quietly folding a fifth into
+   * `stored` would print "ได้ตัวเลขชุดใหม่จริง" over something nobody knows the shape of.
+   */
+  it('refuses an outcome this build has not been taught', () => {
+    expect(() => decodeFxManualSyncResult({ ...WIRE, outcome: 'partial' })).toThrow(TypeError);
+  });
+
+  it('refuses a missing budget rather than assuming the button is free', () => {
+    const { manualSync: _dropped, ...missing } = WIRE;
+
+    expect(() => decodeFxManualSyncResult(missing)).toThrow(TypeError);
+    expect(() =>
+      decodeFxManualSyncResult({ ...WIRE, manualSync: { ...WIRE.manualSync, remainingToday: undefined } }),
+    ).toThrow(TypeError);
+  });
+});
+
+describe('the configured-rate decoder', () => {
+  const ROW = {
+    countryCode: 'SG',
+    countryNameTh: 'สิงคโปร์',
+    currency: 'SGD',
+    isActive: true,
+    source: 'mid_market',
+    effectiveThbPerUnit: '26.496296',
+    midThbPerUnit: '27.037037',
+    spreadBp: 200,
+    spreadApplied: true,
+    provider: { unitPerBase: 1.35, thbPerBase: 36.5 },
+    problem: null,
+  };
+  const wire = (rows: readonly unknown[]) => ({ ...health(), configuredRates: rows, base: 'USD' });
+
+  it('accepts an empty list, which is a real and ordinary state', () => {
+    expect(decodeFxRateHealth(wire([])).configuredRates).toStrictEqual([]);
+  });
+
+  /**
+   * ⚠️ Empty passes and absent throws. Empty renders as "no destination is configured, everything
+   * is quoted in baht" — a reassuring sentence, and one that must never be printed off a server
+   * build that merely renamed the key.
+   */
+  it('refuses an absent list rather than reading it as no destinations', () => {
+    const { configuredRates: _dropped, ...missing } = wire([]);
+
+    expect(() => decodeFxRateHealth(missing)).toThrow(TypeError);
+  });
+
+  it('reads a row field for field', () => {
+    expect(decodeFxRateHealth(wire([ROW])).configuredRates[0]).toStrictEqual(ROW);
+  });
+
+  /**
+   * ⭐ `source` IS narrowed here, unlike `status` — and the asymmetry is deliberate. Every branch
+   * downstream (does the spread apply, is a mid-market figure meaningful) is written against
+   * exactly two answers, so defaulting a third to `mid_market` would print a market rate for a
+   * destination quoting off an override.
+   */
+  it('refuses a source this build has not been taught, rather than defaulting to market', () => {
+    expect(() => decodeFxRateHealth(wire([{ ...ROW, source: 'pinned' }]))).toThrow(TypeError);
+  });
+
+  it('accepts a null provider and a null rate, which are real answers', () => {
+    const bare = { ...ROW, provider: null, effectiveThbPerUnit: null, midThbPerUnit: null, problem: 'no_snapshot' };
+
+    expect(decodeFxRateHealth(wire([bare])).configuredRates[0]).toStrictEqual(bare);
+  });
+
+  it('refuses an absent provider key rather than reading it as no observation', () => {
+    const { provider: _dropped, ...missing } = ROW;
+
+    expect(() => decodeFxRateHealth(wire([missing]))).toThrow(TypeError);
+  });
+
+  it('names the row index so a malformed entry can be found', () => {
+    expect(() => decodeFxRateHealth(wire([ROW, { ...ROW, currency: 7 }]))).toThrow(/rate 1/u);
   });
 });

@@ -1,14 +1,47 @@
 'use client';
 
-import { AlertTriangle, CheckCircle2, Clock, MailX } from 'lucide-react';
-import type { FxRateHealthWire } from '@wewin/contract/organisation';
+import { useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock, Loader2, MailX, RefreshCw } from 'lucide-react';
+import type { FxConfiguredRateWire, FxManualSyncBudgetWire, FxManualSyncResultWire, FxRateHealthWire } from '@wewin/contract/organisation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FieldGroup } from '@/components/ui/field';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReadOnlyField } from '@/components/products/form-field';
+import { failureMessage } from '@/lib/api/errors';
+import { postFxManualSync } from './fx-health-api';
+import {
+  FX_FIX_PERMISSION,
+  fxAgeTh,
+  fxClockTh,
+  fxFailuresTh,
+  fxFrozenFeedTh,
+  fxHealthBadgeTh,
+  fxHealthBadgeVariant,
+  fxHealthDetailTh,
+  fxHealthRemedyTh,
+  fxHealthTitleTh,
+  fxHealthVerdict,
+  fxManualOverrideNoteTh,
+  fxMidRateTh,
+  fxNoConfiguredRatesTh,
+  fxNoRecipientsTh,
+  fxProviderRawTh,
+  fxRateProblemTh,
+  fxRateSourceTh,
+  fxRateTh,
+  fxRecipientsTh,
+  fxSyncBlockedTh,
+  fxSyncBudgetTh,
+  fxSyncOutcomeTh,
+  fxSyncOutcomeTitleTh,
+  fxSyncOutcomeVariant,
+  fxThresholdsTh,
+} from './fx-health-copy';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -20,10 +53,31 @@ import { ReadOnlyField } from '@/components/products/form-field';
  * nobody performed. Both facts existed and neither was reachable by a person, which is the
  * definition of a silent failure. This card is the reachable half.
  *
- * Read-only, and it holds no controls at all — not even a refresh button. There is nothing here
- * to set: the two thresholds are constants in `apps/api/src/fx/staleness.ts`, and the rate is
+ * ⚠️ **It used to say "read-only, and it holds no controls at all — not even a refresh button",
+ * and it now holds exactly one.** The half of that sentence that stands is that nothing here is
+ * *settable*: the two thresholds are constants in `apps/api/src/fx/staleness.ts`, and the rate is
  * changed by an administrator editing a *destination* in the tax-country table below, which is
- * why this card sits directly above that table rather than at the top of the page.
+ * still why this card sits directly above that table rather than at the top of the page. What
+ * changed is that there is now one thing here that is *doable* — ซิงก์เดี๋ยวนี้ — and it sets no
+ * value: it asks the provider for the number 01:00 would have asked for. See `SyncNowPanel`.
+ *
+ * ── ⭐ AND IT NOW SHOWS THE NUMBERS, NOT ONLY THE HEALTH ─────────────────────────
+ *
+ * The card reported how *old* the rate was and never what it *was*, which meant the one thing a
+ * person actually opens this screen to do — check the system's rate against the one they know —
+ * was the one thing it could not help with. `configuredRates` on the payload is that gap closed,
+ * and the whole of the design is in two rules that `configured-rates.ts` argues server-side and
+ * this file renders:
+ *
+ *   1. **Only the currencies that matter.** The feed carries ~170; the ones on this card are the
+ *      ones configured on a destination in `tax_countries`, which is a list of two.
+ *   2. **⭐ The provider's number is never presented as the rate.** `rates['SGD'] = 1.35` means
+ *      1.35 Singapore dollars per US dollar; the figure staff need is ~27 baht per Singapore
+ *      dollar. A reciprocal, a cross-rate and a spread separate them. Every rate on this card is
+ *      rendered with its unit welded into the string (`27.037037 บาท ต่อ 1 SGD`), and every raw
+ *      provider figure as a full equation naming the base (`1 USD = 1.35 SGD`), in muted text,
+ *      under a label that says it is not what prices anything. A person comparing against Google
+ *      has to be unable to pick up the wrong one.
  *
  * ── ⭐ The wording is the feature, and there are five states, not three ──────────
  *
@@ -81,24 +135,28 @@ import { ReadOnlyField } from '@/components/products/form-field';
  * copy of them. There is no `36` and no `72` anywhere in this file, and there must not be: the
  * drift that matters is a screen quoting one number while the refusal compares against another.
  *
- * ── Pure functions, exported, tested ────────────────────────────────────────────
+ * ── ⭐ Pure functions, exported, tested — and now next door ─────────────────────
  *
- * Every derived sentence below is a named `…Th` function of the wire row and nothing else, so
- * what this card *says* is asserted directly in `fx-health.test.ts`. `quote-alerts.tsx` sets this
- * precedent exactly — `unrecognisedDestinationTitleTh` and friends live beside the component that
- * renders them and are tested without a DOM, per `vitest.config.ts`'s own stance that a component
- * test here would be a test of these functions, spelled expensively.
+ * Every derived sentence this card prints is a named `…Th` function of the wire row and nothing
+ * else, so what the card *says* is asserted directly in `fx-health.test.ts` without a DOM, per
+ * `vitest.config.ts`'s own stance that a component test here would be a test of those functions
+ * spelled expensively. `quote-alerts.tsx` set that precedent.
  *
- * ⚠️ The cost, named rather than discovered: exporting functions from a `.tsx` trips
- * `react/only-export-components`, which the root `.oxlintrc.json` sets to `warn` — fourteen of them
- * from this file, more than any other single file in the app. That rule is about Fast Refresh
- * preserving component state in dev, not about correctness, and the alternative was worse in a way
- * that is not about lint: the *other* house pattern is a separate pure module (`tax-country-fields
- * .ts` beside `tax-countries.tsx`), and the only `.ts` in this feature is `fx-health-api.ts`, whose
- * job is narrowing a wire payload. Thai copy about stopped cron jobs in a file named `-api` would
- * put two unrelated concerns behind one name to quiet a dev-ergonomics warning. Should this card's
- * wording ever grow past what fits comfortably here, the fix is a third file — `fx-health-copy.ts`
- * — and not a retreat from testing what the card says.
+ * ⚠️ **They used to live in this file, and the paragraph here used to explain why.** It accepted
+ * fourteen `react/only-export-components` warnings — a Fast-Refresh ergonomics rule, `warn` in the
+ * root `.oxlintrc.json`, not a correctness one — and then named the condition under which that
+ * stopped being the right trade: *"Should this card's wording ever grow past what fits comfortably
+ * here, the fix is a third file — `fx-health-copy.ts` — and not a retreat from testing what the
+ * card says."*
+ *
+ * The round that added the synced figures and the manual-sync button took that count from fourteen
+ * to twenty-seven, which is past the line this file drew for itself. So the sentences now live in
+ * `fx-health-copy.ts` and this file exports one component and one type. The second half of that
+ * sentence held: nothing was untested to get there, and no assertion changed — the test file moved
+ * one import specifier.
+ *
+ * What stayed: `FxHealthState`, because it is *this component's* contract with
+ * `organisation-screen.tsx` rather than anything a sentence is derived from.
  */
 
 export type FxHealthState =
@@ -106,364 +164,29 @@ export type FxHealthState =
   | { readonly status: 'failed'; readonly problem: string }
   | { readonly status: 'ready'; readonly health: FxRateHealthWire };
 
-/**
- * The five things a reader can be told, as one value the wording functions switch on.
- *
- * `never_synced` and `stale_blocked` both arrive as `status: 'blocked'` — the server is right to
- * summarise them the same way, because a foreign-currency submit is refused either way — and they
- * are split here because the *sentence* differs and the next action differs.
- */
-export type FxHealthVerdict = 'ok' | 'warn' | 'stale_blocked' | 'never_synced' | 'unrecognised';
-
-/**
- * ⚠️ **`ageHours === null` is checked before the word, and the order is deliberate.**
- *
- * The null age is a fact about the stored data — `fx_rates` is empty — while `status` is the
- * server's one-word summary of it. They cannot disagree today (`fxRateHealthStatus(null)` is
- * `'blocked'` by its own first line), and if a future build ever made them disagree, the fact
- * should win over the summary for this branch: a card cannot honestly report an age it does not
- * have.
- *
- * ⭐ **An unrecognised word resolves toward "unusable", never toward green.** The contract types
- * `status` as `string` and the union lives server-side, so a fourth word is a version skew that
- * this build can reach. Reading it as `ok` would put a green badge over submits that are, right
- * now, being refused — which `staleness.ts` names as the specific failure its single shared
- * comparison exists to prevent. Reading it as a hard refusal would be an unearned alarm, so
- * `unrecognised` is its own verdict with its own sentence: the numbers below are real, the word
- * above them is not one we know, treat it as unusable until somebody checks.
- */
-export function fxHealthVerdict(health: FxRateHealthWire): FxHealthVerdict {
-  if (health.ageHours === null) return 'never_synced';
-
-  switch (health.status) {
-    case 'ok':
-      return 'ok';
-    case 'warn':
-      return 'warn';
-    case 'blocked':
-      return 'stale_blocked';
-    default:
-      return 'unrecognised';
-  }
-}
-
-/** The badge beside the card title — the state in two or three words, for a glance. */
-export function fxHealthBadgeTh(health: FxRateHealthWire): string {
-  switch (fxHealthVerdict(health)) {
-    case 'ok':
-      return 'ปกติ';
-    case 'warn':
-      return 'เริ่มเก่า';
-    case 'stale_blocked':
-      return 'ปฏิเสธอยู่';
-    case 'never_synced':
-      return 'ไม่มีอัตราเลย';
-    case 'unrecognised':
-      return 'สถานะไม่รู้จัก';
-  }
-}
-
-/**
- * ⚠️ `warn` is `secondary` and not `destructive`, and that is the whole point of having four
- * variants for five states. A red badge over a state in which every quotation still works is how
- * a team learns to stop reading the badge.
- */
-export function fxHealthBadgeVariant(
-  health: FxRateHealthWire,
-): 'outline' | 'secondary' | 'destructive' {
-  switch (fxHealthVerdict(health)) {
-    case 'ok':
-      return 'outline';
-    case 'warn':
-      return 'secondary';
-    default:
-      return 'destructive';
-  }
-}
-
-/**
- * The headline. Leads with the consequence rather than the cause wherever there is one — the same
- * rule `unrecognisedDestinationTitleTh` follows in `quote-alerts.tsx`, for the same reason: what
- * changes the reader's next action goes first, and the hour count is why.
- */
-export function fxHealthTitleTh(health: FxRateHealthWire): string {
-  switch (fxHealthVerdict(health)) {
-    case 'ok':
-      return 'อัตราแลกเปลี่ยนเป็นปัจจุบัน';
-    case 'warn':
-      return 'อัตราแลกเปลี่ยนเริ่มเก่า — ใบเสนอราคาสกุลเงินต่างประเทศยังออกได้ตามปกติ';
-    case 'stale_blocked':
-      return 'ออกใบเสนอราคาสกุลเงินต่างประเทศไม่ได้ตอนนี้ — อัตราแลกเปลี่ยนเก่าเกินกำหนด';
-    case 'never_synced':
-      return 'ออกใบเสนอราคาสกุลเงินต่างประเทศไม่ได้เลย — ยังไม่เคยมีอัตราแลกเปลี่ยนในระบบ';
-    case 'unrecognised':
-      return `เซิร์ฟเวอร์ส่งสถานะ "${health.status}" ที่แดชบอร์ดรุ่นนี้ไม่รู้จัก`;
-  }
-}
-
-/**
- * What is true right now, in one paragraph, with the hour counts taken from the response.
- *
- * ⚠️ The `warn` sentence and the `stale_blocked` sentence are written to be impossible to
- * mistake for each other. `warn` says *ยังไม่มีใบใดถูกปฏิเสธ* and names the hour at which that
- * stops being true; `stale_blocked` says *ถูกปฏิเสธทุกใบตั้งแต่นี้* in the present tense. Both also
- * say that baht-only quotations are unaffected, because the first question a reader asks on
- * seeing red on a settings page is "is the whole thing down".
- */
-export function fxHealthDetailTh(health: FxRateHealthWire): string {
-  const warn = fxHoursTh(health.warnAfterHours);
-  const refuse = fxHoursTh(health.refuseAfterHours);
-
-  switch (fxHealthVerdict(health)) {
-    case 'ok':
-      return `อัตราล่าสุดยังใหม่กว่าเกณฑ์เตือน ${warn} ชั่วโมง ใบเสนอราคาสกุลเงินต่างประเทศออกได้ตามปกติ`;
-    case 'warn':
-      return `อัตราล่าสุดเก่ากว่าเกณฑ์เตือน ${warn} ชั่วโมงแล้ว — เป็นคำเตือนเท่านั้น ยังไม่มีใบเสนอราคาใดถูกปฏิเสธ และจะเริ่มถูกปฏิเสธเมื่ออัตราเก่ากว่า ${refuse} ชั่วโมง จึงยังมีเวลาแก้ก่อนถึงตรงนั้น`;
-    case 'stale_blocked':
-      return `อัตราล่าสุดเก่ากว่าเกณฑ์ปฏิเสธ ${refuse} ชั่วโมง ระบบจึงปฏิเสธการออกใบเสนอราคาสกุลเงินต่างประเทศทุกใบตั้งแต่นี้ จนกว่าจะดึงอัตราใหม่ได้สำเร็จหรือมีผู้ดูแลกรอกอัตราเอง ส่วนใบเสนอราคาที่คิดเป็นเงินบาทเท่านั้นไม่ได้รับผลกระทบ`;
-    case 'never_synced':
-      return 'ตารางอัตราแลกเปลี่ยนว่างเปล่า ไม่ใช่ว่าอัตราเก่า แต่คือยังไม่มีอัตราให้ใช้เลยแม้แต่ครั้งเดียว ระบบจึงปฏิเสธใบเสนอราคาสกุลเงินต่างประเทศทุกใบ การรอรอบดึงถัดไปอาจไม่ช่วย เพราะถ้าเคยดึงสำเร็จแม้ครั้งเดียวก็จะมีอัตราค้างอยู่แล้ว ส่วนใบเสนอราคาที่คิดเป็นเงินบาทเท่านั้นไม่ได้รับผลกระทบ';
-    case 'unrecognised':
-      return `แดชบอร์ดถือว่าใช้งานไม่ได้ไว้ก่อน เพราะการขึ้นสีเขียวทับสถานะที่อ่านไม่ออกคือความผิดพลาดที่แย่ที่สุดของการ์ดนี้ ตัวเลขทั้งหมดข้างล่างยังเป็นของจริงจากเซิร์ฟเวอร์ ใช้ประกอบการตัดสินใจได้ (เกณฑ์เตือน ${warn} ชั่วโมง เกณฑ์ปฏิเสธ ${refuse} ชั่วโมง)`;
-  }
-}
-
-/**
- * ⭐ The permission that can end an outage, named once because three sentences on this card name
- * it — the remedy below, the recipients field's description, and the zero-recipient warning.
- *
- * Naming a permission code in Thai staff copy is deliberate and not a leak of internals: it is the
- * string an administrator types into the groups screen, so a sentence that said "the appropriate
- * permission" would be a sentence nobody could act on. It is a constant rather than three literals
- * for the ordinary reason — the three would drift, and two of them would then send a reader to
- * grant something that is not what the email is routed on.
- *
- * ⚠️ Not imported from a shared permissions module, because there is no runtime one to import
- * from: `PermissionCode` is a server-side type and the wire carries only the *count*. This is a
- * copy of a server-side fact, and the honest place for it is one line the compiler cannot check —
- * which is why `fx-health.test.ts` asserts the string appears in the copy that matters.
- */
-const FX_FIX_PERMISSION = 'organisation.write';
-
-/**
- * The way out, or `null` when nothing needs one.
- *
- * ⭐ Names the *field* and the *place*, not just "contact an administrator". The remedy is one
- * text box on this same page: open the destination in the tax-country table below and fill in
- * `อัตราแลกเปลี่ยนกำหนดเอง`, which converts at the typed rate directly and is recorded in that
- * destination's change history with the actor's id. That path is chosen over anything faster on
- * purpose — `FxController`'s own note says a second way to influence conversion that skipped the
- * audit row is exactly what this codebase does not have.
- *
- * `null` for `ok` and for `warn`: a warning whose text ends in an instruction reads as a task,
- * and `warn` is explicitly not one yet.
- */
-export function fxHealthRemedyTh(health: FxRateHealthWire): string | null {
-  switch (fxHealthVerdict(health)) {
-    case 'ok':
-    case 'warn':
-      return null;
-    default:
-      return `ถ้าต้องออกใบเสนอราคาสกุลเงินต่างประเทศเดี๋ยวนี้: ในตารางประเทศปลายทางด้านล่าง กด "แก้ไข" ที่ประเทศนั้น แล้วกรอกช่อง "อัตราแลกเปลี่ยนกำหนดเอง" เป็นจำนวนบาทต่อ 1 หน่วยของสกุลเงินนั้น ระบบจะใช้อัตราที่กรอกแทนอัตรากลางตลาดทันที และบันทึกไว้ในประวัติการแก้ไขของประเทศนั้นพร้อมผู้แก้ — ต้องมีสิทธิ์ ${FX_FIX_PERMISSION}`;
-  }
-}
-
-/**
- * A number of hours as text: `36` → `'36'`, `12.34` → `'12.3'`, `12.04` → `'12'`.
- *
- * One decimal place, because a rate's age is read to decide whether to act and the tenth of an
- * hour is already more precision than that decision needs — while `12.033333333333333 ชั่วโมง` on
- * a settings card is just noise. A trailing `.0` is dropped for the same reason `rateField` in
- * `tax-country-fields.ts` drops it: a figure that always shows a decimal reads as more precise
- * than it is.
- */
-export function fxHoursTh(hours: number): string {
-  const rounded = Math.round(hours * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
-
-/**
- * How old the newest rate is, in words.
- *
- * ⚠️ **`null` is "never", not "zero".** `ageHours === null` means `fx_rates` has never held a
- * row; printing `0 ชั่วโมง` there would be the single most misleading string this card could
- * produce, because zero hours old is what a perfectly fresh rate looks like.
- *
- * Minutes below one hour (a healthy feed sits between ~1h and ~26h, so sub-hour is worth
- * reading exactly), and a day count added past two days — nobody converts `412.5 ชั่วโมง` into
- * "two and a half weeks" in their head, and "two and a half weeks" is the fact that makes
- * somebody act.
- */
-export function fxAgeTh(ageHours: number | null): string {
-  if (ageHours === null) return 'ยังไม่เคยมีอัตราแลกเปลี่ยน';
-
-  if (ageHours < 1) return `${String(Math.round(ageHours * 60))} นาที`;
-  if (ageHours < 48) return `${fxHoursTh(ageHours)} ชั่วโมง`;
-
-  return `${fxHoursTh(ageHours)} ชั่วโมง (ประมาณ ${String(Math.floor(ageHours / 24))} วัน)`;
-}
-
-/**
- * The failure count, and the one reading of it that is a trap.
- *
- * ⭐ **Zero failures beside an old rate is not reassurance — it is the loudest signal here.**
- * `consecutiveFailures` counts failures *recorded since the newest stored rate*, so zero means
- * nothing has failed since then, which beside a stale rate means nothing has *tried*: a stopped
- * scheduler rather than a struggling provider. Those two have different fixes and only one of
- * them resolves itself, so the card says which one it is looking at rather than printing a
- * comforting `0`.
- *
- * The staleness boundary for "old enough that silence is suspicious" is `warnAfterHours` from the
- * response — the same threshold the server warns on — rather than a number invented here.
- *
- * ⚠️ A nonzero count is labelled a lower bound, because it is one: a failure the database refused
- * to record is a failure that is not counted (`FxRatesService.record` swallows that path
- * deliberately). Printing it as exact would overstate what the number knows.
- */
-export function fxFailuresTh(health: FxRateHealthWire): string {
-  const { ageHours, consecutiveFailures, warnAfterHours } = health;
-
-  if (consecutiveFailures > 0) {
-    return `${String(consecutiveFailures)} ครั้ง (เป็นค่าอย่างน้อย — ความล้มเหลวที่บันทึกไม่สำเร็จจะไม่ถูกนับ)`;
-  }
-
-  if (ageHours === null || ageHours > warnAfterHours) {
-    return '0 ครั้ง — และนี่ไม่ใช่ข่าวดี: อัตราเก่าแล้วแต่ไม่มีการดึงที่ล้มเหลวเลย แปลว่าไม่มีอะไรพยายามดึงอยู่ ให้ไปตรวจตัวตั้งเวลาของงานดึงอัตรา ไม่ใช่ผู้ให้บริการ';
-  }
-
-  return '0 ครั้ง';
-}
-
-const MS_PER_HOUR = 60 * 60 * 1000;
-
-/**
- * ⭐ The frozen feed, stated outright — the failure no fetch-time check can see.
- *
- * A provider whose feed has stopped updating but whose HTTP endpoint is healthy answers 200 every
- * day with the same `timestamp`. That writes a new row daily, so `fetchedAt` is always minutes old
- * and every "did the sync work" check reports perfect health, while the number being frozen onto
- * documents is weeks old. Showing both clocks makes it *visible*; this sentence makes it
- * *diagnosed*, so that a reader who has not internalised the difference between the two columns
- * still leaves knowing which side to chase.
- *
- * The gap is the lag between the two clocks, and it is compared against `warnAfterHours` from the
- * response rather than a threshold of its own — there is no second opinion here about how much
- * staleness is too much, and inventing one would be a number to keep in step with the server's.
- *
- * `null` — say nothing — when either clock is missing (there is nothing to compare, and
- * `never_synced` already has the reader's attention) or when either fails to parse, because a
- * malformed timestamp is a decoding complaint and not a provider diagnosis.
- */
-export function fxFrozenFeedTh(health: FxRateHealthWire): string | null {
-  const { observedAt, fetchedAt, warnAfterHours } = health;
-  if (observedAt === null || fetchedAt === null) return null;
-
-  const observed = Date.parse(observedAt);
-  const fetched = Date.parse(fetchedAt);
-  if (Number.isNaN(observed) || Number.isNaN(fetched)) return null;
-
-  const lagHours = (fetched - observed) / MS_PER_HOUR;
-  if (lagHours <= warnAfterHours) return null;
-
-  return `ระบบดึงข้อมูลสำเร็จ แต่ตัวเลขที่ได้มาถูกออกไว้ก่อนเวลาที่ดึงถึง ${fxHoursTh(lagHours)} ชั่วโมง — ผู้ให้บริการยังตอบปกติแต่หยุดอัปเดตอัตรา การดูแค่ว่า "ดึงสำเร็จหรือไม่" จะไม่เห็นปัญหานี้เลย เพราะดึงสำเร็จทุกครั้งจริง`;
-}
-
-/**
- * How many people the staleness warning could actually reach.
- *
- * ⚠️ **Zero is printed as a fact, not as a number**, for the same reason `fxFailuresTh` refuses to
- * print a comforting `0`: a bare `0 คน` in a column of counts reads as "nothing to see", and this
- * particular zero is the most consequential value on the card. The sentence in the field says what
- * it means; `fxNoRecipientsTh` below says what to do about it.
- *
- * `คน` and not `รายชื่อ` on purpose — these are people resolved from the permission model at send
- * time, not entries on a list somebody maintains.
- */
-export function fxRecipientsTh(health: FxRateHealthWire): string {
-  if (health.warningRecipients === 0) {
-    return '0 คน — ไม่มีใครที่ระบบจะแจ้งได้เมื่ออัตราแลกเปลี่ยนเริ่มเก่า';
-  }
-
-  return `${String(health.warningRecipients)} คน`;
-}
-
-/**
- * ⭐ Nobody can be told — the condition that is worse than the one this card was built to report.
- *
- * `null` — say nothing — whenever at least one person is reachable. Non-`null` whenever the count
- * is zero, **and that is deliberately not conditioned on `status`**. See this file's header: a
- * green feed with no reachable holder of the permission is a trap that has already been set, and
- * the only useful time to say so is before it fires. A version of this check that only spoke when
- * the rate was already stale would speak for the first time in the one state where the warning it
- * is about has already failed to arrive.
- *
- * The copy has to do three jobs, and each is one somebody got wrong in the log-line version of
- * this:
- *
- *   1. **Name the consequence, not the configuration.** Not "no recipients are configured" — there
- *      is nothing to configure. The consequence is that the rate will go stale and the people who
- *      could type a manual rate will find out when a quotation is refused.
- *   2. **Name the fix as a grant, not as a settings change.** Grant `organisation.write` to an
- *      active account, or reactivate one — those are the two shapes this condition has.
- *   3. **Say that the count measures reachability, not authority.** Somebody suspended, or with no
- *      primary address, holds the permission and is still not counted, because they cannot be
- *      told. Without that sentence an administrator looking at a groups screen listing four
- *      holders reads the `0` as a bug in this card and stops.
- *
- * And it says outright that the shared sales queue still gets its copy, because it does — while
- * refusing to let that read as a substitute. Somebody being told is better than nobody; it is not
- * the same as reaching a person who holds the permission.
- */
-export function fxNoRecipientsTh(health: FxRateHealthWire): string | null {
-  if (health.warningRecipients > 0) return null;
-
-  return (
-    `ไม่มีบัญชีที่ใช้งานอยู่คนใดถือสิทธิ์ ${FX_FIX_PERMISSION} พร้อมอีเมลหลัก ระบบจึงไม่มีใครให้แจ้งเมื่ออัตราแลกเปลี่ยนเริ่มเก่า — ` +
-    'คนที่กรอกอัตราเองเพื่อจบปัญหาได้จะไม่ได้รับอีเมลเลย และจะรู้ตัวตอนที่ออกใบเสนอราคาสกุลเงินต่างประเทศไม่ได้แล้ว ' +
-    'คำเตือนนี้จึงขึ้นทุกครั้งที่ตัวเลขนี้เป็นศูนย์ ไม่ว่าสถานะอัตราด้านบนจะเป็นอะไร เพราะต้องแก้ก่อนอัตราจะเก่า ไม่ใช่หลังจากนั้น ' +
-    `วิธีแก้: ให้สิทธิ์ ${FX_FIX_PERMISSION} กับบัญชีที่ใช้งานอยู่ หรือเปิดใช้งานบัญชีที่ถูกระงับไว้กลับมา แล้วตรวจว่าบัญชีนั้นมีอีเมลหลัก ` +
-    'ตัวเลขนี้นับว่าแจ้งถึงได้จริงกี่คน ไม่ใช่ว่ามีสิทธิ์กี่คน — ผู้ที่ถือสิทธิ์แต่บัญชีถูกระงับ หรือไม่มีอีเมลหลัก จะไม่ถูกนับ เพราะแจ้งไปก็ไม่ถึงตัว ' +
-    'ส่วนอีเมลที่เข้ากล่องกลางของฝ่ายขายยังส่งตามปกติ แต่นั่นไม่เท่ากับมีคนที่ถือสิทธิ์รู้เรื่อง'
-  );
-}
-
-/** The two thresholds, printed from the response so this screen keeps no copy of them. */
-export function fxThresholdsTh(health: FxRateHealthWire): string {
-  return `เตือนเมื่อเก่ากว่า ${fxHoursTh(health.warnAfterHours)} ชั่วโมง · ปฏิเสธเมื่อเก่ากว่า ${fxHoursTh(health.refuseAfterHours)} ชั่วโมง`;
-}
-
-/**
- * The same four-line `at` every sibling here defines — `tax-country-history.tsx`,
- * `bank-account-history.tsx`, `profile-history.tsx`. Asia/Bangkok explicitly, so a laptop left on
- * UTC does not quietly show staff a different hour than the one their colleague is reading.
- */
-const at = (iso: string): string =>
-  new Date(iso).toLocaleString('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-/**
- * One of the three timestamps, or the word for its absence.
- *
- * ⚠️ The `null` guard is load-bearing rather than tidy: `new Date(null)` is the Unix epoch, so
- * an unguarded call would print `1 ม.ค. 2513, 07:00` — a real-looking date, in the past, on a card
- * whose entire job is to say how old something is.
- *
- * `format` is injected with `at` as its default so the branch that *is* this file's decision — what
- * absence reads as — is assertable without depending on which ICU build the test runs against.
- * The formatting itself is ICU's and is not this file's to prove.
- */
-export function fxClockTh(iso: string | null, format: (iso: string) => string = at): string {
-  return iso === null ? 'ยังไม่มี' : format(iso);
-}
 
 /* ------------------------------------------------------------------ *
  * The card
  * ------------------------------------------------------------------ */
 
-export function FxHealthCard({ state }: { readonly state: FxHealthState }) {
+export function FxHealthCard({
+  state,
+  editable,
+  onSynced,
+}: {
+  readonly state: FxHealthState;
+  /**
+   * `organisation.write` — resolved once at the top of `OrganisationScreen` and passed down as a
+   * boolean, which is this app's rule for every permission gate (see `tax-country-fields.test.ts`
+   * on why a component that called `useSession()` itself would be untestable here).
+   *
+   * The sync panel is **hidden** rather than disabled without it, exactly as every other write
+   * control on this page is. A greyed-out button is an invitation to go looking for why.
+   */
+  readonly editable: boolean;
+  /** The parent's reload, so a sync that moved the number redraws the figures it moved. */
+  readonly onSynced: () => Promise<void>;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -471,7 +194,7 @@ export function FxHealthCard({ state }: { readonly state: FxHealthState }) {
           <div>
             <CardTitle>สถานะอัตราแลกเปลี่ยน</CardTitle>
             <CardDescription>
-              อัตราที่ระบบใช้แปลงสกุลเงินบนใบเสนอราคา — อ่านได้เท่านั้น ไม่มีอะไรตั้งค่าได้ที่การ์ดนี้
+              อัตราที่ระบบใช้แปลงสกุลเงินบนใบเสนอราคา และตัวเลขที่ดึงมาได้จริง
               ตัวเลขทั้งหมดมาจากเซิร์ฟเวอร์ รวมทั้งเกณฑ์เตือนและเกณฑ์ปฏิเสธ ซึ่งเป็นตัวเดียวกับที่ใช้ปฏิเสธจริง
               การ์ดนี้จึงไม่มีทางบอกว่าปกติในขณะที่ใบเสนอราคาถูกปฏิเสธอยู่
             </CardDescription>
@@ -500,13 +223,23 @@ export function FxHealthCard({ state }: { readonly state: FxHealthState }) {
           </Alert>
         )}
 
-        {state.status === 'ready' && <FxHealthBody health={state.health} />}
+        {state.status === 'ready' && (
+          <FxHealthBody health={state.health} editable={editable} onSynced={onSynced} />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
+function FxHealthBody({
+  health,
+  editable,
+  onSynced,
+}: {
+  readonly health: FxRateHealthWire;
+  readonly editable: boolean;
+  readonly onSynced: () => Promise<void>;
+}) {
   const verdict = fxHealthVerdict(health);
   const remedy = fxHealthRemedyTh(health);
   const frozen = fxFrozenFeedTh(health);
@@ -604,6 +337,221 @@ function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
           description={`มาจากผู้ที่ถือสิทธิ์ ${FX_FIX_PERMISSION} ในระบบสิทธิ์ ไม่ใช่รายชื่อผู้รับที่ตั้งค่าไว้ที่ไหน — ให้สิทธิ์นี้กับใครเพิ่ม คนนั้นได้รับอีเมลทันทีโดยไม่ต้องแก้รายชื่อ และคนที่ลาออกก็หยุดรับเองเมื่อบัญชีถูกปิด นับเฉพาะบัญชีที่ใช้งานอยู่และมีอีเมลหลัก เพราะเป็นสิทธิ์เดียวกับที่กรอกอัตราแลกเปลี่ยนกำหนดเองได้`}
         />
       </FieldGroup>
+
+      <Separator />
+      <SyncedRates health={health} />
+
+      {/* Hidden, not disabled, without `organisation.write` — the rule every write control on
+          this page follows. See `FxHealthCard`'s prop. */}
+      {editable && (
+        <>
+          <Separator />
+          <SyncNowPanel budget={health.manualSync} onSynced={onSynced} />
+        </>
+      )}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The figures
+ * ------------------------------------------------------------------ */
+
+function SyncedRates({ health }: { readonly health: FxRateHealthWire }) {
+  const empty = fxNoConfiguredRatesTh(health);
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-sm font-medium">อัตราที่ระบบถืออยู่ตอนนี้</h3>
+        <p className="text-muted-foreground text-sm">
+          เฉพาะสกุลเงินที่มีประเทศปลายทางตั้งค่าไว้จริง — ชุดข้อมูลที่ดึงมามีสกุลเงินนับร้อย
+          แต่ที่เหลือไม่มีผลกับใบเสนอราคาใดเลย ตัวเลขที่แสดงคืออัตราที่ระบบจะใช้เสนอราคาจริง
+          รวมส่วนต่างแล้ว ไม่ใช่ตัวเลขดิบของผู้ให้บริการ
+        </p>
+      </div>
+
+      {empty !== null ? (
+        <p className="text-muted-foreground text-sm">{empty}</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {health.configuredRates.map((rate) => (
+            <ConfiguredRateRow key={rate.countryCode} rate={rate} base={health.base} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * ⭐ One destination, with the useful figure large and the provider's raw numbers small.
+ *
+ * The visual hierarchy is doing real work here and is not decoration: the effective rate is the
+ * only number on this row a person should act on, so it is the only one at full size and full
+ * contrast. The provider's figures are `text-muted-foreground` and small — present, because this
+ * card is about the feed and what the feed said is a fact worth seeing, but never competing for
+ * the eye with the number that prices a quotation.
+ */
+function ConfiguredRateRow({
+  rate,
+  base,
+}: {
+  readonly rate: FxConfiguredRateWire;
+  readonly base: string | null;
+}) {
+  const value = fxRateTh(rate);
+  const mid = fxMidRateTh(rate);
+  const raw = fxProviderRawTh(rate, base);
+  const problem = fxRateProblemTh(rate);
+  const overridden = fxManualOverrideNoteTh(rate);
+
+  return (
+    <div className="rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">
+          {rate.countryNameTh} ({rate.countryCode}) · {rate.currency}
+        </span>
+        <Badge variant={rate.source === 'manual' ? 'secondary' : 'outline'}>
+          {rate.source === 'manual' ? 'กรอกอัตราเอง' : 'อัตราตลาด'}
+        </Badge>
+        {/* A withdrawn destination is still listed, because its rate can still be pinned onto a
+            document — see `configuredRates`. The badge is what stops that reading as an error. */}
+        {!rate.isActive && <Badge variant="outline">ปิดใช้งานอยู่</Badge>}
+      </div>
+
+      {value !== null ? (
+        <p className="mt-2 text-base font-semibold tabular-nums">{value}</p>
+      ) : (
+        <p className="text-destructive mt-2 text-sm font-medium">คำนวณอัตราไม่ได้</p>
+      )}
+
+      <p className="text-muted-foreground mt-1 text-sm">{fxRateSourceTh(rate)}</p>
+      {mid !== null && <p className="text-muted-foreground text-sm tabular-nums">{mid}</p>}
+
+      {problem !== null && <p className="text-destructive mt-2 text-sm">{problem}</p>}
+
+      {/* ⭐ The sentence the owner asked for: for a destination with a typed override, the feed's
+          number is not what gets used, said outright rather than left to be inferred from a
+          badge. See `fxManualOverrideNoteTh`. */}
+      {overridden !== null && (
+        <p className="text-muted-foreground mt-2 text-sm">{overridden}</p>
+      )}
+
+      {raw !== null && (
+        <p className="text-muted-foreground mt-2 text-xs tabular-nums">{raw}</p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The button, and the budget under it
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ ซิงก์เดี๋ยวนี้ — with the guard printed above it rather than only enforced behind it.
+ *
+ * ⚠️ **The disabled state is a courtesy; the guard is the server's.** `FxRatesService.syncNow`
+ * refuses on its own and answers 429 with a Thai sentence naming which limit and until when, and
+ * that refusal is what actually protects the quota — a client-side `disabled` protects nothing
+ * against a second tab, a stale page, or curl. What the disabled state buys is that the ordinary
+ * user never meets the refusal at all, and the refusal is a sentence rather than a mystery when
+ * they do (a stale budget in a tab left open is exactly how that happens).
+ *
+ * The budget after the press comes back **on the sync response**, so the button re-disables
+ * itself from the server's own arithmetic without waiting for `onSynced` to complete. That
+ * matters for the case this whole guard is about: a second press one second after the first.
+ */
+function SyncNowPanel({
+  budget: initial,
+  onSynced,
+}: {
+  readonly budget: FxManualSyncBudgetWire;
+  readonly onSynced: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [result, setResult] = useState<FxManualSyncResultWire | null>(null);
+
+  /* The freshest budget known: the one the last sync answered with, or the one the card loaded
+     with. Never a locally decremented copy — see `syncNow`'s note on re-reading it. */
+  const budget = result?.manualSync ?? initial;
+  const blocked = fxSyncBlockedTh(budget);
+
+  async function sync(): Promise<void> {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const outcome = await postFxManualSync();
+      setResult(outcome);
+      /* Redraw the figures and the two clocks. Awaited inside `busy` so the button stays
+         disabled until the card is showing what the sync actually did. */
+      await onSynced();
+    } catch (cause) {
+      setProblem(failureMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-sm font-medium">ดึงอัตราเดี๋ยวนี้</h3>
+        <p className="text-muted-foreground text-sm">
+          ปกติระบบดึงอัตราวันละครั้งตอนตีหนึ่ง ปุ่มนี้สั่งให้ดึงทันทีโดยไม่ต้องรอรอบถัดไป
+          — ไม่ได้ตั้งค่าอะไร และไม่ได้เปลี่ยนอัตราด้วยตัวเอง เพียงแต่ไปถามผู้ให้บริการซ้ำ
+        </p>
+      </div>
+
+      {/* ⭐ The quota, stated every time and not only when it is nearly gone. The cost of
+          pressing this lands a week later, on somebody else; nobody joins those two up on
+          their own, so the screen joins them up. */}
+      <p className="text-muted-foreground text-sm">{fxSyncBudgetTh(budget)}</p>
+
+      {blocked !== null && (
+        <Alert>
+          <Clock className="size-4" />
+          <AlertTitle>ยังกดซิงก์ไม่ได้ตอนนี้</AlertTitle>
+          <AlertDescription>{blocked}</AlertDescription>
+        </Alert>
+      )}
+
+      <div>
+        <Button
+          variant="secondary"
+          disabled={busy || blocked !== null}
+          onClick={() => void sync()}
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          ซิงก์อัตราแลกเปลี่ยนเดี๋ยวนี้
+        </Button>
+      </div>
+
+      {problem !== null && (
+        <Alert variant="destructive">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>ทำรายการไม่สำเร็จ</AlertTitle>
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
+      )}
+
+      {result !== null && (
+        <Alert variant={fxSyncOutcomeVariant(result)}>
+          {result.outcome === 'stored' ? (
+            <CheckCircle2 className="size-4" />
+          ) : result.outcome === 'failed' ? (
+            <AlertTriangle className="size-4" />
+          ) : (
+            /* A clock, not a tick. `unchanged` is not a success about the thing that was asked
+               for, and the icon is read before the words are. */
+            <Clock className="size-4" />
+          )}
+          <AlertTitle>{fxSyncOutcomeTitleTh(result)}</AlertTitle>
+          <AlertDescription>{fxSyncOutcomeTh(result)}</AlertDescription>
+        </Alert>
+      )}
+    </section>
   );
 }

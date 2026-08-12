@@ -18,5 +18,8 @@
  * from a package whose export map exists to keep the surface small.
  */
 
-export { and, asc, count, desc, eq, gt, inArray, max, or, sql } from 'drizzle-orm';
+/* `min` joined `max` for `FxRatesRepository.manualSyncUsage`: the oldest manual attempt still
+   inside the rolling window is when an exhausted quota starts to refill, and reading it as an
+   aggregate beside the count keeps the pair on one round trip and one snapshot of the table. */
+export { and, asc, count, desc, eq, gt, inArray, max, min, or, sql } from 'drizzle-orm';
 export type { SQL } from 'drizzle-orm';

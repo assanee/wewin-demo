@@ -47,6 +47,11 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
    * where it lands in `tax_country_changes` with an actor and a before/after.
    */
   ['GET /admin/fx/health', ['organisation.read']],
+  /* ⭐ `organisation.write`, not the `read` that opens the screen this renders on: a manual
+     sync spends a request against the provider's shared monthly plan, and the scheduled sync
+     draws on the same pool. Costing something that runs out is the line the two organisation
+     codes are drawn on everywhere else. See `FxController.syncNow`. */
+  ['POST /admin/fx/sync', ['organisation.write']],
 
   /*
    * Media. Same two permissions as the catalogue it illustrates, deliberately: a person
