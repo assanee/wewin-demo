@@ -33,6 +33,9 @@ import type { PlainKey } from '../../i18n/keys';
  * was telling the truth: a customer could price a window, fill a cart, and then had to
  * telephone. Everything downstream existed. This was the missing first step.
  *
+ * ⚠️ That key is gone. It survived on the product page for a round after this form shipped and
+ * is now `configure.quoteNext`, which names this screen instead of apologising for its absence.
+ *
  * ── ⚠️ Two calls, and the catalogue in between ───────────────────────────────
  *
  * The cart is `localStorage` and the catalogue is compiled into the bundle, so a line knows

@@ -151,7 +151,7 @@ export const vi: PartialUiCatalogue = {
   'configure.area.line': (p, f) =>
     `Diện tích ${f.area(p.areaSqUm)} m² · tính tối thiểu ${f.area(p.minBillableSqUm)} m²`,
   'configure.group.affectsSku': 'ảnh hưởng tới mã sản phẩm',
-  'configure.futureQuote': 'Chức năng yêu cầu báo giá sẽ có ở phiên bản kế tiếp.',
+  'configure.quoteNext': 'Thêm vào danh sách báo giá, rồi yêu cầu báo giá ngay ở đó.',
   'configure.breakdown.title': 'Chi tiết giá',
   'configure.qty': 'Số lượng',
   'configure.qty.decrease': 'Bớt một cái',
@@ -450,7 +450,7 @@ export const vi: PartialUiCatalogue = {
   'settings.nav': 'Hiển thị',
   'settings.heading': 'Cài đặt hiển thị',
   'settings.intro':
-    'Chọn cách trang này hiển thị với bạn: ngôn ngữ, đơn vị đo và tiền tệ. Cả ba chỉ liên quan tới cách trình bày — số đo bạn nhập và giá chúng tôi tính không thay đổi theo chúng.',
+    'Chọn cách trang này hiển thị với bạn: ngôn ngữ và đơn vị đo. Cả hai chỉ liên quan tới cách trình bày — số đo bạn nhập và giá chúng tôi tính không thay đổi theo chúng. Tiền tệ không chọn được ở trang này; lý do ở bên dưới.',
   'settings.meta.title': 'Cài đặt hiển thị',
 
   'settings.language.legend': 'Ngôn ngữ của trang này',
@@ -461,7 +461,7 @@ export const vi: PartialUiCatalogue = {
   'settings.currency.legend': 'Tiền tệ hiển thị giá',
   'settings.currency.fixed': (p) => `Luôn là ${p.currency}, ở mọi ngôn ngữ`,
   'settings.currency.why':
-    'Mọi mức giá đều được tính và lưu bằng baht Thái, và các trang sản phẩm được dựng một lần rồi dùng chung cho mọi khách truy cập, nên không thể áp tiền tệ riêng cho từng người. Báo giá cho khách nước ngoài bằng tiền tệ của họ là việc khác và chưa được bật.',
+    'Mọi mức giá đều được tính và lưu bằng baht Thái, và các trang sản phẩm được dựng một lần rồi dùng chung cho mọi khách truy cập, nên không thể áp tiền tệ riêng cho từng người. Báo giá thì khác: với điểm đến mà chúng tôi đã đặt báo giá bằng tiền tệ khác, báo giá được phát hành bằng tiền tệ đó theo tỷ giá ghim trên chứng từ, và thanh toán bằng baht.',
 
   'settings.storage.local': 'Chỉ lưu trong trình duyệt này',
   'settings.storage.account': (p, f) => `Đã lưu vào tài khoản của bạn ngày ${f.date(p.at)}`,

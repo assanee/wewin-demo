@@ -156,7 +156,7 @@ export const en: PartialUiCatalogue = {
   'configure.area.line': (p, f) =>
     `Area ${f.area(p.areaSqUm)} m² · minimum charged ${f.area(p.minBillableSqUm)} m²`,
   'configure.group.affectsSku': 'affects the product code',
-  'configure.futureQuote': 'Requesting a quotation will be added in the next version.',
+  'configure.quoteNext': 'Add it to your quote list, then request a quotation from there.',
   'configure.breakdown.title': 'Price breakdown',
   'configure.qty': 'Quantity',
   'configure.qty.decrease': 'Remove one piece',
@@ -449,13 +449,15 @@ export const en: PartialUiCatalogue = {
    *
    * Translated here as well as in Thai because this is the one screen whose whole subject is
    * the reader's own language: a settings page that is only legible to somebody who already
-   * reads Thai cannot be used by the person most likely to need it. The other six catalogues
-   * stay empty, which is plan 13's state and not a placeholder.
+   * reads Thai cannot be used by the person most likely to need it.
+   *
+   * ⚠️ This note used to end "the other six catalogues stay empty, which is plan 13's state" —
+   * they were filled in phase 17 and `catalogue.test.ts` now asserts all eight are complete.
    */
   'settings.nav': 'Display',
   'settings.heading': 'Display settings',
   'settings.intro':
-    'Choose how this site is written for you: language, measurement unit and currency. All three are presentation only — the sizes you enter and the prices we calculate do not change with them.',
+    'Choose how this site is written for you: language and measurement unit. Both are presentation only — the sizes you enter and the prices we calculate do not change with them. Currency cannot be chosen on this page; the reason is below.',
   'settings.meta.title': 'Display settings',
 
   'settings.language.legend': 'Language this site is written in',
@@ -465,7 +467,7 @@ export const en: PartialUiCatalogue = {
   'settings.currency.legend': 'Currency prices are shown in',
   'settings.currency.fixed': (p) => `Always ${p.currency}, in every language`,
   'settings.currency.why':
-    'Every price is calculated and stored in Thai baht, and product pages are built once and shared by every visitor, so a per-person currency cannot be applied to them. Quoting an overseas customer in their own currency is a separate matter and is not switched on yet.',
+    'Every price is calculated and stored in Thai baht, and product pages are built once and shared by every visitor, so a per-person currency cannot be applied to them. A quotation is different: for a destination we quote in another currency, it is issued in that currency at the rate pinned on the document, and settled in baht.',
 
   'settings.storage.local': 'Kept in this browser only',
   'settings.storage.account': (p, f) => `Saved to your account on ${f.date(p.at)}`,

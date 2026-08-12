@@ -11,9 +11,14 @@ import {
  * The table that says what a preference actually changes — pinned, including the `false`s.
  *
  * A table of booleans is the easiest thing in a codebase to "fix" by flipping a cell, and the
- * cells here are not opinions: four of them encode decisions taken in four different phases
- * for four different reasons, and every one of them is the kind of decision whose violation is
+ * cells here are not opinions: they encode decisions taken in several different phases for
+ * several different reasons, and every one of them is the kind of decision whose violation is
  * invisible on the screen where it happens.
+ *
+ * ⚠️ It has been flipped the *other* way once, which is why the last describe block below exists.
+ * `locale/notification` and `locale/dashboard` were both `true` on the strength of a mechanism
+ * that was nearly there, and the honest comment beside each one did nothing for the customer
+ * looking at the tick it produced.
  *
  * So each assertion below names the rule rather than the value. If a cell has to change, the
  * test that goes red says which section of the plan is being overturned.
@@ -64,14 +69,17 @@ describe('plan 10.6 — a document is not re-rendered for the reader', () => {
   });
 });
 
-describe('plan 13 — the foreign-currency line is closed, so no surface renders a preference', () => {
+describe('a reader’s display currency reaches no surface, even now that documents have one', () => {
   it('the currency preference is honoured nowhere', () => {
     /*
-     * Every amount is THB minor units (`orders_currency_is_thb`), and plan 13 keeps the whole
-     * foreign line closed until the owner answers five questions — is there an account at all,
-     * the real spread per currency measured from five to ten actual transfers, the tolerance,
-     * the quote lifetime, OUR/SHA/BEN. Rendering a converted amount needs a rate, and the rate
-     * is the thing that cannot be invented.
+     * Every amount is THB minor units (`orders_currency_is_thb`). A converted amount needs a
+     * rate, and a rate is resolved once inside a submit and frozen on the document — it is a
+     * property of the *destination*, chosen by the company, not of whoever is reading.
+     *
+     * ⚠️ So the foreign-currency quotation shipping (`tax_countries.fx_currency`,
+     * `QuotationRateService`, SG live) does not move these four cells, and this comment used to
+     * rest on it being closed. `display_currency` is a different question and is still read by
+     * nothing.
      *
      * This is the row a preferences screen is most likely to lie about, because the control is
      * trivial to build and the failure is silent: the form saves, and every number stays in
@@ -118,13 +126,43 @@ describe('plan 8.2 trap 3 — what the cached storefront may and may not carry',
   });
 });
 
-describe('plan 10.6 — the live half', () => {
-  it('honours the locale for notifications', () => {
-    // A notification is per-recipient and never cached, which is exactly the property that
-    // makes a reader's current preference safe to honour there. `accountLocale` in
-    // `RecipientLocaleSources` is the seam; the join that fills it is owed by the
-    // notifications repository and is reported, not claimed. See profile.module.ts.
-    expect(cell('locale', 'notification')).toBe(true);
+describe('a cell is true when something reads the stored value, not when something could', () => {
+  it('does not honour the locale for notifications, because the worker never asks for it', () => {
+    /*
+     * ⭐ This assertion was `toBe(true)`, on the argument that a notification is per-recipient
+     * and never cached — which is the reason it *would* be safe, not evidence that it happens.
+     * It does not happen: `NotificationWorkerService.deliver` calls
+     * `preferredLocaleOf({ contactLocale })` with no `accountLocale`, and
+     * `NotificationsRepository` never selects `user_preferences.preferred_locale`. The row was
+     * drawing a tick on `/[locale]/settings` beside "the language of emails we send you".
+     *
+     * Turning this back to `true` is legitimate only in the commit that adds the join. If this
+     * test is what went red, that is the question being asked: does the worker read the
+     * preference *now*?
+     */
+    expect(cell('locale', 'notification')).toBe(false);
+  });
+
+  it('does not honour the locale on the dashboard, which has no language control at all', () => {
+    /*
+     * Also `true` before, and on a claim about another app: "the profile screen is what calls
+     * `setPreferredLocale`". Nothing in `apps/dashboard` calls it, there is no language control
+     * on any dashboard screen, and `preferredLocale()` reads a staff browser's `localStorage`
+     * rather than a customer's row in `user_preferences` — so this cell could not have been
+     * satisfied by this API even in principle.
+     */
+    expect(cell('locale', 'dashboard')).toBe(false);
+  });
+
+  it('leaves exactly two cells true, and both are mechanisms that exist', () => {
+    // The counter-assertion to the two above: this is not a table that has been flipped to
+    // `false` everywhere to make a screen quiet. The storefront honours the language (a path
+    // segment, so it is in the cache key structurally) and the display unit (five variants
+    // rendered into the cached HTML, the island picks one). Both are traceable to a read.
+    const honoured = PREFERENCE_EFFECTS.filter((effect) => effect.honoured).map(
+      (effect) => `${effect.preference}/${effect.surface}`,
+    );
+    expect(honoured).toEqual(['locale/storefront', 'lengthUnit/storefront']);
   });
 
   it('does not yet honour the length unit for notifications, and that is a coverage fact', () => {

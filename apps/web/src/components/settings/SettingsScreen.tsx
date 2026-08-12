@@ -62,12 +62,18 @@ import type { PreferenceKind, PreferenceSurface, Preferences } from '../../lib/p
  * ── Currency has no control, and that is the point ───────────────────────────────
  *
  * There is no currency `<select>` here. Every price is calculated and stored in THB minor units
- * (`orders_currency_is_thb`), `ProductCard` renders `f.baht(...)` in a *server* component so a
- * per-reader currency would need either the cache key or a `cookies()` read, and plan 13 keeps
- * the foreign-currency line closed until the owner answers five questions no engineer can
- * invent. A `<select>` offering nine currencies that changed nothing on any page would be the
- * exact failure this whole screen is built to avoid. What is here instead is the fact, the
- * reason, and — from the API rather than from this file — the four `false`s that prove it.
+ * (`orders_currency_is_thb`), and `ProductCard` renders `f.baht(...)` in a *server* component, so
+ * a per-reader currency would need either the cache key or a `cookies()` read. A `<select>`
+ * offering nine currencies that changed nothing on any page would be the exact failure this whole
+ * screen is built to avoid. What is here instead is the fact, the reason, and — from the API
+ * rather than from this file — the four `false`s that prove it.
+ *
+ * ⚠️ **A quotation for an overseas destination is a different question and it ships.**
+ * `tax_countries.fx_currency` + `QuotationRateService` issue the document in the destination's
+ * currency at a rate frozen on it (SG is live), settled in baht. `settings.currency.why` said
+ * that was "not switched on yet" for a round after it was; the sentence now says what happens.
+ * The distinction the copy has to keep is *whose* currency: the company picks the destination's,
+ * and nothing anywhere reads the reader's `display_currency`.
  *
  * ⚠️ A currency **already stored** on the account is preserved on every write below. This screen
  * has no control for it, which is not a licence to erase what another surface set.
@@ -383,10 +389,13 @@ function StorageLine({
 /**
  * The twelve statements, as the API sends them.
  *
- * Rendered rather than decided. Eight are `false` today — a document is pinned at submit, the
- * storefront is prerendered, the ledger is in baht, plan 13 keeps the foreign line closed — and
- * every one of them is a sentence somebody would otherwise have to discover for themselves. The
- * `false` rows are **shown, not hidden**: hiding them makes the *absence* the message, which is
+ * Rendered rather than decided. Ten are `false` today — a document is pinned at submit, the
+ * storefront is prerendered, the ledger is in baht, no reader's *display* currency is consulted
+ * anywhere, the notification worker never joins the stored language and the dashboard has no
+ * language control — and every one of them is a sentence somebody would otherwise have to
+ * discover for themselves.
+ *
+ * The `false` rows are **shown, not hidden**: hiding them makes the *absence* the message, which is
  * the mistake plan 9.5 refuses when it says not to print "no reviews yet" on 81 pages.
  */
 function EffectList({

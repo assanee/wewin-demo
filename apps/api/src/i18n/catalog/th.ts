@@ -31,11 +31,22 @@ import type { Catalogue } from './types';
 export const TH: Catalogue = {
   /* ── Password sign-in ─────────────────────────────────────────────────────────
    *
-   * "อีเมลหรือรหัสผ่านไม่ถูกต้อง" and not "ไม่พบบัญชีนี้": the sentence has to be true of
-   * five different situations at once, and naming any of them would tell a stranger which
-   * addresses belong to customers.
+   * Not "ไม่พบบัญชีนี้": the sentence has to be true of five different situations at once, and
+   * naming any of them would tell a stranger which addresses belong to customers.
+   *
+   * ⚠️ It named the *email* alone until now — "อีเมลหรือรหัสผ่านไม่ถูกต้อง" — and the field it
+   * describes stopped being an email field when a telephone number became an identity.
+   * `normaliseUsername` decides the namespace from the shape of what was typed, the storefront
+   * registers **telephone numbers only** (`error.auth.register_phone_only`) and labels its own
+   * field "เบอร์โทรศัพท์หรืออีเมล", so the commonest reader of this sentence is somebody who has
+   * no email on this account at all, being told their email is wrong.
+   *
+   * ⚠️ Both namespaces, deliberately in one clause. The refusal must not say *which* one the
+   * attempt failed to be in — `username.ts` argues that at length: a message that narrowed to the
+   * namespace would reinstate the enumeration oracle the single refusal exists to close. Naming
+   * both names neither.
    */
-  'error.auth.credentials_rejected': 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
+  'error.auth.credentials_rejected': 'เบอร์โทรศัพท์ อีเมล หรือรหัสผ่านไม่ถูกต้อง',
   'error.auth.second_factor_rejected': 'รหัสยืนยันไม่ถูกต้องหรือหมดอายุแล้ว — เข้าสู่ระบบใหม่อีกครั้ง',
   'error.mfa.already_enabled': 'บัญชีนี้เปิดการยืนยันสองขั้นอยู่แล้ว — ต้องปิดก่อนจึงจะตั้งใหม่ได้',
   'error.mfa.not_enrolling': 'ยังไม่ได้เริ่มตั้งค่าการยืนยันสองขั้น',
@@ -102,7 +113,21 @@ export const TH: Catalogue = {
   'error.order.concurrent_event': 'มีการเปลี่ยนแปลงออร์เดอร์นี้พร้อมกัน — กรุณาลองใหม่อีกครั้ง',
   'error.order.order_no_taken': 'เลขที่ออร์เดอร์นี้ถูกใช้ไปแล้ว',
   'error.order.needs_an_owner': 'ออร์เดอร์ต้องมีเจ้าของเสมอ',
-  'error.order.needs_a_contact_channel': 'ต้องมีอีเมลสำหรับติดต่อก่อนจึงจะส่งใบเสนอราคาได้',
+  /*
+   * ⚠️ Said "ต้องมีอีเมลสำหรับติดต่อ…" — an email — while the constraint behind it has accepted
+   * either channel since `0025_user_phones.sql`:
+   * `submitted_at is null or contact_email is not null or contact_phone is not null`. A number
+   * alone satisfies it, and the storefront's own form says so ("มีเบอร์โทรอย่างเดียวก็ได้"), so
+   * this refusal was demanding something the database does not and sending the reader to add a
+   * field they may not have. It fires when there is *neither*, which is what it now says.
+   *
+   * ⚠️ It does not promise the customer will be *written to*. A phone-only order receives
+   * nothing, because the notification fan-out resolves email recipients only — that weakening is
+   * argued in the migration, and it is the dashboard's "ไม่มีอีเมล — ระบบไม่ได้ส่งอะไรถึงลูกค้า"
+   * that says so, not this sentence.
+   */
+  'error.order.needs_a_contact_channel':
+    'ต้องมีช่องทางติดต่ออย่างน้อยหนึ่งอย่าง — อีเมลหรือเบอร์โทรศัพท์ — ก่อนจึงจะส่งใบเสนอราคาได้',
   'error.order.contact_email_shape': 'รูปแบบอีเมลไม่ถูกต้อง',
   'error.order.total_does_not_foot': 'ยอดรวมไม่ตรงกับผลบวกของยอดก่อนภาษีและภาษี',
   'error.order.deposit_exceeds_total': 'ยอดมัดจำต้องไม่เกินยอดรวมของสัญญา',

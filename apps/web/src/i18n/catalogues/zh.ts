@@ -144,7 +144,7 @@ export const zh: PartialUiCatalogue = {
   'configure.area.line': (p, f) =>
     `面积 ${f.area(p.areaSqUm)} m² · 最低计费 ${f.area(p.minBillableSqUm)} m²`,
   'configure.group.affectsSku': '影响产品编号',
-  'configure.futureQuote': '索取报价单的功能将在下一版本加入。',
+  'configure.quoteNext': '加入报价清单后，即可在清单页面索取报价单。',
   'configure.breakdown.title': '价格明细',
   'configure.qty': '数量',
   'configure.qty.decrease': '减少一件',
@@ -412,7 +412,7 @@ export const zh: PartialUiCatalogue = {
   'settings.nav': '显示',
   'settings.heading': '显示设置',
   'settings.intro':
-    '选择本网站呈现给您的方式：语言、计量单位与货币。这三项只影响显示——您输入的尺寸和我们计算的价格不会因此改变。',
+    '选择本网站呈现给您的方式：语言与计量单位。这两项只影响显示——您输入的尺寸和我们计算的价格不会因此改变。货币无法在本页选择，原因见下方。',
   'settings.meta.title': '显示设置',
 
   'settings.language.legend': '本网站使用的语言',
@@ -422,7 +422,7 @@ export const zh: PartialUiCatalogue = {
   'settings.currency.legend': '价格显示的货币',
   'settings.currency.fixed': (p) => `始终为${p.currency}，各语言一致`,
   'settings.currency.why':
-    '所有价格均以泰铢计算和存储，产品页面只生成一次并由所有访客共用，因此无法按访客切换货币。以海外客户本国货币报价是另一回事，目前尚未开放。',
+    '所有价格均以泰铢计算和存储，产品页面只生成一次并由所有访客共用，因此无法按访客切换货币。报价单则不同：若送达地已设定以其他货币报价，报价单便以该货币开出，采用单据上锁定的汇率，付款仍以泰铢结算。',
 
   'settings.storage.local': '仅保存在此浏览器中',
   'settings.storage.account': (p, f) => `已于 ${f.date(p.at)} 保存到您的账户`,

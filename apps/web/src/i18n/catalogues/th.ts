@@ -134,7 +134,7 @@ export const th: UiCatalogue = {
   'configure.area.line': (p, f) =>
     `พื้นที่ ${f.area(p.areaSqUm)} ตร.ม. · คิดขั้นต่ำ ${f.area(p.minBillableSqUm)} ตร.ม.`,
   'configure.group.affectsSku': 'มีผลกับรหัสสินค้า',
-  'configure.futureQuote': 'ขั้นตอนขอใบเสนอราคาจะเพิ่มในเวอร์ชันถัดไป',
+  'configure.quoteNext': 'เพิ่มลงรายการ แล้วขอใบเสนอราคาได้จากหน้าตะกร้า',
   'configure.breakdown.title': 'รายละเอียดราคา',
   'configure.qty': 'จำนวน',
   'configure.qty.decrease': 'ลดจำนวน 1 ชิ้น',
@@ -422,8 +422,14 @@ export const th: UiCatalogue = {
   /* ---- Display settings ------------------------------------------------------ */
   'settings.nav': 'การแสดงผล',
   'settings.heading': 'ตั้งค่าการแสดงผล',
+  /*
+   * ⚠️ Two, not three. This sentence offered ภาษา, หน่วยวัด และสกุลเงิน over a page with a
+   * language `<select>`, a unit radiogroup and — for currency — a stated fact and no control at
+   * all. Counting copy is the risky kind: the count is checked by nobody, and the reader is the
+   * one who goes looking for the third control.
+   */
   'settings.intro':
-    'ตั้งค่าว่าจะให้เว็บไซต์แสดงภาษา หน่วยวัด และสกุลเงินอย่างไร ทั้งหมดนี้เป็นเรื่องการแสดงผลเท่านั้น ขนาดที่คุณกรอกและราคาที่ระบบคิดไว้ไม่เปลี่ยนตาม',
+    'ตั้งค่าว่าจะให้เว็บไซต์แสดงภาษาและหน่วยวัดอย่างไร ทั้งสองอย่างเป็นเรื่องการแสดงผลเท่านั้น ขนาดที่คุณกรอกและราคาที่ระบบคิดไว้ไม่เปลี่ยนตาม สกุลเงินเลือกในหน้านี้ไม่ได้ เหตุผลอยู่ด้านล่าง',
   'settings.meta.title': 'ตั้งค่าการแสดงผล',
 
   'settings.language.legend': 'ภาษาที่ใช้แสดงหน้าเว็บ',
@@ -432,8 +438,18 @@ export const th: UiCatalogue = {
   'settings.unit.legend': 'หน่วยที่ใช้แสดงขนาด',
   'settings.currency.legend': 'สกุลเงินที่ใช้แสดงราคา',
   'settings.currency.fixed': (p) => `แสดงเป็น ${p.currency} ทุกภาษา`,
+  /*
+   * ⚠️ The last clause used to read "…เป็นคนละเรื่องและยังไม่เปิดใช้" — a separate matter, not
+   * switched on yet. It ships: `tax_countries.fx_currency` configures a destination's currency,
+   * `QuotationRateService` resolves the rate inside the submit, `order_documents` freezes it and
+   * the quotation page prints the whole document in that currency. SG is live today, so the
+   * sentence was telling a Singapore customer that the document in their hand does not exist.
+   *
+   * The first half is unchanged and still true: a *per-reader display* currency cannot reach a
+   * prerendered product page. The two are different questions and only one of them is closed.
+   */
   'settings.currency.why':
-    'ราคาทั้งหมดคิดและเก็บเป็นเงินบาท หน้าสินค้าถูกสร้างไว้ล่วงหน้าและใช้ร่วมกันทุกคน จึงเลือกสกุลเงินรายบุคคลไม่ได้ ใบเสนอราคาสำหรับลูกค้าต่างประเทศเป็นคนละเรื่องและยังไม่เปิดใช้',
+    'ราคาทั้งหมดคิดและเก็บเป็นเงินบาท หน้าสินค้าถูกสร้างไว้ล่วงหน้าและใช้ร่วมกันทุกคน จึงเลือกสกุลเงินรายบุคคลไม่ได้ ใบเสนอราคาเป็นอีกเรื่อง ถ้าปลายทางที่เลือกเป็นประเทศที่เราตั้งค่าให้เสนอราคาเป็นสกุลเงินอื่น ใบเสนอราคาจะออกเป็นสกุลเงินนั้นตามอัตราแลกเปลี่ยนที่ตรึงไว้บนเอกสาร และชำระเป็นเงินบาท',
 
   'settings.storage.local': 'ตอนนี้เก็บไว้ในเบราว์เซอร์นี้เครื่องเดียว',
   'settings.storage.account': (p, f) => `บันทึกไว้กับบัญชีแล้วเมื่อ ${f.date(p.at)}`,

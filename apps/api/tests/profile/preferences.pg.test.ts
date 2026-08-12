@@ -138,7 +138,10 @@ describeWithPg('per-user presentation preferences', () => {
     // preferences is exactly the person about to make one.
     const answer = await read(bob);
     expect(answer.effects).toHaveLength(12);
-    expect(answer.effects.filter((effect) => effect.honoured)).toHaveLength(4);
+    // Two, not four: `locale/notification` and `locale/dashboard` were `true` on the strength of
+    // a join nobody had written and a dashboard control nobody had built. See
+    // `preference-effects.test.ts`, which names each cell rather than counting them.
+    expect(answer.effects.filter((effect) => effect.honoured)).toHaveLength(2);
   });
 
   /* ---------------------------------------------------------------- *

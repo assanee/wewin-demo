@@ -145,7 +145,14 @@ export interface UiParamsByKey {
   'configure.size.heading': Plain;
   'configure.area.line': { areaSqUm: bigint; minBillableSqUm: bigint };
   'configure.group.affectsSku': Plain;
-  'configure.futureQuote': Plain;
+  /**
+   * ⚠️ Was `configure.futureQuote` — *"requesting a quotation will be added in the next
+   * version"* — on all 81 product pages, for a version that had already shipped. The key was
+   * renamed rather than reworded so the identifier cannot outlive the promise a second time:
+   * `RequestQuotationForm` is the step that was missing, `/[locale]/quote` is where it lives,
+   * and this sentence now names it.
+   */
+  'configure.quoteNext': Plain;
   'configure.breakdown.title': Plain;
   'configure.qty': Plain;
   'configure.qty.decrease': Plain;
@@ -432,10 +439,11 @@ export interface UiParamsByKey {
    *
    * ⭐ **`settings.effect.*` is one key per statement the API sends, and that is the whole
    * mechanism.** `GET /me/preferences` answers with twelve `{preference, surface, honoured}`
-   * rows, eight of which are `false` today for four separate and individually correct reasons
-   * (a document is pinned at submit, the storefront is prerendered, the ledger is in baht, and
-   * plan 13 keeps the foreign-currency line closed). A screen that decided locally which
-   * settings "work" would be a second opinion that goes stale the day one of them changes; a
+   * rows, ten of which are `false` today for separate and individually correct reasons (a
+   * document is pinned at submit, the storefront is prerendered, the ledger is in baht, no
+   * reader's display currency is consulted anywhere, the notification worker does not join the
+   * stored language, and the dashboard has no language control). A screen that decided locally
+   * which settings "work" would be a second opinion that goes stale the day one of them changes; a
    * screen with no such sentences at all would be a form that saves a currency nobody will
    * ever render and says "saved".
    *
