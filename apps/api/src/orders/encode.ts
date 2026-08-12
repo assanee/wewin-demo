@@ -2,6 +2,7 @@ import {
   POST_FREEZE_STATUSES_WIRE,
   encodeThb,
   type AvailableTransitionWire,
+  type CancellationPreviewWire,
   type ChangeRequestWire,
   type OrderDocumentResponseWire,
   type OrderDocumentWire,
@@ -10,6 +11,7 @@ import {
   type OrderWire,
 } from '@wewin/contract/order';
 import type { OrganisationProfileWire } from '@wewin/contract/organisation';
+import type { OrderStatus } from '@wewin/db/schema';
 
 import type { ChangeRequestRow, OrderEventRow } from './order.repository';
 import type { ScopedOrder } from './scope';
@@ -199,6 +201,25 @@ export const encodeDocumentResponse = (
   document: OrderDocumentWire,
   seller: OrganisationProfileWire,
 ): OrderDocumentResponseWire => ({ document, seller });
+
+/**
+ * A priced cancellation, onto the wire.
+ *
+ * `fromStatus` is carried through rather than re-read from the order, because the figures were
+ * priced *for that status* and a response that paired them with a freshly-read one would be
+ * describing a cancellation nobody priced.
+ */
+export const encodeCancellationPreview = (input: {
+  readonly fromStatus: OrderStatus;
+  readonly heldThbMinor: bigint;
+  readonly forfeitThbMinor: bigint;
+  readonly refundThbMinor: bigint;
+}): CancellationPreviewWire => ({
+  fromStatus: input.fromStatus,
+  heldThbMinor: encodeThb(input.heldThbMinor),
+  forfeitThbMinor: encodeThb(input.forfeitThbMinor),
+  refundThbMinor: encodeThb(input.refundThbMinor),
+});
 
 export const encodeChangeRequest = (row: ChangeRequestRow): ChangeRequestWire => ({
   id: row.id,

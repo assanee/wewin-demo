@@ -18,6 +18,7 @@ import {
   createChangeRequestSchema,
   createOrderRequestSchema,
   resolveChangeRequestSchema,
+  type CancellationPreviewWire,
   type ChangeRequestWire,
   type CreateChangeRequestWire,
   type CreateOrderRequestWire,
@@ -53,6 +54,7 @@ import { OrdersService } from './orders.service';
  *     GET    /orders/:id                                          one of them
  *     GET    /orders/:id/events                                   the spine, in order
  *     GET    /orders/:id/document                                 what was pinned at submit
+ *     GET    /orders/:id/cancellation-preview                     what cancelling would cost
  *     POST   /orders/:id/transitions/:toStatus                    **every** move
  *     POST   /orders/:id/change-requests                          the customer objects
  *     POST   /orders/:id/change-requests/:id/resolution           somebody answers
@@ -280,6 +282,29 @@ export class OrdersController {
     @Param('orderId') orderId: string,
   ): Promise<PaymentInstructionsWire> {
     return this.orders.paymentInstructions(scope, orderId);
+  }
+
+  /**
+   * What cancelling would cost, before anybody cancels.
+   *
+   * A `GET` beside `payment-instructions` and for the same reason: it is an ownership-scoped
+   * read *about* one order that is not a field of the order. It is deliberately **not** on
+   * `OrderWire` — pricing a cancellation needs a pinned forfeit policy and raises without one,
+   * so folding it into the order response would make every order read able to fail over a
+   * question nobody asked. Here it fails only when a cancellation is actually being considered.
+   *
+   * Reachable by the customer and the guest whose order it is, which is the whole point: the
+   * storefront's cancel button reads its figure from here.
+   */
+  @Get(':orderId/cancellation-preview')
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePrincipal()
+  async cancellationPreview(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+  ): Promise<CancellationPreviewWire> {
+    return this.orders.previewCancellation(scope, orderId);
   }
 
   /**

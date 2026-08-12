@@ -12,6 +12,26 @@ import {
 import { LifecycleRepository } from './lifecycle.repository';
 
 /**
+ * What cancelling an order right now would do to the money it holds.
+ *
+ * Produced by `PaymentLifecycleService.priceCancellation` and consumed by two callers who must
+ * never disagree — the cancellation itself, and the preview a customer is shown before they
+ * confirm. See that method for why this is one type and not two.
+ *
+ * `policyId` is `null` only when nothing is held, which is the one case that needs no policy.
+ */
+export interface CancellationPrice {
+  /** Money in hand, from `order_held_thb_minor()`. Not cash, not the grand total. */
+  readonly heldThbMinor: bigint;
+  /** What the pinned policy keeps. `order_forfeit_thb_minor()`'s answer, never a second one. */
+  readonly forfeitThbMinor: bigint;
+  /** What comes back: `held − forfeit`, which is what the refund path reads after the debit. */
+  readonly refundThbMinor: bigint;
+  /** The policy pinned at submit, whose rate priced this. `null` when nothing is held. */
+  readonly policyId: string | null;
+}
+
+/**
  * What happens to money when an order moves — the seam 5a left open and 5b spent a round
  * proving was still open.
  *
@@ -337,19 +357,45 @@ export class PaymentLifecycleService {
    * customer gets back. An order holding money with no pin is refused rather than priced under
    * today's table, which is the behaviour the pin exists to produce.
    */
-  async onCancelled(
+  /**
+   * ⭐ What a cancellation would cost, without performing one — and the ONLY reader of that.
+   *
+   * `onCancelled` below prices its forfeit by calling this, and so does
+   * `GET /orders/:orderId/cancellation-preview`. That is the whole point: the figure a customer
+   * is shown before they confirm and the figure the ledger keeps afterwards cannot disagree,
+   * because they are not two answers — they are one call made twice. A screen promising one
+   * number while the ledger keeps another is the plan-7.13 family this repository keeps finding
+   * (`scheduledDepositMinor` written three ways, answering ฿5,530 and ฿18,432 for the same
+   * order), and a preview with its own arithmetic would have been the next one.
+   *
+   * The arithmetic is not here and must never be: `order_forfeit_thb_minor()` is the definition
+   * and `LedgerRepository` calls it. What *is* here is the sequencing SQL cannot do for itself —
+   * whether any money is held at all, and which policy the order pinned. Those two steps are
+   * what a second caller would have had to duplicate, so they moved here instead.
+   *
+   * ⚠️ The `held <= 0` short-circuit comes *before* the policy lookup, and the order is
+   * load-bearing: an order holding nothing forfeits nothing whether or not it ever pinned a
+   * policy, and a draft has not pinned one — the pin happens at submit. Checking the policy
+   * first would refuse to price the cancellation of an empty cart, which is the one
+   * cancellation that is always free.
+   *
+   * `refundThbMinor` is `held − forfeit` because that is what the refund path independently
+   * arrives at: `RefundsService.request` refunds `money.heldThbMinor`, read *after* this
+   * forfeit has been debited from `deposit_held`. Stating it here is what lets a customer be
+   * told what comes back, not merely what is kept.
+   */
+  async priceCancellation(
     tx: LedgerTx,
     input: {
       readonly orderId: string;
       readonly fromStatus: OrderStatus;
       readonly fault: FaultParty;
-      readonly eventId: string;
     },
-  ): Promise<bigint> {
-    await this.schedule.close({ tx, orderId: input.orderId }, 'cancelled');
-
+  ): Promise<CancellationPrice> {
     const held = (await this.ledgerRepository.money(input.orderId, tx)).heldThbMinor;
-    if (held <= 0n) return 0n;
+    if (held <= 0n) {
+      return { heldThbMinor: 0n, forfeitThbMinor: 0n, refundThbMinor: 0n, policyId: null };
+    }
 
     const terms = await this.lifecycle.orderMoneyTerms(tx, input.orderId);
     const policyId = terms?.forfeitPolicyId;
@@ -361,7 +407,7 @@ export class PaymentLifecycleService {
       );
     }
 
-    const amount = await this.ledgerRepository.forfeitThbMinor(
+    const forfeitThbMinor = await this.ledgerRepository.forfeitThbMinor(
       input.orderId,
       input.fromStatus,
       input.fault,
@@ -369,7 +415,45 @@ export class PaymentLifecycleService {
       tx,
     );
 
+    return {
+      heldThbMinor: held,
+      forfeitThbMinor,
+      refundThbMinor: held - forfeitThbMinor,
+      policyId,
+    };
+  }
+
+  async onCancelled(
+    tx: LedgerTx,
+    input: {
+      readonly orderId: string;
+      readonly fromStatus: OrderStatus;
+      readonly fault: FaultParty;
+      readonly eventId: string;
+    },
+  ): Promise<bigint> {
+    await this.schedule.close({ tx, orderId: input.orderId }, 'cancelled');
+
+    const price = await this.priceCancellation(tx, {
+      orderId: input.orderId,
+      fromStatus: input.fromStatus,
+      fault: input.fault,
+    });
+
+    const amount = price.forfeitThbMinor;
     if (amount <= 0n) return 0n;
+
+    /*
+     * Unreachable, and stated rather than narrowed away: a positive forfeit requires money held,
+     * and money held requires a pinned policy — `priceCancellation` refuses otherwise. A silent
+     * `return 0n` here would turn a broken invariant into a free cancellation.
+     */
+    const { policyId } = price;
+    if (policyId === null) {
+      throw new Error(
+        `payments: order ${input.orderId} priced a forfeit of ${amount} with no pinned policy`,
+      );
+    }
 
     const policy = await this.ledgerRepository.effectiveForfeitPolicy(tx);
     const bp = await this.ledgerRepository.forfeitBp(policyId, input.fromStatus, input.fault, tx);

@@ -625,6 +625,47 @@ export interface ChangeRequestWire {
   readonly resolvedAt: string | null;
 }
 
+/**
+ * What cancelling this order *right now* would cost — priced, not estimated.
+ *
+ * ── Why this is a response and not something a client computes ────────────────────
+ *
+ * The forfeit is `least(held, scheduled_deposit) × forfeit_bp`, clamped to money held, and two
+ * of those three inputs are not on any wire: `held` is a fold of ledger postings, and
+ * `forfeit_bp` comes from the policy the order **pinned at submit** — not from today's table.
+ * A client cannot arrive at this number, and a client that approximated it would be telling
+ * somebody what their cancellation costs and being wrong.
+ *
+ * So the server prices it, by calling the same `PaymentLifecycleService.priceCancellation` the
+ * cancellation itself calls. The figure shown before confirming and the figure the ledger keeps
+ * afterwards are one call made twice, which is the only arrangement under which they cannot
+ * drift. Plan 7.13 is the reason that sentence is written down.
+ *
+ * ── `fault` is not a parameter, because for the caller it is not a choice ─────────
+ *
+ * This prices the cancellation **as the caller could actually perform it**: with no
+ * company-fault claim, which for a customer or a guest is the only cancellation that exists
+ * (`faultFor` returns `'customer'` for every non-staff actor, and `CancelOrderRequestWire` has
+ * no field through which a claim could be made). Staff who intend to claim company fault are
+ * asking a different question — and its answer is always ฿0 forfeited, by CHECK.
+ */
+export interface CancellationPreviewWire {
+  /**
+   * The status this was priced from — the order's status when the preview was taken.
+   *
+   * Echoed back so a client can notice it is stale. The forfeit rate is keyed on this, so a
+   * preview taken in `production_confirmed` does not describe a cancellation made from
+   * `in_production`.
+   */
+  readonly fromStatus: OrderStatusWire;
+  /** Money the company is holding for this order. The ceiling on both figures below. */
+  readonly heldThbMinor: MoneyWire<'THB'>;
+  /** What would be kept. ฿0 is a real and common answer — see the shipped default policy. */
+  readonly forfeitThbMinor: MoneyWire<'THB'>;
+  /** What would come back: `held − forfeit`. */
+  readonly refundThbMinor: MoneyWire<'THB'>;
+}
+
 /* ------------------------------------------------------------------ *
  * Requests
  * ------------------------------------------------------------------ */
@@ -884,6 +925,13 @@ export const changeRequestWireSchema: z.ZodType<ChangeRequestWire> = z.object({
   openedAt: z.iso.datetime(),
   resolution: z.literal(CHANGE_REQUEST_RESOLUTIONS_WIRE).nullable(),
   resolvedAt: z.iso.datetime().nullable(),
+});
+
+export const cancellationPreviewWireSchema: z.ZodType<CancellationPreviewWire> = z.object({
+  fromStatus: orderStatusWireSchema,
+  heldThbMinor: thb,
+  forfeitThbMinor: thb,
+  refundThbMinor: thb,
 });
 
 export const orderSummaryWireSchema: z.ZodType<OrderSummaryWire> = z.object({
