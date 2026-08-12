@@ -71,6 +71,16 @@ import { UserGroupsDialog } from './user-groups-dialog';
  * last administrator" would be a second implementation of the only rule here that cannot be
  * recovered from, and the two would disagree the day somebody is in two admin groups.
  *
+ * ── ⚠️ The ceiling table is NOT a tab here, and must not become one again ────────
+ *
+ * It was, for one round: อำนาจอนุมัติ beside กลุ่มและสิทธิ์, on the reasoning that authority
+ * attaches to a group and groups are administered here. The consequence was invisible from
+ * inside this file. This route requires `users.read` — the whole staff directory — so a person
+ * holding `groups.read` + `groups.write`, the permissions that actually own `authority_limits`,
+ * could not reach it, and `groups.write` is held by nobody at boot. It lives at `/authority`
+ * now, behind `groups.read` alone, with its own role-picker endpoint so it needs nothing from
+ * this screen. See `components/authority/authority-screen.tsx`.
+ *
  * ── ⭐ Phone verification, and why it is a badge next to a claim rather than a fact ──────
  *
  * `user_phones` has no dedicated screen and this list is where staff already look at any

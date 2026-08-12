@@ -1,17 +1,28 @@
 'use client';
 
-import { CalendarClock, Undo2, UserPen } from 'lucide-react';
+import { CalendarClock, Coins, TriangleAlert, Undo2, UserPen } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 
 import { daysText } from './amounts';
+import {
+  FX_PREVIEW_BADGE_TH,
+  FX_PREVIEW_NOT_BINDING_TH,
+  FX_STALE_POINTS_TH,
+  fxAmountTh,
+  fxRateTh,
+  fxStaleTitleTh,
+  fxUnavailableNoteTh,
+} from './fx-preview';
 import { concessionText, type OverrideContext } from './override-entry';
 import { Figure, overrideTitle } from './provenance';
 import { vatLabelTh } from './quote-alerts';
 import { revokeOverride } from './quote-api';
-import { thbMinorOf } from './quote-wire';
+import { thbMinorOf, type QuoteFxPreviewWire } from './quote-wire';
 import type { QuoteView } from './quote-model';
 import type { QuoteWriteFn } from './authority-panel';
 
@@ -39,6 +50,17 @@ import type { QuoteWriteFn } from './authority-panel';
  * ⚠️ `grand_total_thb_minor` is the single base for the whole system — instalments, the
  * deposit, forfeits, refunds and the ledger all refer to it and to nothing else (plan 7.13),
  * and it always includes VAT.
+ *
+ * ### The destination-currency figure is an annotation on the baht total, not a second total
+ *
+ * `sales.fxPreview` is rendered below the grand total and deliberately *beneath* it in every
+ * visual sense: smaller, muted, monospace but never bold, and never in the primary colour. The
+ * paragraph above is why — the baht grand total is the one figure the rest of the system refers
+ * to, and a foreign figure that looked equally settled would be a second candidate for
+ * "the price" on the one screen where somebody is deciding what to promise. The pinned quotation
+ * inverts this (there the destination currency *is* the document and baht is the settlement
+ * note); until submit freezes a rate there is nothing to invert for, so the annotation says so
+ * in as many words.
  */
 export function TotalsCard({
   view,
@@ -161,6 +183,15 @@ export function TotalsCard({
           </div>
         </div>
 
+        {/*
+         * Read straight off the wire rather than folded into `QuoteView`. `quote-model.ts`'s
+         * header swears it *"joins and compares, it does not price"*, and a conversion is
+         * pricing — so the one thing that would have to happen there is the one thing it says it
+         * does not do. `null` for a customer audience (`sales` is null) and for every domestic
+         * quotation (`fxPreview` is null), and the component renders nothing in both cases.
+         */}
+        <FxPreviewNote preview={view.wire.sales?.fxPreview ?? null} />
+
         <Separator />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -219,6 +250,98 @@ export function TotalsCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * ⭐ Roughly what the customer pays in their own money — and, when there is no usable rate,
+ * why there is no figure.
+ *
+ * ### Everything about this is quieter than the baht total, on purpose
+ *
+ * The grand total above renders through `Figure` at `text-lg`; this renders at `text-sm` in
+ * `text-muted-foreground` with no box, no strike-through and no fill. `provenance.tsx` spends
+ * `variant="default"` — the primary colour — exactly once on this screen, on the override badge,
+ * and says why: *"primary is spent once, on the thing the screen exists for"*. An indicative
+ * conversion is emphatically not that thing, so the badge here is `outline`, the same variant
+ * `customer-document.tsx` uses for its own ตัวอย่าง marker.
+ *
+ * ### The stale arm shows the figure **and** the refusal
+ *
+ * `stale: true` is the server saying the submit will refuse this quotation. Both facts are shown
+ * because a salesperson needs both: hiding the figure leaves them unable to answer *"roughly how
+ * much?"*, and hiding the refusal lets them promise a price that cannot be issued. The treatment
+ * is `UnrecognisedDestinationBanner`'s — a destructive alert for a 422 that has **not happened
+ * yet** — because it is the same class of fact seen at the same moment, and giving it a second
+ * visual language would make one of the two look less real than the other.
+ *
+ * Nothing here disables a control. The refusal lives in apps/api, and a gate computed on this
+ * screen is what `QuoteView.hasStaleBaselines`' own note forbids.
+ */
+function FxPreviewNote({ preview }: { readonly preview: QuoteFxPreviewWire | null }) {
+  /* No destination currency at all — the ordinary domestic quotation. Nothing to annotate. */
+  if (preview === null) return null;
+
+  if (!preview.available) {
+    const note = fxUnavailableNoteTh(preview.currency, preview.reason);
+
+    /*
+     * `undefined` rather than the literal `'default'` on the non-blocking arm. `Alert`'s default
+     * variant is `bg-card` and carries no primary colour, so nothing here competes with the
+     * override badge — but `provenance.tsx`'s house rule about spending primary exactly once is
+     * checked by reading for `variant="default"`, and a spelling that trips that read costs a
+     * reviewer the time to work out it was a different component's variant.
+     */
+    return (
+      <Alert variant={note.blocking ? 'destructive' : undefined}>
+        <Coins />
+        <AlertTitle>{note.titleTh}</AlertTitle>
+        <AlertDescription>{note.detailTh}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  const amount = fxAmountTh(preview.currency, preview.grandTotalMinor);
+  const rate = fxRateTh(preview);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="inline-flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <Coins className="size-4" />
+            ยอดโดยประมาณสกุล {preview.currency}
+            <Badge variant="outline">{FX_PREVIEW_BADGE_TH}</Badge>
+          </span>
+          {rate === null ? null : <span className="text-xs text-muted-foreground">{rate}</span>}
+        </div>
+        {/*
+         * A dash rather than nothing when the amount will not render: `available: true` with a
+         * `grandTotalMinor` this build cannot scale — a currency with no exponent here, a field
+         * that is not digits — is a disagreement with the server worth seeing, and the rate line
+         * beside it still tells a person what to ask about.
+         */}
+        <span className="font-mono text-sm text-muted-foreground tabular-nums">
+          {amount ?? '—'}
+        </span>
+      </div>
+
+      <span className="text-xs text-muted-foreground">{FX_PREVIEW_NOT_BINDING_TH}</span>
+
+      {!preview.stale ? null : (
+        <Alert variant="destructive">
+          <TriangleAlert />
+          <AlertTitle>{fxStaleTitleTh(preview.currency, preview.ageHours)}</AlertTitle>
+          <AlertDescription>
+            <ul className="flex list-disc flex-col gap-1 ps-4">
+              {FX_STALE_POINTS_TH.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
   );
 }
 

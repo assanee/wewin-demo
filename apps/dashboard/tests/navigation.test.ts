@@ -42,20 +42,23 @@ describe('navigation derived from permissions', () => {
 
   it('drops a section whose every item was filtered out, heading included', () => {
     /*
-     * ⚠️ `groups.read`, and it used to be `orders.read`.
+     * ⚠️ `quotes.approve`, and it has now moved **twice** — `orders.read`, then `groups.read`.
      *
-     * The premise moved because the product did: `orders.read` opened no menu entry when
-     * this test was written, and now it opens ออเดอร์ and แจ้งเตือน. Rather than weaken the
-     * assertion to `.not.toContain(...)`, it was re-pointed at a permission that still opens
-     * nothing — `groups.read` is real, held by administrators, and grants no menu of its own
-     * because groups are edited inside ผู้ใช้และสิทธิ์.
+     * The premise moves because the product does, and both moves were the same shape: the
+     * permission this test borrows must open no menu entry, and each time one grew a screen
+     * the borrow had to move rather than the assertion weaken to `.not.toContain(...)`.
+     * `orders.read` now opens ออเดอร์ and แจ้งเตือน; `groups.read` now opens เพดานอำนาจอนุมัติ,
+     * which is exactly the "if groups ever get their own screen" this comment predicted — it
+     * had to, because reaching the ceiling table through ผู้ใช้และสิทธิ์ required `users.read`
+     * and so the whole staff directory.
      *
-     * That distinction is the thing worth keeping: a permission granting no *section* must
-     * still produce no *heading*, because a heading is itself a disclosure that a section
-     * exists — the same rule the overview's cards follow. If groups ever get their own
-     * screen, this needs re-pointing again rather than deleting.
+     * `quotes.approve` is real, is held by approvers, and opens nothing: the approver's inbox
+     * is on the list of screens nobody has built. The distinction being kept is the thing
+     * worth keeping: a permission granting no *section* must still produce no *heading*,
+     * because a heading is itself a disclosure that a section exists — the same rule the
+     * overview's cards follow. When the inbox lands, re-point this again rather than delete it.
      */
-    const withNoSectionOfItsOwn = visibleNavigation(new Set(['groups.read']));
+    const withNoSectionOfItsOwn = visibleNavigation(new Set(['quotes.approve']));
 
     // "ระบบ" survives every permission set, because `/account` inside it requires none —
     // a person's own password is not a thing to hold a grant for.
@@ -71,6 +74,28 @@ describe('navigation derived from permissions', () => {
     );
 
     expect(hrefs).toContain('/orders');
+  });
+
+  /**
+   * ⭐⭐ The permission that owns the ceiling table can reach the ceiling table.
+   *
+   * ⚠️ This is the assertion the previous shape could not make. `authority_limits` was a tab
+   * inside ผู้ใช้และสิทธิ์, whose entry requires `users.read` — sight of the whole staff
+   * directory, a PDPA-relevant disclosure here — so a person holding exactly `groups.read` +
+   * `groups.write` saw no route to it at all and got a raw English `Missing permission:
+   * users.read.` if they typed the URL. `groups.write` is held by nobody at boot, so that was
+   * the state of the *first* person ever granted it.
+   *
+   * Both of the screen's reads are `groups.read`, so the nav asks for that and nothing else,
+   * and `/users` must stay out of what these two codes open.
+   */
+  it('opens เพดานอำนาจอนุมัติ to groups.read, without users.read', () => {
+    const hrefs = visibleNavigation(new Set(['groups.read', 'groups.write'])).flatMap((section) =>
+      section.items.map((item) => item.href),
+    );
+
+    expect(hrefs).toContain('/authority');
+    expect(hrefs).not.toContain('/users');
   });
 
   it('ignores permission codes it has never heard of instead of choking on them', () => {

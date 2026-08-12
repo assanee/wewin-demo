@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq } from '@wewin/db/sql';
-import { organisationProfile } from '@wewin/db/schema';
+import { orders, organisationProfile } from '@wewin/db/schema';
 import type { OrderDocumentWire, OrderLineRequestWire, OrderWire } from '@wewin/contract/order';
 import type { LinkedDocumentWire } from '../../src/orders/document-link';
 
@@ -130,6 +130,37 @@ describeWithPg('⭐ a quotation link is read by somebody carrying nothing', () =
     /* Beside `document`, never inside it — the same property `lifecycle.pg.test.ts` pins for the owned route. */
     expect(body.document).not.toHaveProperty('seller');
     expect(body.document.documentSchemaVersion).toBe(2);
+  });
+
+  /**
+   * ⭐ The deposit, on the path most customers actually use.
+   *
+   * A foreign-currency quotation prints its figures in the destination's currency and is
+   * **settled in baht**, so the page has to name the baht amount and the deposit that is paid
+   * first. Both come off the order row, and this route carried no money at all until now — the
+   * owned route had it under `money`, so widening only that one would have missed the emailed
+   * link, which is the same mistake the seller field made one fix round earlier.
+   */
+  it('⭐ carries the scheduled deposit alongside the document, in baht', async () => {
+    const mine = await order('deposit-link');
+
+    const [row] = await db
+      .select({ deposit: orders.scheduledDepositThbMinor })
+      .from(orders)
+      .where(eq(orders.id, mine.id));
+    if (!row || row.deposit === null) throw new Error('a submitted order has a scheduled deposit');
+
+    const answer = await byLink(links.issue(mine.id).token);
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+
+    const body = answer.body as LinkedDocumentWire;
+    expect(body.scheduledDepositThbMinor).toEqual({
+      unit: 'THB.satang',
+      digits: String(row.deposit),
+    });
+
+    /* Beside `document`, never inside it — a payment fact is not part of what was priced. */
+    expect(body.document).not.toHaveProperty('scheduledDepositThbMinor');
   });
 
   it('⭐ a token for one order never reads another', async () => {

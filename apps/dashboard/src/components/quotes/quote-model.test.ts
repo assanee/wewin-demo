@@ -131,6 +131,10 @@ const quote = (over: Partial<QuoteWire> = {}): QuoteWire => {
       marginConcessionThbMinor: thb(0n),
       baselineGrandTotalThbMinor: thb(net),
       staleBaselines: [],
+      /* A domestic quotation, so there is no destination currency to convert to and no preview —
+       * which is `null` and not an `available: false` payload. `foldQuote` relays it untouched
+       * (`totals-card.tsx` reads it off the wire), so nothing in this file asserts on it. */
+      fxPreview: null,
     },
     ...over,
   };
@@ -237,6 +241,7 @@ const emptySales = (): NonNullable<QuoteWire['sales']> => ({
   marginConcessionThbMinor: thb(0n),
   baselineGrandTotalThbMinor: thb(0n),
   staleBaselines: [],
+  fxPreview: null,
 });
 
 describe('provenance', () => {

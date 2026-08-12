@@ -33,8 +33,26 @@ export interface AuthorityApp {
   readonly close: () => Promise<void>;
 }
 
-export function authorityEnv(databaseUrl: string): Env {
-  return parseEnv({ NODE_ENV: 'test', DATABASE_URL: databaseUrl });
+/**
+ * ⚠️ `overrides` exists for one reason and it is worth stating, because it looks like a
+ * convenience and is not.
+ *
+ * `DATABASE_POOL_MAX` defaults to **10**. A suite that fires N concurrent requests at this app
+ * therefore has at most *ten* transactions open at once however large N is — the rest are
+ * queued waiting for a connection, and a queued request takes its `BEGIN`, and so its
+ * `transaction_timestamp()`, only once a slot frees. That queue is a *serialiser*, and it
+ * narrows the exact window a concurrency test is trying to open.
+ *
+ * `authority-limits.pg.test.ts`'s contiguity test measured this the hard way: at forty writers
+ * against a pool of ten, the wrong-clock mutation escaped 1 run in 100. Raising the pool to the
+ * number of writers makes "forty concurrent writers" mean forty concurrent *transactions*,
+ * which is what the test's name has always claimed. See that file for the numbers.
+ */
+export function authorityEnv(
+  databaseUrl: string,
+  overrides: Readonly<Record<string, string>> = {},
+): Env {
+  return parseEnv({ NODE_ENV: 'test', DATABASE_URL: databaseUrl, ...overrides });
 }
 
 export async function bootAuthorityApp(env: Env): Promise<AuthorityApp> {

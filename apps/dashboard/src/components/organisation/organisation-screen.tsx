@@ -18,6 +18,8 @@ import { useSession } from '@/lib/auth/session';
 
 import { BankAccountDialog } from './bank-account-dialog';
 import { BankAccountHistoryDialog } from './bank-account-history';
+import { FxHealthCard, type FxHealthState } from './fx-health';
+import { getFxRateHealth } from './fx-health-api';
 import { getProfile, listBankAccounts, listTaxCountries, putProfile, setBankAccountAvailability } from './organisation-api';
 import { ProfileHistoryDialog } from './profile-history';
 import {
@@ -34,12 +36,23 @@ import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
  * The company profile, the accounts it is paid into, and the destinations it taxes.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * Three sections, and they are independent screens sharing one page rather than one form: the
+ * Four sections, and they are independent screens sharing one page rather than one form: the
  * profile is a single row a staff member edits a few times a year, the bank-account list is a
- * queue with its own history control, and the tax-country table is a short, mostly-static list
- * with the same kind of control. Loading, saving and failing are tracked separately for each,
- * so a slow `bank-accounts` fetch cannot leave the profile form looking broken, and a rejected
- * profile save cannot disable the account list or the tax table.
+ * queue with its own history control, the exchange-rate health card is a read-only report, and
+ * the tax-country table is a short, mostly-static list with a history control of its own.
+ * Loading, saving and failing are tracked separately for each, so a slow `bank-accounts` fetch
+ * cannot leave the profile form looking broken, and a rejected profile save cannot disable the
+ * account list or the tax table.
+ *
+ * ⚠️ **`FxHealthCard` sits immediately above `TaxCountriesSection`, and the adjacency is the
+ * point.** It is the only section here that sets nothing at all — its own header says so — and
+ * the way out of everything it reports is one text box in the table underneath it:
+ * `อัตราแลกเปลี่ยนกำหนดเอง` on the destination being quoted. A card that named a remedy on a
+ * different screen, or a page that put the diagnosis at the top and the cure at the bottom, would
+ * be asking a person to hold a sentence in their head while they scrolled. It reads its own
+ * endpoint (`GET /admin/fx/health`, `admin/fx` and not `admin/organisation` — `fx-health-api.ts`
+ * records why) and fails on its own, so a rate feed this dashboard cannot reach still leaves the
+ * profile, the accounts and the destinations editable.
  *
  * ⚠️ **The profile's own `ประวัติ` control is simpler than either sibling's, on purpose.** A bank
  * account and a tax country are both rows in a list — `AccountsCard`/`TaxCountriesSection` open
@@ -74,6 +87,7 @@ export function OrganisationScreen() {
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
   const [accountsState, setAccountsState] = useState<AccountsState>({ status: 'loading' });
   const [taxCountriesState, setTaxCountriesState] = useState<TaxCountriesState>({ status: 'loading' });
+  const [fxHealthState, setFxHealthState] = useState<FxHealthState>({ status: 'loading' });
 
   const reloadProfile = async (): Promise<void> => {
     try {
@@ -99,9 +113,25 @@ export function OrganisationScreen() {
     }
   };
 
+  /**
+   * ⚠️ Its own `catch`, like every sibling above, and here the alternative is worse than usual: a
+   * throw that reached the caller would leave this card on its skeleton for ever, which reads as
+   * "still checking" — the one thing a staleness report must never imply while it knows nothing.
+   * `failureMessage` puts the reason on the card instead, and `FxHealthCard` says out loud that a
+   * failure to *read* the status is not a statement about the rate.
+   */
+  const reloadFxHealth = async (): Promise<void> => {
+    try {
+      setFxHealthState({ status: 'ready', health: await getFxRateHealth() });
+    } catch (cause) {
+      setFxHealthState({ status: 'failed', problem: failureMessage(cause) });
+    }
+  };
+
   useEffect(() => {
     void reloadProfile();
     void reloadAccounts();
+    void reloadFxHealth();
     void reloadTaxCountries();
   }, []);
 
@@ -109,6 +139,9 @@ export function OrganisationScreen() {
     <div className="flex flex-col gap-6">
       <ProfileCard state={profileState} editable={editable} onSaved={reloadProfile} />
       <AccountsCard state={accountsState} editable={editable} onChanged={reloadAccounts} />
+      {/* No `editable` and no `onChanged`: nothing on this card writes anything, so there is no
+          permission to gate and nothing to reload after. See its own header. */}
+      <FxHealthCard state={fxHealthState} />
       <TaxCountriesSection state={taxCountriesState} editable={editable} onChanged={reloadTaxCountries} />
     </div>
   );

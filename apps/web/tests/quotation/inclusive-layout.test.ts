@@ -60,6 +60,7 @@ const BASE: PinnedDocument = {
       options: [],
       measures: {},
       netMinor: 2_000_000n,
+      fxMinor: null,
     },
     {
       lineNo: 2,
@@ -70,11 +71,15 @@ const BASE: PinnedDocument = {
       options: [],
       measures: {},
       netMinor: 900_000n,
+      fxMinor: null,
     },
   ],
   /* At least one charge, or the footing this fixture exists to check would be silently
    * true only for the case — no charge — that cannot expose a lines-only bug. */
-  charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 100_000n }],
+  charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 100_000n, fxMinor: null }],
+  /* Baht — the ordinary case. The foreign one is a separate describe below. */
+  fx: null,
+  scheduledDepositThbMinor: null,
 };
 
 /*
@@ -109,7 +114,23 @@ const wireDoc: Record<string, unknown> = {
   pinnedCoreVersion: 'dev',
   vat: { rateBp: 900, treatment: 'standard' },
   lines: [wireLine(1, 'เก้าอี้อะลูมิเนียม', '2000000'), wireLine(2, 'โต๊ะอะลูมิเนียม', '900000')],
-  charges: [{ labelTh: 'ค่าติดตั้ง', amountThbMinor: satangTag('100000') }],
+  /*
+   * ⚠️ The field names `OrderDocumentChargeWire` actually declares.
+   *
+   * This fixture used to say `labelTh` and `amountThbMinor`, neither of which the API has ever
+   * written, and `pinnedDocumentFrom` was written to match the fixture rather than the payload.
+   * `satang(undefined)` throws, so the real consequence was that every quotation carrying a
+   * delivery or installation charge rendered no page at all for the customer.
+   */
+  charges: [
+    {
+      lineNo: 3,
+      customerDescriptionTh: 'ค่าติดตั้ง',
+      netMinor: satangTag('100000'),
+      isVatApplicable: true,
+      override: null,
+    },
+  ],
   documentOverride: null,
   netThbMinor: satangTag('2752294'),
   vatThbMinor: satangTag('247706'),
@@ -177,5 +198,177 @@ describe('the island still renders its loading phase with no browser globals', (
 
     /* `quotation.loading` — the only phase reachable without effects running. */
     expect(html).toContain('กำลังเปิดใบเสนอราคา');
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ A FOREIGN DESTINATION PRINTS IN ITS OWN CURRENCY — baht does not appear
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner's requirement is *replacement*, not a conversion shown beside the price. So the
+ * assertion that matters is a negative one: no `฿` anywhere in the figures a customer reads.
+ * These walk the whole view model rather than checking the total, because "the total converted
+ * and the lines did not" is exactly the half-done state that would look right in a screenshot.
+ */
+const SGD_FIXTURE: PinnedDocument = {
+  ...BASE,
+  /* Converted at 27.238806 THB/SGD — the figures the API pinned, not recomputed here. */
+  fx: {
+    currency: 'SGD',
+    source: 'mid_market',
+    spreadBp: 200,
+    rateText: '27.238806',
+    observedAt: '2026-08-07T01:00:00.000Z',
+    netMinor: 101_042n,
+    vatMinor: 9_093n,
+    grandTotalMinor: 110_135n,
+  },
+  lines: [
+    { ...(BASE.lines[0] as PinnedDocument['lines'][number]), fxMinor: 73_424n },
+    { ...(BASE.lines[1] as PinnedDocument['lines'][number]), fxMinor: 33_040n },
+  ],
+  charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 100_000n, fxMinor: 3_671n }],
+};
+
+describe('⭐ a foreign destination replaces baht rather than sitting beside it', () => {
+  it('prints every figure in the destination currency', () => {
+    const printed = printableQuotation(SGD_FIXTURE);
+
+    expect(printed.currency).toBe('SGD');
+    expect(printed.grandTotalText).toBe('SGD 1,101.35');
+    expect(printed.netText).toBe('SGD 1,010.42');
+    expect(printed.vatText).toBe('SGD 90.93');
+    expect(printed.lines.map((line) => line.netText)).toEqual(['SGD 734.24', 'SGD 330.40']);
+    expect(printed.charges.map((charge) => charge.amountText)).toEqual(['SGD 36.71']);
+  });
+
+  it('⚠️ puts no baht sign anywhere in the figures', () => {
+    const printed = printableQuotation(SGD_FIXTURE);
+
+    const everyFigure = [
+      printed.netText,
+      printed.vatText,
+      printed.grandTotalText,
+      ...printed.lines.map((line) => line.netText),
+      ...printed.charges.map((charge) => charge.amountText),
+    ];
+
+    everyFigure.forEach((figure) => {
+      expect(figure, `${figure} still carries a baht sign`).not.toContain('฿');
+    });
+  });
+
+  it('carries the rate so the page can say how baht became this', () => {
+    const printed = printableQuotation(SGD_FIXTURE);
+
+    expect(printed.fxRate).not.toBeNull();
+    expect(printed.fxRate?.currency).toBe('SGD');
+    expect(printed.fxRate?.rateText).toBe('27.238806');
+    expect(printed.fxRate?.isManual).toBe(false);
+    /* Rendered in the document's own calendar, like every other date on the page. */
+    expect(printed.fxRate?.observedAtText).toContain('2569');
+  });
+
+  it('says a manual rate is one, and shows no observation date for it', () => {
+    const printed = printableQuotation({
+      ...SGD_FIXTURE,
+      fx: { ...SGD_FIXTURE.fx!, source: 'manual', spreadBp: 0, observedAt: null },
+    });
+
+    expect(printed.fxRate?.isManual).toBe(true);
+    expect(printed.fxRate?.observedAtText).toBe('—');
+  });
+
+  it('stays in baht when the document pinned no rate, which is every older one', () => {
+    const printed = printableQuotation(BASE);
+
+    expect(printed.currency).toBe('THB');
+    expect(printed.fxRate).toBeNull();
+    expect(printed.grandTotalText).toBe('฿30,000.00');
+  });
+
+  it('⚠️ falls back to baht per figure rather than printing a blank', () => {
+    /* Not reachable from `priceOrderDocument`, which writes `fxMinor` on every line whenever
+       it writes `fx`. Asserted anyway: a decoder must not assume an invariant it cannot check,
+       and a visibly wrong currency is a page somebody questions where a blank is one they sign. */
+    const printed = printableQuotation({
+      ...SGD_FIXTURE,
+      lines: [{ ...(SGD_FIXTURE.lines[0] as PinnedDocument['lines'][number]), fxMinor: null }],
+    });
+
+    expect(printed.lines[0]?.netText).toBe('฿20,000.00');
+    expect(printed.grandTotalText).toBe('SGD 1,101.35');
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ QUOTED IN SGD, SETTLED IN BAHT — and the two figures cannot drift apart
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner's decision: the foreign currency is the reference price and payment is made in
+ * baht. So the page carries both, and the assertion that matters is *where the baht number
+ * comes from*.
+ *
+ * ⚠️ It is `grandTotalThbMinor` — the pinned figure the foreign one was derived **from** — and
+ * never the foreign total converted back at the pinned rate. Those differ: the forward
+ * conversion rounds once, so converting SGD 1,101.35 back at 27.238806 does not return the
+ * ฿30,000.00 that was priced. A page printing the back-conversion would state an obligation no
+ * row in the database agrees with, and would drift from the payment page by a satang or two on
+ * most orders.
+ */
+describe('⭐ the baht a customer actually transfers', () => {
+  const withDeposit = (depositMinor: bigint | null): PinnedDocument => ({
+    ...SGD_FIXTURE,
+    scheduledDepositThbMinor: depositMinor,
+  });
+
+  it('prints the pinned baht total, not the foreign total converted back', () => {
+    const printed = printableQuotation(SGD_FIXTURE);
+
+    /* The document says 3,000,000 satang. That is what must appear. */
+    expect(printed.payableThbText).toBe('฿30,000.00');
+
+    /*
+     * ⚠️ The negative control, and the reason this test exists. A back-conversion of the
+     * *printed* SGD total at the *printed* rate lands somewhere else — so a green assertion
+     * above is only meaningful alongside proof that the wrong method gives a different answer.
+     */
+    const backConverted = (110_135n * 27_238_806n) / 1_000_000n;
+    expect(backConverted).not.toBe(3_000_000n);
+  });
+
+  it('shows the deposit in baht when it differs from the total', () => {
+    expect(printableQuotation(withDeposit(900_000n)).depositThbText).toBe('฿9,000.00');
+  });
+
+  it('omits the deposit line when the policy is pay-in-full', () => {
+    /* A second identical figure under a different label reads as a second obligation. */
+    expect(printableQuotation(withDeposit(3_000_000n)).depositThbText).toBeNull();
+  });
+
+  it('omits the deposit line when the order carries none', () => {
+    expect(printableQuotation(withDeposit(null)).depositThbText).toBeNull();
+  });
+
+  it('says nothing about baht settlement on a baht quotation', () => {
+    /* The totals are already baht; a line repeating that is noise. */
+    const printed = printableQuotation({ ...BASE, scheduledDepositThbMinor: 900_000n });
+
+    expect(printed.payableThbText).toBeNull();
+    expect(printed.depositThbText).toBeNull();
+  });
+
+  it('⚠️ the baht figure is the same integer the payment page charges', () => {
+    /*
+     * `orders.grand_total_thb_minor` is constrained equal to the pinned document's by the
+     * `orders_totals_match_document` trigger (0007_order_guards.sql:501-529), and the payment
+     * page's outstanding folds from that column. So proving this page prints
+     * `grandTotalThbMinor` verbatim is proving the two pages cannot disagree — neither
+     * recomputes, so there is nothing to recompute differently.
+     */
+    const printed = printableQuotation({ ...SGD_FIXTURE, grandTotalThbMinor: 1_732_400n });
+    expect(printed.payableThbText).toBe('฿17,324.00');
   });
 });

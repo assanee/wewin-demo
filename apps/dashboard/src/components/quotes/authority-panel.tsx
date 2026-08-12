@@ -52,9 +52,16 @@ import type { QuoteEditor } from './use-quote';
  *
  * `authority_limits` ships with **zero rows**, because nobody has asked the owner what the
  * limits are and plan 13's rule is that a placeholder must never be shipped wearing the
- * costume of an answer. `null` means *no row*: fail-closed, this role may concede nothing at
- * all. `0n` means a row exists saying "may record concessions, may approve none of its own".
- * Two different sentences, printed as two.
+ * costume of an answer. So the screen has three sentences, not two, and the wire gives it
+ * three answers rather than making it guess — see `ceilingClaim` below and `CeilingWire`:
+ *
+ *     { known: false }                  this response says nothing about your ceiling
+ *     { known: true, thbMinor: null }   no row: fail-closed, this role may concede nothing
+ *     { known: true, thbMinor: 0n }     a row saying "may record concessions, approve none"
+ *
+ * ⚠️ The middle and the last are different grants and are printed differently. The first is
+ * printed as nothing at all, and getting *that* wrong is what told salespeople they had no
+ * authority on every quote that conceded nothing.
  *
  * ### There is a request button and no approve button
  *
@@ -224,7 +231,7 @@ function DimensionRow({
         </ul>
       )}
 
-      <CeilingLine ceilingThbMinor={dimension.ceilingThbMinor} />
+      <CeilingLine claim={ceilingClaim(dimension)} />
       <Outcome outcome={dimension.outcome} />
 
       {dimension.outcome !== 'needs_approval' ? null : (
@@ -256,8 +263,41 @@ function DimensionRow({
   );
 }
 
-function CeilingLine({ ceilingThbMinor }: { readonly ceilingThbMinor: bigint | null }) {
-  if (ceilingThbMinor === null) {
+/**
+ * ⭐ What this response says about the reader's ceiling — three answers, not two.
+ *
+ * ⚠️ **This function used to be the bug, and the fix is that it no longer decides anything.**
+ *
+ * The wire once carried a bare `ceilingThbMinor: string | null` whose `null` meant "your role
+ * has no ceiling" on `needs_approval` and "this outcome never consulted the table" on the other
+ * three — a split produced by a branch inside `AuthorityService.judge` that no client can see.
+ * Reading it as "no ceiling" printed **ยังไม่มีการกำหนดเพดานอำนาจสำหรับบทบาทของคุณ** on every
+ * quote with no discount on it — which is most quotes — and kept printing it after an
+ * administrator had granted that very role a ceiling. Found by driving both screens in a
+ * browser; nothing in the API could have caught it, because the API was right and the sentence
+ * was invented here.
+ *
+ * The first fix rebuilt the distinction here, from `outcome`. That worked and was the wrong
+ * place: it left a wire field meaning two things, correct on exactly one client, and the
+ * dashboard is only the first. `CeilingWire` now carries `known` and the server sets it — so
+ * this is a rename of the server's three answers into the three sentences the screen prints,
+ * and there is nothing left here to get wrong.
+ */
+export type CeilingClaim =
+  | { readonly kind: 'ceiling'; readonly ceilingThbMinor: bigint }
+  | { readonly kind: 'none_granted' }
+  | { readonly kind: 'unknown' };
+
+export function ceilingClaim(dimension: Pick<DimensionAssessmentView, 'ceiling'>): CeilingClaim {
+  if (!dimension.ceiling.known) return { kind: 'unknown' };
+  if (dimension.ceiling.thbMinor === null) return { kind: 'none_granted' };
+  return { kind: 'ceiling', ceilingThbMinor: dimension.ceiling.thbMinor };
+}
+
+function CeilingLine({ claim }: { readonly claim: CeilingClaim }) {
+  if (claim.kind === 'unknown') return null;
+
+  if (claim.kind === 'none_granted') {
     return (
       <p className="inline-flex items-start gap-1.5 text-sm text-destructive">
         <Lock className="mt-0.5 size-4 shrink-0" />
@@ -271,8 +311,8 @@ function CeilingLine({ ceilingThbMinor }: { readonly ceilingThbMinor: bigint | n
 
   return (
     <p className="text-sm text-muted-foreground">
-      เพดานของบทบาทคุณ {baht(ceilingThbMinor)}
-      {ceilingThbMinor === 0n ? ' — บันทึกส่วนลดได้ แต่ต้องให้คนอื่นอนุมัติทุกครั้ง' : ''}
+      เพดานของบทบาทคุณ {baht(claim.ceilingThbMinor)}
+      {claim.ceilingThbMinor === 0n ? ' — บันทึกส่วนลดได้ แต่ต้องให้คนอื่นอนุมัติทุกครั้ง' : ''}
     </p>
   );
 }

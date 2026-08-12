@@ -394,6 +394,26 @@ export interface UiParamsByKey {
    */
   'quotation.vatIncluded': Plain;
   'quotation.total': Plain;
+  /**
+   * ⭐ The exchange rate the quotation was frozen at.
+   *
+   * `currency` is an ISO code and `rateText` a decimal the API already rendered — neither is
+   * formatted here, because both are pinned in the document and a locale-dependent rendering
+   * of a pinned figure is a reprint that differs from the print.
+   */
+  'quotation.fx.rate': { readonly currency: string; readonly rateText: string };
+  'quotation.fx.observedAt': { readonly observedAt: string };
+  'quotation.fx.manual': Plain;
+  /**
+   * ⭐ That the foreign figures are the price and baht is the payment.
+   *
+   * It has to read as a fact about how this quotation works, not as a disclaimer — a customer
+   * who skims past it transfers the wrong number. Hence a plain sentence naming both
+   * currencies, sitting directly above the baht figure it describes rather than in a footnote.
+   */
+  'quotation.fx.settlementNote': { readonly currency: string };
+  'quotation.fx.payable': Plain;
+  'quotation.fx.deposit': Plain;
   'quotation.lineNo': Plain;
   'quotation.item': Plain;
   'quotation.qty': Plain;

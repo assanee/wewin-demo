@@ -68,13 +68,31 @@ export interface ConcessionSourceView {
   readonly reasonCode: string | null;
 }
 
+/**
+ * ⭐ What the response says about **your** ceiling — and on most outcomes it says nothing.
+ *
+ * Mirrors `CeilingWire` (`authority.contract.ts`) field for field, and the three-way shape is
+ * the point. It used to be a bare `ceilingThbMinor: bigint | null` whose `null` meant *"you
+ * have no ceiling"* on one outcome and *"this outcome never looked"* on the other three —
+ * a distinction this client had to rebuild from `outcome`, which it originally got wrong and
+ * printed "ยังไม่มีการกำหนดเพดานอำนาจสำหรับบทบาทของคุณ" on every quote with no discount on it.
+ *
+ *     { known: false }                  say nothing about a ceiling
+ *     { known: true, thbMinor: 500000n } your roles may concede up to ฿5,000
+ *     { known: true, thbMinor: null }    your roles hold no live ceiling — fail-closed
+ *
+ * ⚠️ `thbMinor: 0n` is a real grant, not the absence of one.
+ */
+export type CeilingView =
+  | { readonly known: false }
+  | { readonly known: true; readonly thbMinor: bigint | null };
+
 export interface DimensionAssessmentView {
   readonly dimension: ApprovalDimensionWire;
   readonly concessionThbMinor: bigint;
   readonly sources: readonly ConcessionSourceView[];
   readonly outcome: AssessmentOutcomeWire;
-  /** ⚠️ `null` is **no `authority_limits` row** — fail-closed. Not the same as a ceiling of 0. */
-  readonly ceilingThbMinor: bigint | null;
+  readonly ceiling: CeilingView;
   readonly approvalId: string | null;
 }
 
@@ -143,6 +161,23 @@ const oneOf = <T extends string>(
   return value as T;
 };
 
+/**
+ * ⚠️ `known` is read, never inferred — including from the presence of `thbMinor`.
+ *
+ * A decoder that treated a missing `known` as `false`, or that keyed off whether `thbMinor` was
+ * there, would put the two-meaning `null` straight back: it is precisely the "absent means the
+ * safe-looking thing" fold that made `revokedAt` fail open one screen away. The server sends
+ * this discriminator deliberately, so a response without it is malformed, not permissive.
+ */
+function decodeCeiling(input: unknown, what: string): CeilingView {
+  const row = object(input, what);
+  const known = row['known'];
+  if (typeof known !== 'boolean') throw new TypeError(`${what}.known is not a boolean`);
+  if (!known) return { known: false };
+
+  return { known: true, thbMinor: nullableMinorOf(row, 'thbMinor', what) };
+}
+
 function decodeDimension(input: unknown, what: string): DimensionAssessmentView {
   const row = object(input, what);
   const sources = row['sources'];
@@ -152,7 +187,7 @@ function decodeDimension(input: unknown, what: string): DimensionAssessmentView 
     dimension: oneOf(APPROVAL_DIMENSIONS_WIRE, row, 'dimension', what),
     concessionThbMinor: minorOf(row, 'concessionThbMinor', what),
     outcome: oneOf(ASSESSMENT_OUTCOMES_WIRE, row, 'outcome', what),
-    ceilingThbMinor: nullableMinorOf(row, 'ceilingThbMinor', what),
+    ceiling: decodeCeiling(row['ceiling'], `${what}.ceiling`),
     approvalId: nullableStr(row, 'approvalId', what),
     sources: sources.map((entry: unknown): ConcessionSourceView => {
       const source = object(entry, `${what}.sources[]`);

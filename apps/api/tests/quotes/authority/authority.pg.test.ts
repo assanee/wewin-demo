@@ -23,6 +23,7 @@ import {
   type Json,
 } from '../../payments/support/payments-app';
 import { authorityEnv, bootAuthorityApp, type AuthorityApp } from './support/authority-app';
+import { purgeAuthorityLimits } from '../support/authority-reset';
 
 /**
  * Who may reduce what the customer pays — over real HTTP, against a real Postgres.
@@ -132,8 +133,8 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
 
   afterAll(async () => {
     /* Leave the ceiling table exactly as it was found: empty is the assertion of another test. */
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, approverGroupId));
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
+    await purgeAuthorityLimits(db, approverGroupId);
+    await purgeAuthorityLimits(db, salesGroupId);
     await app.close();
     await pool.end();
   });
@@ -294,7 +295,17 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
 
       expect(listed.status).toBe(200);
       const wire = body<{ limits: readonly unknown[]; isFailClosed: boolean }>(listed);
-      expect(wire.isFailClosed).toBe(wire.limits.length === 0);
+
+      /*
+       * ⚠️ Not `toBe(wire.limits.length === 0)`. That was the same question while a withdrawal
+       * was a `DELETE`, and since 0038 it is a **tautology on this fixture**: this `describe`
+       * runs before any grant and `purgeAuthorityLimits` empties the table, so both sides are
+       * whatever the code says and the assertion pins nothing. Worse, it encodes the *old*
+       * meaning — the day a withdrawn row is visible here it would fail with the code correct.
+       * `isFailClosed` means "no live ceiling"; on an empty table that is `true`, stated.
+       */
+      expect(wire.limits).toEqual([]);
+      expect(wire.isFailClosed).toBe(true);
     });
 
     /**
@@ -320,8 +331,8 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       expect(assessed.status).toBe(200);
       const wire = body<{
         allowed: boolean;
-        margin: { concessionThbMinor: string; outcome: string };
-        cashflow: { concessionThbMinor: string; outcome: string };
+        margin: { concessionThbMinor: string; outcome: string; ceiling: unknown };
+        cashflow: { concessionThbMinor: string; outcome: string; ceiling: unknown };
       }>(assessed);
 
       expect(wire.margin.concessionThbMinor).toBe('0');
@@ -329,6 +340,19 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       expect(wire.margin.outcome).toBe('nothing_conceded');
       expect(wire.cashflow.outcome).toBe('nothing_conceded');
       expect(wire.allowed).toBe(true);
+
+      /*
+       * ⭐ …and the response says **nothing** about this reader's ceiling, out loud.
+       *
+       * `judge` returns before it reads `authority_limits` when nothing has been conceded, so
+       * there is no ceiling to report — and the wire says so with `{ known: false }` rather
+       * than a `null` that also spells "you have no authority". Reading that `null` as the
+       * second sentence is the bug a browser caught: every quote with no discount on it told
+       * the salesperson they had no authority at all, including right after they were granted
+       * one. The distinction is on the wire now, so no client has to rebuild it from `outcome`.
+       */
+      expect(wire.margin.ceiling).toEqual({ known: false });
+      expect(wire.cashflow.ceiling).toEqual({ known: false });
 
       /* And the gate the submit path calls agrees, which is the half a screen cannot prove. */
       await expect(
@@ -481,12 +505,16 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       });
       const wire = body<{
         allowed: boolean;
-        margin: { outcome: string; ceilingThbMinor: string; concessionThbMinor: string };
+        margin: {
+          outcome: string;
+          ceiling: { known: boolean; thbMinor?: string | null };
+          concessionThbMinor: string;
+        };
       }>(assessed);
 
       expect(wire.margin.concessionThbMinor).toBe('107000');
       expect(wire.margin.outcome).toBe('within_authority');
-      expect(wire.margin.ceilingThbMinor).toBe('500000');
+      expect(wire.margin.ceiling).toEqual({ known: true, thbMinor: '500000' });
       expect(wire.allowed).toBe(true);
 
       await expect(
@@ -507,15 +535,16 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       const tooSmall = await call('GET', `/quotes/authority/orders/${order.id}`, {
         token: sales.token,
       });
-      const narrowed = body<{ allowed: boolean; margin: { outcome: string; ceilingThbMinor: string } }>(
-        tooSmall,
-      );
+      const narrowed = body<{
+        allowed: boolean;
+        margin: { outcome: string; ceiling: { known: boolean; thbMinor?: string | null } };
+      }>(tooSmall);
 
       expect(narrowed.margin.outcome).toBe('needs_approval');
-      expect(narrowed.margin.ceilingThbMinor).toBe('106999');
+      expect(narrowed.margin.ceiling).toEqual({ known: true, thbMinor: '106999' });
       expect(narrowed.allowed).toBe(false);
 
-      await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
+      await purgeAuthorityLimits(db, salesGroupId);
     });
 
     /** The gate refuses, and it refuses inside the transaction the submit path hands it. */
@@ -657,9 +686,7 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       });
 
     const revokeCeiling = async (groupId: string): Promise<void> => {
-      await db
-        .delete(authorityLimits)
-        .where(eq(authorityLimits.groupId, groupId));
+      await purgeAuthorityLimits(db, groupId);
     };
 
     it('refuses the requester as their own approver — the rule that already existed', async () => {
@@ -731,11 +758,22 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       const assessed = await call('GET', `/quotes/authority/orders/${order.id}`, {
         token: sales.token,
       });
-      const wire = body<{ allowed: boolean; margin: { outcome: string; approvalId: string } }>(assessed);
+      const wire = body<{
+        allowed: boolean;
+        margin: { outcome: string; approvalId: string; ceiling: unknown };
+      }>(assessed);
 
       expect(wire.margin.outcome).toBe('covered_by_approval');
       expect(wire.margin.approvalId).toBe(approvalId);
       expect(wire.allowed).toBe(true);
+
+      /*
+       * The sales role's own ceiling is ฿1,000 here and it did not cover this concession —
+       * somebody else's approval did. So the response reports no ceiling: putting the
+       * requester's number beside "approved" invites exactly the comparison the approval has
+       * already settled, and `{ known: false }` is the wire refusing to invite it.
+       */
+      expect(wire.margin.ceiling).toEqual({ known: false });
 
       /* And the gate agrees — the same measurement, not a second one. */
       await expect(
@@ -840,7 +878,7 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
       });
       expect(allowed.status).toBe(200);
 
-      await db.delete(authorityLimits).where(eq(authorityLimits.groupId, second.id));
+      await purgeAuthorityLimits(db, second.id);
       await revokeCeiling(approverGroupId);
       await db.delete(userGroups).where(eq(userGroups.groupId, second.id));
       await db.delete(groups).where(eq(groups.id, second.id));
@@ -924,11 +962,47 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
         { token: owner.token },
       );
       expect(removed.status).toBe(200);
-      expect(
-        body<{ limits: readonly { groupId: string; dimension: string }[] }>(removed).limits.some(
-          (limit) => limit.groupId === approverGroupId && limit.dimension === 'cashflow',
-        ),
-      ).toBe(false);
+
+      /*
+       * ⚠️ **The row is still here, and this assertion was rewritten rather than deleted.**
+       *
+       * It read `.some(...)` `toBe(false)` while `DELETE` was a real delete. Migration 0038
+       * made withdrawal a flag — `authority_limits_block_delete` refuses the alternative,
+       * because the row is what records who granted this role its authority and deleting it
+       * took that name away with the number. So "taken away again" is now three facts rather
+       * than an absence, and all three are asserted: the row survives, it carries a revocation
+       * stamped with the person who made it, and it grants nothing.
+       *
+       * The third is the one that matters and it is checked against the *ceiling read* rather
+       * than against the list, because `ceiling()` is what actually decides. A list that dimmed
+       * the row while `ceiling()` kept honouring it would be fail-open with a tidy screen.
+       */
+      const withdrawn = body<{
+        limits: readonly {
+          groupId: string;
+          dimension: string;
+          revokedAt: string | null;
+          revokedByUserId: string | null;
+          grantedByUserId: string;
+        }[];
+        isFailClosed: boolean;
+      }>(removed).limits.find(
+        (limit) => limit.groupId === approverGroupId && limit.dimension === 'cashflow',
+      );
+
+      expect(withdrawn, 'the ceiling was deleted, not withdrawn').toBeDefined();
+      expect(withdrawn?.revokedAt).not.toBeNull();
+      expect(withdrawn?.revokedByUserId).toBe(owner.userId);
+      /* The granter's name survives the revocation — that is the whole reason the row does. */
+      expect(withdrawn?.grantedByUserId).toBe(owner.userId);
+
+      const approverScope = userScope({
+        userId: approver.userId,
+        sessionId: randomUUID(),
+        permissions: new Set(['quotes.read', 'quotes.write', 'quotes.approve']),
+        groupIds: [approverGroupId],
+      });
+      expect(await service.ceilingFor(approverScope, 'cashflow')).toBeUndefined();
     });
   });
 });

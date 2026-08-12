@@ -86,13 +86,41 @@ export interface ConcessionSourceWire {
   readonly reasonCode: string | null;
 }
 
+/**
+ * ⭐ What this response says about the **caller's** ceiling — and on most outcomes it says
+ * nothing, which is a different sentence from "you have none".
+ *
+ * This was a bare `ceilingThbMinor: string | null`, and `null` carried two meanings split by a
+ * branch no client can see: *"your roles hold no live `authority_limits` row"* on
+ * `needs_approval`, and *"this outcome never consulted the table"* on the other three.
+ * `AuthorityService.judge` returns before reading the ceiling when nothing has been conceded,
+ * and a covered concession is a fact about somebody else's authority rather than the caller's.
+ *
+ * The dashboard read that `null` as "no ceiling" and printed **ยังไม่มีการกำหนดเพดานอำนาจ
+ * สำหรับบทบาทของคุณ** on every quote carrying no discount — which is most quotes — including
+ * for roles that had just been granted one. It was fixed on that client by reconstructing the
+ * distinction from `outcome`, which left the trap armed for the next client and made a wire
+ * field mean something only one reader knew. So the wire says it itself:
+ *
+ *     { known: false }                     this response reports no ceiling — conclude nothing
+ *     { known: true, thbMinor: '500000' }  the caller's roles may concede up to ฿5,000
+ *     { known: true, thbMinor: null }      the caller's roles hold no live ceiling at all
+ *
+ * ⚠️ `known: true` with `thbMinor: '0'` is a **real grant** and not the absence of one — the
+ * distinction `authority_limits`' own schema note exists for: `0` may record a concession and
+ * approve none of its own; no row has no authority at all.
+ */
+export type CeilingWire =
+  | { readonly known: false }
+  | { readonly known: true; readonly thbMinor: string | null };
+
 export interface DimensionAssessmentWire {
   readonly dimension: 'margin' | 'cashflow';
   readonly concessionThbMinor: string;
   readonly sources: readonly ConcessionSourceWire[];
   /** `nothing_conceded` · `within_authority` · `covered_by_approval` · `needs_approval`. */
   readonly outcome: string;
-  readonly ceilingThbMinor: string | null;
+  readonly ceiling: CeilingWire;
   readonly approvalId: string | null;
 }
 
@@ -172,6 +200,18 @@ export interface AuthorityLimitWire {
   readonly grantedByUserId: string;
   readonly updatedAt: string;
   readonly noteTh: string | null;
+  /**
+   * ⭐ `null` is live; an ISO instant is a ceiling that has been withdrawn.
+   *
+   * Withdrawn rows are **in this list**, not filtered out of it — the same call `tax_countries`
+   * makes about `is_active`. A screen dims them; it does not hide them, because a ceiling
+   * somebody took away is the thing an administrator has to see in order to put it back.
+   *
+   * ⚠️ A withdrawn ceiling grants nothing at all, and is not the same as a ceiling of `0`. See
+   * `isFailClosed` below and `AuthorityRepository.ceiling`.
+   */
+  readonly revokedAt: string | null;
+  readonly revokedByUserId: string | null;
 }
 
 export interface AuthorityLimitListWire {
@@ -182,6 +222,60 @@ export interface AuthorityLimitListWire {
    * An empty table means nobody may concede anything and nobody may approve anything. The flag
    * is on the response so that a dashboard can say so out loud instead of rendering an empty
    * list that looks like a feature nobody has used yet.
+   *
+   * ⚠️ It is **"no live ceiling"**, not "no rows". Since 0038 a revoked limit stays in the
+   * table, so `limits.length === 0` stopped being the question: a list of nothing but withdrawn
+   * ceilings is exactly as fail-closed as an empty one, and a flag that said otherwise would
+   * tell an administrator the feature was working on the day it had been switched off.
    */
   readonly isFailClosed: boolean;
+}
+
+/** The `authority_limits` fields a change records. See `AuthorityService.snapshot`. */
+export interface AuthorityLimitSnapshotWire {
+  readonly maxConcessionThbMinor: string;
+  readonly noteTh: string | null;
+  readonly isRevoked: boolean;
+}
+
+/**
+ * One entry in the chain. `before` is `null` on the first grant and on nothing else, so a
+ * reader can tell a ceiling being created from a ceiling being changed without guessing.
+ */
+export interface AuthorityLimitChangeWire {
+  readonly id: string;
+  readonly groupId: string;
+  readonly groupCode: string;
+  readonly dimension: 'margin' | 'cashflow';
+  readonly changedByUserId: string;
+  readonly changedAt: string;
+  readonly before: AuthorityLimitSnapshotWire | null;
+  readonly after: AuthorityLimitSnapshotWire;
+}
+
+export interface AuthorityLimitChangeListWire {
+  readonly changes: readonly AuthorityLimitChangeWire[];
+}
+
+/**
+ * ⭐ A role, named — and nothing else about it.
+ *
+ * The role picker on the authority screen needs a list of groups to choose from, and the only
+ * endpoint that served one was `GET /admin/groups` behind **`users.read`**. That made the
+ * ceiling table undelegatable: a person holding `groups.read` + `groups.write` — the permission
+ * that *owns* this table — could not reach the screen without also being granted sight of the
+ * entire staff directory, which this project treats as a PDPA-relevant disclosure.
+ *
+ * ⚠️ Three fields, deliberately. No permission grants, no member counts, and nothing about any
+ * person. `groups.read`'s catalogue entry already describes reading groups; what was missing
+ * was a route that asked for it rather than for `users.read`.
+ */
+export interface AuthorityGroupWire {
+  readonly id: string;
+  readonly code: string;
+  readonly nameTh: string;
+}
+
+export interface AuthorityGroupListWire {
+  readonly groups: readonly AuthorityGroupWire[];
 }

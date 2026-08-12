@@ -174,6 +174,11 @@ const SAMPLE = {
     marginConcessionThbMinor: { unit: 'THB.satang', digits: '0' },
     baselineGrandTotalThbMinor: { unit: 'THB.satang', digits: '940637' },
     staleBaselines: [],
+    /* A domestic sample, so there is no destination currency and therefore no indicative
+     * conversion — `null` rather than an `available: false` payload naming a currency there is
+     * not one of. Required by `quoteFxPreviewWireSchema`, which is the point of decoding this
+     * fixture rather than casting it: a field the API started sending has to appear here too. */
+    fxPreview: null,
   },
 } as const;
 

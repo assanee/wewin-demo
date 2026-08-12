@@ -267,6 +267,27 @@
       "when": 1786400000008,
       "tag": "0037_deposit_floor_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786400000009,
+      "tag": "0038_authority_limit_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786400000010,
+      "tag": "0039_history_clock",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786400000011,
+      "tag": "0040_fx_sync_failures",
+      "breakpoints": true
     }
   ]
 }

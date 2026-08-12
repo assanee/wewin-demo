@@ -8,7 +8,7 @@ import { priceBreakdownWireSchema, priceRequestWireSchema, type PriceBreakdownWi
 import { catalogRefShape, type CatalogRef } from './catalog.js';
 import { lengthWireSchema, type LengthWire } from './measure.js';
 import type { OrganisationProfileWire } from './organisation.js';
-import { DESTINATION_TAX_BASES } from './tax.js';
+import { DESTINATION_TAX_BASES, FX_CURRENCIES_WIRE } from './tax.js';
 
 /**
  * The order lifecycle on the wire — phase 5a.
@@ -127,6 +127,16 @@ export type VatTreatmentWire = (typeof VAT_TREATMENTS_WIRE)[number];
 const orderStatusWireSchema = z.literal(ORDER_STATUSES_WIRE);
 const thb = moneyWireSchema('THB');
 
+/**
+ * Any currency, not pinned to one — the presentment currency varies per destination, and the
+ * document says which in `fx.currency`.
+ *
+ * ⚠️ Declared here beside `thb` rather than beside the rest of the fx block further down:
+ * `z.object({...})` evaluates its shape eagerly, so a `const` a schema above it references is
+ * a `ReferenceError` at import time. Module-load order, not declaration tidiness.
+ */
+const fxMoney = moneyWireSchema();
+
 /** Every amount an order carries is THB minor units, and says so in its own unit tag. */
 export const encodeThb = (minor: bigint): MoneyWire<'THB'> => encodeMinor(minor, 'THB');
 
@@ -190,6 +200,14 @@ export interface OrderDocumentLineWire extends CatalogRef {
   /** 📣 FOR THE CUSTOMER ONLY. ⚠️ Never rendered onto a production sheet — plan 7.9(ค). */
   readonly customerDescriptionTh: string | null;
   readonly price: PriceBreakdownWire;
+  /**
+   * `netMinor` in the document's presentment currency — see `OrderDocumentFxWire`.
+   *
+   * Pinned rather than derived at print time, because `@wewin/core/quotation` does no
+   * arithmetic. The column is converted as a running total (`convertSeriesFromBaht`), so these
+   * figures sum **exactly** to the converted subtotal rather than to within a few cents of it.
+   */
+  readonly fxMinor?: MoneyWire | undefined;
 }
 
 /**
@@ -223,6 +241,96 @@ export interface OrderDocumentChargeWire {
   readonly netMinor: MoneyWire<'THB'>;
   readonly isVatApplicable: boolean;
   readonly override: OrderDocumentOverrideWire | null;
+  /**
+   * The same charge in the document's presentment currency — see `OrderDocumentFxWire`.
+   *
+   * Absent whenever `fx` is absent, and present on every line and charge whenever it is
+   * present. Optional for the reason `destinationCountry` is: already-issued documents have
+   * no such field and must keep parsing.
+   */
+  readonly fxMinor?: MoneyWire | undefined;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE EXCHANGE RATE, PINNED — AND WHY THIS MUCH OF IT.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner's decision is that the rate is fixed **at the moment staff submits the
+ * quotation** (*"ตรึงเรทตอนที่พนักงานส่งยืนยันใบเสนอราคา"*), and this is where that pin lands.
+ *
+ * ── ⚠️ Why every one of these fields, and why none can be added later ────────────
+ *
+ * `order_documents_freeze` raises unconditionally on UPDATE (`0007_order_guards.sql:564-588`),
+ * so **there is no backfill, ever**. A field not written today is a field no already-issued
+ * quotation can ever have. The test is therefore not "what does the page need now" but "what
+ * would somebody re-deriving this figure in 2031 have to ask a mutable table for" — and the
+ * answer has to be: nothing.
+ *
+ *   - `currency` — what the figures on this page *are*. Without it the digits are unitless.
+ *   - `source` — `mid_market` means the spread below was applied to a provider figure;
+ *     `manual` means a human typed the rate and the spread was deliberately **not** applied
+ *     (THE RULE, `@wewin/core/fx`). Two figures that differ by 2% are indistinguishable
+ *     without it, and "why is this rate not the mid-market one" is the question a customer
+ *     actually asks.
+ *   - `spreadBp` — what was **applied**, which is `0` for a manual override, not what the row
+ *     said. `tax_countries.fx_spread_bp` is mutable and is not a record of anything.
+ *   - `rateNumerator` / `rateDenominator` — the **exact** ratio, as digit strings. This is the
+ *     divisor that produced every figure below. A decimal rounded to N places is a different
+ *     number: ฿100,000 to SGD is 3,698.63 exactly and 3,698.64 through a rate rounded to four
+ *     places, which is a cent of unexplainable difference on a document somebody is auditing.
+ *     Two fields and not one string, because a ratio is what the arithmetic used and parsing a
+ *     `'a/b'` string back is a decoder nobody would test.
+ *   - `rateText` — ⚠️ **a rendering, never the divisor.** It exists so the page can print a
+ *     rate a person can read. Reproducing the figures from it will not work; that is what the
+ *     ratio above is for.
+ *   - `observedAt` — when the market was observed, so a reader can tell a rate pinned from
+ *     that morning's sync from one pinned off a five-day-old cached observation. `null` for
+ *     `manual`: a rate somebody typed has no market observation instant, and inventing one
+ *     (the submit time) would dress a policy figure up as a measurement.
+ *   - `provider` — the two figures the cross-rate was derived from, verbatim. The free plan is
+ *     USD-base, so THB→SGD exists only as `rates.THB ÷ rates.SGD`; keeping both means the
+ *     derivation can be re-checked without `fx_rates`, which is append-only but still a table
+ *     this document would then depend on. `null` for `manual`, which needs no provider at all.
+ *   - The three totals — because `@wewin/core/quotation` is *"a pure function of the pinned
+ *     document"* with *"no arithmetic of its own"*, and a renderer that recomputed a total
+ *     would be a second opinion about a contract term. The same rule puts `fxMinor` on every
+ *     line and charge rather than deriving the column at print time.
+ *
+ * ── What is deliberately NOT here ────────────────────────────────────────────────
+ *
+ * The baht figures do not move. `netThbMinor` / `vatThbMinor` / `grandTotalThbMinor` remain
+ * exactly what they were and remain what `orders_totals_match_document()` checks, what the
+ * ledger posts, and what the VAT return reports. This block is a **presentment** layer over
+ * them, which is the shape `packages/db/src/schema/payment.ts:419-426` reserves the word for:
+ * *"a presentment amount is additional columns beside this one, never a reinterpretation of
+ * it."* The customer's page prints these; the company's books keep those.
+ */
+export interface OrderDocumentFxProviderWire {
+  /** The base the observation was published against — `'USD'` on the free plan. */
+  readonly base: string;
+  /** `rates['THB']` exactly as stored. */
+  readonly thbPerBase: number;
+  /** `rates[currency]` exactly as stored. */
+  readonly unitPerBase: number;
+}
+
+export interface OrderDocumentFxWire {
+  readonly currency: (typeof FX_CURRENCIES_WIRE)[number];
+  readonly source: 'mid_market' | 'manual';
+  /** Basis points actually applied. `0` on a manual override — see THE RULE in core's `fx.ts`. */
+  readonly spreadBp: number;
+  /** Baht per one whole unit of `currency`, exact. Digits only; both are positive integers. */
+  readonly rateNumerator: string;
+  readonly rateDenominator: string;
+  /** ⚠️ For a human to read. `rateNumerator / rateDenominator` is what was divided by. */
+  readonly rateText: string;
+  /** ISO 8601. `null` when `source` is `'manual'`. */
+  readonly observedAt: string | null;
+  readonly provider: OrderDocumentFxProviderWire | null;
+  readonly netMinor: MoneyWire;
+  readonly vatMinor: MoneyWire;
+  readonly grandTotalMinor: MoneyWire;
 }
 
 export interface OrderDocumentWire {
@@ -261,7 +369,7 @@ export interface OrderDocumentWire {
    *
    * Optional is what keeps the 21 already-issued quotations readable: `documentSchemaVersion`
    * is a bare `z.literal` with no v1/v2 union reader, and a parse failure is a 503 for staff
-   * and customer alike (`apps/api/src/orders/order.repository.ts:722-729`).
+   * and customer alike (`apps/api/src/orders/order.repository.ts:747-755`).
    */
   readonly destinationCountry?: string | undefined;
   /**
@@ -271,6 +379,20 @@ export interface OrderDocumentWire {
    * is mutable, and a quotation must print what was quoted, not what is policy today.
    */
   readonly taxBasis?: (typeof DESTINATION_TAX_BASES)[number] | undefined;
+  /**
+   * ⭐ The presentment currency and the rate it was pinned at, or absent for a baht quotation.
+   *
+   * Absent means baht, which is what every domestic quotation and every already-issued
+   * document is. Present means **this document prints in `fx.currency` and not in baht** — the
+   * baht figures beside it are the company's record, not the customer's page.
+   *
+   * Optional for the same reason `destinationCountry` above is, and it is the same trap:
+   * `documentSchemaVersion` is a bare `z.literal(2)` with no v1/v2 union reader, and a parse
+   * failure is `AppError.databaseUnavailable` — a 503 for staff and customer alike
+   * (`apps/api/src/orders/order.repository.ts:747-755`). A required field here would take every
+   * already-issued quotation off the air at once.
+   */
+  readonly fx?: OrderDocumentFxWire | undefined;
 }
 
 /**
@@ -312,6 +434,7 @@ const orderDocumentLineWireSchema: z.ZodType<OrderDocumentLineWire> = z.object({
   isVatApplicable: z.boolean(),
   customerDescriptionTh: z.string().nullable(),
   price: priceBreakdownWireSchema,
+  fxMinor: fxMoney.optional(),
 });
 
 const orderDocumentChargeWireSchema: z.ZodType<OrderDocumentChargeWire> = z.object({
@@ -320,6 +443,33 @@ const orderDocumentChargeWireSchema: z.ZodType<OrderDocumentChargeWire> = z.obje
   netMinor: thb,
   isVatApplicable: z.boolean(),
   override: orderDocumentOverrideWireSchema.nullable(),
+  fxMinor: fxMoney.optional(),
+});
+
+/** Digits only, and never `0`: the ratio is positive, and a zero denominator is a division. */
+const positiveDigits = z
+  .string()
+  .regex(/^\d{1,40}$/u, 'must be digits')
+  .refine((value) => /[1-9]/u.test(value), { message: 'must be greater than zero' });
+
+const orderDocumentFxWireSchema: z.ZodType<OrderDocumentFxWire> = z.object({
+  currency: z.enum(FX_CURRENCIES_WIRE),
+  source: z.enum(['mid_market', 'manual']),
+  spreadBp: z.int().min(0).max(2_000),
+  rateNumerator: positiveDigits,
+  rateDenominator: positiveDigits,
+  rateText: z.string().min(1),
+  observedAt: z.iso.datetime({ offset: true }).nullable(),
+  provider: z
+    .object({
+      base: z.string().regex(/^[A-Z]{3}$/u),
+      thbPerBase: z.number().positive(),
+      unitPerBase: z.number().positive(),
+    })
+    .nullable(),
+  netMinor: fxMoney,
+  vatMinor: fxMoney,
+  grandTotalMinor: fxMoney,
 });
 
 export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
@@ -335,6 +485,7 @@ export const orderDocumentWireSchema: z.ZodType<OrderDocumentWire> = z.object({
   }),
   destinationCountry: z.string().regex(/^[A-Z]{2}$/u).optional(),
   taxBasis: z.enum(DESTINATION_TAX_BASES).optional(),
+  fx: orderDocumentFxWireSchema.optional(),
   lines: z.array(orderDocumentLineWireSchema),
   charges: z.array(orderDocumentChargeWireSchema),
   documentOverride: orderDocumentOverrideWireSchema.nullable(),

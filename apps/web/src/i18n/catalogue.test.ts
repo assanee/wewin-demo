@@ -156,6 +156,10 @@ const SAMPLE_PARAMS = {
    */
   language: 'ไทย',
   currency: 'THB',
+  /* Baht per one whole unit, as `thbPerUnitText` renders it — six places, never rounded to
+     something tidier, because the tidy version is not the number the document pinned. */
+  rateText: '27.238806',
+  observedAt: '12 สิงหาคม 2569',
   chosen: 'မြန်မာ',
   rendered: 'ไทย',
   translated: 412,

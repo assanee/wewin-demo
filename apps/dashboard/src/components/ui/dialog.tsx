@@ -60,8 +60,31 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        /*
+         * ⚠️ `max-h-[calc(100dvh-2rem)] overflow-y-auto` — silent data loss without it.
+         *
+         * This is centred with `top-1/2 -translate-y-1/2` and, as generated, carried no height
+         * bound and no overflow. A dialog taller than the viewport therefore hangs off *both*
+         * ends and cannot be scrolled: measured at 884px in a 757px viewport, top at y=-63, so
+         * the footer sat at y=772 — below the fold, unreachable, with the page behind it frozen
+         * by the modal. Save and Cancel both.
+         *
+         * That is not a cosmetic overflow. A member of staff edits a setting, clicks where Save
+         * should be, nothing happens, and there is no error to explain it — the change is lost
+         * and the app looks broken. It was found on `tax-country-dialog`, where choosing a
+         * currency *enables* two fields whose long descriptions then push the footer past the
+         * bottom edge, so the dialog is reachable until the moment you use it.
+         *
+         * Fixed here rather than per-dialog because the bound belongs to the primitive: every
+         * dialog in this app grows with its content, and the next one to outgrow a laptop screen
+         * would otherwise fail the same silent way. `dvh` and not `vh` so mobile browser chrome
+         * is subtracted rather than ignored.
+         *
+         * ⚠️ Safe against popovers: Radix renders `SelectContent` through a portal at body
+         * level, so `overflow-y-auto` here does not clip an open dropdown.
+         */
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

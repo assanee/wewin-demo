@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { CatalogModule } from '../catalog/catalog.module';
+import { FxModule } from '../fx/fx.module';
 import { OrganisationModule } from '../organisation';
 import { AuthorityModule } from '../quotes/authority';
 import { QuotesModule } from '../quotes/quotes.module';
@@ -67,9 +68,18 @@ import { OrderScopeModule } from './scope';
    * `OrganisationModule`, task 10's addition: `paymentInstructions` reads
    * `OrganisationRepository.activeAccounts()` for the accounts to pay into. No cycle risk —
    * `OrganisationModule` imports nothing itself.
+   *
+   * `FxModule` is this round's addition, and it is here for exactly one provider:
+   * `QuotationRateService`, which the submit calls inside its own transaction to turn the
+   * destination into the rate the document is priced at. It is the same edge as
+   * `OrganisationModule`'s and it runs the same way — `FxModule` exports the decision and keeps
+   * `FxRatesService` and `FxRatesRepository` to itself, so nothing reachable from here can
+   * trigger a provider fetch or read `fx_rates` and interpret it a second way. No cycle:
+   * `FxModule` imports `OrganisationModule`, and neither of them knows this module exists.
    */
   imports: [
     CatalogModule,
+    FxModule,
     OrderScopeModule,
     OrganisationModule,
     PaymentLifecycleModule,

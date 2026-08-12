@@ -51,7 +51,13 @@ export {
   type QuoteLineFacts,
 } from './concession';
 
-export type { ApprovalRow, AuthorityLimitRow, AuthorityTx } from './authority.repository';
+export type {
+  ApprovalRow,
+  AuthorityLimitChangeRow,
+  AuthorityLimitRow,
+  AuthorityLimitSnapshot,
+  AuthorityTx,
+} from './authority.repository';
 
 export {
   approvalQuerySchema,
@@ -62,7 +68,10 @@ export {
   type ApprovalListWire,
   type ApprovalWire,
   type AuthorityAssessmentWire,
+  type AuthorityLimitChangeListWire,
+  type AuthorityLimitChangeWire,
   type AuthorityLimitListWire,
+  type AuthorityLimitSnapshotWire,
   type AuthorityLimitWire,
   type DimensionAssessmentWire,
 } from './authority.contract';

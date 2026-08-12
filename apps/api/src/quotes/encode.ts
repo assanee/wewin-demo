@@ -1,13 +1,16 @@
 import { encodeThb } from '@wewin/contract/order';
 import type {
+  QuoteFxPreviewWire,
   QuoteLineWire,
   QuoteMoneyWire,
   QuoteOverrideWire,
   QuoteWire,
   StaleBaselineWire,
 } from '@wewin/contract/quote';
+import { convertFromBaht, thbPerUnitText } from '@wewin/core/fx';
 import type { TaxRule } from '@wewin/core/vat';
 
+import type { QuotationRatePreview } from '../fx/quotation-rate.service';
 import type { DestinationTax } from '../organisation/tax-country.service';
 import type { EffectiveMoney, EffectiveQuote } from './overrides';
 import { decodeStoredSelections, encodeStoredMeasures } from './pricing';
@@ -73,6 +76,15 @@ export interface EncodeQuoteInput {
    */
   readonly destination: DestinationTax;
   readonly staleBaselines: readonly StaleBaselineWire[];
+  /**
+   * The indicative destination-currency conversion, already resolved.
+   *
+   * Passed in rather than resolved here, for the reason this file resolves nothing else: an
+   * encoder that reached for a repository would be a second place deciding *which observation
+   * counts as the rate*, which is the single question `QuotationRateService` exists to answer
+   * once. It arrives as a value; this file only converts and renders it.
+   */
+  readonly fxPreview: QuotationRatePreview;
   readonly audience: QuoteAudience;
 }
 
@@ -114,7 +126,62 @@ export function encodeQuote(input: EncodeQuoteInput): QuoteWire {
             marginConcessionThbMinor: encodeThb(input.marginConcessionThbMinor),
             baselineGrandTotalThbMinor: encodeThb(input.effective.baseline.grandTotalThbMinor),
             staleBaselines: input.staleBaselines,
+            fxPreview: encodeFxPreview(
+              input.fxPreview,
+              input.effective.money.grandTotalThbMinor,
+            ),
           },
+  };
+}
+
+/**
+ * ⭐ The indicative figure, converted once — from the grand total and nothing else.
+ *
+ * `convertFromBaht`, not `convertSeriesFromBaht`: there is exactly one figure here, so there is
+ * no column that has to add up to its own total and no reason to reach for the telescoping
+ * version. That decision belongs to the *document*, which prints every line in the destination
+ * currency and must foot; this prints one number beside a baht total that is still moving.
+ *
+ * ⚠️ `null` — no preview at all — for a domestic quotation, and that is `no_destination_currency`
+ * rather than an `available: false` payload naming a currency there isn't one of. Every other
+ * `ok: false` *does* produce a payload, because in those cases a destination currency exists and
+ * the screen has something true to say about it ("SGD, and we have no rate").
+ */
+function encodeFxPreview(
+  preview: QuotationRatePreview,
+  grandTotalThbMinor: bigint,
+): QuoteFxPreviewWire | null {
+  if (!preview.ok) {
+    if (preview.reason === 'no_destination_currency') return null;
+
+    return {
+      available: false,
+      /* Always known on this arm — it came off the same `tax_countries` row the failure is
+       * about — which is what lets the screen say "SGD, and we have no rate" rather than the
+       * uselessly generic "no rate". */
+      currency: preview.currency,
+      grandTotalMinor: null,
+      rateText: null,
+      source: null,
+      observedAt: null,
+      stale: false,
+      ageHours: null,
+      reason: preview.reason,
+    };
+  }
+
+  return {
+    available: true,
+    currency: preview.rate.currency,
+    grandTotalMinor: convertFromBaht(grandTotalThbMinor, preview.rate).toString(),
+    rateText: thbPerUnitText(preview.rate),
+    source: preview.rate.source,
+    observedAt: preview.observedAt,
+    stale: preview.stale,
+    /* Whole hours: the screen prints a sentence, and 73.4 in prose is noise. The exact figure
+     * stays on the refusal's `details` for whoever is debugging a feed. */
+    ageHours: preview.ageHours === null ? null : Math.floor(preview.ageHours),
+    reason: null,
   };
 }
 

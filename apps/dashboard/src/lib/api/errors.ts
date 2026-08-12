@@ -245,7 +245,38 @@ export function networkError(cause: unknown): ApiError {
  * touches three working screens and belongs in its own change.
  */
 export function failureMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof ApiError) return permissionRefusalTh(error) ?? error.message;
   if (error instanceof Error && error.message !== '') return error.message;
   return 'เกิดข้อผิดพลาดที่ไม่รู้จัก';
+}
+
+/**
+ * ⭐ The one English sentence this Thai dashboard can put in front of a person, in Thai.
+ *
+ * `RbacGuard` refuses with a raw Nest `ForbiddenException` — `Missing permission: users.read.`
+ * — which is not an `AppError`, carries no `messageKey`, and never passes through the API's
+ * i18n rendering. It is the *only* refusal a member of staff can reach that is not already
+ * Thai, and a reviewer met it head-on: navigating to a screen without the permission produced
+ * an all-English alert on an all-Thai page.
+ *
+ * ⚠️ Translated here rather than at the guard, and both halves of that matter:
+ *
+ *   - the guard names the codes deliberately — its own comment says naming them is the
+ *     difference between *"ask an administrator for orders.refund"* and a support thread that
+ *     starts with "it says forbidden". So the codes are kept, in the parenthetical;
+ *   - it is matched by **shape**, not by the `FORBIDDEN` code alone. Plenty of forbidden
+ *     answers from this API are already Thai sentences written by `AppError.forbidden`, and
+ *     replacing those with a generic line would lose the specific reason a person needs.
+ *
+ * `null` means "not the guard's sentence — render what the server sent".
+ */
+const MISSING_PERMISSION = /^Missing permission: (?<codes>[a-z0-9_.,\s]+)\.$/u;
+
+function permissionRefusalTh(error: ApiError): string | null {
+  if (error.code !== 'FORBIDDEN') return null;
+
+  const codes = MISSING_PERMISSION.exec(error.message)?.groups?.['codes'];
+  if (codes === undefined) return null;
+
+  return `บัญชีของคุณไม่มีสิทธิ์ใช้ส่วนนี้ — ต้องให้ผู้ดูแลระบบเพิ่มสิทธิ์ ${codes} ให้กลุ่มของคุณก่อน`;
 }

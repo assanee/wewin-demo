@@ -1,6 +1,7 @@
 import type { NotificationsConfig } from '../../notifications.config';
 import type { EmailTransport } from './email-transport';
 import { FileEmailTransport } from './file.transport';
+import { ResendEmailTransport } from './resend.transport';
 import { SmtpEmailTransport } from './smtp.transport';
 
 /**
@@ -18,8 +19,22 @@ import { SmtpEmailTransport } from './smtp.transport';
  * per send.
  */
 export function createEmailTransport(
-  config: Pick<NotificationsConfig, 'emailTransport' | 'emailDir' | 'smtp'>,
+  config: Pick<NotificationsConfig, 'emailTransport' | 'emailDir' | 'smtp' | 'resendApiKey'>,
 ): EmailTransport {
+  if (config.emailTransport === 'resend') {
+    /*
+     * `parseNotificationsConfig` refuses `NOTIFICATIONS_EMAIL_TRANSPORT=resend` without
+     * `RESEND_API_KEY` at boot (see notifications.config.ts), so this branch only fires for
+     * a `NotificationsConfig` assembled by hand — a test, most plausibly — that skipped
+     * that check. Failing loudly here rather than handing `ResendEmailTransport` an
+     * `undefined` key is the same trade `PasswordModule` makes for `SESSION_CONFIG`.
+     */
+    if (config.resendApiKey === undefined) {
+      throw new Error('createEmailTransport: NOTIFICATIONS_EMAIL_TRANSPORT is "resend" but RESEND_API_KEY is not set');
+    }
+    return new ResendEmailTransport(config.resendApiKey);
+  }
+
   return config.emailTransport === 'smtp'
     ? new SmtpEmailTransport(config.smtp)
     : new FileEmailTransport(config.emailDir);

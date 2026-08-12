@@ -4,13 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq } from '@wewin/db/sql';
-import { authorityLimits, orders, userGroups } from '@wewin/db/schema';
+import { orders, userGroups } from '@wewin/db/schema';
 import { toBigInt } from '@wewin/contract/exact';
 import type { OrderDocumentResponseWire, OrderWire } from '@wewin/contract';
 import type { QuoteWire } from '@wewin/contract/quote';
 
 import { client, makeActor, type Actor, type Json } from '../orders/support/lifecycle-app';
 import { bootQuotesApp, quotesEnv, type QuotesApp } from './support/quotes-app';
+import { purgeAuthorityLimits } from './support/authority-reset';
 
 /**
  * ⭐ ONE QUOTE, END TO END, WITH THE NUMBERS PRINTED — plan 7.9 and plan 13's smoke path.
@@ -107,7 +108,7 @@ describeWithPg('one quote, end to end', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await db.delete(authorityLimits).where(eq(authorityLimits.groupId, salesGroupId));
+    await purgeAuthorityLimits(db, salesGroupId);
     await app.close();
     await pool.end();
   });
@@ -141,7 +142,11 @@ describeWithPg('one quote, end to end', () => {
     orderId: string,
   ): Promise<{
     allowed: boolean;
-    margin: { outcome: string; concessionThbMinor: string; ceilingThbMinor: string | null };
+    margin: {
+      outcome: string;
+      concessionThbMinor: string;
+      ceiling: { known: boolean; thbMinor?: string | null };
+    };
   }> => {
     const read = await call('GET', `/quotes/authority/orders/${orderId}`, auth(sales));
     if (read.status !== 200) throw new Error(JSON.stringify(read.body));
@@ -219,9 +224,10 @@ describeWithPg('one quote, end to end', () => {
     say('   outcome', beforeCharge.margin.outcome);
     expect(beforeCharge.allowed).toBe(false);
     expect(beforeCharge.margin.outcome).toBe('needs_approval');
-    /* ⚠️ plan 13's fail-closed, and this null is what it looks like: not "a ceiling of zero",
-     * but "this role carries no authority row at all". */
-    expect(beforeCharge.margin.ceilingThbMinor).toBeNull();
+    /* ⚠️ plan 13's fail-closed, and this is what it looks like on the wire: the server says it
+     * *looked* (`known`) and found nothing (`thbMinor: null`). Not "a ceiling of zero", and not
+     * the `{ known: false }` it sends when an outcome never consulted the table at all. */
+    expect(beforeCharge.margin.ceiling).toEqual({ known: true, thbMinor: null });
 
     /* ── ③ add a charge ────────────────────────────────────────────── */
 

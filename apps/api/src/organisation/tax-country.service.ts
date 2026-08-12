@@ -10,6 +10,8 @@ import type {
   TaxCountryPatchRequest,
   TaxCountryWire,
 } from '@wewin/contract/tax';
+import type { FxCountrySettings } from '@wewin/core/fx';
+import type { Currency } from '@wewin/core/money';
 import type { TaxRule, TaxTreatment } from '@wewin/core/vat';
 
 import { AppError } from '../common/errors/app-error';
@@ -103,11 +105,18 @@ export interface DestinationTax {
   /**
    * ⚠️ The row's three `fx_*` settings are deliberately **not** here, and their absence is
    * the same kind of decision as `basis`'s presence. This envelope is what `priceOrderDocument`
-   * pins; a quotation document is frozen once issued (0018), and the question of how a foreign
-   * figure appears beside or instead of baht has not been answered. Carrying the settings here
-   * would put them one field access away from a document nobody can amend afterwards.
-   * `packages/core/src/fx.ts` is the arithmetic, tested and reachable, and nothing calls it —
-   * on purpose, until that answer exists.
+   * pins; a quotation document is frozen once issued (0018), so carrying the settings here
+   * would put them one field access away from a document nobody can amend afterwards, reachable
+   * by any caller that happened to hold a `DestinationTax` for any other reason.
+   *
+   * ⭐ They are no longer unread, and this comment used to end by saying they were. The answer
+   * that was missing now exists and it has its own path: `resolveFxSettings` below, read by
+   * `QuotationRateService.forDestination` (`apps/api/src/fx/quotation-rate.service.ts`), which
+   * pairs the settings with the newest row of `fx_rates` and hands `priceOrderDocument` one
+   * already-resolved `FxRate`. Two methods and not one widened return type, because the two
+   * questions have different failure modes: an unknown destination is refused by *this*
+   * envelope, and a destination with no usable rate is refused by *that* one, in a sentence
+   * about exchange rates that tells staff to set a manual rate or wait for the sync.
    */
   /** `null` when the order names no destination. */
   readonly code: string | null;
@@ -126,6 +135,30 @@ export interface DestinationTax {
    * editor stays open.
    */
   readonly known: boolean;
+}
+
+/**
+ * What one destination row says about converting out of baht — the fx half of the same row
+ * `DestinationTax` reads the tax half of, kept in its own envelope for the reason stated there.
+ *
+ * `currency` is separate from `settings` rather than a fourth field inside it because
+ * `FxCountrySettings` (`@wewin/core/fx`) is exactly the two knobs an administrator turns, and
+ * `resolveFxRate` takes the currency as its own argument. Widening core's interface to carry a
+ * currency would make it possible to call it with a currency that disagrees with the settings
+ * beside it; keeping them apart means the pair is assembled once, here, off one row.
+ */
+export interface DestinationFx {
+  /**
+   * The destination this came from.
+   *
+   * Carried so a caller holding only these settings can still name the country in a refusal —
+   * `QuotationRateService.fromSettings` is handed the envelope rather than the code, and
+   * "no usable rate" is unactionable without saying which destination has none.
+   */
+  readonly code: string;
+  /** Never `'THB'` — `tax_countries_fx_currency_not_thb` refuses to store it. */
+  readonly currency: Currency;
+  readonly settings: FxCountrySettings;
 }
 
 const encodeChange = (row: {
@@ -328,6 +361,115 @@ export class TaxCountryService {
   }
 
   /**
+   * ⭐ The same row's *other* half: what this destination says about converting out of baht.
+   *
+   * Separate from `resolveDestination` rather than folded into `DestinationTax` — see that
+   * interface's own note for why the settings must not ride along on the envelope
+   * `priceOrderDocument` pins. This is the one read that `QuotationRateService` makes, and it is
+   * the only thing outside this module that ever sees the three `fx_*` columns for pricing.
+   *
+   * `null` means **quote in baht**, and it means exactly one thing: the row has no
+   * `fx_currency`. That is the configured, ordinary state of every domestic destination and of
+   * every foreign one nobody has set a currency on yet, and it is not a failure — the document
+   * simply carries no foreign figure. `fx_manual_rate` cannot be set without a currency
+   * (`tax_countries_fx_manual_rate_needs_currency`), so there is no state where a rate is
+   * configured and this still answers `null`.
+   *
+   * ⚠️ A code that names **no row** throws, and does not answer `null`. Answering `null` would
+   * make a tampered or mistyped country code print baht on a document configured for something
+   * else, which is the same silent fallback `resolveDestination` spends a page refusing — and
+   * `order_documents_freeze` means it could never be corrected afterwards. It is the identical
+   * refusal, deliberately: a caller that reached here through `resolveDestination` (which is
+   * every caller today) has already been refused once and cannot reach this line, so the throw
+   * is what keeps that ordering from being load-bearing.
+   *
+   * ⚠️ `tx` is REQUIRED and may be `undefined`, exactly as on `resolveDestination` above, and
+   * for the reason spelled out there: dropping the argument changes nothing a runtime test can
+   * observe, so the compiler is made to notice instead.
+   */
+  async resolveFxSettings(code: string, tx: Tx | undefined): Promise<DestinationFx | null> {
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+        destinationCountry: code,
+      });
+    }
+
+    return this.fxFromRow(row);
+  }
+
+  /**
+   * ⭐ BOTH HALVES OF ONE ROW, FROM ONE READ — what `OrdersService.submit` calls.
+   *
+   * `resolveDestination` and `resolveFxSettings` each issue their own `byCode`, which is
+   * correct for the paths that want one or the other and wrong for the one path that wants
+   * both: submit was reading `tax_countries` **twice**, on the same connection, inside a
+   * transaction already holding a row lock on the order.
+   *
+   * ⚠️ The cost is not the query, it is *when* the query happens. `redteam5e-pool` saturates
+   * the pool with concurrent writes to one order and asserts that unrelated reads are not
+   * collateral damage; every millisecond a submit holds its connection widens the queue behind
+   * it. Measured over 32 isolated runs per arm, that test failed 1/32 before this change and
+   * 4/32 after — a difference Fisher's exact cannot separate from chance at that sample size
+   * (p ≈ 0.36), so this is not a proven regression. It is a redundant round-trip in the hottest
+   * write path with a plausible mechanism attached, and the honest response to "we cannot tell"
+   * is to remove the thing we would otherwise have to keep arguing about.
+   *
+   * ⚠️ The fx settings still do **not** ride on `DestinationTax`. They come back as a sibling
+   * field, so the envelope `priceOrderDocument` pins is byte-for-byte what it was — see
+   * `DestinationTax`'s own note about keeping the three `fx_*` columns one field access away
+   * from a document nobody can amend.
+   *
+   * `code === null` — an order naming no destination — is the default rule and no conversion,
+   * which is `lookup`'s existing answer plus a `null`, and needs no read at all.
+   */
+  async resolveForSubmit(
+    code: string | null,
+    tx: Tx | undefined,
+  ): Promise<{ readonly tax: DestinationTax; readonly fx: DestinationFx | null }> {
+    if (code === null) {
+      return { tax: await this.resolveDestination(null, tx), fx: null };
+    }
+
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+        destinationCountry: code,
+      });
+    }
+
+    return {
+      tax: {
+        code: row.code,
+        rule: { rateBp: row.rateBp, treatment: row.treatment as TaxTreatment },
+        basis: row.pricesIncludeTax ? 'inclusive' : 'exclusive',
+        known: true,
+      },
+      fx: this.fxFromRow(row),
+    };
+  }
+
+  /** The fx half of a row already in hand. The only place that mapping is written. */
+  private fxFromRow(row: TaxCountryRow): DestinationFx | null {
+    if (row.fxCurrency === null) return null;
+
+    return {
+      /*
+       * `char(3, { enum: CURRENCIES })` on the column plus `tax_countries_fx_currency_known` in
+       * the database, so this narrowing restates a guarantee two layers already hold rather than
+       * hoping. `fxManualRate` needs no conversion at all: `numeric` reads back as an exact
+       * decimal *string*, which is the type `FxCountrySettings` asks for and the reason the
+       * column is `numeric` — see `TaxCountryRow.fxManualRate` above.
+       */
+      code: row.code,
+      currency: row.fxCurrency as Currency,
+      settings: { spreadBp: row.fxSpreadBp, manualRateThbPerUnit: row.fxManualRate },
+    };
+  }
+
+  /**
    * ⭐ The same lookup for a path that **pins nothing** — and the reason the two are separate.
    *
    * `POST /orders` accepts any `/^[A-Z]{2}$/` and deliberately does not validate it (see
@@ -351,6 +493,45 @@ export class TaxCountryService {
    */
   async resolveForEditing(code: string | null, tx: Tx | undefined): Promise<DestinationTax> {
     return this.lookup(code, tx);
+  }
+
+  /**
+   * ⭐ The editing read, with the fx half of the same row — `resolveForSubmit`'s shape, for the
+   * screen rather than for the pin.
+   *
+   * The quote editor now prints an indicative destination-currency figure beside the baht, so
+   * the read path wants exactly what the submit path wanted: the tax envelope *and* the three
+   * `fx_*` settings, off one row. `resolveForEditing` above answers only the tax half, and a
+   * caller that wanted both had the choice of reading `tax_countries` a second time — which on
+   * `QuotesService.write` would be a third read inside a transaction already holding a row lock
+   * on the order, the exact cost `resolveForSubmit` was extracted to remove.
+   *
+   * ⚠️ `fx` is `null` for an **unrecognised** code as well as for a destination with no
+   * `fx_currency`, and the two are deliberately one answer here. `lookup` degrades an unknown
+   * country to the default rule with `known: false`; inventing fx settings for a row that does
+   * not exist would put a currency on a screen for a country this company does not sell to. No
+   * preview is the right amount of preview for a code that names nothing.
+   */
+  async resolveForEditingWithFx(
+    code: string | null,
+    tx: Tx | undefined,
+  ): Promise<{ readonly tax: DestinationTax; readonly fx: DestinationFx | null }> {
+    if (code === null) return { tax: await this.lookup(null, tx), fx: null };
+
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      return { tax: { code, rule: DEFAULT_VAT_RULE, basis: 'exclusive', known: false }, fx: null };
+    }
+
+    return {
+      tax: {
+        code: row.code,
+        rule: { rateBp: row.rateBp, treatment: row.treatment as TaxTreatment },
+        basis: row.pricesIncludeTax ? 'inclusive' : 'exclusive',
+        known: true,
+      },
+      fx: this.fxFromRow(row),
+    };
   }
 
   /** One statement and one interpretation of the row, shared by both readings above. */

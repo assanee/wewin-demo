@@ -4,6 +4,7 @@ import { divRoundHalfUp } from '../src/money.js';
 import {
   FX_SPREAD_BP_LIMIT,
   convertFromBaht,
+  convertSeriesFromBaht,
   quoteFromBaht,
   readRatio,
   resolveFxRate,
@@ -345,5 +346,99 @@ describe('quoteFromBaht — the two steps in one call', () => {
     const quoted = quoteFromBaht(PRICE, 'THB', midMarket(0), OXR);
     expect(quoted.ok).toBe(false);
     if (!quoted.ok) expect(quoted.reason).toBe('same_currency');
+  });
+});
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ A COLUMN THAT ADDS UP — `convertSeriesFromBaht`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The property is not "the residual is small", it is "there is no residual". These tests
+ * assert the identity itself rather than a worked example of it, because the failure mode is
+ * a customer adding up the column on a printed page and getting a different number from the
+ * total printed underneath it.
+ */
+describe('⭐ a converted column sums to the converted total, exactly', () => {
+  const rate = rateOf('SGD', midMarket(200));
+
+  test('the sum telescopes on a column chosen to round badly', () => {
+    /*
+     * Every one of these is a few satang off a clean cent at this rate, so converting them
+     * independently and adding up is what drifts. Eleven of them, an odd count, so a residual
+     * cannot cancel itself by symmetry.
+     */
+    const lines = [
+      333_333n, 666_667n, 1n, 99_999n, 100_001n, 7n, 12_345n, 54_321n, 999_999n, 3n, 500_050n,
+    ];
+
+    const converted = convertSeriesFromBaht(lines, rate);
+    const total = lines.reduce((sum, line) => sum + line, 0n);
+
+    expect(converted.reduce((sum, line) => sum + line, 0n)).toBe(convertFromBaht(total, rate));
+    expect(converted).toHaveLength(lines.length);
+  });
+
+  test('independent conversion of the same column does NOT add up — which is why this exists', () => {
+    /*
+     * The negative control. If this ever goes green, `convertFromBaht` has started rounding
+     * the way `convertSeriesFromBaht` does and the function has become redundant — which is
+     * worth knowing, and is not something a passing test above would ever tell us.
+     */
+    const lines = [333_333n, 666_667n, 1n, 99_999n, 100_001n, 7n, 12_345n, 54_321n, 999_999n, 3n, 500_050n];
+    const total = lines.reduce((sum, line) => sum + line, 0n);
+    const independently = lines.reduce((sum, line) => sum + convertFromBaht(line, rate), 0n);
+
+    expect(independently).not.toBe(convertFromBaht(total, rate));
+  });
+
+  test('a credit line is handled by the identity, not by a special case', () => {
+    /*
+     * `charges` may be negative — a goodwill credit. The telescoping sum does not care.
+     *
+     * ⚠️ This column is chosen, not invented: converting it independently gives SGD 31.02 and
+     * the identity gives SGD 31.03. An arbitrary-looking set of credits rounds the same way
+     * under both rules and would make this test green against an implementation that had no
+     * such guarantee at all — which is what the first draft of it did.
+     */
+    const lines = [100_003n, -33_331n, 15_540n, -7n];
+    const total = lines.reduce((sum, line) => sum + line, 0n);
+
+    expect(convertSeriesFromBaht(lines, rate).reduce((sum, line) => sum + line, 0n)).toBe(
+      convertFromBaht(total, rate),
+    );
+    /* And it is a case where the naive rule really does land elsewhere. */
+    expect(lines.reduce((sum, line) => sum + convertFromBaht(line, rate), 0n)).not.toBe(
+      convertFromBaht(total, rate),
+    );
+  });
+
+  test('holds for a currency with no minor unit at all', () => {
+    /* VND is `MINOR_EXPONENT` 0 — whole đồng. The identity is about the ratio, not the scale. */
+    const dong = rateOf('VND', midMarket(150));
+    const lines = [123_456n, 78_901n, 5n, 999_999n, 2_468n];
+    const total = lines.reduce((sum, line) => sum + line, 0n);
+
+    expect(convertSeriesFromBaht(lines, dong).reduce((sum, line) => sum + line, 0n)).toBe(
+      convertFromBaht(total, dong),
+    );
+  });
+
+  test('each figure stays within one minor unit of its own honest conversion', () => {
+    /*
+     * The cost of the guarantee, bounded and asserted. A line that drifted further would be a
+     * figure the customer could not reconcile against the rate printed on the same page.
+     */
+    const lines = [333_333n, 666_667n, 1n, 99_999n, 100_001n, 7n, 12_345n, 54_321n];
+
+    convertSeriesFromBaht(lines, rate).forEach((converted, index) => {
+      const honest = convertFromBaht(lines[index] ?? 0n, rate);
+      const drift = converted - honest;
+      expect(drift >= -1n && drift <= 1n).toBe(true);
+    });
+  });
+
+  test('an empty column converts to an empty column', () => {
+    expect(convertSeriesFromBaht([], rate)).toEqual([]);
   });
 });

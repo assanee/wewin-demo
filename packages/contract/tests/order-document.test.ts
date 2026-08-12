@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ORDER_DOCUMENT_SCHEMA_VERSION, encodeThb, orderDocumentWireSchema, type OrderDocumentWire } from '../src/order.js';
+import { encodeMinor } from '../src/money.js';
 
 /**
  * ⚠️ THE SILENT STRIP — why `parsed.data`, never the input, is the assertion that matters.
@@ -66,5 +67,83 @@ describe('the pinned document carries a destination without a version bump', () 
   it('refuses a basis outside the two', () => {
     const parsed = orderDocumentWireSchema.safeParse({ ...legacyDocument(), taxBasis: 'net' });
     expect(parsed.success).toBe(false);
+  });
+});
+
+/**
+ * ⭐ The pinned rate, and the same silent-strip hazard one level deeper.
+ *
+ * `fx` is a nested `z.object`, so it strips per-field as well: a `rateNumerator` written and
+ * not declared would vanish and leave a document whose figures nobody can reproduce, with no
+ * error anywhere. Every assertion below therefore reads `parsed.data`, never the input.
+ */
+const pinnedFx = (): NonNullable<OrderDocumentWire['fx']> => ({
+  currency: 'SGD',
+  source: 'mid_market',
+  spreadBp: 200,
+  rateNumerator: '365000',
+  rateDenominator: '13400',
+  rateText: '27.238806',
+  observedAt: '2026-08-12T01:00:00.000Z',
+  provider: { base: 'USD', thbPerBase: 36.5, unitPerBase: 1.34 },
+  netMinor: encodeMinor(367_000n, 'SGD'),
+  vatMinor: encodeMinor(26_000n, 'SGD'),
+  grandTotalMinor: encodeMinor(393_000n, 'SGD'),
+});
+
+describe('the pinned document carries an exchange rate without a version bump', () => {
+  it('keeps every fx field through a parse', () => {
+    const fx = pinnedFx();
+    const parsed = orderDocumentWireSchema.safeParse({ ...legacyDocument(), fx });
+
+    expect(parsed.success).toBe(true);
+    /* Field-for-field, because a nested z.object strips silently and a missing provenance
+       field is only discovered by the person who cannot reproduce the figure years later. */
+    expect(parsed.success && parsed.data.fx).toEqual(fx);
+  });
+
+  it('still parses a document written before the rate was pinned', () => {
+    const parsed = orderDocumentWireSchema.safeParse(legacyDocument());
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.fx).toBeUndefined();
+  });
+
+  it('refuses baht as a presentment currency', () => {
+    /* Baht to baht is not a conversion; `tax_countries_fx_currency_not_thb` refuses to store
+       it and `resolveFxRate` refuses to compute it. The wire agrees with both. */
+    const parsed = orderDocumentWireSchema.safeParse({
+      ...legacyDocument(),
+      fx: { ...pinnedFx(), currency: 'THB' },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('refuses a rate whose denominator is zero', () => {
+    const parsed = orderDocumentWireSchema.safeParse({
+      ...legacyDocument(),
+      fx: { ...pinnedFx(), rateDenominator: '0' },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('keeps a per-line foreign figure, in the line currency and not in baht', () => {
+    const parsed = orderDocumentWireSchema.safeParse({
+      ...legacyDocument(),
+      fx: pinnedFx(),
+      charges: [
+        {
+          lineNo: 1,
+          customerDescriptionTh: 'ค่าติดตั้ง',
+          netMinor: encodeThb(100_000n),
+          isVatApplicable: true,
+          override: null,
+          fxMinor: encodeMinor(367_000n, 'SGD'),
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.charges[0]?.fxMinor).toEqual(encodeMinor(367_000n, 'SGD'));
   });
 });

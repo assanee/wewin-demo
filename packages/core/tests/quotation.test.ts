@@ -56,9 +56,12 @@ const DOCUMENT: PinnedDocument = {
       ],
       measures: { width: '1800 mm', height: '2100 mm' },
       netMinor: 769_200n,
+      fxMinor: null,
     },
   ],
-  charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 0n }],
+  charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 0n, fxMinor: null }],
+  fx: null,
+  scheduledDepositThbMinor: null,
 };
 
 describe('⭐ the same document renders the same way', () => {
@@ -184,7 +187,17 @@ describe('⭐ the basis the destination was quoted on', () => {
     pinnedCoreVersion: 'dev',
     vat: { rateBp: 900, treatment: 'standard' },
     lines: [wireLine(1, 'เก้าอี้อะลูมิเนียม', '2000000'), wireLine(2, 'โต๊ะอะลูมิเนียม', '900000')],
-    charges: [{ labelTh: 'ค่าติดตั้ง', amountThbMinor: satangTag('100000') }],
+    /* ⚠️ The field names `OrderDocumentChargeWire` really uses. This fixture said `labelTh` and
+     `amountThbMinor`, which the API has never written — see `pinnedDocumentFrom`. */
+  charges: [
+    {
+      lineNo: 3,
+      customerDescriptionTh: 'ค่าติดตั้ง',
+      netMinor: satangTag('100000'),
+      isVatApplicable: true,
+      override: null,
+    },
+  ],
     documentOverride: null,
     netThbMinor: satangTag('2752294'),
     vatThbMinor: satangTag('247706'),
@@ -281,5 +294,49 @@ describe('⭐ the option labels come from the document, not the catalogue', () =
 
     expect(line?.detail[0]).toContain('width');
     expect(line?.detail.at(-1)).toContain('สีโปรไฟล์');
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⚠️ A CURRENCY WITH NO MINOR UNIT — the 100× hazard, in the one place it lands
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `MINOR_EXPONENT` calls itself "a fact, not a policy" and is `0` for VND and LAK. `money`
+ * divided by a hardcoded `100n` for as long as baht was the only currency it could be handed,
+ * and that constant surviving the change would render ₫1,234,567 as "12,345.67" — plan 4.3(c)'s
+ * named failure, on a document somebody transfers against.
+ *
+ * Two currencies, not one: LAK proves the branch reads the table rather than special-casing the
+ * three letters `VND`.
+ */
+describe('⚠️ a currency with no minor unit prints whole units, not hundredths', () => {
+  const inCurrency = (currency: 'VND' | 'LAK' | 'SGD', minor: bigint) =>
+    printableQuotation({
+      ...DOCUMENT,
+      fx: {
+        currency,
+        source: 'mid_market',
+        spreadBp: 0,
+        rateText: '0.001500',
+        observedAt: null,
+        netMinor: minor,
+        vatMinor: 0n,
+        grandTotalMinor: minor,
+      },
+    }).grandTotalText;
+
+  it('renders đồng whole, with no decimal point at all', () => {
+    /* 1,234,567 đồng is 1,234,567 minor units — the minor unit *is* the đồng. */
+    expect(inCurrency('VND', 1_234_567n)).toBe('VND 1,234,567');
+  });
+
+  it('renders kip the same way, off the table rather than a special case', () => {
+    expect(inCurrency('LAK', 987_654n)).toBe('LAK 987,654');
+  });
+
+  it('still renders a two-decimal currency with its two decimals', () => {
+    /* The control. A fix that dropped the fraction everywhere would pass the two above. */
+    expect(inCurrency('SGD', 1_234_567n)).toBe('SGD 12,345.67');
   });
 });

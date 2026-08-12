@@ -7,6 +7,7 @@ import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { DRIZZLE } from '../database/database.tokens';
 import { FxHttp, FxHttpError } from './fx-http';
+import { FxRatesRepository, type FxSyncStage } from './fx-rates.repository';
 import { parseLatestRates } from './latest-rates';
 
 /**
@@ -54,11 +55,20 @@ import { parseLatestRates } from './latest-rates';
  *
  * ── Failure handling ──────────────────────────────────────────────────────────────
  *
- * A failed fetch is logged and left for the next tick — no retry loop, no crash. Nothing
- * downstream reads `fx_rates` yet, so a failed fetch is not an outage, and spending the
- * app's availability on a table nobody consumes would be the wrong trade. `FxHttp` never
- * hands this class a URL or a response body to log (see that file), so what gets logged
- * here is a status code at most — never anything that could carry `app_id`.
+ * A failed fetch is **recorded and** left for the next tick — no retry loop, no crash.
+ * `FxHttp` never hands this class a URL or a response body to log (see that file), so what
+ * gets logged here is a status code at most — never anything that could carry `app_id`.
+ *
+ * ⚠️ **"Recorded" is new, and the sentence that used to be here was the bug.** It read:
+ * *"Nothing downstream reads `fx_rates` yet, so a failed fetch is not an outage."* That
+ * stopped being true the moment `QuotationRateService` started pricing quotations from this
+ * table — a failed fetch is now a quotation converted at an older rate, pinned by
+ * `order_documents_freeze`, and correctable never. The trade itself is still right: a
+ * provider outage should cost freshness rather than availability, which is the owner's cache
+ * rule. What was missing was any way to tell a *little* freshness from a *lot* of it, because
+ * a warning line is not a record and the only trace of a failed sync was the row that did not
+ * appear. `record` below writes that trace to `fx_sync_failures`; `staleness.ts` decides when
+ * the accumulated freshness cost has stopped being acceptable.
  *
  * **The database calls get the identical trade, on purpose.** `onModuleInit`'s "is the
  * table empty" read and `fetchAndStore`'s insert are both wrapped rather than left to
@@ -89,6 +99,7 @@ export class FxRatesService implements OnModuleInit {
     @Inject(ENV) env: Env,
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly http: FxHttp,
+    private readonly failures: FxRatesRepository,
   ) {
     this.appId = env.OPENEXCHANGERATES_APP_ID;
     if (this.appId === undefined) {
@@ -134,15 +145,18 @@ export class FxRatesService implements OnModuleInit {
       body = await this.http.getLatest(appId);
     } catch (error) {
       const status = error instanceof FxHttpError ? error.status : undefined;
+      const detail = status === undefined ? 'unreachable' : `status ${String(status)}`;
       this.logger.warn(
         `exchange-rate fetch failed${status === undefined ? '' : ` (status ${String(status)})`}; will retry on the next tick`,
       );
+      await this.record('fetch', detail);
       return;
     }
 
     const parsed = parseLatestRates(body);
     if (!parsed.ok) {
       this.logger.warn(`exchange-rate fetch returned a malformed body (${parsed.reason}); storing nothing`);
+      await this.record('parse', parsed.reason);
       return;
     }
 
@@ -155,6 +169,37 @@ export class FxRatesService implements OnModuleInit {
       });
     } catch (error) {
       this.logger.warn(`could not store the fetched rates (${dbFailureReason(error)}); will retry on the next tick`);
+      await this.record('store', dbFailureReason(error));
+    }
+  }
+
+  /**
+   * ⭐ The failure, written down — which is the whole point of this round.
+   *
+   * Each of the three `return`s above used to be a `logger.warn` and nothing else, and that is
+   * precisely how a three-week outage stayed invisible: the evidence of a failed sync was an
+   * *absence* of an `fx_rates` row, and an absence is ambiguous. A row here makes the run
+   * countable, and `FxRatesRepository.health` counts it against the newest success.
+   *
+   * ⚠️ **Swallows its own failure, and must.** This is called from three paths that are
+   * already handling a failure, one of which is *"the database would not take the rates"* —
+   * so the database is exactly the thing that may be unavailable when we try to record that it
+   * was. Rethrowing would convert a logged, retryable sync failure into an unhandled rejection
+   * inside a `@Cron` handler, and on the `onModuleInit` path into a boot crash: the same trade
+   * this class's header already argues for the insert itself, and for the same reason —
+   * *"a service that exits on it turns a ten-second outage into a crash loop"*.
+   *
+   * The consequence, said out loud: `consecutiveFailures` is a **lower bound**. A failure we
+   * could not write down is a failure that does not appear in the count. That is the honest
+   * direction for it to be wrong in — it under-reports an outage rather than inventing one —
+   * and the age check in `staleness.ts` does not depend on this table at all, so the refusal
+   * still fires on a rate's own timestamp even if every failure row went missing.
+   */
+  private async record(stage: FxSyncStage, detail: string): Promise<void> {
+    try {
+      await this.failures.recordFailure(stage, detail);
+    } catch (error) {
+      this.logger.warn(`could not record the failed sync (${dbFailureReason(error)})`);
     }
   }
 }

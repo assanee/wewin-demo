@@ -5,6 +5,7 @@ import { sql } from '@wewin/db/sql';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { FxHttp } from '../../src/fx/fx-http';
+import { FxRatesRepository } from '../../src/fx/fx-rates.repository';
 import { FxRatesService } from '../../src/fx/fx-rates.service';
 import { testEnv, UNREACHABLE_DATABASE_URL } from '../support/app';
 
@@ -57,7 +58,12 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
   beforeAll(() => {
     pool = createPool(url as string);
     db = createDatabase(pool);
-    service = new FxRatesService(testEnv({ OPENEXCHANGERATES_APP_ID: APP_ID }), db, new FxHttp());
+    service = new FxRatesService(
+      testEnv({ OPENEXCHANGERATES_APP_ID: APP_ID }),
+      db,
+      new FxHttp(),
+      new FxRatesRepository(db),
+    );
   });
 
   afterAll(async () => {
@@ -153,7 +159,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
     // The one warning happens here, at construction — logged once, per the class header.
-    const disabled = new FxRatesService(testEnv(), db, new FxHttp());
+    const disabled = new FxRatesService(testEnv(), db, new FxHttp(), new FxRatesRepository(db));
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockClear();
 
@@ -195,6 +201,7 @@ describeWithPg('FxRatesService, against a real Postgres', () => {
         testEnv({ OPENEXCHANGERATES_APP_ID: APP_ID }),
         unreachableDb,
         new FxHttp(),
+        new FxRatesRepository(unreachableDb),
       );
     });
 

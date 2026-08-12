@@ -154,6 +154,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const asString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
 /**
+ * Satang out of a tagged wire amount, or `null`.
+ *
+ * ⚠️ Lenient where the document's own money is strict. A missing grand total is a quotation
+ * that must not print; a missing deposit is one line fewer on a page whose figures are all
+ * still correct — `printableQuotation` omits the line rather than showing a zero.
+ */
+const asSatang = (value: unknown): bigint | null => {
+  if (!isRecord(value) || value['unit'] !== 'THB.satang') return null;
+  try {
+    return BigInt(String(value['digits']));
+  } catch {
+    return null;
+  }
+};
+
+/**
  * ⚠️ A throw from `pinnedDocumentFrom` becomes `malformed`, and that is the strict half.
  *
  * It throws on money it cannot read, and the alternative — defaulting a missing total to zero
@@ -171,6 +187,8 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
         orderNo: asString(body['orderNo']),
         contactName: asString(body['contactName']),
         submittedAt: asString(body['submittedAt']),
+        /* Beside the document, never inside it — a payment fact off the order row. */
+        scheduledDepositThbMinor: asSatang(body['scheduledDepositThbMinor']),
       }),
       seller: sellerFrom(body['seller']),
     };
@@ -251,11 +269,19 @@ export async function fetchQuotation(
   }
 
   const contact = isRecord(summary['contact']) ? summary['contact'] : {};
+  /*
+   * ⚠️ The two shapes carry the deposit in different places, and this is the one function that
+   * knows it: the token route puts `scheduledDepositThbMinor` at the top level beside
+   * `document`, while `GET /orders/:id` nests it under `money` with the rest of the order's
+   * figures. Both are the same column.
+   */
+  const money = isRecord(summary['money']) ? summary['money'] : {};
   const data = decodeQuotation({
     orderNo: summary['orderNo'],
     status: summary['status'],
     contactName: contact['name'],
     submittedAt: summary['submittedAt'],
+    scheduledDepositThbMinor: money['scheduledDepositThbMinor'],
     document: wrapped['document'],
     seller: wrapped['seller'],
   });

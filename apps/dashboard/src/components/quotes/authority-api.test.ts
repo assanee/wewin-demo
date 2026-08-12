@@ -11,11 +11,12 @@ import { decodeAssessment } from './authority-api';
  *
  * Two of the assertions below are about a decision that has legal weight rather than a shape:
  *
- *   **a null ceiling stays null.** It means *no `authority_limits` row*, which is fail-closed:
- *   this role may concede nothing at all. Widening it to `0n` would render as "a ceiling of
- *   zero", which is a different sentence — a role that may record concessions and approve none
- *   of its own. Plan 13 exists to keep exactly this kind of placeholder from being mistaken
- *   for an answer.
+ *   **the three ceiling answers stay three.** `{ known: false }` is "this response says
+ *   nothing about your ceiling"; `{ known: true, thbMinor: null }` is *no `authority_limits`
+ *   row*, fail-closed, this role may concede nothing at all; `{ known: true, thbMinor: 0n }`
+ *   is a row saying "may record concessions, may approve none of its own". Collapsing any two
+ *   of them is how a placeholder gets mistaken for an answer, which is what plan 13 exists to
+ *   stop — and the first two *were* collapsed until the wire grew `known`.
  *
  *   **money arrives as a bare digit string.** These endpoints do not use the `{unit, digits}`
  *   envelope the rest of the system does, so nothing in the payload says "satang". The regex
@@ -35,7 +36,7 @@ const DIMENSION = {
     },
   ],
   outcome: 'needs_approval',
-  ceilingThbMinor: null,
+  ceiling: { known: true, thbMinor: null },
   approvalId: null,
 } as const;
 
@@ -48,7 +49,7 @@ const ASSESSMENT = {
     concessionThbMinor: '0',
     sources: [],
     outcome: 'nothing_conceded',
-    ceilingThbMinor: '0',
+    ceiling: { known: false },
     approvalId: null,
   },
   allowed: false,
@@ -64,11 +65,36 @@ describe('decoding an assessment', () => {
     expect(assessment.allowed).toBe(false);
   });
 
-  it('keeps “no authority row” distinct from “a ceiling of zero” — plan 13', () => {
+  /**
+   * ⭐ Three answers, and the decoder keeps all three apart.
+   *
+   * `{ known: false }` is *"this response says nothing about your ceiling"*, and it is the one
+   * that used to be indistinguishable — the wire flattened it into the same `null` as "no row",
+   * and the panel printed the fail-closed sentence on both. `known` is read from the payload
+   * and never inferred, so a response that dropped it is malformed rather than permissive.
+   */
+  it('keeps “did not say”, “no authority row” and “a ceiling of zero” apart — plan 13', () => {
     const assessment = decodeAssessment(ASSESSMENT);
 
-    expect(assessment.margin.ceilingThbMinor).toBeNull();
-    expect(assessment.cashflow.ceilingThbMinor).toBe(0n);
+    expect(assessment.margin.ceiling).toEqual({ known: true, thbMinor: null });
+    expect(assessment.cashflow.ceiling).toEqual({ known: false });
+
+    const zero = decodeAssessment({
+      ...ASSESSMENT,
+      margin: { ...DIMENSION, ceiling: { known: true, thbMinor: '0' } },
+    });
+    expect(zero.margin.ceiling).toEqual({ known: true, thbMinor: 0n });
+  });
+
+  /** An absent or non-boolean `known` is a decode failure, never a quiet `{ known: false }`. */
+  it('refuses a ceiling whose known flag is missing rather than assuming silence', () => {
+    expect(() =>
+      decodeAssessment({ ...ASSESSMENT, margin: { ...DIMENSION, ceiling: { thbMinor: null } } }),
+    ).toThrow(/known/u);
+
+    expect(() =>
+      decodeAssessment({ ...ASSESSMENT, margin: { ...DIMENSION, ceiling: { known: true } } }),
+    ).toThrow(/thbMinor/u);
   });
 
   it('refuses an amount that is not canonical digits rather than throwing later', () => {
