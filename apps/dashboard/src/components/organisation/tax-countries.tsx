@@ -77,8 +77,19 @@ export default function TaxCountriesSection({
           <div>
             <CardTitle>ประเทศปลายทางและภาษีมูลค่าเพิ่ม</CardTitle>
             <CardDescription>
+              {/*
+                ⚠️ The second sentence used to read *"ส่วนการตั้งค่าอัตราแลกเปลี่ยนบันทึกไว้แล้วแต่ยังไม่
+                ถูกนำไปใช้กับใบเสนอราคา"* — the fx settings are recorded but not yet applied to
+                quotations. That was true when the columns were added ahead of a consumer and false
+                from the moment `QuotationRateService` started pricing with them. It was the most
+                misleading sentence on the page: a member of staff reading it would take
+                `fxManualRate` for a note-to-self, when it is in fact the field that decides what a
+                customer is charged — and, since this round, the only way to issue a foreign-currency
+                quotation while the rate feed is stale.
+              */}
               อัตราภาษี ประเภทการคำนวณ และฐานราคาของแต่ละประเทศปลายทาง — ใบเสนอราคาใช้ค่าเหล่านี้คำนวณภาษีให้อัตโนมัติตามปลายทางที่ลูกค้าเลือก
-              ส่วนการตั้งค่าอัตราแลกเปลี่ยนบันทึกไว้แล้วแต่ยังไม่ถูกนำไปใช้กับใบเสนอราคา
+              ส่วนการตั้งค่าอัตราแลกเปลี่ยนถูกนำไปใช้จริงกับใบเสนอราคาที่เสนอเป็นสกุลเงินต่างประเทศ และ &ldquo;อัตราแลกเปลี่ยนกำหนดเอง&rdquo;
+              จะใช้แทนอัตรากลางตลาดทันทีโดยไม่ติดเงื่อนไขความเก่าของอัตรา
             </CardDescription>
           </div>
           {editable && (
