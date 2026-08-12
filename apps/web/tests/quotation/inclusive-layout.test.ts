@@ -352,12 +352,26 @@ describe('⭐ the baht a customer actually transfers', () => {
     expect(printableQuotation(withDeposit(null)).depositThbText).toBeNull();
   });
 
-  it('says nothing about baht settlement on a baht quotation', () => {
-    /* The totals are already baht; a line repeating that is noise. */
+  it('⭐ restates no baht TOTAL on a baht quotation, but does state the DEPOSIT', () => {
+    /*
+     * ⚠️ This test used to assert both were null, and half of it was wrong — the same
+     * conflation the production code had, which is why they agreed.
+     *
+     * `payableThbText` is the grand total restated in baht. On a domestic order the totals
+     * above are already baht, so repeating one of them under a second label is noise, and it
+     * stays null. That half was always right.
+     *
+     * `depositThbText` is **not a repetition of anything**. It is the only place a Thai
+     * customer is told they may pay 30% now rather than all of it, and suppressing it left the
+     * payment screen — which opens its amount field on the next instalment due, per the
+     * owner's ruling — offering ฿9,000.00 against a quotation that had only ever printed
+     * ฿30,000.00. The field opens on what the quotation promised, so the quotation has to
+     * promise it.
+     */
     const printed = printableQuotation({ ...BASE, scheduledDepositThbMinor: 900_000n });
 
     expect(printed.payableThbText).toBeNull();
-    expect(printed.depositThbText).toBeNull();
+    expect(printed.depositThbText).toBe('฿9,000.00');
   });
 
   it('⚠️ the baht figure is the same integer the payment page charges', () => {

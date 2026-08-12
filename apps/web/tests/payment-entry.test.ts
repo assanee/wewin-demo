@@ -216,3 +216,92 @@ describe('the label promises a screen and not a figure', () => {
     }
   });
 });
+
+describe('⭐ the field opens on what the quotation promised', () => {
+  /*
+   * ─────────────────────────────────────────────────────────────────────────────
+   * The owner's ruling, and the assertion this round turns on.
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   *   "ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอดเต็มเลย"
+   *
+   * The screen used to open on `outstandingThbMinor` — everything still owed — while the
+   * quotation two clicks earlier printed `ชำระมัดจำก่อน ฿4,320.00`. One number shown, another
+   * asked for. What follows pins the wiring that closes it: the prefill reads `nextDue`, the
+   * server decides which figure that is, and a response without the field is refused rather
+   * than quietly defaulted back to the old one.
+   */
+  const island = read('../src/components/payment/PaymentIsland.tsx');
+  const paymentApi = read('../src/lib/payment/api.ts');
+
+  it('⭐ prefills from nextDue, and no longer from the outstanding', () => {
+    expect(island).toContain('satangField(result.data.nextDueThbMinor)');
+    expect(island).not.toContain('satangField(result.data.outstandingThbMinor)');
+  });
+
+  it('⭐ does not re-decide the rule on the client', () => {
+    /*
+     * A `deposit ?? total` here would be a second implementation of the ruling, and the two
+     * would disagree the first time somebody paid half a deposit — the server answers the
+     * *remainder* of the instalment, which no client-side pick between two pinned figures can
+     * produce. The prefill must therefore be one field, not a choice.
+     */
+    expect(island).not.toMatch(/depositThbMinor\s*\?\?/u);
+    expect(island).not.toMatch(/scheduledDeposit/u);
+  });
+
+  it('⭐ refuses a response with no nextDue rather than falling back', () => {
+    /*
+     * ⚠️ The regression this guards is silent and expensive. An API one version behind sends
+     * no `nextDueThbMinor`; a decoder that defaulted it to the outstanding would restore the
+     * exact ฿14,400-against-฿4,320 bug with every test still green. `satang()` returning null
+     * has to fail the whole decode, the same as a missing grand total.
+     */
+    /*
+     * ⚠️ The whole statement, terminator included — a `toContain` of the prefix alone let
+     * `satang(body['nextDueThbMinor']) ?? outstandingThbMinor` through a mutation run with
+     * every test still green, which is the precise regression being guarded and would have
+     * shipped the old bug back under a passing suite.
+     */
+    const apiCode = paymentApi.replaceAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
+
+    /*
+     * The assignment ends at its semicolon: `satang(…) ?? outstandingThbMinor;` fails this,
+     * and so does any other coalescing tacked onto the read.
+     */
+    expect(apiCode).toMatch(/const nextDueThbMinor = satang\(body\['nextDueThbMinor'\]\);\s*\n/u);
+    /* And a null still fails the whole decode, beside the other two required figures. */
+    expect(apiCode).toContain('nextDueThbMinor === null');
+  });
+
+  it('⭐ still states the outstanding, because it answers a different question', () => {
+    /*
+     * Next-due is what the field opens on; outstanding is what the customer still owes in
+     * total. Dropping the second would leave somebody paying a ฿4,320 deposit with no way to
+     * see the ฿14,400 the order comes to.
+     */
+    expect(island).toContain("t('payment.outstanding')");
+    expect(island).toContain('data.outstandingThbMinor');
+  });
+
+  it('⭐ the quotation states a deposit at every destination, not only foreign ones', () => {
+    /*
+     * `@wewin/core` conditioned `depositThbText` on `fx`, which hid the deposit on every
+     * domestic order — so a Thai customer met ฿4,237.20 on the payment screen having been
+     * promised only ฿14,124.00. The promise has to exist before the field can honour it.
+     */
+    const core = read('../../../packages/core/src/quotation.ts');
+    /*
+     * ⚠️ Comments stripped, and for the second time in this file the first draft caught its
+     * own prose: the doc comment on `depositThbText` *quotes* the condition it removed
+     * ("This was `fx === null || !depositIsSeparate ? null : …`"), so a bare `not.toContain`
+     * failed against the sentence explaining the fix.
+     */
+    const coreCode = core.replaceAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
+
+    expect(coreCode).toContain('depositThbText: !depositIsSeparate ? null :');
+    expect(coreCode).not.toContain('fx === null || !depositIsSeparate');
+    /* And the page has to render it outside the fx branch, or core's fix reaches nobody. */
+    expect(quotationIsland).toContain('quotation.fxRate !== null || depositRow === null');
+  });
+});

@@ -107,6 +107,26 @@ export interface BankAccountPublicWire {
 export interface PaymentInstructionsWire {
   readonly grandTotalThbMinor: MoneyWire<'THB'>;
   readonly outstandingThbMinor: MoneyWire<'THB'>;
+  /**
+   * ⭐ What the customer is being asked for right now — the remainder of the first instalment
+   * that is not yet settled. `฿0.00` when nothing is due.
+   *
+   * The owner's rule for the amount field: *"ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้
+   * ยอดเต็มเลย"* — a schedule with a deposit asks for the deposit, one without asks for the
+   * whole amount.
+   *
+   * ⚠️ **Beside `outstandingThbMinor`, not instead of it, because they answer different
+   * questions.** Outstanding is everything still owed on the order and is what the screen
+   * *states*; this is the next obligation and is what the screen's amount field *opens on*.
+   * They are equal on a pay-in-full schedule and differ by the balance on a 30/70 — and a
+   * screen that opened on the first while the quotation promised the second is exactly the
+   * mismatch this field was added to close.
+   *
+   * The deposit is deliberately not sent as such: "the deposit" stops being the right answer
+   * the moment it has been paid, and a client choosing between two figures would be a second
+   * implementation of a rule the server already applied.
+   */
+  readonly nextDueThbMinor: MoneyWire<'THB'>;
   readonly accounts: readonly BankAccountPublicWire[];
 }
 

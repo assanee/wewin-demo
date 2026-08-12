@@ -13,7 +13,8 @@ import { reviewsApiBaseUrl } from '../reviews/api';
  *
  * 🔗 **The seam:**
  *
- *     GET  /orders/:orderId/payment-instructions   → { grandTotalThbMinor, outstandingThbMinor, accounts[] }
+ *     GET  /orders/:orderId/payment-instructions   → { grandTotalThbMinor, outstandingThbMinor,
+ *                                                      nextDueThbMinor, accounts[] }
  *     GET  /orders/:orderId/payment-slips           → { slips[] }
  *     POST /orders/:orderId/payment-slips/image      the file, as the body — see uploadSlipImage
  *     POST /orders/:orderId/payment-slips             the slip itself, naming the uploaded bytes
@@ -124,6 +125,19 @@ export interface PaymentAccount {
 export interface PaymentInstructions {
   readonly grandTotalThbMinor: bigint;
   readonly outstandingThbMinor: bigint;
+  /**
+   * ⭐ What this customer is being asked for right now, and what the amount field opens on.
+   *
+   * The owner's rule: *"ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอดเต็มเลย"* — a
+   * schedule with a deposit asks for the deposit, one without asks for the whole amount. The
+   * server applies that rule (`order_next_due_thb_minor()`); this bundle does not choose
+   * between two figures, because a client-side choice would be a second implementation of it.
+   *
+   * ⚠️ **Not the same as `outstandingThbMinor`.** Outstanding is everything still owed and is
+   * what the screen states; this is the next obligation and is what it prefills. Equal on a
+   * pay-in-full order, different by the balance on a 30/70. `0n` when nothing is due.
+   */
+  readonly nextDueThbMinor: bigint;
   readonly accounts: readonly PaymentAccount[];
 }
 
@@ -152,8 +166,20 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
 
   const grandTotalThbMinor = satang(body['grandTotalThbMinor']);
   const outstandingThbMinor = satang(body['outstandingThbMinor']);
+  /*
+   * ⚠️ Required, not optional-with-a-fallback. Defaulting a missing `nextDueThbMinor` to the
+   * outstanding would silently restore the exact bug this field was added to fix — the screen
+   * opening on ฿14,400.00 against a quotation promising ฿4,320.00 — on any deployment where
+   * the API is a version behind. A refusal to render is loud; a wrong prefilled amount is not.
+   */
+  const nextDueThbMinor = satang(body['nextDueThbMinor']);
   const rawAccounts = body['accounts'];
-  if (grandTotalThbMinor === null || outstandingThbMinor === null || !Array.isArray(rawAccounts)) {
+  if (
+    grandTotalThbMinor === null ||
+    outstandingThbMinor === null ||
+    nextDueThbMinor === null ||
+    !Array.isArray(rawAccounts)
+  ) {
     return null;
   }
 
@@ -164,7 +190,7 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     accounts.push(account);
   }
 
-  return { grandTotalThbMinor, outstandingThbMinor, accounts };
+  return { grandTotalThbMinor, outstandingThbMinor, nextDueThbMinor, accounts };
 }
 
 /* ------------------------------------------------------------------ *

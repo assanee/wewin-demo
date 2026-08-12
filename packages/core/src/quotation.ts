@@ -209,6 +209,19 @@ export interface PrintableQuotation {
    * The deposit is what the customer pays *first*, so the settle-in-baht statement has to hold
    * on it too. Suppressed when it equals the grand total (a pay-in-full policy), where a second
    * identical figure under a different label reads as a second obligation.
+   *
+   * ── ⚠️ NOT conditioned on `fx`, and it used to be ────────────────────────────
+   *
+   * This was `fx === null || !depositIsSeparate ? null : …`, which tied the deposit to
+   * `payableThbText`'s condition and hid it on **every domestic order**. The two are not the
+   * same fact: `payableThbText` is the grand total restated in baht and is genuinely redundant
+   * without an fx conversion, while the deposit is *new information at any destination* — it is
+   * the only place a Thai customer is told they may pay 30% now rather than all of it.
+   *
+   * The consequence was found by connecting the two screens: the payment page opens its amount
+   * field on the next instalment due, so a domestic 30/70 order offered ฿4,237.20 against a
+   * quotation that had only ever printed ฿14,124.00. The owner's rule is that the field opens
+   * on what the quotation promised, and a quotation that promised nothing cannot satisfy it.
    */
   readonly depositThbText: string | null;
   /**
@@ -362,8 +375,8 @@ export function printableQuotation(document: PinnedDocument): PrintableQuotation
   return {
     currency,
     payableThbText: fx === null ? null : money(document.grandTotalThbMinor, locale, 'THB'),
-    depositThbText:
-      fx === null || !depositIsSeparate ? null : money(deposit, locale, 'THB'),
+    /* ⚠️ No `fx` term — see `depositThbText`. A domestic order has a deposit to state too. */
+    depositThbText: !depositIsSeparate ? null : money(deposit, locale, 'THB'),
     fxRate:
       fx === null
         ? null

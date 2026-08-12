@@ -219,6 +219,20 @@ function Sheet({
   readonly locale: Locale;
   readonly t: Translate;
 }): ReactElement {
+  /*
+   * ⭐ One deposit row, rendered in one of two places — see the domestic block below.
+   *
+   * Built once here so the foreign and domestic branches cannot drift into printing the
+   * deposit with two different labels or two different formats. `@wewin/core` has already
+   * decided whether there is one to print: `depositThbText` is null when the schedule has no
+   * deposit *and* when the deposit is the whole total (a pay-in-full policy), where a second
+   * identical figure under "ชำระมัดจำก่อน" would read as a second obligation.
+   */
+  const depositRow =
+    quotation.depositThbText === null ? null : (
+      <Row label={t('quotation.fx.deposit')} value={quotation.depositThbText} />
+    );
+
   return (
     <article>
       <header className="flex flex-wrap items-baseline justify-between gap-3">
@@ -369,9 +383,7 @@ function Sheet({
                 {t('quotation.fx.settlementNote', { currency: quotation.fxRate.currency })}
               </p>
               <Row label={t('quotation.fx.payable')} value={quotation.payableThbText} strong />
-              {quotation.depositThbText === null ? null : (
-                <Row label={t('quotation.fx.deposit')} value={quotation.depositThbText} />
-              )}
+              {depositRow}
             </div>
           )}
 
@@ -385,6 +397,31 @@ function Sheet({
               : ` · ${t('quotation.fx.observedAt', { observedAt: quotation.fxRate.observedAtText })}`}
           </p>
         </div>
+      )}
+
+      {/*
+       * ⭐ THE DEPOSIT ON A DOMESTIC ORDER, WHICH THIS PAGE NEVER USED TO PRINT.
+       *
+       * `depositThbText` was conditioned on `fx` inside `@wewin/core`, so a Thai customer was
+       * told the total and nothing else — and then met `฿4,237.20` on the payment screen,
+       * which now opens on the next instalment due. The owner's rule is that the field opens
+       * on what the quotation promised, and a quotation that promised nothing cannot satisfy
+       * it, so the promise has to exist here first.
+       *
+       * ⚠️ A second block rather than one shared with the fx branch above, because the two
+       * orders differ: for a foreign destination the deposit belongs directly under
+       * `quotation.fx.payable` (the baht figure it is a part of) and *above* the rate line,
+       * while a domestic order has neither of those and the deposit simply follows the total.
+       * Rendering one block after the rate would have moved the foreign layout to say
+       * payable → rate → deposit, which puts a figure below the footnote explaining a
+       * different figure.
+       *
+       * `quotation.fx.deposit` keeps its key name though it is no longer only about fx — the
+       * label itself ("ชำระมัดจำก่อน") was never about the currency, and renaming a key across
+       * eight catalogues to change nothing a customer sees is churn.
+       */}
+      {quotation.fxRate !== null || depositRow === null ? null : (
+        <div className="mt-4 ml-auto max-w-[320px] border-t border-line pt-2">{depositRow}</div>
       )}
 
       {/*
