@@ -84,9 +84,22 @@ export function OverrideDialog({
   const [reasonCode, setReasonCode] = useState<OverrideReasonWire>('price_match');
   const [noteTh, setNoteTh] = useState('');
 
-  const parsed = text.trim() === '' ? null : preview(context, enteredAs, text);
-  const ready: EntryPreview | null = parsed !== null && parsed.ok ? parsed.value : null;
-  const error = parsed !== null && !parsed.ok ? parsed.reasonTh : undefined;
+  /*
+   * ⚠️ **No touched-tracking, so a wrong entry is red as it is typed rather than at save.**
+   *
+   * This read `text.trim() === '' ? null : preview(...)`, which meant an empty box showed nothing
+   * and a mistyped one only turned red once something parseable had been in it. The owner's
+   * instruction is that anything outside the accepted format goes red immediately —
+   * *"ถ้าใส่ผิดให้ขึ้นแดงเลย"* — and discovering the format at submit is the thing being fixed.
+   *
+   * `organisation/bank-account-dialog.tsx` is the precedent and states the same reasoning: it reads
+   * every field out of state "rather than tracking which one the person actually touched", so an
+   * empty new-account form opens red with Save already disabled. That is what caught a bad
+   * PromptPay id. `ready` is null for every refusal, and the Save button below is disabled on it.
+   */
+  const parsed = preview(context, enteredAs, text);
+  const ready: EntryPreview | null = parsed.ok ? parsed.value : null;
+  const error = parsed.ok ? undefined : parsed.reasonTh;
   /* `other` is a prompt for a sentence, not a way past the vocabulary — mirrors the CHECK. */
   const noteMissing = reasonCode === 'other' && noteTh.trim() === '';
 
@@ -133,7 +146,14 @@ export function OverrideDialog({
             mono
             description={DESCRIPTION_TH[enteredAs]}
             {...(enteredAs === 'percent_discount'
-              ? { suffix: '%', placeholder: 'เช่น 5 หรือ 7.5' }
+              ? /*
+                 * The placeholder shows the discount it is: `5` in this box means five percent
+                 * *off*, and typing it is now enough — the `%` is appended on the way out. It used
+                 * to read `เช่น 5 หรือ 7.5` while the server refused a bare `5` and its 422 replied
+                 * `เช่น "-15%"`, which is how a salesperson got talked into the one input that
+                 * previewed a surcharge and stored a discount.
+                 */
+                { suffix: '%', placeholder: 'เช่น 5 = ลด 5% หรือ 7.5 = ลด 7.5%' }
               : enteredAs === 'lead_time_days'
                 ? { suffix: 'วัน', placeholder: 'เช่น 30' }
                 : { prefix: '฿', placeholder: hintFor(context, enteredAs) })}
@@ -179,7 +199,14 @@ export function OverrideDialog({
                   anchor: ready.anchor,
                   quoteLineId: context.anchor === 'line_total' ? context.quoteLineId : null,
                   enteredAs: ready.enteredAs,
-                  /* Verbatim. Nothing about the preview above goes up. */
+                  /*
+                   * No money goes up — not the preview, not a baseline. What goes up is the text,
+                   * normalised by `@wewin/core/discount` into the form the server parses: a
+                   * percentage carries the `%` the box above only *draws*. The dialog does not do
+                   * that itself on purpose — patching the string here, after the preview had been
+                   * computed from the unpatched one, is precisely the two-readers shape that made
+                   * `-5%` preview a surcharge and store a discount.
+                   */
                   enteredValueText: ready.enteredValueText,
                   reasonCode,
                   noteTh: noteTh.trim() === '' ? null : noteTh.trim(),
@@ -212,6 +239,13 @@ const DESCRIPTION_TH: Readonly<Record<OverrideEntryModeWire, string>> = {
 
 function hintFor(context: OverrideContext, enteredAs: OverrideEntryModeWire): string {
   if (context.anchor === 'lead_time_days') return '';
+  /*
+   * The money-discount box states its format rather than showing the computed total. It used to
+   * echo `bahtInput(computedThbMinor)` like the absolute boxes do — a placeholder of `13200` in a
+   * box captioned ส่วนลดเป็นจำนวนเงิน, which reads as an invitation to type the whole price as the
+   * discount. The absolute boxes keep that echo, where it is exactly the right suggestion.
+   */
+  if (enteredAs === 'discount_amount') return 'เช่น 291 = ลด ฿291';
   if (enteredAs === 'unit_price' && context.anchor === 'line_total') {
     return bahtInput(unitPriceOf(context.computedThbMinor, context.qty));
   }

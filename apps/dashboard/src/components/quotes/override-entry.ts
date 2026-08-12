@@ -1,6 +1,15 @@
+import { priceAfterPercentDiscount } from '@wewin/core/discount';
 import { divRoundHalfUp } from '@wewin/core/money';
 
-import { baht, percentText, readBaht, readDays, readPercentBp, type ParseResult } from './amounts';
+import {
+  baht,
+  percentText,
+  readBaht,
+  readDays,
+  readDiscountBaht,
+  readPercentEntry,
+  type ParseResult,
+} from './amounts';
 import { ENTRY_MODES_BY_ANCHOR, type OverrideAnchorWire, type OverrideEntryModeWire } from './quote-wire';
 
 /**
@@ -23,9 +32,14 @@ import { ENTRY_MODES_BY_ANCHOR, type OverrideAnchorWire, type OverrideEntryModeW
  *   CHECK in `packages/db/src/schema/quote.ts`. Without them the same refusal arrives as
  *   SQLSTATE 23514 translated into prose, attached to no field.
  *
- *   **a preview** — typing `5` into a percent box and watching `฿8,351.45` appear is what
+ *   **a preview** — typing `5` into a percent box and watching `฿8,351` appear is what
  *   makes plan 7.9(ก)'s "absolute, never a delta" self-evident rather than a paragraph
  *   somebody has to be told. It is also what makes the per-unit box safe to offer.
+ *
+ *   ⚠️ That figure read `฿8,351.45` here for as long as the preview did its own arithmetic, and
+ *   the write stored `฿8,351.00`. A preview is allowed to be *superseded* by the server — see
+ *   below — but it is not allowed to be computed differently, and the difference between those
+ *   two sentences is `@wewin/core/discount`.
  *
  * ⚠️ **If this preview and the server ever disagree, the server is right and the screen will
  * show it on the next render**, because every write answers with the whole quote. That is the
@@ -96,7 +110,18 @@ export type OverrideContext =
 export interface EntryPreview {
   readonly anchor: OverrideAnchorWire;
   readonly enteredAs: OverrideEntryModeWire;
-  /** Verbatim, trimmed of outer whitespace and changed in no other way. */
+  /**
+   * What the request will carry: the typed text, trimmed, with **one** deliberate exception.
+   *
+   * On `percent_discount` the `%` the field renders as a decoration is appended, because the server
+   * requires a literal one — that is the guard which stops `291` being read as 291 percent, and the
+   * owner's ruling is that the client sends what the server already requires rather than the server
+   * loosening. `@wewin/core/discount` does the appending; see `readPercentEntry`.
+   *
+   * ⚠️ A sign is never invented. `5` sends `5%`, not `-5%`: the server reads those identically, and
+   * `entered_value_text` is plan 7.9(ก)'s record of what the human said, not a place to put
+   * characters they did not type.
+   */
   readonly enteredValueText: string;
   /** The anchor figure this typing should produce. Satang, or `null` on the lead-time anchor. */
   readonly anchorThbMinor: bigint | null;
@@ -106,6 +131,7 @@ export interface EntryPreview {
 const fail = <T>(reasonTh: string): ParseResult<T> => ({ ok: false, reasonTh });
 const ok = <T>(value: T): ParseResult<T> => ({ ok: true, value });
 
+/** Only `concessionText` still needs this — the discount arithmetic moved to `@wewin/core/discount`. */
 const BP_PER_UNIT = 10_000n;
 
 /**
@@ -118,17 +144,6 @@ const BP_PER_UNIT = 10_000n;
  * fails in.
  */
 const ENTERED_TEXT_MAX = 32;
-
-/**
- * The price after a percentage has been taken off it.
- *
- * `divRoundHalfUp` and not `Math.round`, for the reason plan 7.9(ง)(4) records with a number:
- * `Math.round(-1432.5)` is −1432 because it rounds toward +Infinity, and half_up means −1433.
- * Negative money is new in this phase — credits, reversals, a discount typed with the wrong
- * sign — so the rule is taken from core rather than restated.
- */
-const afterPercent = (computedMinor: bigint, bp: bigint): bigint =>
-  computedMinor - divRoundHalfUp(computedMinor * bp, BP_PER_UNIT);
 
 /**
  * What one entry mode means against one baseline.
@@ -155,7 +170,13 @@ export function preview(
   }
 
   const enteredValueText = text.trim();
-  if (enteredValueText === '') return fail('ยังไม่ได้กรอกค่า');
+  /*
+   * An empty box is refused by whichever reader the mode selects, not here. The blanket
+   * `ยังไม่ได้กรอกค่า` that used to sit at this line preempted all four of them, so the percent field
+   * could not say what to type — and since the dialog now shows a refusal from the moment it opens,
+   * that first sentence is the one doing the teaching. `readPercentEntry('')` answers
+   * "กรอกเป็นตัวเลขเท่านั้น เช่น 5 = ลด 5%"; `readBaht('')` answers "กรอกจำนวนเงิน".
+   */
   if (enteredValueText.length > ENTERED_TEXT_MAX) {
     return fail(`ยาวเกิน ${String(ENTERED_TEXT_MAX)} ตัวอักษร — ช่องนี้เก็บราคา ไม่ใช่คำอธิบาย`);
   }
@@ -179,11 +200,24 @@ export function preview(
     };
   }
 
-  const value = readMoneyEntry(enteredAs, text, context);
-  if (!value.ok) return value;
+  const entry = readMoneyEntry(enteredAs, text, context);
+  if (!entry.ok) return entry;
 
-  if (value.value < 0n) {
-    return fail(`ยอดที่ได้คือ ${baht(value.value)} — ราคาติดลบไม่ได้ เงินที่ไหลกลับหาลูกค้าคือการคืนเงิน`);
+  const { minor, wireText } = entry.value;
+
+  /*
+   * The cap is applied **again**, to `wireText` rather than to what was typed, because `wireText`
+   * is what the request carries and a percentage leaves here one character longer than it arrived.
+   * The check at the top of this function cannot cover that: a 32-character entry would pass it and
+   * then send 33, and the contract's `enteredValueTextSchema` would refuse something this screen
+   * had already shown a price for.
+   */
+  if (wireText.length > ENTERED_TEXT_MAX) {
+    return fail(`ยาวเกิน ${String(ENTERED_TEXT_MAX)} ตัวอักษร — ช่องนี้เก็บราคา ไม่ใช่คำอธิบาย`);
+  }
+
+  if (minor < 0n) {
+    return fail(`ยอดที่ได้คือ ${baht(minor)} — ราคาติดลบไม่ได้ เงินที่ไหลกลับหาลูกค้าคือการคืนเงิน`);
   }
 
   /*
@@ -194,17 +228,28 @@ export function preview(
    * nothing. Re-confirming a price after the catalogue moved is a *revocation*, which is
    * exactly what the contract's `RevokeOverrideRequestWire` header says too.
    */
-  if (value.value === context.computedThbMinor) {
+  if (minor === context.computedThbMinor) {
     return fail('ค่าเท่ากับที่คำนวณได้ — ถ้าต้องการยืนยันราคานี้ ให้ยกเลิกการแก้ราคาเดิมแทน');
   }
 
   return ok({
     anchor: context.anchor,
     enteredAs,
-    enteredValueText,
-    anchorThbMinor: value.value,
+    enteredValueText: wireText,
+    anchorThbMinor: minor,
     anchorDays: null,
   });
+}
+
+/**
+ * The anchor figure, and the characters that produced it.
+ *
+ * `wireText` is what the request carries. For three of the four modes it is the typed text
+ * unchanged; for `percent_discount` it is the typed text with the `%` the field only *drew*.
+ */
+interface MoneyEntry {
+  readonly minor: bigint;
+  readonly wireText: string;
 }
 
 /** The four money entry modes, each landing on the same anchor. */
@@ -212,11 +257,16 @@ function readMoneyEntry(
   enteredAs: OverrideEntryModeWire,
   text: string,
   context: Extract<OverrideContext, { computedThbMinor: bigint }>,
-): ParseResult<bigint> {
+): ParseResult<MoneyEntry> {
+  /** Verbatim, for the modes whose typed text is already what the server parses. */
+  const asTyped = (minor: bigint): ParseResult<MoneyEntry> => ok({ minor, wireText: text.trim() });
+
   switch (enteredAs) {
     case 'line_total':
-    case 'grand_total':
-      return readBaht(text);
+    case 'grand_total': {
+      const parsed = readBaht(text);
+      return parsed.ok ? asTyped(parsed.value) : parsed;
+    }
 
     case 'unit_price': {
       const parsed = readBaht(text);
@@ -227,19 +277,43 @@ function readMoneyEntry(
        * that rounds, and `unitPriceOf` below is labelled accordingly.
        */
       const qty = context.anchor === 'line_total' ? context.qty : 1;
-      return ok(parsed.value * BigInt(qty));
+      return asTyped(parsed.value * BigInt(qty));
     }
 
     case 'percent_discount': {
-      const parsed = readPercentBp(text);
+      const parsed = readPercentEntry(text);
       if (!parsed.ok) return parsed;
-      return ok(afterPercent(context.computedThbMinor, parsed.value));
+      /*
+       * ⭐ THE PREVIEW AND THE WRITE COME FROM ONE PARSE OF ONE STRING.
+       *
+       * This used to be a local `afterPercent` over a locally-parsed sign, and it disagreed with
+       * the server twice over: on the sign (it read `-5` as "add five percent") and on the
+       * rounding (it stopped at ฿8,351.45 where the write stored ฿8,351.00).
+       *
+       * Now `normalisePercentEntry` produces both halves at once — the `bp` this figure is derived
+       * from and the `wireText` the server will re-derive it from — so there is no arrangement of
+       * this code in which the screen shows one discount and sends another.
+       */
+      return ok({
+        minor: priceAfterPercentDiscount(context.computedThbMinor, parsed.value.bp),
+        wireText: parsed.value.wireText,
+      });
     }
 
     case 'discount_amount': {
-      const parsed = readBaht(text);
+      /*
+       * `readDiscountBaht` and not `readBaht`: one accepted spelling, a plain positive number, with
+       * `-291` and `฿291` refused by name. Its `wireText` is the typed text unchanged — a money
+       * discount needs no decoration appended, unlike the percentage above, so this field's
+       * `entered_value_text` is character-for-character what the salesperson wrote.
+       *
+       * The refusal for a discount larger than the price is `preview`'s `minor < 0n` check, not this
+       * reader's: it needs the baseline, and `readBaht` already argues there why a negative price is
+       * not a price.
+       */
+      const parsed = readDiscountBaht(text);
       if (!parsed.ok) return parsed;
-      return ok(context.computedThbMinor - parsed.value);
+      return ok({ minor: context.computedThbMinor - parsed.value.minor, wireText: parsed.value.wireText });
     }
 
     case 'lead_time_days':

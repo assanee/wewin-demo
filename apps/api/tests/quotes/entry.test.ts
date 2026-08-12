@@ -1,3 +1,4 @@
+import { normaliseAmountEntry, normalisePercentEntry, priceAfterPercentDiscount } from '@wewin/core/discount';
 import { describe, expect, it } from 'vitest';
 
 import { EntryError, normaliseCharge, normaliseEntry } from '../../src/quotes/entry';
@@ -142,6 +143,119 @@ describe('a discount may only discount', () => {
   it('rounds a percentage to the whole baht, which is what every computed total already is', () => {
     /* 7% of ฿8,791.00 is ฿615.37 exactly; ฿8,175.63 rounds half-up to ฿8,176. */
     expect(money('percent_discount', '7%')).toEqual({ kind: 'money', overrideThbMinor: 817_600n });
+  });
+
+  /**
+   * ⭐ The other half of the pair in `apps/dashboard/.../override-entry.test.ts`.
+   *
+   * The convention above was stated here in a comment *and* in the dashboard's `amounts.ts`, in
+   * opposite directions, and both suites were green: `-5%` on a ฿8,791.00 line previewed ฿9,230.55
+   * and stored ฿8,351.00. This asserts the figure comes out of `@wewin/core/discount` rather than
+   * out of arithmetic in this file that happens to agree with it today — the screen asserts the
+   * same call with the same arguments, so the two cannot drift apart again without one failing.
+   */
+  it('takes its figure from the shared rule, not from arithmetic of its own', () => {
+    for (const typed of ['5%', '-5%']) {
+      expect(money('percent_discount', typed)).toEqual({
+        kind: 'money',
+        overrideThbMinor: priceAfterPercentDiscount(879_100n, 500n),
+      });
+    }
+
+    expect(money('percent_discount', '-5%')).toEqual({
+      kind: 'money',
+      overrideThbMinor: 835_100n,
+    });
+  });
+
+  /**
+   * ⭐ THE LOOP, CLOSED ACROSS BOTH APPS WITH `@wewin/core` AS THE ONLY BRIDGE.
+   *
+   * The dashboard's percent box renders `%` as a decoration, so a salesperson types `5`. The guard
+   * above refuses a bare number on purpose — that is what stops `291` being read as 291 percent —
+   * and the owner's ruling is that the **client sends what the guard requires** rather than the
+   * guard being loosened. `normalisePercentEntry` does the appending, in core, for both sides.
+   *
+   * This walks every form a person types, takes the exact `wireText` the dashboard would send, and
+   * asserts this function produces the figure the dashboard previewed from the same parse. A
+   * cross-app test is not otherwise possible here — the two apps cannot import each other — so this
+   * is where "the number shown equals the number applied" is nailed down for the real inputs.
+   */
+  it('accepts every wire text the dashboard produces, and agrees on the figure', () => {
+    /*
+     * The accepted format is one: a plain positive number. `-5`, `5%` and `-5%` are refused by the
+     * screen now — see the refusal test below — so the forms walked here are the forms that exist.
+     */
+    for (const typed of ['5', ' 5 ', '7.5', '3.31', '0.05', '15', '100']) {
+      const entry = normalisePercentEntry(typed);
+      if (!entry.ok) throw new Error(`the screen would refuse ${typed}: ${entry.refusal}`);
+
+      /* What the salesperson sees, computed by the screen from its own parse. */
+      const previewed = priceAfterPercentDiscount(BASELINE, entry.value.bp);
+
+      /* What this function stores, from the characters that parse produced. */
+      expect(money('percent_discount', entry.value.wireText), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: previewed,
+      });
+    }
+  });
+
+  /**
+   * ⚠️ **The server stays lenient and that is deliberate.** It still reads `-15%` as fifteen percent
+   * off, because `entered_value_text` rows written before the screen tightened say exactly that, and
+   * because a guard that only holds when the client is well-behaved is not a guard.
+   *
+   * The strictness is the *screen's*: one format, so a salesperson never has to hold a theory about
+   * what a minus means. This asserts the two layers disagree in the safe direction — the screen
+   * refuses more than the server does, so nothing the screen accepts can surprise the server.
+   */
+  it('still reads the signed forms the screen no longer sends', () => {
+    for (const typed of ['-5%', '5%']) {
+      expect(normalisePercentEntry(typed).ok, typed).toBe(false);
+      expect(money('percent_discount', typed), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: 835_100n,
+      });
+    }
+  });
+
+  /* A surcharge is refused at both layers, and always was. */
+  it('refuses the surcharge form the screen also refuses', () => {
+    for (const typed of ['+5', '+5%']) {
+      expect(normalisePercentEntry(typed).ok, typed).toBe(false);
+      expect(() => money('percent_discount', typed)).toThrow(EntryError);
+    }
+  });
+
+  /**
+   * ⭐ The same loop for the **money** discount box, which the owner brought under the one-format
+   * rule in the last round.
+   *
+   * `normaliseAmountEntry` sends the typed text unchanged — no `%` to append — so the assertion is
+   * that this function reads every string the screen would send and lands on the figure the screen
+   * previewed. `1,234.50` is in the list because the grammar is `readSatang`'s, separators and all,
+   * and `scan` here has to agree about where a comma may sit.
+   */
+  it('accepts every money-discount text the dashboard sends, and agrees on the figure', () => {
+    for (const typed of ['291', ' 291 ', '291.50', '1,234.50', '0.01']) {
+      const entry = normaliseAmountEntry(typed);
+      if (!entry.ok) throw new Error(`the screen would refuse ${typed}: ${entry.refusal}`);
+
+      expect(money('discount_amount', entry.value.wireText), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: BASELINE - entry.value.minor,
+      });
+    }
+  });
+
+  /*
+   * And the same asymmetry as the percentage: the server still reads `-291` as ฿291 off for the rows
+   * already written that way, while the screen refuses it. Stricter client, unchanged server.
+   */
+  it('still reads the signed money discount the screen no longer sends', () => {
+    expect(normaliseAmountEntry('-291').ok).toBe(false);
+    expect(money('discount_amount', '-291')).toEqual({ kind: 'money', overrideThbMinor: 850_000n });
   });
 });
 

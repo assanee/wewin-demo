@@ -1,4 +1,12 @@
 import { MAX_QTY, MIN_QTY } from '@wewin/core/constants';
+import {
+  normaliseAmountEntry,
+  normalisePercentEntry,
+  type AmountEntry,
+  type AmountEntryRefusal,
+  type PercentEntry,
+  type PercentEntryRefusal,
+} from '@wewin/core/discount';
 import { formatLength } from '@wewin/core/format';
 import type { AuthoredUnit } from '@wewin/core';
 
@@ -45,6 +53,46 @@ const fail = <T>(reasonTh: string): ParseResult<T> => ({ ok: false, reasonTh });
 
 const MINOR_PER_BAHT = 100n;
 const BP_PER_PERCENT = 100n;
+
+/* ------------------------------------------------------------------ *
+ * The discount convention, borrowed whole from @wewin/core
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⚠️ **Neither discount box on this screen decides anything about what was typed.**
+ * `@wewin/core/discount` reads both — `normalisePercentEntry` and `normaliseAmountEntry`, over one
+ * shared `screenTypedDiscount` — and this file maps their verdicts to Thai. The percentage box used
+ * to decide its own sign here, in a comment, in the opposite direction from the server's comment,
+ * which is how `-5%` came to preview a five percent surcharge and store a five percent discount.
+ *
+ * Both boxes now take **one spelling: a plain positive number.** Sharing the screening is what keeps
+ * that sentence true of both of them a year from now.
+ */
+
+/**
+ * The surcharge refusal **names the two routes that do raise a price**, because a refusal that
+ * only says no leaves a salesperson with a legitimate need and no next step: an edit after a
+ * factory bounce really is usually more expensive (plan 7.2). Type the total as an amount, or open
+ * a new charge line — and both of those carry a description the customer can be shown, which is
+ * the thing a negative discount never had.
+ */
+const SURCHARGE_TH =
+  'ช่องส่วนลดใช้เพิ่มราคาไม่ได้ — ถ้าต้องการขึ้นราคา ให้กรอกยอดเป็นจำนวนเงิน หรือเปิดเป็นรายการใหม่';
+
+/**
+ * Thai prose for `normaliseAmountEntry`'s reasons — the money box's half of the shared vocabulary.
+ *
+ * The sign message is the same instruction as the percentage box's and deliberately so: the two
+ * fields refuse a sign for one reason, and a salesperson who meets it in both should read the same
+ * sentence. What differs is the unit named in each, which is the only thing that actually differs.
+ */
+const AMOUNT_REFUSAL_TH: Readonly<Record<AmountEntryRefusal, string>> = {
+  empty: 'กรอกเป็นตัวเลขเท่านั้น เช่น 291 = ลด ฿291',
+  signed: 'ไม่ต้องใส่เครื่องหมาย + หรือ − — ช่องนี้เป็นส่วนลดอยู่แล้ว กรอก 291 = ลด ฿291',
+  unit_typed: 'ไม่ต้องพิมพ์ ฿ — ช่องนี้เป็นบาทอยู่แล้ว กรอก 291 = ลด ฿291',
+  unreadable: 'กรอกเป็นตัวเลขเท่านั้น ทศนิยมไม่เกิน 2 ตำแหน่ง เช่น 291 หรือ 1,234.50',
+  no_change: 'ส่วนลด ฿0 ไม่เปลี่ยนอะไร — กรอกตัวเลขมากกว่า 0 เช่น 291 = ลด ฿291',
+};
 
 /* ------------------------------------------------------------------ *
  * Money — satang stored, baht typed
@@ -111,6 +159,27 @@ export function readCharge(text: string): ParseResult<bigint> {
   return parsed;
 }
 
+/**
+ * Satang **off**, from a discount typed as money — and the text to send.
+ *
+ * ⚠️ **One accepted spelling: a plain positive number**, with the thousands separators `readSatang`
+ * already accepts. `'-291'` and `'฿291'` are refused, each with the instruction that names it.
+ *
+ * This had two previous lives and both were wrong in the same shape. It began as `readBaht`, which
+ * refused `-291` outright while the server read that as ฿291 off; then it took the magnitude, so
+ * `-291` and `291` meant the same thing and the person who typed the minus was never told their
+ * theory was unnecessary. Now there is one format and a visible refusal, and neither the grammar
+ * (`readSatang`) nor the screening (`screenTypedDiscount`) is decided in this file.
+ *
+ * The `฿` leniency `readBaht` keeps above is deliberately **not** copied here: that box has no
+ * decoration of its own to duplicate, this one draws a `฿` prefix, and pasting into a box that
+ * already shows the symbol is the one case where accepting it teaches nobody anything.
+ */
+export function readDiscountBaht(text: string): ParseResult<AmountEntry> {
+  const ruled = normaliseAmountEntry(text);
+  return ruled.ok ? ok(ruled.value) : fail(AMOUNT_REFUSAL_TH[ruled.refusal]);
+}
+
 const groups = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /**
@@ -151,40 +220,51 @@ export function bahtInput(minor: bigint): string {
 }
 
 /* ------------------------------------------------------------------ *
- * Percent — basis points, and the sign means something
+ * Percent — basis points, and @wewin/core decides what the sign means
  * ------------------------------------------------------------------ */
 
-const PERCENT = /^(-?)(\d+)(?:\.(\d{1,2}))?$/;
+/**
+ * Thai prose for `normalisePercentEntry`'s reasons. The rule is arithmetic; this is the sentence.
+ *
+ * ⚠️ **Every one of these says what to type.** The owner's instruction was
+ * *"ถ้าใส่ผิดให้ขึ้นแดงเลยจะได้กรอกรูปแบบเดียว ไม่งงด้วย"*, and a refusal that only reports that the
+ * input is wrong leaves the person guessing at the format — which is the confusion being named, not
+ * a smaller version of it. So each message ends in the example `5` and what it means, and the two
+ * commonest mistakes get the specific instruction rather than a generic one.
+ */
+const PERCENT_REFUSAL_TH: Readonly<Record<PercentEntryRefusal, string>> = {
+  empty: 'กรอกเป็นตัวเลขเท่านั้น เช่น 5 = ลด 5%',
+  signed: 'ไม่ต้องใส่เครื่องหมาย + หรือ − — ช่องนี้เป็นส่วนลดอยู่แล้ว กรอก 5 = ลด 5%',
+  unit_typed: 'ไม่ต้องพิมพ์ % — ช่องนี้เป็น % อยู่แล้ว กรอก 5 = ลด 5%',
+  unreadable: 'กรอกเป็นตัวเลขเท่านั้น ทศนิยมไม่เกิน 2 ตำแหน่ง เช่น 5 หรือ 7.5',
+  no_change: 'ส่วนลด 0% ไม่เปลี่ยนอะไร — กรอกตัวเลขมากกว่า 0 เช่น 5 = ลด 5%',
+  above_full: 'ส่วนลดเกิน 100% จะทำให้ยอดติดลบ — กรอกระหว่าง 0.01 ถึง 100',
+  /*
+   * Unreachable through `normalisePercentEntry`: `signed` catches a `+` first. Present because
+   * `discountBp` is typed to be able to say it, and an exhaustive map is what makes a new reason
+   * code fail to compile here rather than fall through as a blank sentence under the box.
+   */
+  surcharge: SURCHARGE_TH,
+};
 
 /**
- * Basis points, from a percentage typed into a box labelled **ส่วนลด**.
+ * A percentage typed into a box labelled **ส่วนลด** — the figure *and* the text to send.
  *
- * ⚠️ The sign is not decoration. A positive figure reduces the price and a negative one
- * raises it, because plan 7.2 says an edit after a factory bounce is usually *more*
- * expensive, and a discount field that silently took the magnitude would turn "−5" — a
- * salesperson's shorthand for adding five percent — into a five percent giveaway.
+ * ⚠️ **Neither the sign rule nor the parse is this file's, and both used to be.** It read the sign
+ * as a *direction* — `-5` meaning "add five percent" — while `apps/api/src/quotes/entry.ts` read
+ * the same keystroke as five percent off. Each file carried a comment asserting its own reading,
+ * and on a ฿8,791.00 line `-5%` therefore previewed ฿9,230.55 and stored ฿8,351.00.
  *
- * Two decimal places, because 7.5% is an ordinary thing to agree and 750 bp is the figure
- * the rest of this system counts in.
+ * `@wewin/core/discount`'s `normalisePercentEntry` is the only reader now. It also produces
+ * `wireText`, because the `%` in this field is a decoration rather than text and the server
+ * requires a literal one — so `5` has to become `5%` on the way out. That append happens **there
+ * and not in the dialog**: a second place that knows how to read a percentage is the shape this
+ * defect had, and a dialog that patched the string after the preview had been computed from it
+ * would be exactly that shape again.
  */
-export function readPercentBp(text: string): ParseResult<bigint> {
-  const trimmed = text.trim().replace(/\s*%$/, '');
-  if (trimmed === '') return fail('กรอกเปอร์เซ็นต์');
-
-  const match = PERCENT.exec(trimmed);
-  if (match === null) return fail('กรอกเป็นเปอร์เซ็นต์ ทศนิยมไม่เกิน 2 ตำแหน่ง');
-
-  const [, sign = '', whole = '0', fraction = ''] = match;
-  const bp = BigInt(whole) * BP_PER_PERCENT + BigInt(fraction.padEnd(2, '0'));
-  if (bp === 0n) return fail('ส่วนลด 0% ไม่เปลี่ยนอะไร');
-  /*
-   * A hundred percent off is a free window, which is a decision somebody may genuinely
-   * make — but past it the price is negative, and `readBaht` above says why that is not a
-   * price. Refusing here means the message names the percentage rather than the satang.
-   */
-  if (bp > 10_000n) return fail('ส่วนลดเกิน 100% จะทำให้ยอดติดลบ');
-
-  return ok(sign === '-' ? -bp : bp);
+export function readPercentEntry(text: string): ParseResult<PercentEntry> {
+  const ruled = normalisePercentEntry(text);
+  return ruled.ok ? ok(ruled.value) : fail(PERCENT_REFUSAL_TH[ruled.refusal]);
 }
 
 /** `750` → `7.5`. Trailing zeros dropped, so 500 bp reads as `5` and not `5.00`. */

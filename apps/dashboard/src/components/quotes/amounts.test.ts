@@ -8,7 +8,8 @@ import {
   readBaht,
   readCharge,
   readDays,
-  readPercentBp,
+  readDiscountBaht,
+  readPercentEntry,
   readQty,
   readSignedBaht,
   signedBaht,
@@ -98,20 +99,109 @@ describe('showing money', () => {
 });
 
 describe('percent', () => {
+  const bp = (text: string): bigint => value(readPercentEntry(text)).bp;
+
   it('reads whole and fractional percentages as basis points', () => {
-    expect(value(readPercentBp('5'))).toBe(500n);
-    expect(value(readPercentBp('7.5'))).toBe(750n);
-    expect(value(readPercentBp('3.31'))).toBe(331n);
-    expect(value(readPercentBp('100'))).toBe(10_000n);
+    expect(bp('5')).toBe(500n);
+    expect(bp('7.5')).toBe(750n);
+    expect(bp('3.31')).toBe(331n);
+    expect(bp('100')).toBe(10_000n);
   });
 
-  it('keeps the sign, because an edit after a factory bounce is usually more expensive', () => {
-    expect(value(readPercentBp('-5'))).toBe(-500n);
+  /**
+   * ⭐ The `%` is a decoration on the field, so a salesperson types `5`; the server requires a
+   * literal `%`. The append happens in `@wewin/core/discount` and this asserts the screen gets the
+   * benefit of it — and that nothing else is added, since `entered_value_text` is the record of
+   * what a person said.
+   */
+  it('sends the % the field only draws, and nothing else', () => {
+    expect(value(readPercentEntry('5')).wireText).toBe('5%');
+    expect(value(readPercentEntry('7.5')).wireText).toBe('7.5%');
+    expect(value(readPercentEntry('  5  ')).wireText).toBe('5%');
+    expect(value(readPercentEntry('5')).wireText).not.toContain('-');
+  });
+
+  /**
+   * ⚠️ **Two rounds of this file accepted a sign here, in both directions, and it now refuses one.**
+   *
+   * First it read `-5` as "raise the price by five percent"; then, once the convention was settled,
+   * as "five percent off" — the same figure as `5`. The owner has since asked for a single format
+   * with a visible refusal, because two spellings are two things a salesperson can believe about
+   * what they typed. The message has to *teach*, so it names the sign rather than reporting that the
+   * input is invalid.
+   */
+  it('refuses a sign and tells the person to drop it', () => {
+    for (const typed of ['-5', '+5', '-5%', '-7.5']) {
+      const refused = readPercentEntry(typed);
+      expect(refused.ok, typed).toBe(false);
+      if (!refused.ok) {
+        expect(refused.reasonTh, typed).toContain('ไม่ต้องใส่เครื่องหมาย');
+        expect(refused.reasonTh, typed).toContain('5');
+      }
+    }
+  });
+
+  it('refuses a typed % and says the field already has one', () => {
+    for (const typed of ['5%', '5 %', '7.5%']) {
+      const refused = readPercentEntry(typed);
+      expect(refused.ok, typed).toBe(false);
+      if (!refused.ok) expect(refused.reasonTh, typed).toContain('ไม่ต้องพิมพ์ %');
+    }
   });
 
   it('refuses a discount that changes nothing and one that would go below zero', () => {
-    expect(readPercentBp('0').ok).toBe(false);
-    expect(readPercentBp('101').ok).toBe(false);
+    expect(readPercentEntry('0').ok).toBe(false);
+    expect(readPercentEntry('0.00').ok).toBe(false);
+    expect(readPercentEntry('101').ok).toBe(false);
+    expect(readPercentEntry('100.01').ok).toBe(false);
+  });
+
+  it('refuses a blank box with a sentence that names the format, not the emptiness', () => {
+    for (const typed of ['', '   ']) {
+      const refused = readPercentEntry(typed);
+      expect(refused.ok, typed).toBe(false);
+      /* This is the first thing the dialog shows on open, so it has to teach. */
+      if (!refused.ok) expect(refused.reasonTh, typed).toContain('กรอกเป็นตัวเลขเท่านั้น');
+    }
+  });
+
+  it('refuses something that is not a number', () => {
+    for (const typed of ['abc', '5.123', '1 5', '.5', '5.']) {
+      expect(readPercentEntry(typed).ok, typed).toBe(false);
+    }
+  });
+
+  /**
+   * ⚠️ **The money box now has the percentage box's rule, and this test has had all three of its
+   * answers.** It expected `-291` to be refused as a negative price; then to mean ฿291 off, the same
+   * as `291`; now to be refused with the instruction to drop the sign. The owner's reasoning, applied
+   * consistently: whoever typed the minus believed something different from whoever did not, and
+   * making both mean ฿291 off told one of them nothing.
+   */
+  it('takes one spelling and refuses the rest, in baht as in percent', () => {
+    expect(value(readDiscountBaht('291')).minor).toBe(29_100n);
+    expect(value(readDiscountBaht('291.50')).minor).toBe(29_150n);
+    /* `readSatang`'s separators, because the grammar is its and not a second one. */
+    expect(value(readDiscountBaht('1,234.50')).minor).toBe(123_450n);
+
+    for (const [typed, instruction] of [
+      ['-291', 'ไม่ต้องใส่เครื่องหมาย'],
+      ['+291', 'ไม่ต้องใส่เครื่องหมาย'],
+      ['฿291', 'ไม่ต้องพิมพ์ ฿'],
+      ['0', 'ส่วนลด ฿0'],
+      ['', 'กรอกเป็นตัวเลขเท่านั้น'],
+      ['291.123', 'ทศนิยมไม่เกิน 2 ตำแหน่ง'],
+    ] as const) {
+      const refused = readDiscountBaht(typed);
+      expect(refused.ok, typed).toBe(false);
+      if (!refused.ok) expect(refused.reasonTh, typed).toContain(instruction);
+    }
+  });
+
+  /* Nothing is appended here — unlike the percentage box, which must add its `%`. */
+  it('sends a money discount exactly as typed', () => {
+    expect(value(readDiscountBaht('291')).wireText).toBe('291');
+    expect(value(readDiscountBaht(' 1,234.50 ')).wireText).toBe('1,234.50');
   });
 
   it('renders basis points without inventing trailing zeros', () => {
