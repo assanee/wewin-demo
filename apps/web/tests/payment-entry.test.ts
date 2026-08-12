@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { PAYABLE_ORDER_STATUSES, acceptsPayment } from '../src/lib/payment/payable';
+import { printableQuotation } from '@wewin/core/quotation';
+
+import { formattersFor } from '../src/i18n/format';
+import { LOCALES, type Locale } from '../src/i18n/locales';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -303,5 +307,116 @@ describe('⭐ the field opens on what the quotation promised', () => {
     expect(coreCode).not.toContain('fx === null || !depositIsSeparate');
     /* And the page has to render it outside the fx branch, or core's fix reaches nobody. */
     expect(quotationIsland).toContain('quotation.fxRate !== null || depositRow === null');
+  });
+});
+
+describe('⭐ the payment screen and the quotation write the same number the same way', () => {
+  /*
+   * ─────────────────────────────────────────────────────────────────────────────
+   * A customer walks from the quotation to the payment screen in one click.
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   * The quotation printed `฿14,124.00` and the payment screen `฿14124.00` — one figure, two
+   * spellings, one click apart. The cause was `f.plain` in the payment catalogue, whose
+   * entire purpose is to *not* group (a year reads `2026`, never `2,026`).
+   *
+   * ⚠️ This is the assertion the round needed and the suite did not have. `catalogue.test.ts`
+   * pins that the satang survive, that the pad stays ASCII and that a minus lands in front of
+   * the `฿` — all three by *decoding* the rendering, which deliberately strips group
+   * separators and therefore cannot see grouping at all. Taking the grouping away again would
+   * leave every one of those green.
+   *
+   * It compares the two renderers against each other rather than against a literal:
+   * `@wewin/core`'s `money()` is what the quotation prints via `printableQuotation`, and
+   * `f.bahtExact` is what the payment screen prints. A hard-coded `'฿14,124.00'` would pin
+   * today's CLDR and go red the day ICU moves a separator, which is not a bug — what matters
+   * is that the two agree, in every locale, whatever ICU says.
+   */
+  const FIGURES = [1_412_400n, 423_720n, 2_824_824n, 100n, -150n] as const;
+
+  /** As the quotation page renders it: `payableThbText` is core's `money()` verbatim. */
+  function asQuotationPrints(minor: bigint, locale: Locale): string | null {
+    return printableQuotation({
+      revision: 1,
+      documentHash: 'f'.repeat(16),
+      pinnedLocale: locale,
+      destinationCountry: null,
+      taxBasis: 'exclusive',
+      orderNo: 'WW-1000',
+      contactName: null,
+      submittedAt: '2026-08-12T00:00:00.000Z',
+      vatRateBp: 700,
+      leadTimeDays: 30,
+      netThbMinor: minor,
+      vatThbMinor: 0n,
+      grandTotalThbMinor: minor,
+      lines: [],
+      charges: [],
+      /* `payableThbText` is only produced when there is an fx block — see core. */
+      fx: {
+        currency: 'SGD',
+        source: 'mid_market',
+        spreadBp: 0,
+        rateText: '25.315148',
+        observedAt: null,
+        netMinor: 1n,
+        vatMinor: 0n,
+        grandTotalMinor: 1n,
+      },
+      scheduledDepositThbMinor: null,
+    }).payableThbText;
+  }
+
+  it('⭐ agrees with @wewin/core’s money(), figure for figure', () => {
+    for (const locale of LOCALES) {
+      /* `la` is the one that does not agree, and it is core's doing — see the test below. */
+      if (locale === 'la') continue;
+
+      const f = formattersFor(locale);
+      for (const minor of FIGURES) {
+        expect(asQuotationPrints(minor, locale), `${locale} @ ${String(minor)}`).toBe(
+          f.bahtExact(minor),
+        );
+      }
+    }
+  });
+
+  it('⚠️ …except Lao, where core reads the app’s code as Latin', () => {
+    /*
+     * ⚠️ A REAL DIVERGENCE, PRE-EXISTING, AND NOT THIS SCREEN'S.
+     *
+     * `money()` in `@wewin/core/quotation` does
+     * `toLocaleString(locale === 'th' ? 'th-TH' : locale)` — the app's own eight-code
+     * vocabulary passed to `Intl` unmapped. Seven of the eight happen to be valid BCP 47
+     * tags. **`la` is not Lao; it is Latin.** `Intl.NumberFormat.supportedLocalesOf('la')`
+     * is empty, so the quotation falls back to the default locale and groups a Lao customer's
+     * total with commas, while everything routed through `@wewin/i18n` uses `INTL_TAG` and
+     * gets `lo`, which groups with points.
+     *
+     * So a Lao customer reads `฿14,124.00` on the quotation and `฿14.124.00` on the payment
+     * screen — the very mismatch this round was asked to remove, in the one locale where the
+     * cause is upstream of it.
+     *
+     * **Left as it is, deliberately.** The fix is a tag map in core, but core's `money()`
+     * renders the *pinned document*, and plan 10.6 is that a document which reprints
+     * differently is one nobody can cite — changing it re-spells every Lao quotation ever
+     * issued, including the dashboard's printed copy. That is an owner's decision, not a
+     * side effect of a presentation round. This test states the divergence so the day it is
+     * fixed, the suite says so rather than staying quietly green.
+     */
+    const f = formattersFor('la');
+
+    expect(asQuotationPrints(1_412_400n, 'la')).toBe('฿14,124.00');
+    expect(f.bahtExact(1_412_400n)).toBe('฿14.124.00');
+  });
+
+  it('⭐ groups the baht, which is the half the decoding tests cannot see', () => {
+    /*
+     * The direct statement of the fix, on the locale whose grouping is unambiguous — and the
+     * two figures from the browser walk-through rather than invented ones: WW-1038's total
+     * and the deposit its payment field opens on.
+     */
+    expect(formattersFor('th').bahtExact(1_412_400n)).toBe('฿14,124.00');
+    expect(formattersFor('th').bahtExact(423_720n)).toBe('฿4,237.20');
   });
 });

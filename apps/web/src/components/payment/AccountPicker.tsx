@@ -8,6 +8,7 @@ import type { PaymentAccount } from '../../lib/payment/api';
 import { useLocale } from '../../state/localeContext';
 import type { Translate } from '../../i18n/translate';
 import { QrCode } from '../configurator/QrCode';
+import { PaymentFieldset } from './PaymentFieldset';
 
 /**
  * ⭐ Which of the company's accounts, and the QR for the amount actually being sent.
@@ -52,28 +53,55 @@ export function AccountPicker({
   }, [copiedId]);
 
   return (
-    <fieldset className="border border-line bg-panel p-4">
-      <legend className="px-1 text-lead text-chalk">{t('payment.account.legend')}</legend>
-
-      <div className="mt-3 flex flex-col gap-3">
+    <PaymentFieldset legend={t('payment.account.legend')}>
+      <div className="flex flex-col gap-3">
         {accounts.map((account) => {
           const selected = account.id === selectedId;
 
           return (
+            /*
+             * ⚠️ The accent is the **border**, not a fill.
+             *
+             * This card was `border-sel-line bg-sel-bg`, which is the app's own selected-state
+             * pair — but everywhere else it is spent on something small: a 4.5×4.5 checkbox in
+             * `FilterPanel`, a 140px colour chip, a cart badge. Flooding a full-width card with
+             * `--color-sel-bg` made a third accent area on a screen that already spends its two
+             * on the outstanding figure (`text-lime`) and the submit button, which is the cap
+             * spec section 2 puts on it. The border and the filled radio carry the state; the
+             * card keeps `bg-panel-2` whether it is chosen or not.
+             */
             <label
               key={account.id}
-              className={`flex flex-col gap-3 border p-3 ${
-                selected ? 'border-sel-line bg-sel-bg' : 'border-line bg-panel-2'
+              className={`flex cursor-pointer flex-col gap-3 rounded-xs border bg-panel-2 p-3 transition-colors duration-180 ease-out ${
+                selected ? 'border-sel-line' : 'border-line hover:border-line-2'
               }`}
             >
               <span className="flex items-start gap-3">
+                {/*
+                 * The app's own control, following `FilterPanel.tsx:79-97`: the real input is
+                 * `sr-only` — focusable and announced, merely not painted — and a `peer`, so
+                 * the drawn dot can carry both the checked state and the focus ring. The
+                 * browser's default radio was the only one in the storefront, and it ignores
+                 * the palette entirely (it renders system blue on a near-black panel).
+                 */}
                 <input
                   type="radio"
                   name="payment-account"
                   checked={selected}
                   onChange={() => onSelect(account.id)}
+                  className="peer sr-only"
                 />
-                <span className="flex flex-col">
+                <span
+                  aria-hidden
+                  className={`mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full border transition-colors duration-180 ease-out peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-sel-line ${
+                    selected ? 'border-sel-line bg-sel-bg' : 'border-line-2 bg-panel'
+                  }`}
+                >
+                  {/* The dot, not a colour swap alone — `FilterPanel` makes the same point
+                      about state that is invisible to a colour vision deficiency. */}
+                  <span className={`h-2 w-2 rounded-full ${selected ? 'bg-lime' : 'bg-transparent'}`} />
+                </span>
+                <span className="flex min-w-0 flex-col">
                   <span className="text-body text-chalk">
                     {account.bankCode} · {account.accountName}
                   </span>
@@ -90,7 +118,9 @@ export function AccountPicker({
                         setCopiedId(account.id);
                       });
                     }}
-                    className="border border-line px-3 py-1 text-caption text-chalk"
+                    /* `min-h-11` is spec section 8's floor on every touch target — this one is
+                     * pressed with a thumb, standing at a banking app, and was 26px tall. */
+                    className="inline-flex min-h-11 items-center rounded-xs border border-line bg-panel px-3 text-caption text-chalk transition-colors duration-180 ease-out hover:border-line-2"
                   >
                     {copiedId === account.id
                       ? t('payment.account.copied')
@@ -104,7 +134,7 @@ export function AccountPicker({
           );
         })}
       </div>
-    </fieldset>
+    </PaymentFieldset>
   );
 }
 

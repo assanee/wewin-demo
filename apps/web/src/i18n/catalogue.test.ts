@@ -316,7 +316,23 @@ describe('the payment page never rounds a customer’s own money to whole baht',
   function bahtAndSatang(rendered: string): { readonly baht: string; readonly satang: string } {
     const separator = rendered.indexOf('·');
     const money = separator === -1 ? rendered : rendered.slice(0, separator);
-    const dot = money.indexOf('.');
+    /*
+     * ⚠️ `lastIndexOf`, and the change is the helper's, not the assertions'.
+     *
+     * `indexOf` was correct only while the baht half carried no group separator. Now that it
+     * does — `f.bahtExact` groups it, so this screen and the quotation page print the same
+     * `฿28,248.24` — German and Vietnamese group with `.` and the *first* dot in
+     * `฿28.248.24` is a thousands separator, not the decimal point. That made this helper
+     * report `28` baht and pass `24` satang through unnoticed.
+     *
+     * The satang separator is always a literal ASCII `.`: every one of these four entries is
+     * built by `bahtExact`, which writes `${baht}.${satang}` itself rather than letting a
+     * locale choose. So the last dot is the decimal point in all eight, grouped or not, and
+     * this is the reading that was always meant.
+     *
+     * The two assertions below are untouched — the property being tested has not moved.
+     */
+    const dot = money.lastIndexOf('.');
     expect(dot, `${rendered} (locale money prefix: ${money})`).toBeGreaterThan(0);
     return { baht: money.slice(0, dot), satang: money.slice(dot + 1, dot + 3) };
   }

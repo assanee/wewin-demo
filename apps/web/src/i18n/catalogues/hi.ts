@@ -523,11 +523,7 @@ export const hi: PartialUiCatalogue = {
   'payment.heading': 'भुगतान की सूचना दें',
   'payment.loading': 'आपके भुगतान का विवरण खोला जा रहा है…',
   'payment.outstanding': 'बकाया राशि',
-  'payment.outstandingAmount': (p, f) => {
-    const negative = p.owedMinor < 0n;
-    const magnitude = negative ? -p.owedMinor : p.owedMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
-  },
+  'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'यह ऑर्डर पूरी तरह भुगतान हो चुका है',
   'payment.account.legend': 'इनमें से किसी भी खाते में ट्रांसफर करें',
   'payment.account.copy': (p) => `खाता नंबर ${p.accountDigits} कॉपी करें`,
@@ -538,6 +534,8 @@ export const hi: PartialUiCatalogue = {
     'अभी तक कोई प्राप्तकर्ता बैंक खाता सेट नहीं किया गया है। कृपया भुगतान विवरण के लिए सेल्स टीम से संपर्क कीजिए।',
   'payment.form.legend': 'स्लिप जोड़ें',
   'payment.form.image': 'स्लिप की फ़ोटो',
+  'payment.form.imageChoose': 'स्लिप की फ़ोटो चुनें',
+  'payment.form.imageChange': 'फ़ोटो बदलें',
   'payment.form.imageHint': 'अपने बैंकिंग ऐप का स्क्रीनशॉट भी चलेगा। अधिकतम 8 MB.',
   'payment.form.amount': 'ट्रांसफर की गई राशि',
   'payment.form.transferredAt': 'ट्रांसफर की तारीख और समय',
@@ -548,21 +546,9 @@ export const hi: PartialUiCatalogue = {
   'payment.done': 'आपकी स्लिप मिल गई है। हमारी टीम इसकी जाँच करके आपको सूचित करेगी।',
   'payment.history.heading': 'आपकी भेजी गई स्लिप',
   'payment.history.empty': 'अभी तक कोई स्लिप नहीं भेजी गई',
-  'payment.history.submitted': (p, f) => {
-    const negative = p.slipMinor < 0n;
-    const magnitude = negative ? -p.slipMinor : p.slipMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} को भेजी गई · जाँच जारी है`;
-  },
-  'payment.history.accepted': (p, f) => {
-    const negative = p.slipMinor < 0n;
-    const magnitude = negative ? -p.slipMinor : p.slipMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} को भेजी गई · स्वीकृत`;
-  },
-  'payment.history.rejected': (p, f) => {
-    const negative = p.slipMinor < 0n;
-    const magnitude = negative ? -p.slipMinor : p.slipMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · स्वीकृत नहीं — ${p.reason}`;
-  },
+  'payment.history.submitted': (p, f) => `${f.bahtExact(p.slipMinor)} · ${f.date(p.sentAt)} को भेजी गई · जाँच जारी है`,
+  'payment.history.accepted': (p, f) => `${f.bahtExact(p.slipMinor)} · ${f.date(p.sentAt)} को भेजी गई · स्वीकृत`,
+  'payment.history.rejected': (p, f) => `${f.bahtExact(p.slipMinor)} · स्वीकृत नहीं — ${p.reason}`,
   'payment.problem.noImage': 'कृपया स्लिप की फ़ोटो जोड़ें।',
   'payment.problem.imageTooBig': (p, f) =>
     `यह फ़ोटो बहुत बड़ी है — अधिकतम ${f.plain(p.limitMib)} MB.`,

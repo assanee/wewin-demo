@@ -537,6 +537,22 @@ export interface UiParamsByKey {
   'payment.account.none': Plain;
   'payment.form.legend': Plain;
   'payment.form.image': Plain;
+  /**
+   * ⭐ The button that opens the file picker — the text the *browser* used to write.
+   *
+   * A bare `<input type="file">` paints `Choose File / No file chosen` itself, in the
+   * browser's language and out of CSS's reach, so the one control a customer must press to
+   * pay was hard-coded English on an all-Thai page. `SlipForm` now hides the input (visually
+   * only — it stays focusable and announced) and drives it from a real `<label>`, which
+   * needs a string of its own, in all eight.
+   *
+   * Two of them, because the button's job changes once a file is chosen: the first press is
+   * "pick one", every later press is "replace the one you picked". A single "เลือกไฟล์" that
+   * never changed would leave a customer who attached the wrong screenshot with no visible
+   * way to swap it — the file name beside the button is confirmation, not an affordance.
+   */
+  'payment.form.imageChoose': Plain;
+  'payment.form.imageChange': Plain;
   'payment.form.imageHint': Plain;
   'payment.form.amount': Plain;
   'payment.form.transferredAt': Plain;
