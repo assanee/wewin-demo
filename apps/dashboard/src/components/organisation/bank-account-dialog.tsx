@@ -139,7 +139,10 @@ export function BankAccountDialog({
 
           <TextField
             label="พร้อมเพย์"
-            description="ไม่บังคับ — เบอร์มือถือ 10 หลัก หรือเลขผู้เสียภาษี 13 หลัก"
+            /* The leading zero, said *before* the field is wrong rather than only after —
+               "10 หลัก" was true of `1234567890`, which is how it came to be typed and
+               stored. The hint and `bankAccountFormErrors`' message now say the same thing. */
+            description="ไม่บังคับ — เบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 หรือเลขผู้เสียภาษี 13 หลัก"
             value={fields.promptpayId}
             onChange={set('promptpayId')}
             error={errors.promptpayId}

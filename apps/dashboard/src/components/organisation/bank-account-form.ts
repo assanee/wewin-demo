@@ -1,4 +1,5 @@
 import type { BankAccountCreateRequestWire, BankAccountPatchRequestWire } from '@wewin/contract/organisation';
+import { isPromptPayId } from '@wewin/core/promptpay';
 
 /**
  * The add/edit form for one receiving account, checked against the same three CHECK
@@ -21,7 +22,24 @@ export interface BankAccountFields {
 
 const BANK_CODE = /^[A-Z]{3,8}$/u;
 const ACCOUNT_NUMBER = /^[0-9]{10,15}$/u;
-const PROMPTPAY_ID = /^([0-9]{10}|[0-9]{13})$/u;
+/*
+ * ⚠️ `isPromptPayId` from `@wewin/core/promptpay`, and no regex of this form's own.
+ *
+ * This was `^([0-9]{10}|[0-9]{13})$` — *any* ten digits — and so was the API's zod schema and
+ * the database's CHECK. `promptPayTarget`, which is the thing that actually has to build a QR
+ * out of the stored value, requires a leading `0`, because every Thai mobile number has one.
+ *
+ * The three loose checks and the one strict one is how the dev database came to hold
+ * `1234567890` on its only active account: typed here, accepted here, stored, and refused at
+ * the single point where the customer would have seen the result. The payment screen showed
+ * the account with no QR beside it and nothing anywhere said why — not to the customer, and
+ * not to whoever typed it.
+ *
+ * Importing the generator's own predicate is what stops this form and that renderer drifting
+ * again: a value this accepts is one a QR can be built from, by construction rather than by
+ * two regexes happening to agree.
+ */
+
 
 export interface BankAccountFormErrors {
   readonly bankCode?: string;
@@ -43,8 +61,8 @@ export function bankAccountFormErrors(fields: BankAccountFields): BankAccountFor
   }
 
   const promptpayId = fields.promptpayId.trim();
-  if (promptpayId !== '' && !PROMPTPAY_ID.test(promptpayId)) {
-    errors['promptpayId'] = 'พร้อมเพย์เป็นเบอร์มือถือ 10 หลัก หรือเลขผู้เสียภาษี 13 หลัก';
+  if (promptpayId !== '' && !isPromptPayId(promptpayId)) {
+    errors['promptpayId'] = 'พร้อมเพย์เป็นเบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 หรือเลขผู้เสียภาษี 13 หลัก';
   }
 
   return errors;

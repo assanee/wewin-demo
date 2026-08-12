@@ -250,6 +250,58 @@ const RENDERABLE = new Set(['th', 'en', 'zh', 'de', 'hi', 'my', 'vi', 'la']);
 const FALLBACK = 'th';
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE TAG ICU KNOWS THE LANGUAGE BY — WHICH IS NOT ALWAYS THE PROJECT'S TAG.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `money()` and `dateIn()` below used to hand `document.pinnedLocale` to `Intl` directly,
+ * with a single `locale === 'th' ?` special case in front of it. Seven of the eight project
+ * codes happen to be valid BCP 47 tags, so that worked seven times and failed once —
+ * **silently**, in the way this whole codebase keeps finding:
+ *
+ *     Intl.NumberFormat.supportedLocalesOf(['la'])            // []
+ *     Intl.NumberFormat('la').resolvedOptions().locale        // 'en-US'
+ *     Intl.DateTimeFormat('la', {dateStyle:'long'}).format(d) // 'August 12, 2026'
+ *
+ * **`la` is Latin, the dead one. Lao is `lo`.** ICU has no data for `la`, so it does not
+ * throw and does not fall back visibly — it answers in American English. A Lao customer's
+ * quotation grouped its total with commas where Lao groups with points, and printed the date
+ * in English. `packages/i18n/src/locales.ts` states this at length as "the worst failure mode
+ * this package can have: not an error, not a fallback, but a plausible wrong answer in a
+ * language nobody on the team reads."
+ *
+ * ── ⚠️ Hand-written, and pinned from outside — exactly like `RENDERABLE` above ──
+ *
+ * `INTL_TAG` in `@wewin/i18n/locales` is the real table and this is a copy of it, for the
+ * same unavoidable reason the renderable set is a copy: `@wewin/i18n` depends on
+ * `@wewin/core`, so importing it here would be a cycle. Nothing inside this package can
+ * notice the two disagreeing, so `packages/i18n/tests/quotation-locales.test.ts` — the one
+ * place both are visible at once — asserts every entry matches, and fails if either moves.
+ *
+ * ⚠️ `en → en-GB` is a decision carried over with the rest of the table, not an accident:
+ * `en-US` is the only tag in the set that writes dates month-first, and an invoice read as
+ * 06/08 must not mean June to one customer and August to the other seven.
+ */
+const INTL_TAGS: Readonly<Record<string, string>> = {
+  de: 'de-DE',
+  en: 'en-GB',
+  hi: 'hi-IN',
+  la: 'lo-LA',
+  my: 'my-MM',
+  th: 'th-TH',
+  vi: 'vi-VN',
+  zh: 'zh-CN',
+};
+
+/**
+ * `?? locale` rather than `?? FALLBACK`: by the time either caller runs, `printableQuotation`
+ * has already replaced an unrenderable locale with `FALLBACK` and set `localeDegraded`, so a
+ * miss here is unreachable. Passing the value through keeps this function total without
+ * inventing a second, quieter fallback policy beside that one.
+ */
+const intlTag = (locale: string): string => INTL_TAGS[locale] ?? locale;
+
+/**
  * Baht **and satang**, unlike `formatBaht`.
  *
  * `formatBaht` rounds to the whole baht, which is right in a table and wrong on a document:
@@ -293,7 +345,8 @@ function money(minor: bigint, locale: string, currency: Currency): string {
   const per = exponent === 0 ? 1n : 100n;
   const symbol = currency === 'THB' ? '฿' : `${currency} `;
 
-  const whole = (magnitude / per).toLocaleString(locale === 'th' ? 'th-TH' : locale, {
+  /* ⚠️ Through `intlTag`, never the project code — `la` reaching `Intl` raw is Latin. */
+  const whole = (magnitude / per).toLocaleString(intlTag(locale), {
     maximumFractionDigits: 0,
   });
 
@@ -317,7 +370,15 @@ function money(minor: bigint, locale: string, currency: Currency): string {
 function dateIn(iso: string | null, locale: string): string {
   if (iso === null) return '—';
 
-  return new Date(iso).toLocaleDateString(locale === 'th' ? 'th-TH-u-ca-buddhist' : locale, {
+  /*
+   * ⚠️ The same tag table as `money()`, plus the calendar. The Buddhist extension is a
+   * separate fact from the language — `th-TH` is the tag, `-u-ca-buddhist` is the calendar —
+   * so it is appended to the mapped tag rather than hard-coded beside a raw project code,
+   * which is how `la` slipped past here as well as in `money()`.
+   */
+  const tag = intlTag(locale);
+
+  return new Date(iso).toLocaleDateString(locale === 'th' ? `${tag}-u-ca-buddhist` : tag, {
     timeZone: 'Asia/Bangkok',
     year: 'numeric',
     month: 'long',

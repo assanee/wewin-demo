@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, History, Loader2, Pencil, Plus } from 'lucide-react';
 import type { BankAccountWire, OrganisationProfileWire } from '@wewin/contract/organisation';
+import { isPromptPayId } from '@wewin/core/promptpay';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -448,7 +449,40 @@ function AccountsCard({
                   <TableCell className="font-mono text-sm">{account.bankCode}</TableCell>
                   <TableCell className="font-mono text-sm">{account.accountNumber}</TableCell>
                   <TableCell>{account.accountName}</TableCell>
-                  <TableCell className="font-mono text-sm">{account.promptpayId ?? '—'}</TableCell>
+                  {/*
+                    ⭐ AN ID THAT CANNOT BECOME A QR, SAID OUT LOUD — the silent failure the
+                    customer met and nobody here could see.
+
+                    `1234567890` sat on the only active account in the dev database: ten
+                    digits, so every validator in front of it agreed, and `promptPayTarget`
+                    refused it because a Thai mobile number starts with `0`. The customer's
+                    payment screen showed that account with no QR beside it, and this table —
+                    the one screen belonging to the person who typed the number — printed the
+                    value with nothing to suggest anything was wrong with it.
+
+                    ⚠️ The tightened `bankAccountFormErrors` closes the door for *new* input
+                    and can do nothing about rows already stored, which is why this exists as
+                    well as that. It is read straight off the stored value through the
+                    generator's own predicate, so it cannot disagree with what the storefront
+                    will actually manage to render.
+
+                    Deliberately **not** mirrored on the customer's screen. A missing QR is not
+                    an error state for them: the account number and its copy button are the
+                    payment path, the QR is a convenience, and "this account's PromptPay is
+                    misconfigured" tells a customer about an internal fault they cannot act on
+                    while giving them a reason to doubt the transfer. The person who can fix it
+                    is the one looking at this table.
+                  */}
+                  <TableCell className="font-mono text-sm">
+                    <span className="flex items-center gap-2">
+                      {account.promptpayId ?? '—'}
+                      {account.promptpayId !== null && !isPromptPayId(account.promptpayId) ? (
+                        <Badge variant="destructive" title="พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 หรือเลขผู้เสียภาษี 13 หลัก">
+                          สร้าง QR ไม่ได้
+                        </Badge>
+                      ) : null}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     {account.isActive ? (
                       <Badge variant="outline">ใช้งาน</Badge>

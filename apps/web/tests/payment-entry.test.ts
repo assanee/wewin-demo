@@ -369,9 +369,6 @@ describe('⭐ the payment screen and the quotation write the same number the sam
 
   it('⭐ agrees with @wewin/core’s money(), figure for figure', () => {
     for (const locale of LOCALES) {
-      /* `la` is the one that does not agree, and it is core's doing — see the test below. */
-      if (locale === 'la') continue;
-
       const f = formattersFor(locale);
       for (const minor of FIGURES) {
         expect(asQuotationPrints(minor, locale), `${locale} @ ${String(minor)}`).toBe(
@@ -381,33 +378,33 @@ describe('⭐ the payment screen and the quotation write the same number the sam
     }
   });
 
-  it('⚠️ …except Lao, where core reads the app’s code as Latin', () => {
+  it('⭐ …including Lao, which is where this last disagreed', () => {
     /*
-     * ⚠️ A REAL DIVERGENCE, PRE-EXISTING, AND NOT THIS SCREEN'S.
+     * ⭐ THE DIVERGENCE THIS TEST USED TO DOCUMENT, NOW CLOSED.
      *
-     * `money()` in `@wewin/core/quotation` does
-     * `toLocaleString(locale === 'th' ? 'th-TH' : locale)` — the app's own eight-code
-     * vocabulary passed to `Intl` unmapped. Seven of the eight happen to be valid BCP 47
-     * tags. **`la` is not Lao; it is Latin.** `Intl.NumberFormat.supportedLocalesOf('la')`
-     * is empty, so the quotation falls back to the default locale and groups a Lao customer's
-     * total with commas, while everything routed through `@wewin/i18n` uses `INTL_TAG` and
-     * gets `lo`, which groups with points.
+     * It read: *"a Lao customer reads `฿14,124.00` on the quotation and `฿14.124.00` on the
+     * payment screen — left as it is, deliberately… this test states the divergence so the
+     * day it is fixed, the suite says so rather than staying quietly green."* It went red on
+     * the fix, which is the whole reason it was written that way round.
      *
-     * So a Lao customer reads `฿14,124.00` on the quotation and `฿14.124.00` on the payment
-     * screen — the very mismatch this round was asked to remove, in the one locale where the
-     * cause is upstream of it.
+     * The cause was in `@wewin/core`: `money()` handed `Intl` the project's own `la`, which
+     * is **Latin**, not Lao — `supportedLocalesOf(['la'])` is `[]`, so ICU resolved to
+     * `en-US` and grouped a Lao total with commas. Core now maps through its own `INTL_TAGS`,
+     * pinned against `@wewin/i18n`'s `INTL_TAG` by `quotation-locales.test.ts`.
      *
-     * **Left as it is, deliberately.** The fix is a tag map in core, but core's `money()`
-     * renders the *pinned document*, and plan 10.6 is that a document which reprints
-     * differently is one nobody can cite — changing it re-spells every Lao quotation ever
-     * issued, including the dashboard's printed copy. That is an owner's decision, not a
-     * side effect of a presentation round. This test states the divergence so the day it is
-     * fixed, the suite says so rather than staying quietly green.
+     * The reason to fix it now rather than later was a fact rather than a preference: at the
+     * time, `order_documents` held 39 Thai rows and 1 English one and **no Lao document at
+     * all**, so plan 10.6's "a document that reprints differently is one nobody can cite" had
+     * nothing to bind on. The first Lao quotation issued would have made this permanent.
+     *
+     * Kept as its own case rather than folded into the loop above so the regression has a
+     * name: `la` is the only one of the eight whose project code is a *different real
+     * language*, so it is the only one that fails silently instead of throwing.
      */
-    const f = formattersFor('la');
+    expect(Intl.NumberFormat.supportedLocalesOf(['la'])).toStrictEqual([]);
 
-    expect(asQuotationPrints(1_412_400n, 'la')).toBe('฿14,124.00');
-    expect(f.bahtExact(1_412_400n)).toBe('฿14.124.00');
+    expect(asQuotationPrints(1_412_400n, 'la')).toBe(formattersFor('la').bahtExact(1_412_400n));
+    expect(asQuotationPrints(1_412_400n, 'la')).toBe('฿14.124.00');
   });
 
   it('⭐ groups the baht, which is the half the decoding tests cannot see', () => {

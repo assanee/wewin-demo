@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isPromptPayId } from '@wewin/core/promptpay';
+
 import type { MoneyWire } from './money.js';
 
 /**
@@ -12,9 +14,32 @@ import type { MoneyWire } from './money.js';
 const bankCode = z.string().regex(/^[A-Z]{3,8}$/u, 'รหัสธนาคารเป็นตัวพิมพ์ใหญ่ 3–8 ตัว');
 const accountNumber = z.string().regex(/^[0-9]{10,15}$/u, 'เลขบัญชีเป็นตัวเลข 10–15 หลัก');
 const accountName = z.string().trim().min(1).max(200);
+/**
+ * ⚠️ `isPromptPayId` from `@wewin/core/promptpay`, not a regex restated here.
+ *
+ * This was `^([0-9]{10}|[0-9]{13})$` — *any* ten digits — while `promptPayTarget`, which has
+ * to turn the stored value into an actual QR, requires a leading `0` because every Thai
+ * mobile number has one. So `1234567890` was accepted here, stored, and then refused at the
+ * only point where it mattered: the customer's payment screen rendered the bank account with
+ * no QR beside it, and nothing told the customer or the staff member who typed it why.
+ *
+ * The message names the leading zero now, because "10 digits" was true of the value that was
+ * rejected and is what made the old rule look satisfied.
+ *
+ * ⚠️ **This is the one rule on this file that is deliberately stricter than its CHECK**, so
+ * the header's "when they disagree, the migration is right" does not hold for it. The header's
+ * worry is a rule *looser* than the database — that turns a refusal into a 500. Stricter is
+ * safe in that direction: everything this accepts, `bank_accounts_promptpay_shape` accepts too.
+ *
+ * The migration is still the one that ought to move. `0027_organisation.sql` checks
+ * `^([0-9]{10}|[0-9]{13})$`, so a direct INSERT can still store an id no QR can be built from,
+ * and this schema only closes the HTTP door. Tightening the CHECK is a migration whose safety
+ * depends on rows in environments this change cannot see, so it is written up rather than
+ * shipped blind.
+ */
 const promptpayId = z
   .string()
-  .regex(/^([0-9]{10}|[0-9]{13})$/u, 'พร้อมเพย์เป็นเบอร์มือถือ 10 หลัก หรือเลขผู้เสียภาษี 13 หลัก');
+  .refine(isPromptPayId, 'พร้อมเพย์เป็นเบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 หรือเลขผู้เสียภาษี 13 หลัก');
 
 export const bankAccountCreateSchema = z.strictObject({
   bankCode,

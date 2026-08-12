@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { crc16ccitt, promptPayPayload, promptPayTarget } from '../src/promptpay.js';
+import {
+  crc16ccitt,
+  isPromptPayId,
+  promptPayPayload,
+  promptPayTarget,
+  PROMPTPAY_MOBILE,
+  PROMPTPAY_TAX_ID,
+} from '../src/promptpay.js';
 
 /**
  * ⭐ A QR that scans and carries the wrong number is the whole risk here.
@@ -45,6 +52,50 @@ describe('reading a PromptPay identifier', () => {
    */
   it('refuses a ten-digit id that does not start with 0, rather than mis-slicing it as a mobile number', () => {
     expect(promptPayTarget('1812345678'), '"1812345678" was accepted').toBeNull();
+  });
+
+  /**
+   * ⭐ And the predicate the validators call must be this same refusal, not a copy of it.
+   *
+   * F3 above described the gap and left it open: the CHECK, `bankAccountCreateSchema` and the
+   * dashboard's `bankAccountFormErrors` all enforced `^([0-9]{10}|[0-9]{13})$`, so a staff
+   * member could type `1234567890`, be told nothing, and have it stored — which is exactly
+   * what the dev database held on its only *active* account. The customer's payment screen
+   * then rendered that account with no QR beside it and nothing anywhere said why.
+   *
+   * `isPromptPayId` is now exported for those validators to call, so the front door and this
+   * function cannot answer differently. Asserting them equal across the same inputs is what
+   * keeps that true — a predicate that drifted from `promptPayTarget` would put the gap back
+   * while every test above stayed green.
+   */
+  it('⭐ isPromptPayId agrees with promptPayTarget on every shape', () => {
+    const inputs = [
+      '0812345678',
+      '0612345678',
+      '0912345678',
+      '0105558012345',
+      '1234567890',
+      '1812345678',
+      '9812345678',
+      '081234567',
+      '08123456789',
+      '',
+      'abcdefghij',
+      '081-234-5678',
+    ];
+
+    for (const id of inputs) {
+      expect(isPromptPayId(id), `disagreed on "${id}"`).toBe(promptPayTarget(id) !== null);
+    }
+  });
+
+  it('the two shape constants carry no global flag, so `.test` is not stateful', () => {
+    /* A `g` regex keeps `lastIndex` between calls and would answer `false` on every second
+     * call for the same string — a validator that passes on retry is worse than one that
+     * fails, because nobody reproduces it. */
+    expect(PROMPTPAY_MOBILE.global).toBe(false);
+    expect(PROMPTPAY_TAX_ID.global).toBe(false);
+    expect(isPromptPayId('0812345678')).toBe(isPromptPayId('0812345678'));
   });
 });
 
