@@ -44,6 +44,24 @@ function str(row: Record<string, unknown>, key: string, what: string): string {
   return value;
 }
 
+/**
+ * The plain, never-null numbers: `consecutiveFailures`, the two thresholds, and
+ * `warningRecipients`.
+ *
+ * ⭐ **`warningRecipients` belongs here and not with `numOrNull`, and the reason is the mirror
+ * image of `ageHours`'s.** For `ageHours` the *`null`* is the loud fact, so absence must not be
+ * folded into it. For this field the loud fact is *zero* — "nobody active holds
+ * `organisation.write` with a reachable address, so when the rate goes stale the people who could
+ * end it are never told" — and `fxNoRecipientsTh` in `fx-health.tsx` puts a warning on the card
+ * for it even while everything else there is green. A helper that read a missing key as `0` would
+ * print that warning off a server build that merely renamed the field, and an administrator would
+ * go granting a permission somebody already holds.
+ *
+ * The single `typeof` already covers it: an absent key reads as `undefined`, which is not a
+ * number, so absence throws without needing the explicit `in` check `numOrNull` carries. Stated
+ * because it is load-bearing here rather than incidental — this field has no legal `null` to
+ * distinguish absence from.
+ */
 function num(row: Record<string, unknown>, key: string, what: string): number {
   const value = row[key];
   if (typeof value !== 'number') throw new TypeError(`${what} has no ${key}`);
@@ -112,6 +130,7 @@ export function decodeFxRateHealth(input: unknown): FxRateHealthWire {
     lastFailureAt: strOrNull(row, 'lastFailureAt', what),
     warnAfterHours: num(row, 'warnAfterHours', what),
     refuseAfterHours: num(row, 'refuseAfterHours', what),
+    warningRecipients: num(row, 'warningRecipients', what),
   };
 }
 

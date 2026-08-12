@@ -5,6 +5,7 @@ import { createEmailTransport } from '../notifications/channels/transports/creat
 import { parseNotificationsConfig } from '../notifications';
 import { EMAIL_TRANSPORT } from '../notifications/notifications.tokens';
 import { OrganisationModule } from '../organisation';
+import { PermissionRepository } from '../rbac/permission.repository';
 import { FxController } from './fx.controller';
 import { FxHttp } from './fx-http';
 import { FxRatesRepository } from './fx-rates.repository';
@@ -64,6 +65,20 @@ import { QuotationRateService } from './quotation-rate.service';
     FxRatesRepository,
     QuotationRateService,
     FxStalenessService,
+    /*
+     * ⭐ `PermissionRepository`, provided here rather than imported.
+     *
+     * `FxStalenessService` mails the holders of `organisation.write` and `FxController` reports
+     * how many there are, and both go through the one file that knows the user→group→permission
+     * join (`rbac/permission.repository.ts`). It is provided directly because `RbacModule` is a
+     * `forRoot` dynamic module — importing it a second time would build a second `APP_GUARD` and
+     * a second route registry, which is a far larger thing to duplicate than this.
+     *
+     * The repository is stateless: its only field is the injected `DRIZZLE` handle, so a second
+     * instance shares the same pool and can hold no divergent state. What must not be duplicated
+     * is the *query*, and it is not — there is one copy of it, in rbac.
+     */
+    PermissionRepository,
     {
       provide: EMAIL_TRANSPORT,
       /*
@@ -90,7 +105,7 @@ import { QuotationRateService } from './quotation-rate.service';
 
         return {
           from: config.emailFrom,
-          recipient: config.queueAddresses.sales_queue,
+          salesQueue: config.queueAddresses.sales_queue,
         };
       },
     },

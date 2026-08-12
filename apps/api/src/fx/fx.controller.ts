@@ -3,6 +3,7 @@ import { CONTRACT_VERSION, CONTRACT_VERSION_HEADER } from '@wewin/contract/versi
 import type { FxRateHealthWire } from '@wewin/contract/organisation';
 
 import { RequirePermissions } from '../rbac';
+import { PermissionRepository } from '../rbac/permission.repository';
 import { FxRatesRepository } from './fx-rates.repository';
 import {
   FX_RATE_REFUSE_AFTER_HOURS,
@@ -50,13 +51,21 @@ const contractVersion = (): MethodDecorator =>
  */
 @Controller('admin/fx')
 export class FxController {
-  constructor(private readonly rates: FxRatesRepository) {}
+  constructor(
+    private readonly rates: FxRatesRepository,
+    /* Who could be told, so an empty set is a sentence on this screen rather than a log line
+     * nobody reads — see `FxRateHealthWire.warningRecipients`. */
+    private readonly people: PermissionRepository,
+  ) {}
 
   @Get('health')
   @contractVersion()
   @RequirePermissions('organisation.read')
   async health(): Promise<FxRateHealthWire> {
-    const health = await this.rates.health();
+    const [health, warningRecipients] = await Promise.all([
+      this.rates.health(),
+      this.people.addressesHolding('organisation.write'),
+    ]);
     const newest = health.newest;
 
     /*
@@ -76,6 +85,7 @@ export class FxController {
       lastFailureAt: health.lastFailureAt?.toISOString() ?? null,
       warnAfterHours: FX_RATE_WARN_AFTER_HOURS,
       refuseAfterHours: FX_RATE_REFUSE_AFTER_HOURS,
+      warningRecipients: warningRecipients.length,
     };
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, MailX } from 'lucide-react';
 import type { FxRateHealthWire } from '@wewin/contract/organisation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -55,6 +55,26 @@ import { ReadOnlyField } from '@/components/products/form-field';
  * which, and `fxFrozenFeedTh` states the diagnosis outright when the gap is wide enough that
  * nothing else explains it.
  *
+ * ── ⭐ Nobody to tell is a worse condition than a stale rate ─────────────────────
+ *
+ * `warningRecipients` counts the people the staleness email could actually reach: holders of
+ * `organisation.write` with an active account and a primary (therefore verified) address. The
+ * routing is by permission and not by a configured list because `organisation.write` is exactly
+ * what can type `อัตราแลกเปลี่ยนกำหนดเอง` and end the outage.
+ *
+ * Zero is the condition this card exists to surface, and it is **orthogonal to `status`**: a feed
+ * that is green right now with nobody to warn is a trap already armed — when the rate does go
+ * stale, the mail goes to the shared sales queue and the people who could fix it are never told,
+ * so the first anybody hears of it is a foreign-currency submit being refused. So
+ * `fxNoRecipientsTh` is its own alert with its own trigger, shown beside a green verdict rather
+ * than folded into the verdict's paragraph — the same separation `fxFrozenFeedTh` gets, for the
+ * same reason: a fact that can only be said once the rate is already too old is a fact said too
+ * late.
+ *
+ * ⚠️ It deliberately leaves the badge alone. The badge is a verdict on the *rate*, and the
+ * header's promise — that this card cannot read green while quotations are refused — is about
+ * that. Turning the badge red over a working feed would trade one mis-signal for its inverse.
+ *
  * ── ⚠️ Every threshold in every sentence comes from the response ─────────────────
  *
  * `warnAfterHours` and `refuseAfterHours` are reported *down* precisely so this screen holds no
@@ -70,7 +90,7 @@ import { ReadOnlyField } from '@/components/products/form-field';
  * test here would be a test of these functions, spelled expensively.
  *
  * ⚠️ The cost, named rather than discovered: exporting functions from a `.tsx` trips
- * `react/only-export-components`, which the root `.oxlintrc.json` sets to `warn` — twelve of them
+ * `react/only-export-components`, which the root `.oxlintrc.json` sets to `warn` — fourteen of them
  * from this file, more than any other single file in the app. That rule is about Fast Refresh
  * preserving component state in dev, not about correctness, and the alternative was worse in a way
  * that is not about lint: the *other* house pattern is a separate pure module (`tax-country-fields
@@ -209,6 +229,23 @@ export function fxHealthDetailTh(health: FxRateHealthWire): string {
 }
 
 /**
+ * ⭐ The permission that can end an outage, named once because three sentences on this card name
+ * it — the remedy below, the recipients field's description, and the zero-recipient warning.
+ *
+ * Naming a permission code in Thai staff copy is deliberate and not a leak of internals: it is the
+ * string an administrator types into the groups screen, so a sentence that said "the appropriate
+ * permission" would be a sentence nobody could act on. It is a constant rather than three literals
+ * for the ordinary reason — the three would drift, and two of them would then send a reader to
+ * grant something that is not what the email is routed on.
+ *
+ * ⚠️ Not imported from a shared permissions module, because there is no runtime one to import
+ * from: `PermissionCode` is a server-side type and the wire carries only the *count*. This is a
+ * copy of a server-side fact, and the honest place for it is one line the compiler cannot check —
+ * which is why `fx-health.test.ts` asserts the string appears in the copy that matters.
+ */
+const FX_FIX_PERMISSION = 'organisation.write';
+
+/**
  * The way out, or `null` when nothing needs one.
  *
  * ⭐ Names the *field* and the *place*, not just "contact an administrator". The remedy is one
@@ -227,7 +264,7 @@ export function fxHealthRemedyTh(health: FxRateHealthWire): string | null {
     case 'warn':
       return null;
     default:
-      return 'ถ้าต้องออกใบเสนอราคาสกุลเงินต่างประเทศเดี๋ยวนี้: ในตารางประเทศปลายทางด้านล่าง กด "แก้ไข" ที่ประเทศนั้น แล้วกรอกช่อง "อัตราแลกเปลี่ยนกำหนดเอง" เป็นจำนวนบาทต่อ 1 หน่วยของสกุลเงินนั้น ระบบจะใช้อัตราที่กรอกแทนอัตรากลางตลาดทันที และบันทึกไว้ในประวัติการแก้ไขของประเทศนั้นพร้อมผู้แก้ — ต้องมีสิทธิ์ organisation.write';
+      return `ถ้าต้องออกใบเสนอราคาสกุลเงินต่างประเทศเดี๋ยวนี้: ในตารางประเทศปลายทางด้านล่าง กด "แก้ไข" ที่ประเทศนั้น แล้วกรอกช่อง "อัตราแลกเปลี่ยนกำหนดเอง" เป็นจำนวนบาทต่อ 1 หน่วยของสกุลเงินนั้น ระบบจะใช้อัตราที่กรอกแทนอัตรากลางตลาดทันที และบันทึกไว้ในประวัติการแก้ไขของประเทศนั้นพร้อมผู้แก้ — ต้องมีสิทธิ์ ${FX_FIX_PERMISSION}`;
   }
 }
 
@@ -331,6 +368,65 @@ export function fxFrozenFeedTh(health: FxRateHealthWire): string | null {
   return `ระบบดึงข้อมูลสำเร็จ แต่ตัวเลขที่ได้มาถูกออกไว้ก่อนเวลาที่ดึงถึง ${fxHoursTh(lagHours)} ชั่วโมง — ผู้ให้บริการยังตอบปกติแต่หยุดอัปเดตอัตรา การดูแค่ว่า "ดึงสำเร็จหรือไม่" จะไม่เห็นปัญหานี้เลย เพราะดึงสำเร็จทุกครั้งจริง`;
 }
 
+/**
+ * How many people the staleness warning could actually reach.
+ *
+ * ⚠️ **Zero is printed as a fact, not as a number**, for the same reason `fxFailuresTh` refuses to
+ * print a comforting `0`: a bare `0 คน` in a column of counts reads as "nothing to see", and this
+ * particular zero is the most consequential value on the card. The sentence in the field says what
+ * it means; `fxNoRecipientsTh` below says what to do about it.
+ *
+ * `คน` and not `รายชื่อ` on purpose — these are people resolved from the permission model at send
+ * time, not entries on a list somebody maintains.
+ */
+export function fxRecipientsTh(health: FxRateHealthWire): string {
+  if (health.warningRecipients === 0) {
+    return '0 คน — ไม่มีใครที่ระบบจะแจ้งได้เมื่ออัตราแลกเปลี่ยนเริ่มเก่า';
+  }
+
+  return `${String(health.warningRecipients)} คน`;
+}
+
+/**
+ * ⭐ Nobody can be told — the condition that is worse than the one this card was built to report.
+ *
+ * `null` — say nothing — whenever at least one person is reachable. Non-`null` whenever the count
+ * is zero, **and that is deliberately not conditioned on `status`**. See this file's header: a
+ * green feed with no reachable holder of the permission is a trap that has already been set, and
+ * the only useful time to say so is before it fires. A version of this check that only spoke when
+ * the rate was already stale would speak for the first time in the one state where the warning it
+ * is about has already failed to arrive.
+ *
+ * The copy has to do three jobs, and each is one somebody got wrong in the log-line version of
+ * this:
+ *
+ *   1. **Name the consequence, not the configuration.** Not "no recipients are configured" — there
+ *      is nothing to configure. The consequence is that the rate will go stale and the people who
+ *      could type a manual rate will find out when a quotation is refused.
+ *   2. **Name the fix as a grant, not as a settings change.** Grant `organisation.write` to an
+ *      active account, or reactivate one — those are the two shapes this condition has.
+ *   3. **Say that the count measures reachability, not authority.** Somebody suspended, or with no
+ *      primary address, holds the permission and is still not counted, because they cannot be
+ *      told. Without that sentence an administrator looking at a groups screen listing four
+ *      holders reads the `0` as a bug in this card and stops.
+ *
+ * And it says outright that the shared sales queue still gets its copy, because it does — while
+ * refusing to let that read as a substitute. Somebody being told is better than nobody; it is not
+ * the same as reaching a person who holds the permission.
+ */
+export function fxNoRecipientsTh(health: FxRateHealthWire): string | null {
+  if (health.warningRecipients > 0) return null;
+
+  return (
+    `ไม่มีบัญชีที่ใช้งานอยู่คนใดถือสิทธิ์ ${FX_FIX_PERMISSION} พร้อมอีเมลหลัก ระบบจึงไม่มีใครให้แจ้งเมื่ออัตราแลกเปลี่ยนเริ่มเก่า — ` +
+    'คนที่กรอกอัตราเองเพื่อจบปัญหาได้จะไม่ได้รับอีเมลเลย และจะรู้ตัวตอนที่ออกใบเสนอราคาสกุลเงินต่างประเทศไม่ได้แล้ว ' +
+    'คำเตือนนี้จึงขึ้นทุกครั้งที่ตัวเลขนี้เป็นศูนย์ ไม่ว่าสถานะอัตราด้านบนจะเป็นอะไร เพราะต้องแก้ก่อนอัตราจะเก่า ไม่ใช่หลังจากนั้น ' +
+    `วิธีแก้: ให้สิทธิ์ ${FX_FIX_PERMISSION} กับบัญชีที่ใช้งานอยู่ หรือเปิดใช้งานบัญชีที่ถูกระงับไว้กลับมา แล้วตรวจว่าบัญชีนั้นมีอีเมลหลัก ` +
+    'ตัวเลขนี้นับว่าแจ้งถึงได้จริงกี่คน ไม่ใช่ว่ามีสิทธิ์กี่คน — ผู้ที่ถือสิทธิ์แต่บัญชีถูกระงับ หรือไม่มีอีเมลหลัก จะไม่ถูกนับ เพราะแจ้งไปก็ไม่ถึงตัว ' +
+    'ส่วนอีเมลที่เข้ากล่องกลางของฝ่ายขายยังส่งตามปกติ แต่นั่นไม่เท่ากับมีคนที่ถือสิทธิ์รู้เรื่อง'
+  );
+}
+
 /** The two thresholds, printed from the response so this screen keeps no copy of them. */
 export function fxThresholdsTh(health: FxRateHealthWire): string {
   return `เตือนเมื่อเก่ากว่า ${fxHoursTh(health.warnAfterHours)} ชั่วโมง · ปฏิเสธเมื่อเก่ากว่า ${fxHoursTh(health.refuseAfterHours)} ชั่วโมง`;
@@ -414,6 +510,7 @@ function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
   const verdict = fxHealthVerdict(health);
   const remedy = fxHealthRemedyTh(health);
   const frozen = fxFrozenFeedTh(health);
+  const unreachable = fxNoRecipientsTh(health);
   const refused = verdict !== 'ok' && verdict !== 'warn';
 
   return (
@@ -444,6 +541,25 @@ function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
           <AlertTriangle className="size-4" />
           <AlertTitle>ผู้ให้บริการยังตอบ แต่ตัวเลขไม่ขยับ</AlertTitle>
           <AlertDescription>{frozen}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* ⭐ Orthogonal to the verdict in the same way the frozen feed is, and more so: this one is
+          true or false without reference to the rate at all. It is rendered from its own trigger so
+          it stands *directly beneath a green alert* when the feed is healthy and nobody can be
+          warned — which is the only moment at which saying it still prevents something. Folding it
+          into the verdict would mean the card first mentioned "nobody was told" in the state where
+          the telling had already failed to happen.
+
+          `destructive` and its own icon, because a second `default` alert under a green one is
+          furniture: the whole requirement here is that this stays legible while everything else on
+          the card is reassuring. `MailX` rather than the `AlertTriangle` above it — this is not a
+          third opinion about the rate, it is a message with no destination. */}
+      {unreachable !== null && (
+        <Alert variant="destructive">
+          <MailX className="size-4" />
+          <AlertTitle>ไม่มีใครได้รับอีเมลเตือนเมื่ออัตราแลกเปลี่ยนเก่า</AlertTitle>
+          <AlertDescription>{unreachable}</AlertDescription>
         </Alert>
       )}
 
@@ -481,6 +597,11 @@ function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
           label="เกณฑ์ที่ใช้ตัดสิน"
           value={fxThresholdsTh(health)}
           description="ค่าคงที่ฝั่งเซิร์ฟเวอร์ ส่งลงมาพร้อมสถานะ เพื่อให้หน้าจอนี้ไม่ต้องเก็บสำเนาไว้เองและไม่มีทางอ้างเลขที่ไม่ตรงกับของจริง"
+        />
+        <ReadOnlyField
+          label="คนที่จะได้รับอีเมลเตือนเมื่ออัตราเก่า"
+          value={fxRecipientsTh(health)}
+          description={`มาจากผู้ที่ถือสิทธิ์ ${FX_FIX_PERMISSION} ในระบบสิทธิ์ ไม่ใช่รายชื่อผู้รับที่ตั้งค่าไว้ที่ไหน — ให้สิทธิ์นี้กับใครเพิ่ม คนนั้นได้รับอีเมลทันทีโดยไม่ต้องแก้รายชื่อ และคนที่ลาออกก็หยุดรับเองเมื่อบัญชีถูกปิด นับเฉพาะบัญชีที่ใช้งานอยู่และมีอีเมลหลัก เพราะเป็นสิทธิ์เดียวกับที่กรอกอัตราแลกเปลี่ยนกำหนดเองได้`}
         />
       </FieldGroup>
     </>

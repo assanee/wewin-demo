@@ -14,6 +14,8 @@ import {
   fxHealthTitleTh,
   fxHealthVerdict,
   fxHoursTh,
+  fxNoRecipientsTh,
+  fxRecipientsTh,
   fxThresholdsTh,
 } from './fx-health';
 
@@ -42,6 +44,11 @@ import {
 /**
  * A healthy row, one field at a time overridden. `warnAfterHours`/`refuseAfterHours` are
  * deliberately not 36/72 — see the note above.
+ *
+ * `warningRecipients: 4` — nonzero, so the zero-recipient warning stays silent in every fixture
+ * that is not specifically about it, and so *every other* assertion in this file is made on a row
+ * where somebody could be told. A base fixture of `0` would make that alarm the ambient state and
+ * hide the one test that is about it.
  */
 const health = (overrides: Readonly<Partial<FxRateHealthWire>> = {}): FxRateHealthWire => ({
   status: 'ok',
@@ -52,6 +59,7 @@ const health = (overrides: Readonly<Partial<FxRateHealthWire>> = {}): FxRateHeal
   lastFailureAt: null,
   warnAfterHours: 10,
   refuseAfterHours: 20,
+  warningRecipients: 4,
   ...overrides,
 });
 
@@ -329,6 +337,103 @@ describe('a frozen provider feed, which no fetch-time check can see', () => {
   });
 });
 
+describe('nobody to tell, which is worse than the stale rate it would be telling them about', () => {
+  const UNREACHABLE = health({ warningRecipients: 0 });
+
+  it('fires while every other thing on this card is green', () => {
+    /* ⭐ The assertion this whole feature turns on. A healthy feed with no reachable holder of
+       `organisation.write` is a trap that is already armed: when the rate does go stale, the mail
+       goes to the sales queue and the people who could type a manual rate are never told, so the
+       first anybody hears of it is a refused quotation. The only useful moment to say so is this
+       one — while nothing is wrong yet. */
+    expect(fxHealthVerdict(UNREACHABLE)).toBe('ok');
+    expect(fxNoRecipientsTh(UNREACHABLE)).not.toBeNull();
+  });
+
+  it('fires in every state, because the condition does not reference the rate at all', () => {
+    for (const row of EVERY_STATE) {
+      expect(
+        fxNoRecipientsTh({ ...row, warningRecipients: 0 }),
+        `no one could be warned and status ${row.status} silenced it`,
+      ).not.toBeNull();
+    }
+  });
+
+  it('stays silent whenever somebody could be told', () => {
+    /* ⚠️ The other half of the pair. A warning that fires on a nonzero count is a warning that
+       fires always, which is a warning nobody reads. */
+    for (const row of EVERY_STATE) {
+      expect(fxNoRecipientsTh(row), `status ${row.status} raised a false alarm`).toBeNull();
+    }
+
+    expect(fxNoRecipientsTh(health({ warningRecipients: 1 }))).toBeNull();
+  });
+
+  it('leaves the badge a verdict on the rate, and nothing else', () => {
+    /* The header's promise is that this card cannot read green while quotations are refused. Turning
+       the badge red over a feed that is working would trade that mis-signal for its inverse — so the
+       recipients condition gets its own alert and touches neither badge nor verdict. */
+    expect(fxHealthBadgeTh(UNREACHABLE)).toBe('ปกติ');
+    expect(fxHealthBadgeVariant(UNREACHABLE)).toBe('outline');
+    expect(fxHealthTitleTh(UNREACHABLE)).toBe(fxHealthTitleTh(OK));
+  });
+
+  it('names the consequence rather than a missing configuration', () => {
+    const said = fxNoRecipientsTh(UNREACHABLE);
+
+    /* Not "no recipients are configured" — there is nothing to configure. What a reader has to be
+       told is that nobody will be told, and that they find out via a refused quotation. */
+    expect(said).toContain('ไม่มีใครให้แจ้ง');
+    expect(said).toContain('ออกใบเสนอราคาสกุลเงินต่างประเทศไม่ได้');
+  });
+
+  it('names the permission to grant, and both shapes the fix takes', () => {
+    const said = fxNoRecipientsTh(UNREACHABLE);
+
+    /* ⭐ The permission code appears in Thai staff copy on purpose: it is the string an
+       administrator types on the groups screen, and "the appropriate permission" is not actionable.
+       The two shapes are a grant to an active account, or reactivating a suspended one. */
+    expect(said).toContain('organisation.write');
+    expect(said).toContain('ให้สิทธิ์');
+    expect(said).toContain('เปิดใช้งานบัญชีที่ถูกระงับ');
+  });
+
+  it('says the count measures reachability and not authority', () => {
+    const said = fxNoRecipientsTh(UNREACHABLE);
+
+    /* ⚠️ Without this, an administrator looking at a groups screen that lists four holders reads
+       the `0` as a bug in this card and stops. A holder who is suspended, or who has no primary
+       address, is not counted — because they cannot be told. */
+    expect(said).toContain('บัญชีถูกระงับ');
+    expect(said).toContain('ไม่มีอีเมลหลัก');
+    expect(said).toContain('ไม่ถูกนับ');
+  });
+
+  it('refuses to let the shared sales queue read as a substitute', () => {
+    const said = fxNoRecipientsTh(UNREACHABLE);
+
+    /* The queue does still get its copy, and somebody being told beats nobody. It is not the same
+       as reaching a person who holds the permission, and the sentence has to carry both halves. */
+    expect(said).toContain('ฝ่ายขาย');
+    expect(said).toContain('ไม่เท่ากับ');
+  });
+
+  it('prints an ordinary count as a count', () => {
+    expect(fxRecipientsTh(health({ warningRecipients: 4 }))).toBe('4 คน');
+    expect(fxRecipientsTh(health({ warningRecipients: 1 }))).toBe('1 คน');
+  });
+
+  it('prints zero as the fact it is rather than as a number in a column', () => {
+    /* ⭐ The same discipline `fxFailuresTh` applies to a comforting `0`: a bare zero in a row of
+       counts reads as "nothing to see", and this zero is the most consequential value on the card. */
+    const none = fxRecipientsTh(UNREACHABLE);
+
+    expect(none).toContain('0 คน');
+    expect(none).toContain('ไม่มีใคร');
+    expect(none).not.toBe('0 คน');
+  });
+});
+
 describe('a timestamp that is not there', () => {
   it('never lets an absent clock become the Unix epoch', () => {
     /* ⚠️ `new Date(null)` is 1970. An unguarded call would print a real-looking date, in the past,
@@ -356,6 +461,7 @@ describe('the decoder refuses a payload this card would misread', () => {
     lastFailureAt: '2026-08-08T01:00:00.000Z',
     warnAfterHours: 36,
     refuseAfterHours: 72,
+    warningRecipients: 3,
   };
 
   it('reads a well-formed row field for field', () => {
@@ -385,6 +491,18 @@ describe('the decoder refuses a payload this card would misread', () => {
     expect(() => decodeFxRateHealth({ ...WIRE, ageHours: '40.5' })).toThrow(TypeError);
     expect(() => decodeFxRateHealth({ ...WIRE, observedAt: 17 })).toThrow(TypeError);
     expect(() => decodeFxRateHealth({ ...WIRE, warnAfterHours: null })).toThrow(TypeError);
+    expect(() => decodeFxRateHealth({ ...WIRE, warningRecipients: '3' })).toThrow(TypeError);
+    expect(() => decodeFxRateHealth({ ...WIRE, warningRecipients: null })).toThrow(TypeError);
+  });
+
+  it('refuses an absent recipient count rather than reading it as nobody', () => {
+    /* ⚠️ The mirror image of the `ageHours` trap above, and the reason `warningRecipients` uses the
+       plain `num` helper: here the loud value is *zero*, not `null`. A decoder that defaulted a
+       missing key to `0` would put "nobody can be told" on a green card off a server build that
+       merely renamed the field, and send an administrator granting a permission somebody holds. */
+    const { warningRecipients: _dropped, ...missing } = WIRE;
+
+    expect(() => decodeFxRateHealth(missing)).toThrow(TypeError);
   });
 
   it('refuses anything that is not an object at all', () => {

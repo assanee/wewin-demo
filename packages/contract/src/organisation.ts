@@ -159,4 +159,20 @@ export interface FxRateHealthWire {
   readonly warnAfterHours: number;
   /** The hard threshold, in hours. Past this a foreign-currency submit is refused. */
   readonly refuseAfterHours: number;
+  /**
+   * ⭐ How many people could actually be told — holders of `organisation.write` with an active
+   * account and a primary (therefore verified) email address.
+   *
+   * Here because **zero is a worse condition than a stale rate**, and until it was on this
+   * payload it was only ever a line in a log. Nobody holding the permission means the staleness
+   * warning has no destination that can act on it: the mail still goes to the sales queue, but
+   * the people who could type `fxManualRate` are not reachable, and the next foreign-currency
+   * submit is refused with nobody having been warned. That is the precise failure class this
+   * whole phase exists to remove, so it is reported on the same card as the staleness itself.
+   *
+   * It deliberately counts *reachability*, not authority: somebody who holds the permission but
+   * whose account is suspended, or who has no primary address, is not counted, because they
+   * cannot be told. See `PermissionRepository.addressesHolding`.
+   */
+  readonly warningRecipients: number;
 }

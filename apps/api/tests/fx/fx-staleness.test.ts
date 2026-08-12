@@ -5,6 +5,7 @@ import type {
   OutgoingEmail,
 } from '../../src/notifications/channels/transports/email-transport';
 import type { FxRatesRepository, FxSyncHealth } from '../../src/fx/fx-rates.repository';
+import type { PermissionRepository } from '../../src/rbac/permission.repository';
 import { FxStalenessService, type FxStalenessConfig } from '../../src/fx/fx-staleness.service';
 import { FX_RATE_REFUSE_AFTER_HOURS, FX_RATE_WARN_AFTER_HOURS } from '../../src/fx/staleness';
 
@@ -60,14 +61,32 @@ const healthAged = (hours: number, consecutiveFailures = 0): FxSyncHealth => ({
 
 const CONFIG: FxStalenessConfig = {
   from: 'wewin <no-reply@wewin.test>',
-  recipient: 'sales-queue@wewin.test',
+  salesQueue: 'sales-queue@wewin.test',
 };
+
+/**
+ * A `PermissionRepository` that answers a canned address list.
+ *
+ * The *query* — who holds a permission, and which statuses are excluded — is a statement about
+ * rows and is proved against real Postgres in `permission-recipients.pg.test.ts`. What is
+ * proved here is what this service does with the answer, which is a different thing and the
+ * only thing a fake can honestly stand in for.
+ */
+const peopleOf = (addresses: readonly string[]): PermissionRepository =>
+  ({ addressesHolding: async () => addresses }) as unknown as PermissionRepository;
+
+const ADMIN = 'somchai@wewin.test';
 
 const serviceWith = (
   health: FxSyncHealth,
   transport: EmailTransport,
   config: FxStalenessConfig = CONFIG,
-): FxStalenessService => new FxStalenessService(repositoryOf(health), transport, config);
+  admins: readonly string[] = [ADMIN],
+): FxStalenessService =>
+  new FxStalenessService(repositoryOf(health), peopleOf(admins), transport, config);
+
+const addressesOf = (transport: RecordingTransport): readonly string[] =>
+  transport.sent.map((email) => email.to).sort();
 
 describe('FxStalenessService', () => {
   /**
@@ -81,18 +100,18 @@ describe('FxStalenessService', () => {
   it('says nothing about a healthy daily sync at its oldest', async () => {
     const transport = new RecordingTransport();
 
-    expect(await serviceWith(healthAged(25), transport).check(NOW)).toBe(false);
+    expect((await serviceWith(healthAged(25), transport).check(NOW)).sent).toBe(0);
     expect(transport.sent).toHaveLength(0);
   });
 
   it('warns once the newest rate is past the warning threshold', async () => {
     const transport = new RecordingTransport();
 
-    const sent = await serviceWith(healthAged(FX_RATE_WARN_AFTER_HOURS + 1, 2), transport).check(NOW);
+    const outcome = await serviceWith(healthAged(FX_RATE_WARN_AFTER_HOURS + 1, 2), transport).check(NOW);
 
-    expect(sent).toBe(true);
-    expect(transport.sent).toHaveLength(1);
-    expect(transport.sent[0]?.to).toBe('sales-queue@wewin.test');
+    /* Both audiences: the administrator who can fix it and the queue it blocks. */
+    expect(outcome).toStrictEqual({ status: 'warn', authorised: 1, sent: 2 });
+    expect(addressesOf(transport)).toStrictEqual(['sales-queue@wewin.test', ADMIN]);
     /* Still quotable: the warning has to say the submits are *working*, or it reads as the
        refusal and staff stop trying. */
     expect(transport.sent[0]?.subject).toContain('แจ้งเตือน');
@@ -150,7 +169,7 @@ describe('FxStalenessService', () => {
       lastFailureAt: undefined,
     };
 
-    expect(await serviceWith(health, transport).check(NOW)).toBe(true);
+    expect((await serviceWith(health, transport).check(NOW)).sent).toBe(2);
     expect(transport.sent[0]?.subject).toContain('ด่วน');
     expect(transport.sent[0]?.body).toContain('ยังไม่เคยดึงอัตราแลกเปลี่ยนเข้าระบบเลย');
   });
@@ -168,8 +187,13 @@ describe('FxStalenessService', () => {
     await service.check(new Date('2026-08-12T23:30:00Z'));
     await service.check(new Date('2026-08-13T02:00:00Z'));
 
-    expect(transport.sent[0]?.messageId).toBe(transport.sent[1]?.messageId);
-    expect(transport.sent[2]?.messageId).not.toBe(transport.sent[0]?.messageId);
+    /* Two recipients per run, so runs are 2 apart. Same day → same ids; next day → different. */
+    expect(transport.sent[0]?.messageId).toBe(transport.sent[2]?.messageId);
+    expect(transport.sent[4]?.messageId).not.toBe(transport.sent[0]?.messageId);
+    /* And two people in the same run never share one, or a server may drop the second. */
+    expect(transport.sent[0]?.messageId).not.toBe(transport.sent[1]?.messageId);
+    /* ⚠️ No address in the id — it travels in cleartext through every relay. */
+    for (const email of transport.sent) expect(email.messageId).not.toContain('@wewin.test');
   });
 
   /**
@@ -183,7 +207,10 @@ describe('FxStalenessService', () => {
   it('reports failure rather than throwing when the transport refuses', async () => {
     const service = serviceWith(healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1), new RefusingTransport());
 
-    expect(await service.check(NOW)).toBe(false);
+    const outcome = await service.check(NOW);
+    /* It still *resolved* an administrator — the honest report is "one person should have been
+       told and nobody was", not "there was nobody to tell". */
+    expect(outcome).toStrictEqual({ status: 'blocked', authorised: 1, sent: 0 });
   });
 
   /**
@@ -196,13 +223,160 @@ describe('FxStalenessService', () => {
    */
   it('does not invent a recipient when no staff mailbox is configured', async () => {
     const transport = new RecordingTransport();
-    const service = serviceWith(healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1), transport, {
-      from: CONFIG.from,
-      recipient: undefined,
-    });
+    const service = serviceWith(
+      healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1),
+      transport,
+      { from: CONFIG.from, salesQueue: undefined },
+      [],
+    );
 
-    expect(await service.check(NOW)).toBe(false);
+    expect(await service.check(NOW)).toStrictEqual({ status: 'blocked', authorised: 0, sent: 0 });
     expect(transport.sent).toHaveLength(0);
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Recipients — routed by permission, not by a list
+   * ──────────────────────────────────────────────────────────────────────────── */
+
+  /**
+   * ⭐ Everybody who holds `organisation.write` gets it, one address each.
+   *
+   * The set follows the permission model, so a super admin (who holds every code) is included
+   * without being named and a newly delegated administrator starts receiving mail with nobody
+   * editing a recipient list.
+   */
+  it('warns every holder of organisation.write, plus the sales queue', async () => {
+    const transport = new RecordingTransport();
+    const admins = ['aoy@wewin.test', 'nok@wewin.test', 'somchai@wewin.test'];
+
+    const outcome = await serviceWith(
+      healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1),
+      transport,
+      CONFIG,
+      admins,
+    ).check(NOW);
+
+    expect(outcome).toStrictEqual({ status: 'blocked', authorised: 3, sent: 4 });
+    expect(addressesOf(transport)).toStrictEqual([...admins, 'sales-queue@wewin.test'].sort());
+  });
+
+  /**
+   * ⚠️ One address per person, even when the same mailbox arrives twice.
+   *
+   * A person holding `organisation.write` through two groups is resolved once by the repository's
+   * `selectDistinct`; a person who *is* the sales queue address would otherwise be mailed twice
+   * by this service. The `Set` here is the second of those two guards and the only one a fake
+   * repository can exercise.
+   */
+  it('never mails the same address twice, even when it is also the sales queue', async () => {
+    const transport = new RecordingTransport();
+
+    const outcome = await serviceWith(
+      healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1),
+      transport,
+      CONFIG,
+      ['sales-queue@wewin.test', ADMIN],
+    ).check(NOW);
+
+    expect(outcome.sent).toBe(2);
+    expect(addressesOf(transport)).toStrictEqual(['sales-queue@wewin.test', ADMIN]);
+  });
+
+  /**
+   * ⭐ THE EMPTY SET — the condition this whole phase exists to stop being silent.
+   *
+   * Nobody active holds `organisation.write` with a primary address, so the people who could
+   * enter a manual rate cannot be reached. The sales queue still gets its copy, because somebody
+   * being told beats nobody — but `authorised: 0` records that no *administrator* was, and that
+   * is the number `GET /admin/fx/health` reports so the organisation screen can say it in Thai.
+   *
+   * ⚠️ The assertion that matters is `authorised: 0` **beside** `sent: 1`. A version that let the
+   * sales copy count as success would report this state as a warning delivered, which is the
+   * silent failure wearing the costume of a working alarm.
+   */
+  it('records that nobody authorised was reached, while still telling the sales queue', async () => {
+    const transport = new RecordingTransport();
+
+    const outcome = await serviceWith(
+      healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1),
+      transport,
+      CONFIG,
+      [],
+    ).check(NOW);
+
+    expect(outcome).toStrictEqual({ status: 'blocked', authorised: 0, sent: 1 });
+    expect(addressesOf(transport)).toStrictEqual(['sales-queue@wewin.test']);
+  });
+
+  /**
+   * ⚠️ And it never invents a recipient to fill the gap. No holders and no configured queue
+   * means no send at all — a hardcoded fallback address would be a warning going somewhere
+   * nobody agreed to, which is worse than a loud nothing.
+   */
+  it('sends nothing at all when there is no holder and no queue', async () => {
+    const transport = new RecordingTransport();
+
+    const outcome = await serviceWith(
+      healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1),
+      transport,
+      { from: CONFIG.from, salesQueue: undefined },
+      [],
+    ).check(NOW);
+
+    expect(outcome).toStrictEqual({ status: 'blocked', authorised: 0, sent: 0 });
+    expect(transport.sent).toHaveLength(0);
+  });
+
+  /**
+   * A permission read that throws degrades to "nobody authorised" rather than taking the whole
+   * run down — the sales queue is still told, and the `authorised: 0` alarm is raised. Silence
+   * would be the one outcome that reports a stale rate to nobody at all.
+   */
+  it('still warns the sales queue when the permission read itself fails', async () => {
+    const transport = new RecordingTransport();
+    const broken = {
+      addressesHolding: async () => {
+        throw new Error('connection terminated');
+      },
+    } as unknown as PermissionRepository;
+
+    const outcome = await new FxStalenessService(
+      repositoryOf(healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1)),
+      broken,
+      transport,
+      CONFIG,
+    ).check(NOW);
+
+    expect(outcome).toStrictEqual({ status: 'blocked', authorised: 0, sent: 1 });
+    expect(addressesOf(transport)).toStrictEqual(['sales-queue@wewin.test']);
+  });
+
+  /**
+   * One dead mailbox must not silence the others. The send loop catches per recipient, so a
+   * transport that refuses the first address still delivers the second — the alternative is that
+   * one stale staff account suppresses the warning for everybody.
+   */
+  it('keeps going when one recipient refuses', async () => {
+    class RefusesFirst implements EmailTransport {
+      readonly name = 'refuses-first';
+      readonly sent: OutgoingEmail[] = [];
+      async send(email: OutgoingEmail): Promise<string | undefined> {
+        if (email.to === 'aoy@wewin.test') throw new Error('mailbox unavailable');
+        this.sent.push(email);
+        return 'ok';
+      }
+    }
+    const transport = new RefusesFirst();
+
+    const outcome = await serviceWith(
+      healthAged(FX_RATE_REFUSE_AFTER_HOURS + 1),
+      transport,
+      CONFIG,
+      ['aoy@wewin.test', 'nok@wewin.test'],
+    ).check(NOW);
+
+    expect(outcome).toStrictEqual({ status: 'blocked', authorised: 2, sent: 2 });
+    expect(transport.sent.map((e) => e.to)).toContain('nok@wewin.test');
   });
 
   /**
@@ -217,7 +391,11 @@ describe('FxStalenessService', () => {
       },
     } as unknown as FxRatesRepository;
 
-    expect(await new FxStalenessService(broken, transport, CONFIG).check(NOW)).toBe(false);
+    const outcome = await new FxStalenessService(broken, peopleOf([ADMIN]), transport, CONFIG).check(NOW);
+
+    /* `'unknown'`, not `'ok'`: a health read that failed is neither healthy nor stale, and
+       reporting it as the former is how a broken check looks like a working one. */
+    expect(outcome).toStrictEqual({ status: 'unknown', authorised: 0, sent: 0 });
     expect(transport.sent).toHaveLength(0);
   });
 });

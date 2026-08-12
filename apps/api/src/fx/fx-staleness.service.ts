@@ -1,21 +1,32 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { EMAIL_TRANSPORT } from '../notifications/notifications.tokens';
 import type { EmailTransport } from '../notifications/channels/transports/email-transport';
+import { PermissionRepository } from '../rbac/permission.repository';
 import { FxRatesRepository } from './fx-rates.repository';
 import {
   FX_RATE_REFUSE_AFTER_HOURS,
   FX_RATE_WARN_AFTER_HOURS,
   fxRateAgeHours,
   fxRateHealthStatus,
+  type FxRateHealthStatus,
 } from './staleness';
 
 /** Injected rather than read from `process.env` inline, so a test can hand it both halves. */
 export interface FxStalenessConfig {
   readonly from: string;
-  /** `undefined` when no staff queue is configured at all — see `FxStalenessService.check`. */
-  readonly recipient: string | undefined;
+  /**
+   * The shared sales mailbox, or `undefined` when none is configured.
+   *
+   * ⚠️ Named `salesQueue` and not `recipient`, because it is no longer *the* recipient. The
+   * people who can fix a stale rate are resolved from `organisation.write` at send time; this is
+   * an additional audience — the staff the refusal blocks — and it is never a fallback for an
+   * empty authorised set. See `FxStalenessService.check`.
+   */
+  readonly salesQueue: string | undefined;
 }
 
 export const FX_STALENESS_CONFIG = Symbol('wewin.fx.stalenessConfig');
@@ -94,6 +105,16 @@ export class FxStalenessService {
 
   constructor(
     private readonly rates: FxRatesRepository,
+    /**
+     * ⭐ Who can end the outage, resolved from the permission model at send time.
+     *
+     * Not a constant, not a group code, and not an env var: `organisation.write` is the
+     * permission that can actually type `fxManualRate`, so routing on it means a super admin
+     * (who holds every code) is included automatically, and delegating just that permission to
+     * one new person starts mailing them with nobody editing a recipient list. See
+     * `PermissionRepository.addressesHolding` for who is excluded and why.
+     */
+    private readonly people: PermissionRepository,
     @Inject(EMAIL_TRANSPORT) private readonly mail: EmailTransport,
     @Inject(FX_STALENESS_CONFIG) private readonly config: FxStalenessConfig,
   ) {}
@@ -109,12 +130,18 @@ export class FxStalenessService {
    * A parameter rather than `new Date()` inside, so a test can put the clock where it needs it
    * without either mutating time globally or waiting three days. The `@Cron` above is the only
    * caller that supplies the real one, which keeps this method a pure-ish function of (rows,
-   * instant) — see the test, which drives it entirely through this seam.
+   * permissions, instant) — see the test, which drives it entirely through this seam.
    *
-   * Returns whether it sent, for the same reason: a test asserting "an email went out" is
-   * asserting on the transport, and a test asserting "it decided to" is asserting on this.
+   * ── ⭐ WHY IT RETURNS A COUNT AND NOT A BOOLEAN ──────────────────────────────────
+   *
+   * It used to answer `true`/`false`. That collapses the case this round is about: "warned four
+   * administrators" and "warned nobody who can fix it, but the sales queue got a copy" are both
+   * *"an email went out"*, and only one of them means somebody with `organisation.write` knows.
+   * `authorised` is reported separately from `sent` so a caller — and the test — can tell them
+   * apart, which is the same reason `EffectivePermissions` carries a status rather than a
+   * boolean.
    */
-  async check(now: Date): Promise<boolean> {
+  async check(now: Date): Promise<FxStalenessOutcome> {
     let health;
     try {
       health = await this.rates.health();
@@ -122,60 +149,144 @@ export class FxStalenessService {
       /* The database being unreachable is not a stale rate, and it is already every other
        * subsystem's alarm. Warning about the wrong thing is worse than not warning. */
       this.logger.warn(`could not read exchange-rate health: ${String(error)}`);
-      return false;
+      return { status: 'unknown', authorised: 0, sent: 0 };
     }
 
     const ageHours =
       health.newest === undefined ? null : fxRateAgeHours(health.newest.rateTimestamp, now);
     const status = fxRateHealthStatus(ageHours);
 
-    if (status === 'ok') return false;
+    if (status === 'ok') return { status, authorised: 0, sent: 0 };
 
-    const recipient = this.config.recipient;
-    if (recipient === undefined) {
-      /*
-       * Loud, and on the path that is *already* an alarm. Outside production the queue address
-       * defaults to `sales-queue@wewin.local`, and inside it `parseNotificationsConfig` refuses
-       * to boot without one — so reaching this is a deployment that opted out of both, and the
-       * only honest thing left is to say the warning could not be delivered.
-       */
-      this.logger.error(
-        `exchange rates are ${status} (${describeAge(ageHours)}) and no staff mailbox is ` +
-          'configured to say so; set NOTIFICATIONS_SALES_QUEUE_EMAIL',
-      );
-      return false;
+    /*
+     * Resolved here, on every run, rather than read once at boot. A permission granted this
+     * morning has to be reflected tonight, and a person who left has to stop receiving mail
+     * without anybody remembering to remove them — that is the whole point of routing by
+     * permission instead of by a list.
+     */
+    let authorised: readonly string[];
+    try {
+      authorised = await this.people.addressesHolding('organisation.write');
+    } catch (error) {
+      this.logger.warn(`could not resolve who holds organisation.write: ${String(error)}`);
+      authorised = [];
     }
 
-    try {
-      await this.mail.send({
-        from: this.config.from,
-        to: recipient,
-        subject:
-          status === 'blocked'
-            ? '[ด่วน] อัตราแลกเปลี่ยนเก่าเกินเพดาน — ใบเสนอราคาสกุลต่างประเทศถูกระงับ'
-            : '[แจ้งเตือน] อัตราแลกเปลี่ยนในระบบเริ่มเก่า',
-        body: bodyTh(status, ageHours, health.consecutiveFailures, health.newest?.fetchedAt),
-        /*
-         * Stable per day and per status, so a mail server that receives the same warning on
-         * three consecutive days threads them rather than showing three unrelated alarms —
-         * and so a retry within the same day cannot double-send. `toISOString().slice(0, 10)`
-         * is the date in UTC, which is the clock the cron runs on.
-         */
-        messageId: `fx-staleness-${status}-${now.toISOString().slice(0, 10)}`,
-        headers: { 'X-Wewin-Purpose': 'fx-staleness' },
-      });
-    } catch (error) {
-      this.logger.error(`could not send the exchange-rate staleness warning: ${String(error)}`);
-      return false;
+    if (authorised.length === 0) {
+      /*
+       * ⭐ THE EMPTY SET, AND WHY IT IS NOT A SILENT NO-OP.
+       *
+       * Nobody active holds `organisation.write` with a primary address, so the warning has no
+       * destination that can act on it. That is a worse condition than the stale rate it is
+       * trying to report, and it is exactly the failure class this phase exists to remove — so
+       * it is **not** swallowed and it does **not** fall back to a hardcoded address.
+       *
+       * Three things happen instead. It logs at `error`, one level above the ordinary warning.
+       * The sales queue below still gets its copy if one is configured, because somebody being
+       * told is better than nobody — but that copy is *not* counted as having warned an
+       * administrator, which is what `authorised: 0` in the outcome preserves. And the count is
+       * reported by `GET /admin/fx/health`, so the organisation screen says it in Thai on the
+       * same card as the staleness itself: a condition on a screen, not a line in a stream.
+       */
+      this.logger.error(
+        `exchange rates are ${status} (${describeAge(ageHours)}) and NOBODY holds ` +
+          'organisation.write with an active account and a primary email — the people who could ' +
+          'enter a manual rate cannot be told. Grant organisation.write, or reactivate an account.',
+      );
+    }
+
+    /*
+     * ⭐ Sales as well, and it is a second audience rather than a fallback.
+     *
+     * `organisation.write` holders can *fix* it; the sales queue is *blocked* by it, and they
+     * are usually not the same people. A salesperson who is not told will keep composing
+     * foreign-currency quotations and discover the refusal at the moment they promise a price
+     * to a customer — and the sales-screen banner only appears if they happen to open that
+     * particular quote. Keeping this recipient is the difference between "we told the person
+     * who can fix it" and "we told everybody it affects".
+     *
+     * ⚠️ It is deliberately *additive*. It is never used to stand in for an empty authorised
+     * set — see above — because a copy in a shared inbox is not the same as reaching somebody
+     * who holds the permission, and letting it count as one would hide the condition.
+     */
+    const recipients = [...new Set([...authorised, ...(this.config.salesQueue === undefined ? [] : [this.config.salesQueue])])];
+
+    if (recipients.length === 0) {
+      this.logger.error(
+        `exchange rates are ${status} (${describeAge(ageHours)}) and there is no address to say ` +
+          'so at all: nobody holds organisation.write and NOTIFICATIONS_SALES_QUEUE_EMAIL is unset.',
+      );
+      return { status, authorised: 0, sent: 0 };
+    }
+
+    const subject =
+      status === 'blocked'
+        ? '[ด่วน] อัตราแลกเปลี่ยนเก่าเกินเพดาน — ใบเสนอราคาสกุลต่างประเทศถูกระงับ'
+        : '[แจ้งเตือน] อัตราแลกเปลี่ยนในระบบเริ่มเก่า';
+    const body = bodyTh(status, ageHours, health.consecutiveFailures, health.newest?.fetchedAt);
+    const day = now.toISOString().slice(0, 10);
+
+    let sent = 0;
+    for (const to of recipients) {
+      try {
+        await this.mail.send({
+          from: this.config.from,
+          to,
+          subject,
+          body,
+          /*
+           * Stable per day, per status **and per recipient**, so a mail server receiving the
+           * same warning on three consecutive days threads them rather than showing three
+           * unrelated alarms, and a retry inside the same day cannot double-send. The recipient
+           * is part of it because two people must not be handed the same `Message-ID` — a
+           * server that saw one would be entitled to treat the second as a duplicate and drop
+           * it, which would silently reduce a four-person warning to a one-person warning.
+           */
+          messageId: `fx-staleness-${status}-${day}-${recipientTag(to)}`,
+          headers: { 'X-Wewin-Purpose': 'fx-staleness' },
+        });
+        sent += 1;
+      } catch (error) {
+        /* Per-recipient, so one dead mailbox does not silence the other three. */
+        this.logger.error(`could not warn ${to} about the exchange rate: ${String(error)}`);
+      }
     }
 
     this.logger.warn(
       `exchange rates are ${status} (${describeAge(ageHours)}, ` +
-        `${String(health.consecutiveFailures)} failed syncs since the last success); warned ${recipient}`,
+        `${String(health.consecutiveFailures)} failed syncs since the last success); ` +
+        `warned ${String(sent)} of ${String(recipients.length)} recipients, ` +
+        `${String(authorised.length)} of whom hold organisation.write`,
     );
 
-    return true;
+    return { status, authorised: authorised.length, sent };
   }
+}
+
+/**
+ * What one run decided and achieved.
+ *
+ * `authorised` is separate from `sent` on purpose — see `check`. `'unknown'` is the status when
+ * the health read itself failed, which is neither healthy nor stale and must not be reported as
+ * either.
+ */
+export interface FxStalenessOutcome {
+  readonly status: FxRateHealthStatus | 'unknown';
+  /** How many holders of `organisation.write` were resolvable. `0` is an alarm in itself. */
+  readonly authorised: number;
+  readonly sent: number;
+}
+
+/**
+ * A short, stable, non-reversible tag for a `Message-ID`.
+ *
+ * ⚠️ Hashed rather than embedded. A `Message-ID` travels in cleartext through every relay and
+ * lands in logs the mail team can read; putting a staff address in it would spread the address
+ * further than the envelope already does, for no benefit. Sixteen hex characters of SHA-256 is
+ * stable across runs (so the threading it exists for still works) and says nothing about who.
+ */
+function recipientTag(address: string): string {
+  return createHash('sha256').update(address).digest('hex').slice(0, 16);
 }
 
 function describeAge(ageHours: number | null): string {
