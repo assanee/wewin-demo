@@ -162,6 +162,79 @@ describe('the preview and the write cannot disagree', () => {
   });
 });
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE FIELD DRAWS A `%`; THE SERVER DEMANDS ONE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The percent box renders `%` as a decoration, so a salesperson typing `5` used to send `5` — and
+ * `apps/api/src/quotes/entry.ts` refuses a bare number, by design, so that `291` cannot be read as
+ * 291 percent. Its 422 then advised `เช่น "-15%"`, and `-15%` is what previewed a surcharge and
+ * stored a discount. The guard stays; the client sends what the guard requires.
+ *
+ * What these assert is the property from the round before, extended over the forms a real person
+ * types: **whatever is typed, the figure previewed is the figure the sent text produces.**
+ */
+describe('what a person types reaches the server as something it accepts', () => {
+  /* Every accepted spelling of five percent off, previewing one figure and sending a `%`. */
+  const FIVE_PERCENT_OFF = ['5', '-5', '5%', '-5%', ' 5 ', '5 %'] as const;
+
+  it('previews the same discount for every way of writing it', () => {
+    for (const typed of FIVE_PERCENT_OFF) {
+      const entry = shown(preview(LINE, 'percent_discount', typed));
+      expect(entry.anchorThbMinor, typed).toBe(priceAfterPercentDiscount(LINE.computedThbMinor, 500n));
+      expect(entry.anchorThbMinor, typed).toBe(835_100n);
+    }
+  });
+
+  it('always sends text carrying a literal %, which is what the server parses', () => {
+    for (const typed of FIVE_PERCENT_OFF) {
+      expect(shown(preview(LINE, 'percent_discount', typed)).enteredValueText, typed).toMatch(/%$/);
+    }
+  });
+
+  /*
+   * ⚠️ `entered_value_text` is plan 7.9(ก)'s record of what the salesperson said. A `-` survives
+   * because it was typed; one is never added.
+   */
+  it('appends the % and nothing else — no invented sign', () => {
+    expect(shown(preview(LINE, 'percent_discount', '5')).enteredValueText).toBe('5%');
+    expect(shown(preview(LINE, 'percent_discount', '-5')).enteredValueText).toBe('-5%');
+    expect(shown(preview(LINE, 'percent_discount', '7.5')).enteredValueText).toBe('7.5%');
+    expect(shown(preview(LINE, 'percent_discount', '  -15%  ')).enteredValueText).toBe('-15%');
+  });
+
+  /* The other three modes are already in the form the server parses, so nothing is added to them. */
+  it('leaves the absolute and money-discount modes exactly as typed', () => {
+    expect(shown(preview(LINE, 'line_total', ' 8500 ')).enteredValueText).toBe('8500');
+    expect(shown(preview(LINE, 'discount_amount', ' 291 ')).enteredValueText).toBe('291');
+    expect(shown(preview(LINE, 'discount_amount', '-291')).enteredValueText).toBe('-291');
+  });
+
+  it('refuses a blank percent box and a percentage that is not a number', () => {
+    expect(refusal(preview(LINE, 'percent_discount', '   '))).toContain('ยังไม่ได้กรอก');
+    expect(refusal(preview(LINE, 'percent_discount', '5.123'))).toContain('ทศนิยม');
+    expect(refusal(preview(LINE, 'percent_discount', '0'))).toContain('0%');
+  });
+
+  /*
+   * The cap has to be applied to what is *sent*, because a percentage grows by one character on the
+   * way out — 32 characters pass the check on the typed text and would then send 33.
+   *
+   * Zero-padding is the only way to reach 32 characters while staying a legal percentage (`5`
+   * repeated 32 times is refused as over 100% long before length matters). Contrived as an input,
+   * exact as a boundary: this is the case the second check exists for, and without it the contract's
+   * `enteredValueTextSchema` would refuse something this screen had already priced.
+   */
+  it('refuses at the contract length limit measured on the sent text, not the typed text', () => {
+    const padded = `${'0'.repeat(31)}5`;
+    expect(padded).toHaveLength(32);
+    /* Still an ordinary five percent, so nothing else refuses it. */
+    expect(shown(preview(LINE, 'percent_discount', '05')).anchorThbMinor).toBe(835_100n);
+    expect(refusal(preview(LINE, 'percent_discount', padded))).toContain('ยาวเกิน');
+  });
+});
+
 describe('refusals that mirror a CHECK in packages/db', () => {
   it('refuses a value equal to the baseline — quote_overrides_value_differs', () => {
     expect(refusal(preview(LINE, 'line_total', '8791'))).toContain('เท่ากับที่คำนวณได้');

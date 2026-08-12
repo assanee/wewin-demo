@@ -73,9 +73,12 @@ export type TypedSign = 'negative' | 'positive' | 'unsigned';
 /** Why a typed discount is not usable. Rendered as prose by the caller, never here. */
 export type DiscountRefusal = 'surcharge' | 'above_full';
 
-export type DiscountRule<T> =
+/** A verdict carrying a reason code and no language. `R` widens for `normalisePercentEntry`. */
+export type Ruled<T, R> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly refusal: DiscountRefusal };
+  | { readonly ok: false; readonly refusal: R };
+
+export type DiscountRule<T> = Ruled<T, DiscountRefusal>;
 
 /** One hundred percent, in basis points. A discount at the ceiling is a free window. */
 export const FULL_DISCOUNT_BP = 10_000n;
@@ -128,3 +131,67 @@ export function discountMinor(sign: TypedSign, magnitudeMinor: bigint): Discount
  */
 export const priceAfterPercentDiscount = (computedMinor: bigint, bp: bigint): bigint =>
   roundToUnit(computedMinor - divRoundHalfUp(computedMinor * bp, FULL_DISCOUNT_BP), THB_PRESENTATION_MINOR);
+
+/* ------------------------------------------------------------------ *
+ * What a person types → the text the wire requires
+ * ------------------------------------------------------------------ */
+
+/**
+ * A percentage in every shape a person types one: a bare number, a sign, a `%`, or both.
+ *
+ * `+` is *matched* rather than excluded, so that an explicit surcharge is refused with a reason
+ * that names it. Left unmatched it failed as "not a percentage", which is a lie about what is
+ * wrong with `+5`.
+ */
+const TYPED_PERCENT = /^([-+]?)(\d+(?:\.\d{1,2})?)$/;
+
+export type PercentEntryRefusal = DiscountRefusal | 'empty' | 'unreadable' | 'no_change';
+
+export interface PercentEntry {
+  /** Basis points off. `5`, `-5`, `5%` and `-5%` all produce 500. */
+  readonly bp: bigint;
+  /**
+   * The characters to put on the wire, which is **not always what was typed**.
+   *
+   * `apps/api/src/quotes/entry.ts` requires a literal `%` on a `percent_discount` — the guard
+   * that stops `291` being read as 291 percent — and the dashboard's field renders the `%` as a
+   * decoration rather than as text, so a salesperson who types `5` into a box captioned
+   * ส่วนลด and showing `%` sends `5`, and the server refuses it. This is the appended `%`.
+   *
+   * ⚠️ **Nothing else is added.** A `-` is preserved because it was typed and a `+` never gets
+   * here, but no sign is ever *invented*: the server reads `5%` and `-5%` identically, so
+   * fabricating a minus would put a character into `entered_value_text` that the human did not
+   * write, in the one column plan 7.9(ก) keeps as the record of what they actually said.
+   */
+  readonly wireText: string;
+}
+
+/**
+ * The single reader of a typed percentage, for the preview **and** for the request.
+ *
+ * This is here rather than in the dialog for the reason the sign rule is: a second place that
+ * knows how to read a percentage is the shape the original defect had. The screen calls it to
+ * show a figure, and the text it hands back is what gets sent — so the number previewed and the
+ * number the server normalises come from one parse of one string.
+ */
+export function normalisePercentEntry(typed: string): Ruled<PercentEntry, PercentEntryRefusal> {
+  /* A `%` the person typed, with or without a space before it. The decoration is not text. */
+  const trimmed = typed.trim().replace(/\s*%$/, '');
+  if (trimmed === '') return { ok: false, refusal: 'empty' };
+
+  const match = TYPED_PERCENT.exec(trimmed);
+  if (match === null) return { ok: false, refusal: 'unreadable' };
+
+  const [, sign = '', digits = '0'] = match;
+  const [whole = '0', fraction = ''] = digits.split('.');
+  const magnitude = BigInt(whole) * PERCENT_TO_BP + BigInt(fraction.padEnd(2, '0'));
+  if (magnitude === 0n) return { ok: false, refusal: 'no_change' };
+
+  const ruled = discountBp(sign === '-' ? 'negative' : sign === '+' ? 'positive' : 'unsigned', magnitude);
+  if (!ruled.ok) return ruled;
+
+  return { ok: true, value: { bp: ruled.value, wireText: `${sign}${digits}%` } };
+}
+
+/** Two decimal places of a *percent* is exactly one basis point, so `7.5%` is 750 bp. */
+const PERCENT_TO_BP = 100n;

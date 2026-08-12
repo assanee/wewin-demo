@@ -9,7 +9,7 @@ import {
   readCharge,
   readDays,
   readDiscountBaht,
-  readPercentBp,
+  readPercentEntry,
   readQty,
   readSignedBaht,
   signedBaht,
@@ -99,11 +99,13 @@ describe('showing money', () => {
 });
 
 describe('percent', () => {
+  const bp = (text: string): bigint => value(readPercentEntry(text)).bp;
+
   it('reads whole and fractional percentages as basis points', () => {
-    expect(value(readPercentBp('5'))).toBe(500n);
-    expect(value(readPercentBp('7.5'))).toBe(750n);
-    expect(value(readPercentBp('3.31'))).toBe(331n);
-    expect(value(readPercentBp('100'))).toBe(10_000n);
+    expect(bp('5')).toBe(500n);
+    expect(bp('7.5')).toBe(750n);
+    expect(bp('3.31')).toBe(331n);
+    expect(bp('100')).toBe(10_000n);
   });
 
   /*
@@ -113,21 +115,48 @@ describe('percent', () => {
    * `@wewin/core/discount`'s now, and a discount box only discounts.
    */
   it('takes the magnitude, because a discount box only discounts', () => {
-    expect(value(readPercentBp('-5'))).toBe(500n);
-    expect(value(readPercentBp('-7.5'))).toBe(750n);
-    expect(value(readPercentBp('-5'))).toBe(value(readPercentBp('5')));
+    expect(bp('-5')).toBe(500n);
+    expect(bp('-7.5')).toBe(750n);
+    expect(bp('-5')).toBe(bp('5'));
   });
 
-  it('refuses an explicit surcharge by name rather than as an unreadable figure', () => {
-    const refused = readPercentBp('+5');
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.reasonTh).toContain('เพิ่มราคาไม่ได้');
+  /**
+   * ⭐ The `%` is a decoration on the field, so a salesperson sends `5`; the server requires a
+   * literal `%`. The append happens in `@wewin/core/discount` and this asserts the screen gets the
+   * benefit of it — including that a sign is **never invented**, since `entered_value_text` is the
+   * record of what a person said.
+   */
+  it('sends the % the field only draws, and no sign the person did not type', () => {
+    expect(value(readPercentEntry('5')).wireText).toBe('5%');
+    expect(value(readPercentEntry('-5')).wireText).toBe('-5%');
+    expect(value(readPercentEntry('5%')).wireText).toBe('5%');
+    expect(value(readPercentEntry('7.5')).wireText).toBe('7.5%');
+    expect(value(readPercentEntry('5')).wireText).not.toContain('-');
+  });
+
+  it('refuses an explicit surcharge and names the two routes that do raise a price', () => {
+    for (const typed of ['+5', '+5%']) {
+      const refused = readPercentEntry(typed);
+      expect(refused.ok, typed).toBe(false);
+      if (!refused.ok) {
+        expect(refused.reasonTh).toContain('เพิ่มราคาไม่ได้');
+        expect(refused.reasonTh).toContain('จำนวนเงิน');
+        expect(refused.reasonTh).toContain('รายการใหม่');
+      }
+    }
   });
 
   it('refuses a discount that changes nothing and one that would go below zero', () => {
-    expect(readPercentBp('0').ok).toBe(false);
-    expect(readPercentBp('101').ok).toBe(false);
-    expect(readPercentBp('-101').ok).toBe(false);
+    expect(readPercentEntry('0').ok).toBe(false);
+    expect(readPercentEntry('0%').ok).toBe(false);
+    expect(readPercentEntry('101').ok).toBe(false);
+    expect(readPercentEntry('-101').ok).toBe(false);
+  });
+
+  it('refuses a blank box and something that is not a number, each with its own sentence', () => {
+    for (const typed of ['', '   ', '%', 'abc', '5.123']) {
+      expect(readPercentEntry(typed).ok, typed).toBe(false);
+    }
   });
 
   it('reads a money discount as a magnitude too, and refuses a surcharge in that box', () => {

@@ -1,4 +1,4 @@
-import { priceAfterPercentDiscount } from '@wewin/core/discount';
+import { normalisePercentEntry, priceAfterPercentDiscount } from '@wewin/core/discount';
 import { describe, expect, it } from 'vitest';
 
 import { EntryError, normaliseCharge, normaliseEntry } from '../../src/quotes/entry';
@@ -166,6 +166,43 @@ describe('a discount may only discount', () => {
       kind: 'money',
       overrideThbMinor: 835_100n,
     });
+  });
+
+  /**
+   * ⭐ THE LOOP, CLOSED ACROSS BOTH APPS WITH `@wewin/core` AS THE ONLY BRIDGE.
+   *
+   * The dashboard's percent box renders `%` as a decoration, so a salesperson types `5`. The guard
+   * above refuses a bare number on purpose — that is what stops `291` being read as 291 percent —
+   * and the owner's ruling is that the **client sends what the guard requires** rather than the
+   * guard being loosened. `normalisePercentEntry` does the appending, in core, for both sides.
+   *
+   * This walks every form a person types, takes the exact `wireText` the dashboard would send, and
+   * asserts this function produces the figure the dashboard previewed from the same parse. A
+   * cross-app test is not otherwise possible here — the two apps cannot import each other — so this
+   * is where "the number shown equals the number applied" is nailed down for the real inputs.
+   */
+  it('accepts every wire text the dashboard produces, and agrees on the figure', () => {
+    for (const typed of ['5', '-5', '5%', '-5%', ' 5 ', '5 %', '7.5', '-3.31', '100']) {
+      const entry = normalisePercentEntry(typed);
+      if (!entry.ok) throw new Error(`the screen would refuse ${typed}: ${entry.refusal}`);
+
+      /* What the salesperson sees, computed by the screen from its own parse. */
+      const previewed = priceAfterPercentDiscount(BASELINE, entry.value.bp);
+
+      /* What this function stores, from the characters that parse produced. */
+      expect(money('percent_discount', entry.value.wireText), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: previewed,
+      });
+    }
+  });
+
+  /* The forms the screen refuses never reach here — but if one did, it must not become a discount. */
+  it('refuses the surcharge form the screen also refuses', () => {
+    for (const typed of ['+5', '+5%']) {
+      expect(normalisePercentEntry(typed).ok, typed).toBe(false);
+      expect(() => money('percent_discount', typed)).toThrow(EntryError);
+    }
   });
 });
 

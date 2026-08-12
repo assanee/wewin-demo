@@ -133,7 +133,14 @@ export function OverrideDialog({
             mono
             description={DESCRIPTION_TH[enteredAs]}
             {...(enteredAs === 'percent_discount'
-              ? { suffix: '%', placeholder: 'เช่น 5 หรือ 7.5' }
+              ? /*
+                 * The placeholder shows the discount it is: `5` in this box means five percent
+                 * *off*, and typing it is now enough — the `%` is appended on the way out. It used
+                 * to read `เช่น 5 หรือ 7.5` while the server refused a bare `5` and its 422 replied
+                 * `เช่น "-15%"`, which is how a salesperson got talked into the one input that
+                 * previewed a surcharge and stored a discount.
+                 */
+                { suffix: '%', placeholder: 'เช่น 5 = ลด 5% หรือ 7.5 = ลด 7.5%' }
               : enteredAs === 'lead_time_days'
                 ? { suffix: 'วัน', placeholder: 'เช่น 30' }
                 : { prefix: '฿', placeholder: hintFor(context, enteredAs) })}
@@ -179,7 +186,14 @@ export function OverrideDialog({
                   anchor: ready.anchor,
                   quoteLineId: context.anchor === 'line_total' ? context.quoteLineId : null,
                   enteredAs: ready.enteredAs,
-                  /* Verbatim. Nothing about the preview above goes up. */
+                  /*
+                   * No money goes up — not the preview, not a baseline. What goes up is the text,
+                   * normalised by `@wewin/core/discount` into the form the server parses: a
+                   * percentage carries the `%` the box above only *draws*. The dialog does not do
+                   * that itself on purpose — patching the string here, after the preview had been
+                   * computed from the unpatched one, is precisely the two-readers shape that made
+                   * `-5%` preview a surcharge and store a discount.
+                   */
                   enteredValueText: ready.enteredValueText,
                   reasonCode,
                   noteTh: noteTh.trim() === '' ? null : noteTh.trim(),
