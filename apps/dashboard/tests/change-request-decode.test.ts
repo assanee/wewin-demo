@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changeRequestWireSchema, type OrderWire } from '@wewin/contract/order';
+import { changeRequestWireSchema, encodeThb, type OrderWire } from '@wewin/contract/order';
 
 import { decodeDetail } from '@/components/orders/order-api';
 
@@ -49,7 +49,7 @@ const WIRE: OrderWire = {
   isFrozen: false,
   frozenAt: null,
   submittedAt: '2026-08-08T03:00:00.000Z',
-  grandTotalThbMinor: { unit: 'THB.satang', digits: '1843200' },
+  grandTotalThbMinor: encodeThb(1843200n),
   updatedAt: '2026-08-09T09:09:09.000Z',
   createdAt: '2026-08-08T02:00:00.000Z',
   contact: {
@@ -60,10 +60,10 @@ const WIRE: OrderWire = {
     destinationCountry: null,
   },
   money: {
-    netThbMinor: { unit: 'THB.satang', digits: '1722617' },
-    vatThbMinor: { unit: 'THB.satang', digits: '120583' },
-    grandTotalThbMinor: { unit: 'THB.satang', digits: '1843200' },
-    scheduledDepositThbMinor: { unit: 'THB.satang', digits: '1843200' },
+    netThbMinor: encodeThb(1722617n),
+    vatThbMinor: encodeThb(120583n),
+    grandTotalThbMinor: encodeThb(1843200n),
+    scheduledDepositThbMinor: encodeThb(1843200n),
   },
   documentRevision: 1,
   supersedesOrderId: null,

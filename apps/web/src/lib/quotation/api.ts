@@ -1,5 +1,6 @@
 import { pinnedDocumentFrom, type PinnedDocument } from '@wewin/core/quotation';
 
+import { orderActionsFrom, type OrderActions } from '../orders/actions';
 import { reviewsApiBaseUrl } from '../reviews/api';
 
 /**
@@ -122,6 +123,20 @@ export interface LinkedQuotation {
   readonly status: string;
   readonly document: PinnedDocument;
   readonly seller: Seller | null;
+  /**
+   * ⭐ What this reader may *do* to the order — and `null` on the `?t=` path, on purpose.
+   *
+   * `LinkedDocumentWire` carries no order UUID: `document-link.controller.ts` refuses
+   * `/orders/{id}?t=…` so that a valid signature beside a chosen id cannot become every
+   * quotation the company has issued. Every action needs an order id, so the emailed link
+   * stays exactly as read-only as it was designed to be, and adding an id to that response to
+   * light up a button would undo the property the whole route is built on.
+   *
+   * The signed-in path (`?order=`) already fetches `GET /orders/:id`, whose response carries
+   * `availableTransitions` and `openChangeRequest`. Those two fields were being decoded and
+   * thrown away; now they are read. No extra request.
+   */
+  readonly actions: OrderActions | null;
 }
 
 export type QuotationFailure =
@@ -191,6 +206,14 @@ export function decodeQuotation(body: unknown): LinkedQuotation | null {
         scheduledDepositThbMinor: asSatang(body['scheduledDepositThbMinor']),
       }),
       seller: sellerFrom(body['seller']),
+      /*
+       * ⚠️ `null` here for both callers, and the owned path attaches its own below.
+       *
+       * This decoder is reached from the `?t=` route as well, where there is no order id and
+       * therefore nothing that could be acted on. Defaulting to "no actions" is what makes the
+       * read-only half read-only by construction rather than by a caller remembering.
+       */
+      actions: null,
     };
   } catch {
     return null;
@@ -286,5 +309,17 @@ export async function fetchQuotation(
     seller: wrapped['seller'],
   });
 
-  return data === null ? { ok: false, reason: 'malformed' } : { ok: true, data };
+  if (data === null) return { ok: false, reason: 'malformed' };
+
+  /*
+   * ⭐ The half of `GET /orders/:id` this file used to discard.
+   *
+   * `availableTransitions` is the server's answer to "what may *this actor* do next", built from
+   * `order_status_transitions` filtered by actor kind — so reading it is the only way to draw a
+   * cancel button that cannot 403. `openChangeRequest` is how the page knows an objection is
+   * already open, which is the difference between offering to raise one and offering to withdraw
+   * it. Attached here rather than inside `decodeQuotation` because it is the owned path that has
+   * an order id, and the token path must not acquire one.
+   */
+  return { ok: true, data: { ...data, actions: orderActionsFrom(source.orderId, summary) } };
 }

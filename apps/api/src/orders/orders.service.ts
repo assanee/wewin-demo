@@ -376,7 +376,7 @@ export class OrdersService {
     );
 
     if (row === undefined) {
-      throw AppError.conflict('ออร์เดอร์นี้ยกเลิกจากสถานะปัจจุบันไม่ได้', {
+      throw AppError.conflict(message('error.order.not_cancellable_from_status'), {
         status: order.status,
       });
     }

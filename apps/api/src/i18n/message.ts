@@ -225,6 +225,16 @@ const PARAM_SHAPES = {
   'error.order.check_failed': {},
   'error.order.state_changed': {},
   'error.order.locked': {},
+  /*
+   * A key rather than a literal, because this one is read by a *customer* on the storefront.
+   *
+   * `GET /orders/:id/cancellation-preview` refuses with this when the order has no `cancelled`
+   * edge from where it stands, which a browser meets by racing a staff transition — so it is a
+   * sentence a German or Burmese customer sees on a page that is otherwise entirely in their
+   * language. `envelope.test.ts` counts the remaining raw literals precisely so a new
+   * customer-facing route does not quietly add one.
+   */
+  'error.order.not_cancellable_from_status': {},
 
   /* ── Quote constraints — src/quotes/pg-errors.ts ──────────────────────────── */
   'error.quote.override_already_on_line': {},

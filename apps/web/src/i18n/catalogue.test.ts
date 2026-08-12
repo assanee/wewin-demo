@@ -192,6 +192,24 @@ const SAMPLE_PARAMS = {
   accountDigits: '1234567890',
   reason: 'ยอดเงินไม่ตรงกับที่แจ้ง',
   limitMib: 8,
+  /*
+   * Acting on your own order — the cancel and objection strings.
+   *
+   * `openedAt` is an already-rendered date, the same exception `observedAt` above is: the
+   * component formats it through `f.date` because the wire carries an ISO string and a
+   * catalogue entry that called `new Date()` on a param would be parsing, not presenting.
+   *
+   * ⚠️ Three separate money params rather than one `minor`, and none of them divisible by 100.
+   * `minor` is already bound to `879_100n` for `price.perPiece`, and these are figures with a
+   * different shape of consequence — the amount somebody is about to forfeit is not a unit
+   * price. The three are also internally coherent (`held = forfeit + refund`, 1843267 =
+   * 921634 + 921633), so a catalogue that swapped two of them in one sentence reads as
+   * nonsense to a person rather than as three plausible numbers.
+   */
+  openedAt: '9 สิงหาคม 2569',
+  heldMinor: 1_843_267n,
+  forfeitMinor: 921_634n,
+  refundMinor: 921_633n,
 } as const;
 
 describe('a lookup always returns a sentence', () => {

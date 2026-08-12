@@ -445,6 +445,45 @@ export const en: PartialUiCatalogue = {
   'quotation.seller.phone': 'Telephone',
   'quotation.seller.taxId': 'Tax ID',
 
+  'orderActions.heading': 'Manage this order',
+  'orderActions.object.title': 'Request a change',
+  'orderActions.object.body':
+    'If something is wrong, ask for a change first. The order will not enter production until our staff reply, and nothing is deducted.',
+  'orderActions.object.noteLabel': 'What needs changing',
+  'orderActions.object.notePlaceholder': 'For example: change the colour to black, or reduce the width by 10 cm.',
+  'orderActions.object.submit': 'Send the request',
+  'orderActions.object.sending': 'Sending…',
+  'orderActions.object.sent': 'Your change request has been sent. Our sales team will be in touch.',
+  'orderActions.object.open': ({ openedAt }) => `A change request is awaiting a reply, sent ${openedAt}`,
+  'orderActions.object.openBody':
+    'This order will not enter production until it is answered. If you sent it by mistake, you can withdraw it.',
+  'orderActions.object.withdraw': 'Withdraw the request',
+  'orderActions.object.withdrawing': 'Withdrawing…',
+  'orderActions.object.withdrawn': 'Your change request has been withdrawn.',
+  'orderActions.cancel.title': 'Cancel this order',
+  'orderActions.cancel.body': 'Cancelling cannot be undone. Ordering again means starting a new quotation.',
+  'orderActions.cancel.start': 'Cancel this order',
+  'orderActions.cancel.preFreezeNote': 'This order has not entered production. No aluminium has been cut.',
+  'orderActions.cancel.postFreezeNote':
+    '⚠️ This order is already in production — aluminium has been cut to your design. Cancelling now means money is kept, under the policy agreed when the contract was signed.',
+  'orderActions.cancel.pricing': 'Working out the amount…',
+  'orderActions.cancel.held': ({ heldMinor }, f) => `We are holding ${f.bahtExact(heldMinor)}`,
+  'orderActions.cancel.forfeit': ({ forfeitMinor }, f) => `${f.bahtExact(forfeitMinor)} would be kept`,
+  'orderActions.cancel.refund': ({ refundMinor }, f) => `${f.bahtExact(refundMinor)} would come back to you`,
+  'orderActions.cancel.freeCancellation': 'You can cancel with nothing kept — the full amount comes back.',
+  'orderActions.cancel.noMoney': 'No payment has been received, so there is nothing to keep or return.',
+  'orderActions.cancel.reasonLabel': 'Why are you cancelling?',
+  'orderActions.cancel.reasonPlaceholder': 'For example: changed my mind, or the project is postponed.',
+  'orderActions.cancel.confirm': 'Confirm cancellation',
+  'orderActions.cancel.cancelling': 'Cancelling…',
+  'orderActions.cancel.keep': 'Keep the order',
+  'orderActions.cancel.done': 'This order has been cancelled.',
+  'orderActions.problem.unconfigured': 'This site is not fully configured. Please contact our sales team.',
+  'orderActions.problem.unreachable': 'We could not reach the system. Please try again.',
+  'orderActions.problem.unauthorized': 'Your session has expired. Please sign in again.',
+  'orderActions.problem.refused': 'That could not be done.',
+  'orderActions.problem.malformed': 'We could not read the reply from the system. Please try again.',
+
   /* ---- Display settings ------------------------------------------------------
    *
    * Translated here as well as in Thai because this is the one screen whose whole subject is

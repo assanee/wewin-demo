@@ -109,6 +109,7 @@ export const TH: Catalogue = {
   'error.order.concurrent_document': 'มีการแก้ไขใบเสนอราคาพร้อมกัน — กรุณาโหลดใหม่',
   'error.order.cannot_return_to_awaiting_payment':
     'ออร์เดอร์ที่เข้าสู่การผลิตแล้วกลับไปสถานะรอชำระเงินไม่ได้',
+  'error.order.not_cancellable_from_status': 'ออร์เดอร์นี้ยกเลิกจากสถานะปัจจุบันไม่ได้',
   'error.order.duplicate': 'ข้อมูลนี้ซ้ำกับที่มีอยู่แล้ว',
   'error.order.missing_reference': 'อ้างถึงข้อมูลที่ไม่มีอยู่',
   'error.order.check_failed': 'ข้อมูลไม่ผ่านเงื่อนไขของออร์เดอร์',
