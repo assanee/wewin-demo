@@ -42,9 +42,46 @@ export const fxRates = pgTable(
     base: char('base', { length: 3 }).notNull(),
     rates: jsonb('rates').$type<Record<string, number>>().notNull(),
     source: text('source').notNull(),
+    /**
+     * ⭐ What made this fetch happen — `'scheduled'`, `'startup'`, or `'manual'`.
+     *
+     * `source` beside it names the *provider*; this names the *cause*, and the two are
+     * deliberately different columns rather than one overloaded string. A row's provenance was
+     * previously unrecoverable: every row looked like the daily tick, so once a person could
+     * press a button there would have been no way to tell an afternoon of impatient clicks from
+     * a month of cron.
+     *
+     * ⭐ **It is what bounds the manual button's quota, and that is why it lives here rather
+     * than in the service's memory.** The free Open Exchange Rates plan allows 1,000 requests a
+     * month for the *whole system*, and when that is spent the *scheduled* sync stops too — so
+     * the budget is a property of the provider account, not of one Node process. An in-memory
+     * counter (the shape `SignInThrottle` and `FunnelThrottleMiddleware` both use, correctly,
+     * for their own problems) resets on deploy and is per-instance, and a deploy is exactly the
+     * moment somebody is standing over the button. Counting rows instead makes the guard
+     * survive a restart and agree across instances.
+     *
+     * It also keeps the count *derived* rather than stored, which is the rule
+     * `fx_sync_failures`'s own header states: a manual attempt lands in exactly one of these
+     * two tables — here when the provider answered, in `fx_sync_failures` when it did not — so
+     * "how many manual syncs in the last day" is measured against the very rows it is
+     * describing and cannot drift from them.
+     *
+     * ⚠️ **No actor column, and the omission is a decision.** Both tables refuse UPDATE by
+     * trigger, and `erase_user()` (0030) scrubs staff actors by *updating* the rows that name
+     * them — so a `triggered_by_user_id` here would be a staff identifier erasure provably
+     * cannot reach, exactly the residue 0030's own `withheld` note lists for
+     * `notification_attempts.recipient_key`. A manual sync changes no setting and moves no
+     * figure; it spends a shared budget, and the budget is what needs a record. If the owner
+     * wants the name of whoever pressed it, that is a separate table that is not append-only.
+     */
+    triggerKind: text('trigger_kind').notNull().default('scheduled'),
   },
   (t) => [
     check('fx_rates_base_shape', sql`${t.base} ~ '^[A-Z]{3}$'`),
+    check(
+      'fx_rates_trigger_kind_known',
+      sql`${t.triggerKind} in ('scheduled', 'startup', 'manual')`,
+    ),
     /* The only order this table is ever read in once something reads it: newest first. */
     index('fx_rates_fetched_at_idx').on(t.fetchedAt.desc()),
   ],
@@ -89,9 +126,23 @@ export const fxSyncFailures = pgTable(
      * `app_id` travels in the URL. See `FxRatesService`'s header.
      */
     detail: text('detail').notNull(),
+    /**
+     * What made this attempt happen — the same three words, and the same column, as
+     * `fx_rates.trigger_kind`. See that column's note for the whole argument.
+     *
+     * ⚠️ It has to be on *both* tables or the quota count is wrong in the one direction that
+     * matters. A manual sync that failed still spent a provider request, so counting only the
+     * successes in `fx_rates` would let somebody hold the button down through an outage and
+     * spend the month's budget without the guard ever seeing a single attempt.
+     */
+    triggerKind: text('trigger_kind').notNull().default('scheduled'),
   },
   (t) => [
     check('fx_sync_failures_stage_known', sql`${t.stage} IN ('fetch', 'parse', 'store')`),
+    check(
+      'fx_sync_failures_trigger_kind_known',
+      sql`${t.triggerKind} in ('scheduled', 'startup', 'manual')`,
+    ),
     /* Newest first, always bounded against the newest `fx_rates.fetched_at`. */
     index('fx_sync_failures_attempted_at_idx').on(t.attemptedAt.desc()),
   ],

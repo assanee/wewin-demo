@@ -56,7 +56,16 @@ export interface PgHarnessHandle {
  * block inside one that needs its own fresh database) makes its own handle rather than sharing
  * `opened` across two independent lifecycles.
  */
-export function createPgHarness(url: string): PgHarnessHandle {
+/**
+ * @param env extra environment for the booted app, merged over `testEnv`'s defaults.
+ *
+ * Added for `fx-manual-sync.pg.test.ts`, which has to boot with `OPENEXCHANGERATES_APP_ID` set:
+ * without a key `FxRatesService` returns `'disabled'` and spends nothing, so the quota guard it
+ * exists to prove can never engage. `DATABASE_URL` is applied *after* this and is deliberately
+ * not overridable — pointing a harness at a database it does not provision is the one mistake
+ * this helper exists to prevent.
+ */
+export function createPgHarness(url: string, env: Record<string, string> = {}): PgHarnessHandle {
   let opened: { readonly app: BootedApp; readonly pool: Pool } | undefined;
 
   const closeOpened = async (): Promise<void> => {
@@ -76,7 +85,7 @@ export function createPgHarness(url: string): PgHarnessHandle {
     // Restore the catalogue every provision, not only migrations — see the file header above.
     await seedCatalog(db);
 
-    const app = await bootApp(testEnv({ DATABASE_URL: url }));
+    const app = await bootApp(testEnv({ ...env, DATABASE_URL: url }));
     opened = { app, pool };
 
     const [user] = await db

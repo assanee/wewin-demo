@@ -1,14 +1,24 @@
 'use client';
 
-import { AlertTriangle, CheckCircle2, Clock, MailX } from 'lucide-react';
-import type { FxRateHealthWire } from '@wewin/contract/organisation';
+import { useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock, Loader2, MailX, RefreshCw } from 'lucide-react';
+import type {
+  FxConfiguredRateWire,
+  FxManualSyncBudgetWire,
+  FxManualSyncResultWire,
+  FxRateHealthWire,
+} from '@wewin/contract/organisation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FieldGroup } from '@/components/ui/field';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReadOnlyField } from '@/components/products/form-field';
+import { failureMessage } from '@/lib/api/errors';
+import { postFxManualSync } from './fx-health-api';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -20,10 +30,31 @@ import { ReadOnlyField } from '@/components/products/form-field';
  * nobody performed. Both facts existed and neither was reachable by a person, which is the
  * definition of a silent failure. This card is the reachable half.
  *
- * Read-only, and it holds no controls at all — not even a refresh button. There is nothing here
- * to set: the two thresholds are constants in `apps/api/src/fx/staleness.ts`, and the rate is
+ * ⚠️ **It used to say "read-only, and it holds no controls at all — not even a refresh button",
+ * and it now holds exactly one.** The half of that sentence that stands is that nothing here is
+ * *settable*: the two thresholds are constants in `apps/api/src/fx/staleness.ts`, and the rate is
  * changed by an administrator editing a *destination* in the tax-country table below, which is
- * why this card sits directly above that table rather than at the top of the page.
+ * still why this card sits directly above that table rather than at the top of the page. What
+ * changed is that there is now one thing here that is *doable* — ซิงก์เดี๋ยวนี้ — and it sets no
+ * value: it asks the provider for the number 01:00 would have asked for. See `SyncNowPanel`.
+ *
+ * ── ⭐ AND IT NOW SHOWS THE NUMBERS, NOT ONLY THE HEALTH ─────────────────────────
+ *
+ * The card reported how *old* the rate was and never what it *was*, which meant the one thing a
+ * person actually opens this screen to do — check the system's rate against the one they know —
+ * was the one thing it could not help with. `configuredRates` on the payload is that gap closed,
+ * and the whole of the design is in two rules that `configured-rates.ts` argues server-side and
+ * this file renders:
+ *
+ *   1. **Only the currencies that matter.** The feed carries ~170; the ones on this card are the
+ *      ones configured on a destination in `tax_countries`, which is a list of two.
+ *   2. **⭐ The provider's number is never presented as the rate.** `rates['SGD'] = 1.35` means
+ *      1.35 Singapore dollars per US dollar; the figure staff need is ~27 baht per Singapore
+ *      dollar. A reciprocal, a cross-rate and a spread separate them. Every rate on this card is
+ *      rendered with its unit welded into the string (`27.037037 บาท ต่อ 1 SGD`), and every raw
+ *      provider figure as a full equation naming the base (`1 USD = 1.35 SGD`), in muted text,
+ *      under a label that says it is not what prices anything. A person comparing against Google
+ *      has to be unable to pick up the wrong one.
  *
  * ── ⭐ The wording is the feature, and there are five states, not three ──────────
  *
@@ -460,10 +491,304 @@ export function fxClockTh(iso: string | null, format: (iso: string) => string = 
 }
 
 /* ------------------------------------------------------------------ *
+ * ⭐ The numbers that were synced — and keeping them apart from the provider's
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐⭐ **THE RATE — baht per one unit, with the unit written into the string.**
+ *
+ * This is the figure a staff member compares against a bank's screen or a search engine, and it
+ * is the only one on the card that is comparable against either. Everything about how it is
+ * rendered is aimed at one failure: somebody reading the provider's `1.35` as though it were a
+ * baht rate.
+ *
+ * ⚠️ **The unit is part of the value, not a column heading.** `27.037037` under a heading that
+ * says "อัตรา" is a number a reader supplies their own units for, and the units they supply will
+ * be whichever ones they were already thinking about. `27.037037 บาท ต่อ 1 SGD` cannot be
+ * misread, survives being copied into a chat message, and is still right when the heading has
+ * scrolled off the top of a phone. The provider's raw figures below get the identical treatment
+ * for the identical reason — see `fxProviderRawTh`.
+ *
+ * `null` when there is no resolved rate; `fxRateProblemTh` says why instead.
+ */
+export function fxRateTh(rate: FxConfiguredRateWire): string | null {
+  if (rate.effectiveThbPerUnit === null) return null;
+
+  return `${rate.effectiveThbPerUnit} บาท ต่อ 1 ${rate.currency}`;
+}
+
+/**
+ * Where that rate came from, in the words the tax-country dialog uses for the same settings.
+ *
+ * ⚠️ The manual arm says the spread is **not** applied, out loud, even though `spreadApplied` is
+ * on the payload and the card could simply not mention it. THE RULE in `packages/core/src/fx.ts`
+ * is genuinely surprising the first time — an administrator who set a spread and then typed an
+ * override reasonably expects both to be in force — and a screen that stays silent about it lets
+ * that expectation survive contact with a figure that contradicts it.
+ */
+export function fxRateSourceTh(rate: FxConfiguredRateWire): string {
+  if (rate.source === 'manual') {
+    return rate.spreadBp === 0
+      ? 'อัตราแลกเปลี่ยนกำหนดเอง (กรอกไว้ที่ประเทศนี้)'
+      : `อัตราแลกเปลี่ยนกำหนดเอง (กรอกไว้ที่ประเทศนี้) — ส่วนต่าง ${fxSpreadTh(rate.spreadBp)} ที่ตั้งไว้ไม่ถูกนำมาใช้ซ้ำกับอัตราที่กรอกเอง`;
+  }
+
+  return rate.spreadBp === 0
+    ? 'อัตรากลางตลาดจากผู้ให้บริการ (ไม่ได้ตั้งส่วนต่างไว้)'
+    : `อัตรากลางตลาดจากผู้ให้บริการ หักส่วนต่าง ${fxSpreadTh(rate.spreadBp)} แล้ว`;
+}
+
+/** Basis points as a percentage: `200` → `'2%'`, `250` → `'2.5%'`. */
+export function fxSpreadTh(spreadBp: number): string {
+  const percent = Math.round((spreadBp / 100) * 100) / 100;
+  return `${String(percent)}%`;
+}
+
+/**
+ * ⭐ The mid-market rate before the spread — and `null` whenever there is not one.
+ *
+ * Shown only for `source: 'mid_market'`, because that is the only case in which a "rate before
+ * the spread" exists. See `FxConfiguredRateWire.midThbPerUnit`: for an override the server sends
+ * `null` deliberately rather than deriving a figure the system would never apply, and this
+ * function's job is to not invent one either.
+ */
+export function fxMidRateTh(rate: FxConfiguredRateWire): string | null {
+  if (rate.midThbPerUnit === null) return null;
+
+  return `ก่อนหักส่วนต่าง: ${rate.midThbPerUnit} บาท ต่อ 1 ${rate.currency}`;
+}
+
+/**
+ * ⭐⭐ **THE PROVIDER'S OWN NUMBERS — and the sentence that stops them being mistaken for the rate.**
+ *
+ * The free plan is USD-base, so what the feed actually holds for Singapore is `1.35`, meaning
+ * *1.35 Singapore dollars per US dollar*. The useful figure is ~27 baht per Singapore dollar.
+ * Between them sit a reciprocal, a cross-rate through USD and a spread. They are not the same
+ * quantity and not the same order of magnitude, and a staff member checking "SGD to THB" against
+ * a search engine will see 27.
+ *
+ * So every raw figure is rendered as a **full equation including the base** — `1 USD = 1.35 SGD`
+ * — rather than as a bare number under a heading. An equation cannot be silently re-unitised by
+ * the reader. And the string ends by saying outright that this is not the rate used for pricing,
+ * because a settings card is read at speed and the label above a value is the first thing to be
+ * skipped.
+ *
+ * `null` — say nothing — when there is no observation for this currency at all: a heading with
+ * "ไม่มี" under it invites a reader to wonder what is broken, and `fxRateProblemTh` is already
+ * saying what is.
+ */
+export function fxProviderRawTh(rate: FxConfiguredRateWire, base: string | null): string | null {
+  if (rate.provider === null || base === null) return null;
+
+  return (
+    `1 ${base} = ${String(rate.provider.unitPerBase)} ${rate.currency} · ` +
+    `1 ${base} = ${String(rate.provider.thbPerBase)} THB — ` +
+    'เป็นตัวเลขดิบที่ผู้ให้บริการส่งมา อิงฐาน ' +
+    `${base} ไม่ใช่อัตราที่ระบบใช้เสนอราคา`
+  );
+}
+
+/**
+ * ⭐ For a destination quoting off a typed override: the feed's number is **not what is used**.
+ *
+ * The owner's instruction on this was explicit — say so on screen rather than showing a figure
+ * that is never applied — and it is right, because a manual destination is the case in which the
+ * card is at its most misleading by default. The feed keeps bringing SGD in every day; that
+ * number is on this card because this card is about the feed; and it has no effect on a single
+ * baht of any quotation for as long as the override is set.
+ *
+ * The sentence also names the way *back*, because the pairing is what makes the state
+ * intelligible: clearing `อัตราแลกเปลี่ยนกำหนดเอง` is what puts the feed back in charge, and an
+ * administrator who does not know that will read this as the feed being broken for that country.
+ *
+ * `null` for a mid-market destination — there is nothing surprising to explain there.
+ */
+export function fxManualOverrideNoteTh(rate: FxConfiguredRateWire): string | null {
+  if (rate.source !== 'manual') return null;
+
+  return (
+    `ประเทศนี้ใช้อัตราที่กรอกเองไว้ ${rate.effectiveThbPerUnit ?? '—'} บาท ต่อ 1 ${rate.currency} ` +
+    'ระบบจึงไม่ได้ใช้ตัวเลขที่ดึงมาจากผู้ให้บริการกับประเทศนี้เลย แม้จะดึงมาได้ทุกวันก็ตาม — ' +
+    'ตัวเลขของผู้ให้บริการที่แสดงไว้จึงมีไว้ให้เทียบดูเฉยๆ ไม่ได้ใช้คิดราคา ' +
+    'ถ้าต้องการกลับไปใช้อัตราตลาดตามที่ดึงมา ให้ล้างช่อง “อัตราแลกเปลี่ยนกำหนดเอง” ของประเทศนี้ในตารางด้านล่าง'
+  );
+}
+
+/**
+ * Why a destination has no usable rate, in a sentence naming what to do about it.
+ *
+ * `null` when there is one. The four causes come from `@wewin/core/fx`'s own vocabulary plus
+ * `no_snapshot`, and they are worded apart because the fixes are genuinely different: an empty
+ * table is a sync problem, a currency the provider does not carry is a configuration problem, and
+ * an unreadable override is a typo in a text box on this very page.
+ *
+ * ⚠️ An unrecognised cause resolves toward "unusable", never toward silence — the same stance
+ * `fxHealthVerdict` takes about an unknown `status`, for the same reason. A blank cell where a
+ * rate belongs reads as "loading", and this row is not loading, it is refusing.
+ */
+export function fxRateProblemTh(rate: FxConfiguredRateWire): string | null {
+  if (rate.problem === null) return null;
+
+  switch (rate.problem) {
+    case 'no_snapshot':
+      return 'ยังไม่มีอัตราแลกเปลี่ยนในระบบเลย จึงคำนวณอัตราของประเทศนี้ไม่ได้ — ใบเสนอราคาสกุลเงินนี้จะถูกปฏิเสธจนกว่าจะดึงอัตราได้สำเร็จ หรือมีผู้ดูแลกรอกอัตราเอง';
+    case 'destination_rate_missing':
+      return `ชุดอัตราที่ดึงมาไม่มีสกุลเงิน ${rate.currency} อยู่ในนั้น จึงแปลงค่าให้ประเทศนี้ไม่ได้ — เป็นปัญหาเฉพาะประเทศนี้ ประเทศอื่นยังใช้ได้ตามปกติ ทางแก้คือกรอกอัตราแลกเปลี่ยนกำหนดเองให้ประเทศนี้`;
+    case 'baht_rate_missing':
+      return 'ชุดอัตราที่ดึงมาไม่มีค่าเงินบาทอยู่ในนั้น จึงแปลงจากบาทไม่ได้เลย — ปัญหานี้กระทบทุกประเทศพร้อมกัน ไม่ใช่เฉพาะประเทศนี้';
+    case 'manual_rate_unreadable':
+      return 'อัตราแลกเปลี่ยนกำหนดเองที่กรอกไว้อ่านเป็นตัวเลขไม่ได้ ระบบจึงไม่ใช้ทั้งอัตราที่กรอกและอัตราตลาด — ให้แก้ค่าในช่อง “อัตราแลกเปลี่ยนกำหนดเอง” ของประเทศนี้ในตารางด้านล่าง';
+    case 'same_currency':
+      return 'ประเทศนี้ถูกตั้งค่าสกุลเงินเป็นบาท ซึ่งไม่ใช่การแปลงค่า — ให้ล้างช่องสกุลเงินของประเทศนี้ในตารางด้านล่าง';
+    default:
+      return `ระบบคำนวณอัตราของประเทศนี้ไม่ได้ (เหตุผล "${rate.problem}" ที่แดชบอร์ดรุ่นนี้ไม่รู้จัก) — ให้ถือว่าใช้ไม่ได้ไว้ก่อน`;
+  }
+}
+
+/**
+ * What to say when there are no rows at all — and there are two reasons for that, not one.
+ *
+ * `null` when there is at least one destination to show.
+ *
+ * ⚠️ The two empties are told apart, because they need opposite responses. **No destination
+ * configured** is an ordinary state of a business selling only in Thailand, and nothing is wrong.
+ * **Destinations configured but nothing ever synced** is the state in which every foreign
+ * quotation is already being refused. A single "ไม่มีข้อมูล" covering both would reassure a reader
+ * during an outage.
+ */
+export function fxNoConfiguredRatesTh(health: FxRateHealthWire): string | null {
+  if (health.configuredRates.length > 0) return null;
+
+  return 'ยังไม่มีประเทศปลายทางใดตั้งค่าสกุลเงินต่างประเทศไว้ ทุกใบเสนอราคาจึงคิดเป็นเงินบาทอย่างเดียว และอัตราที่ดึงมาไม่ได้ถูกนำไปใช้กับใบใดเลย — ถ้าต้องการเสนอราคาเป็นสกุลเงินอื่น ให้ตั้งค่าสกุลเงินที่ประเทศปลายทางในตารางด้านล่าง';
+}
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The manual sync, its budget, and its most common outcome
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ How much of the manual sync's budget is left — printed **before** the button is pressed.
+ *
+ * The whole difficulty with this guard is that its cost is displaced in time. Spending the
+ * month's quota today does not hurt today; it hurts next week, when the 01:00 sync draws on the
+ * same 1,000 requests, finds none, and the rate quietly stops moving until a foreign quotation is
+ * refused. Nobody makes that connection unprompted, so the screen makes it: this sentence names
+ * the shared pool every time, not only when the budget is nearly gone.
+ *
+ * Every figure comes from the response — `dailyLimit` is a server constant reported down, exactly
+ * as `warnAfterHours` is, so this screen keeps no copy of a number the refusal compares against.
+ */
+export function fxSyncBudgetTh(budget: FxManualSyncBudgetWire): string {
+  return (
+    `เหลือสิทธิ์ซิงก์ด้วยตนเอง ${String(budget.remainingToday)} จาก ${String(budget.dailyLimit)} ครั้งในรอบ 24 ชั่วโมง — ` +
+    'โควตาการดึงจากผู้ให้บริการเป็นของทั้งระบบร่วมกัน และรอบดึงอัตโนมัติตอนตีหนึ่งใช้โควตาก้อนเดียวกัน ' +
+    'การกดถี่ ๆ วันนี้จึงทำให้รอบอัตโนมัติดึงไม่ได้ในสัปดาห์หน้า'
+  );
+}
+
+/**
+ * Why the button is not available right now, or `null` when it is.
+ *
+ * Two sentences for the two limits, because the reader's next move differs: a spent quota means
+ * stop until tomorrow, and a minimum interval means wait under a minute. `remainingToday` is what
+ * separates them — see `FxManualSyncBudgetWire.nextAllowedAt`, which is non-`null` for both.
+ */
+export function fxSyncBlockedTh(
+  budget: FxManualSyncBudgetWire,
+  format: (iso: string) => string = at,
+): string | null {
+  if (budget.nextAllowedAt === null) return null;
+
+  if (budget.remainingToday === 0) {
+    return `ใช้สิทธิ์ซิงก์ด้วยตนเองครบ ${String(budget.dailyLimit)} ครั้งแล้วในรอบ 24 ชั่วโมง จะกดได้อีกครั้งประมาณ ${format(budget.nextAllowedAt)} — ถ้าต้องใช้อัตราใหม่ก่อนหน้านั้น ให้กรอก “อัตราแลกเปลี่ยนกำหนดเอง” ที่ประเทศปลายทางแทน`;
+  }
+
+  return `เพิ่งซิงก์ไปเมื่อครู่ ระบบเว้นระยะอย่างน้อย ${String(budget.minIntervalSeconds)} วินาทีระหว่างการกดแต่ละครั้ง จะกดได้อีกครั้งประมาณ ${format(budget.nextAllowedAt)}`;
+}
+
+/**
+ * ⭐⭐ **WHAT THE SYNC ACTUALLY DID — and `unchanged` is why this function exists.**
+ *
+ * The free plan updates hourly. A manual sync minutes after the last one therefore asks the
+ * provider for a number it has not recomputed yet, gets the identical observation back, appends a
+ * row, and moves nothing. That is the *ordinary* outcome of pressing this button, not an edge
+ * case, and reporting it as success is how a team learns that the button works — right up until
+ * the day it matters, when the same green tick means the same nothing.
+ *
+ * So `unchanged` gets its own sentence, and the sentence has three jobs:
+ *
+ *   1. **Say the number did not move**, in those words, first.
+ *   2. **Say why that is normal**, so nobody starts debugging a working system: the provider
+ *      updates hourly and this is what asking again in between looks like.
+ *   3. **Say it was not free.** A request was spent and a row was written. `unchanged` is a no-op
+ *      against the rate and is not a no-op against the quota, and a reader who takes it for a
+ *      no-op will press it ten more times.
+ *
+ * `failed` names the stage and nothing else — never a URL, never a provider message. `app_id`
+ * travels in the request URL, so `FxHttp` is built never to hand its caller either; the stage is
+ * enough to say whether to chase a network, a provider, or this database.
+ */
+export function fxSyncOutcomeTh(result: FxManualSyncResultWire): string {
+  switch (result.outcome) {
+    case 'stored':
+      return 'ดึงอัตราใหม่สำเร็จ และได้ตัวเลขชุดใหม่จริง — เวลาที่ผู้ให้บริการออกอัตราขยับไปแล้ว ตัวเลขด้านล่างเป็นของรอบล่าสุดนี้';
+    case 'unchanged':
+      return 'ดึงสำเร็จ แต่ได้ตัวเลขชุดเดิมที่ระบบมีอยู่แล้ว — อัตราไม่ได้ขยับ นี่เป็นเรื่องปกติ เพราะผู้ให้บริการอัปเดตอัตราชั่วโมงละครั้ง การกดซ้ำในระหว่างนั้นจะได้ค่าเดิมเสมอ ⚠️ แต่การกดครั้งนี้ใช้โควตาการดึงไปแล้วหนึ่งครั้งเท่ากับการดึงที่ได้ค่าใหม่';
+    case 'failed':
+      return `ดึงอัตราไม่สำเร็จ (ล้มเหลวที่ขั้นตอน "${result.failureStage ?? 'ไม่ทราบ'}") — ระบบบันทึกความล้มเหลวนี้ไว้แล้วเหมือนกับรอบดึงอัตโนมัติที่ล้มเหลว จึงนับรวมในช่อง “ดึงไม่สำเร็จติดต่อกัน” ด้านบน อัตราเดิมที่เก็บไว้ยังใช้งานได้ตามปกติ ไม่ได้หายไปไหน`;
+    case 'disabled':
+      return 'ระบบนี้ยังไม่ได้ตั้งค่ากุญแจของผู้ให้บริการอัตราแลกเปลี่ยน (OPENEXCHANGERATES_APP_ID) จึงไม่ได้ติดต่อผู้ให้บริการเลย ไม่มีการใช้โควตา และไม่มีอะไรถูกบันทึกว่าล้มเหลว — เป็นสภาพปกติของเครื่องพัฒนาที่ยังไม่ได้ใส่กุญแจ';
+  }
+}
+
+/**
+ * ⚠️ `unchanged` is **not** `default`, and that is the whole point of having three variants for
+ * four outcomes. A green tick over a number that did not move is precisely the mis-signal this
+ * feature exists to remove; `failed` is not an alarm either, because the cached rate is still
+ * working and nothing is refused.
+ */
+export function fxSyncOutcomeVariant(
+  result: FxManualSyncResultWire,
+): 'default' | 'destructive' {
+  return result.outcome === 'failed' ? 'destructive' : 'default';
+}
+
+/** The heading over the outcome alert — the verdict in three or four words, for a glance. */
+export function fxSyncOutcomeTitleTh(result: FxManualSyncResultWire): string {
+  switch (result.outcome) {
+    case 'stored':
+      return 'ได้อัตราชุดใหม่';
+    case 'unchanged':
+      return 'ดึงสำเร็จ แต่อัตราไม่ขยับ';
+    case 'failed':
+      return 'ดึงอัตราไม่สำเร็จ';
+    case 'disabled':
+      return 'ยังไม่ได้ตั้งค่ากุญแจผู้ให้บริการ';
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * The card
  * ------------------------------------------------------------------ */
 
-export function FxHealthCard({ state }: { readonly state: FxHealthState }) {
+export function FxHealthCard({
+  state,
+  editable,
+  onSynced,
+}: {
+  readonly state: FxHealthState;
+  /**
+   * `organisation.write` — resolved once at the top of `OrganisationScreen` and passed down as a
+   * boolean, which is this app's rule for every permission gate (see `tax-country-fields.test.ts`
+   * on why a component that called `useSession()` itself would be untestable here).
+   *
+   * The sync panel is **hidden** rather than disabled without it, exactly as every other write
+   * control on this page is. A greyed-out button is an invitation to go looking for why.
+   */
+  readonly editable: boolean;
+  /** The parent's reload, so a sync that moved the number redraws the figures it moved. */
+  readonly onSynced: () => Promise<void>;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -471,7 +796,7 @@ export function FxHealthCard({ state }: { readonly state: FxHealthState }) {
           <div>
             <CardTitle>สถานะอัตราแลกเปลี่ยน</CardTitle>
             <CardDescription>
-              อัตราที่ระบบใช้แปลงสกุลเงินบนใบเสนอราคา — อ่านได้เท่านั้น ไม่มีอะไรตั้งค่าได้ที่การ์ดนี้
+              อัตราที่ระบบใช้แปลงสกุลเงินบนใบเสนอราคา และตัวเลขที่ดึงมาได้จริง
               ตัวเลขทั้งหมดมาจากเซิร์ฟเวอร์ รวมทั้งเกณฑ์เตือนและเกณฑ์ปฏิเสธ ซึ่งเป็นตัวเดียวกับที่ใช้ปฏิเสธจริง
               การ์ดนี้จึงไม่มีทางบอกว่าปกติในขณะที่ใบเสนอราคาถูกปฏิเสธอยู่
             </CardDescription>
@@ -500,13 +825,23 @@ export function FxHealthCard({ state }: { readonly state: FxHealthState }) {
           </Alert>
         )}
 
-        {state.status === 'ready' && <FxHealthBody health={state.health} />}
+        {state.status === 'ready' && (
+          <FxHealthBody health={state.health} editable={editable} onSynced={onSynced} />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
+function FxHealthBody({
+  health,
+  editable,
+  onSynced,
+}: {
+  readonly health: FxRateHealthWire;
+  readonly editable: boolean;
+  readonly onSynced: () => Promise<void>;
+}) {
   const verdict = fxHealthVerdict(health);
   const remedy = fxHealthRemedyTh(health);
   const frozen = fxFrozenFeedTh(health);
@@ -604,6 +939,221 @@ function FxHealthBody({ health }: { readonly health: FxRateHealthWire }) {
           description={`มาจากผู้ที่ถือสิทธิ์ ${FX_FIX_PERMISSION} ในระบบสิทธิ์ ไม่ใช่รายชื่อผู้รับที่ตั้งค่าไว้ที่ไหน — ให้สิทธิ์นี้กับใครเพิ่ม คนนั้นได้รับอีเมลทันทีโดยไม่ต้องแก้รายชื่อ และคนที่ลาออกก็หยุดรับเองเมื่อบัญชีถูกปิด นับเฉพาะบัญชีที่ใช้งานอยู่และมีอีเมลหลัก เพราะเป็นสิทธิ์เดียวกับที่กรอกอัตราแลกเปลี่ยนกำหนดเองได้`}
         />
       </FieldGroup>
+
+      <Separator />
+      <SyncedRates health={health} />
+
+      {/* Hidden, not disabled, without `organisation.write` — the rule every write control on
+          this page follows. See `FxHealthCard`'s prop. */}
+      {editable && (
+        <>
+          <Separator />
+          <SyncNowPanel budget={health.manualSync} onSynced={onSynced} />
+        </>
+      )}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The figures
+ * ------------------------------------------------------------------ */
+
+function SyncedRates({ health }: { readonly health: FxRateHealthWire }) {
+  const empty = fxNoConfiguredRatesTh(health);
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-sm font-medium">อัตราที่ระบบถืออยู่ตอนนี้</h3>
+        <p className="text-muted-foreground text-sm">
+          เฉพาะสกุลเงินที่มีประเทศปลายทางตั้งค่าไว้จริง — ชุดข้อมูลที่ดึงมามีสกุลเงินนับร้อย
+          แต่ที่เหลือไม่มีผลกับใบเสนอราคาใดเลย ตัวเลขที่แสดงคืออัตราที่ระบบจะใช้เสนอราคาจริง
+          รวมส่วนต่างแล้ว ไม่ใช่ตัวเลขดิบของผู้ให้บริการ
+        </p>
+      </div>
+
+      {empty !== null ? (
+        <p className="text-muted-foreground text-sm">{empty}</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {health.configuredRates.map((rate) => (
+            <ConfiguredRateRow key={rate.countryCode} rate={rate} base={health.base} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * ⭐ One destination, with the useful figure large and the provider's raw numbers small.
+ *
+ * The visual hierarchy is doing real work here and is not decoration: the effective rate is the
+ * only number on this row a person should act on, so it is the only one at full size and full
+ * contrast. The provider's figures are `text-muted-foreground` and small — present, because this
+ * card is about the feed and what the feed said is a fact worth seeing, but never competing for
+ * the eye with the number that prices a quotation.
+ */
+function ConfiguredRateRow({
+  rate,
+  base,
+}: {
+  readonly rate: FxConfiguredRateWire;
+  readonly base: string | null;
+}) {
+  const value = fxRateTh(rate);
+  const mid = fxMidRateTh(rate);
+  const raw = fxProviderRawTh(rate, base);
+  const problem = fxRateProblemTh(rate);
+  const overridden = fxManualOverrideNoteTh(rate);
+
+  return (
+    <div className="rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">
+          {rate.countryNameTh} ({rate.countryCode}) · {rate.currency}
+        </span>
+        <Badge variant={rate.source === 'manual' ? 'secondary' : 'outline'}>
+          {rate.source === 'manual' ? 'กรอกอัตราเอง' : 'อัตราตลาด'}
+        </Badge>
+        {/* A withdrawn destination is still listed, because its rate can still be pinned onto a
+            document — see `configuredRates`. The badge is what stops that reading as an error. */}
+        {!rate.isActive && <Badge variant="outline">ปิดใช้งานอยู่</Badge>}
+      </div>
+
+      {value !== null ? (
+        <p className="mt-2 text-base font-semibold tabular-nums">{value}</p>
+      ) : (
+        <p className="text-destructive mt-2 text-sm font-medium">คำนวณอัตราไม่ได้</p>
+      )}
+
+      <p className="text-muted-foreground mt-1 text-sm">{fxRateSourceTh(rate)}</p>
+      {mid !== null && <p className="text-muted-foreground text-sm tabular-nums">{mid}</p>}
+
+      {problem !== null && <p className="text-destructive mt-2 text-sm">{problem}</p>}
+
+      {/* ⭐ The sentence the owner asked for: for a destination with a typed override, the feed's
+          number is not what gets used, said outright rather than left to be inferred from a
+          badge. See `fxManualOverrideNoteTh`. */}
+      {overridden !== null && (
+        <p className="text-muted-foreground mt-2 text-sm">{overridden}</p>
+      )}
+
+      {raw !== null && (
+        <p className="text-muted-foreground mt-2 text-xs tabular-nums">{raw}</p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * ⭐ The button, and the budget under it
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ ซิงก์เดี๋ยวนี้ — with the guard printed above it rather than only enforced behind it.
+ *
+ * ⚠️ **The disabled state is a courtesy; the guard is the server's.** `FxRatesService.syncNow`
+ * refuses on its own and answers 429 with a Thai sentence naming which limit and until when, and
+ * that refusal is what actually protects the quota — a client-side `disabled` protects nothing
+ * against a second tab, a stale page, or curl. What the disabled state buys is that the ordinary
+ * user never meets the refusal at all, and the refusal is a sentence rather than a mystery when
+ * they do (a stale budget in a tab left open is exactly how that happens).
+ *
+ * The budget after the press comes back **on the sync response**, so the button re-disables
+ * itself from the server's own arithmetic without waiting for `onSynced` to complete. That
+ * matters for the case this whole guard is about: a second press one second after the first.
+ */
+function SyncNowPanel({
+  budget: initial,
+  onSynced,
+}: {
+  readonly budget: FxManualSyncBudgetWire;
+  readonly onSynced: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [result, setResult] = useState<FxManualSyncResultWire | null>(null);
+
+  /* The freshest budget known: the one the last sync answered with, or the one the card loaded
+     with. Never a locally decremented copy — see `syncNow`'s note on re-reading it. */
+  const budget = result?.manualSync ?? initial;
+  const blocked = fxSyncBlockedTh(budget);
+
+  async function sync(): Promise<void> {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const outcome = await postFxManualSync();
+      setResult(outcome);
+      /* Redraw the figures and the two clocks. Awaited inside `busy` so the button stays
+         disabled until the card is showing what the sync actually did. */
+      await onSynced();
+    } catch (cause) {
+      setProblem(failureMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-sm font-medium">ดึงอัตราเดี๋ยวนี้</h3>
+        <p className="text-muted-foreground text-sm">
+          ปกติระบบดึงอัตราวันละครั้งตอนตีหนึ่ง ปุ่มนี้สั่งให้ดึงทันทีโดยไม่ต้องรอรอบถัดไป
+          — ไม่ได้ตั้งค่าอะไร และไม่ได้เปลี่ยนอัตราด้วยตัวเอง เพียงแต่ไปถามผู้ให้บริการซ้ำ
+        </p>
+      </div>
+
+      {/* ⭐ The quota, stated every time and not only when it is nearly gone. The cost of
+          pressing this lands a week later, on somebody else; nobody joins those two up on
+          their own, so the screen joins them up. */}
+      <p className="text-muted-foreground text-sm">{fxSyncBudgetTh(budget)}</p>
+
+      {blocked !== null && (
+        <Alert>
+          <Clock className="size-4" />
+          <AlertTitle>ยังกดซิงก์ไม่ได้ตอนนี้</AlertTitle>
+          <AlertDescription>{blocked}</AlertDescription>
+        </Alert>
+      )}
+
+      <div>
+        <Button
+          variant="secondary"
+          disabled={busy || blocked !== null}
+          onClick={() => void sync()}
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          ซิงก์อัตราแลกเปลี่ยนเดี๋ยวนี้
+        </Button>
+      </div>
+
+      {problem !== null && (
+        <Alert variant="destructive">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>ทำรายการไม่สำเร็จ</AlertTitle>
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
+      )}
+
+      {result !== null && (
+        <Alert variant={fxSyncOutcomeVariant(result)}>
+          {result.outcome === 'stored' ? (
+            <CheckCircle2 className="size-4" />
+          ) : result.outcome === 'failed' ? (
+            <AlertTriangle className="size-4" />
+          ) : (
+            /* A clock, not a tick. `unchanged` is not a success about the thing that was asked
+               for, and the icon is read before the words are. */
+            <Clock className="size-4" />
+          )}
+          <AlertTitle>{fxSyncOutcomeTitleTh(result)}</AlertTitle>
+          <AlertDescription>{fxSyncOutcomeTh(result)}</AlertDescription>
+        </Alert>
+      )}
+    </section>
   );
 }

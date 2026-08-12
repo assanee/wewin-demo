@@ -115,13 +115,19 @@ export interface PaymentInstructionsWire {
  * ------------------------------------------------------------------ */
 
 /**
- * ⭐ How old the newest exchange rate is, and how many syncs have failed since it landed.
+ * ⭐ How old the newest exchange rate is, how many syncs have failed since it landed, and —
+ * since this round — **what the numbers actually are**.
  *
- * Read-only, and there is no request shape beside it on purpose: nothing here is settable.
- * The two thresholds are constants in `apps/api/src/fx/staleness.ts` and are reported *down*
+ * The thresholds are constants in `apps/api/src/fx/staleness.ts` and are reported *down*
  * rather than configured up, so a screen never has to hold a second copy of them — the panel
  * that renders "36 ชั่วโมง" gets the 36 from the same constant the refusal compares against,
  * and the two cannot drift into a screen showing green over a submit that is being refused.
+ *
+ * ⚠️ It used to say *"read-only, and there is no request shape beside it on purpose: nothing
+ * here is settable"*. Half of that is still true and the other half stopped being true: nothing
+ * here is *settable*, and there is now one thing here that is *doable* — `POST /admin/fx/sync`,
+ * which fetches on demand. It sets no value; it spends a request against the provider's monthly
+ * budget, which is why `manualSync` below reports that budget on this same payload.
  *
  * ⚠️ **Both clocks travel, and the pair is the diagnosis.** `observedAt` is when the provider
  * struck the rate and `fetchedAt` is when we stored it; `ageHours` is measured on the *first*
@@ -175,4 +181,194 @@ export interface FxRateHealthWire {
    * cannot be told. See `PermissionRepository.addressesHolding`.
    */
   readonly warningRecipients: number;
+  /**
+   * ⭐ What the feed is actually holding, per destination that has a currency configured.
+   *
+   * Empty when `fx_rates` has never had a row, and empty when no destination is configured for
+   * a foreign currency — two different reasons for the same empty array, and the screen tells
+   * them apart from `observedAt` rather than from the length.
+   *
+   * ⚠️ **One entry per destination, not per currency.** The spread and the override are columns
+   * on `tax_countries`, so two destinations sharing a currency can resolve to different rates
+   * off the same observation. A payload keyed by currency could not express that, and would
+   * have to pick one of the two to print.
+   */
+  readonly configuredRates: readonly FxConfiguredRateWire[];
+  /** What the provider's `rates` object is denominated in — `'USD'` on the free plan. */
+  readonly base: string | null;
+  /** How much of the manual-sync budget is left, so the button can say so before it is pressed. */
+  readonly manualSync: FxManualSyncBudgetWire;
+}
+
+/**
+ * ⭐ One destination's rate, as staff need to read it — which is not as the provider sends it.
+ *
+ * The provider publishes USD-based mid-market figures: `rates['SGD'] = 1.35` means 1.35 SGD per
+ * USD. This business prices in baht, so **the number staff need is baht per one unit of the
+ * destination currency**, derived through the provider's base and marked down by the
+ * destination's spread. Those are different numbers by two orders of magnitude and a reciprocal,
+ * and the whole point of this shape is that a screen cannot accidentally print one where the
+ * other belongs: the useful figure is `effectiveThbPerUnit`, and every raw provider figure is
+ * nested under `provider` with the base it is denominated against.
+ *
+ * Every rate is a **string**, never a number. `packages/core/src/fx.ts` carries rates as exact
+ * bigint ratios precisely so nothing rounds twice, and JSON has one numeric type: a float. A
+ * decimal string is what survives the wire intact, the same reason `tax_countries.fx_manual_rate`
+ * is `numeric` and reads back as a string.
+ */
+export interface FxConfiguredRateWire {
+  readonly countryCode: string;
+  readonly countryNameTh: string;
+  /** Never `'THB'` — `tax_countries_fx_currency_not_thb` refuses to store it. */
+  readonly currency: string;
+  /**
+   * `false` when the destination is withdrawn. It is still listed, because `is_active` governs
+   * which destinations a *new* order may name and not whether an order that already names this
+   * one resolves — `TaxCountryRepository.byCode` has no `is_active` filter, deliberately. A rate
+   * that can still be pinned is a rate that belongs on this card.
+   */
+  readonly isActive: boolean;
+  /**
+   * ⭐ `'manual'` when the destination carries an `fxManualRate`, `'mid_market'` otherwise.
+   *
+   * This is the field a reader has to see first, because it decides whether the rest of the row
+   * is describing something the system uses. See `effectiveThbPerUnit`.
+   */
+  readonly source: 'manual' | 'mid_market';
+  /**
+   * ⭐ **Baht per one whole unit of `currency` — the rate the system would actually quote with.**
+   *
+   * For `'manual'` this is the typed override, verbatim. For `'mid_market'` it is the cross-rate
+   * through the provider's base, marked down by `spreadBp`. Either way it is the one figure that
+   * answers "what will a ฿36,500 product come out at", and it is the only figure on this row a
+   * staff member should compare against a bank's screen.
+   *
+   * `null` when no rate could be resolved at all — see `problem`.
+   *
+   * ⚠️ **A rendering, not the divisor.** `convertFromBaht` divides by an exact ratio and this is
+   * that ratio rounded for display; reproducing a converted figure from this string will differ
+   * in the last minor unit. `thbPerUnitText` in `@wewin/core/fx` carries the full argument.
+   */
+  readonly effectiveThbPerUnit: string | null;
+  /**
+   * The same quantity **before** the spread, for a reader checking what the spread did.
+   *
+   * ⚠️ `null` for `source: 'manual'`, and that null is a statement rather than a gap. A manual
+   * override is used exactly as typed and the spread is *not* applied on top of it — THE RULE in
+   * `packages/core/src/fx.ts` — so there is no "mid-market rate for this destination" in play.
+   * Deriving one anyway and putting it on the payload would be handing a screen a plausible
+   * number that nothing in the system uses, which is the specific failure this field's absence
+   * prevents. What the feed says for that currency is still visible, unreduced, under `provider`.
+   */
+  readonly midThbPerUnit: string | null;
+  /**
+   * The spread on the destination row, in basis points — 200 is 2%.
+   *
+   * ⚠️ This is the **configured** spread, which for `source: 'manual'` is *not* the applied one
+   * (`FxRate.spreadBp` is `0` there, by THE RULE). It is reported as configured because the
+   * column keeps its value when an override is set — deliberately, so removing the override
+   * restores the old behaviour — and a screen that showed `0` would tell an administrator the
+   * spread had been cleared. `spreadApplied` says whether it is doing anything.
+   */
+  readonly spreadBp: number;
+  /** `false` exactly when `source` is `'manual'`. Named so a screen never has to infer it. */
+  readonly spreadApplied: boolean;
+  /**
+   * The provider's own figures for this currency, verbatim and unreduced — or `null` when there
+   * is no observation, or the observation does not carry this currency.
+   *
+   * Nested rather than flat so that no template can print `unitPerBase` where a THB rate belongs:
+   * reaching one of these numbers costs a `.provider.` and lands beside `base`, which is the only
+   * thing that makes them mean anything.
+   */
+  readonly provider: FxProviderFiguresWire | null;
+  /**
+   * Why there is no `effectiveThbPerUnit`, or `null` when there is one.
+   *
+   * `@wewin/core/fx`'s own vocabulary (`destination_rate_missing`, `baht_rate_missing`,
+   * `manual_rate_unreadable`, `same_currency`) plus `'no_snapshot'` for the case core cannot
+   * name because it never sees the table.
+   */
+  readonly problem: string | null;
+}
+
+/** The two provider figures a mid-market rate is derived from, exactly as stored. */
+export interface FxProviderFiguresWire {
+  /** `rates[currency]` — units of `currency` per one unit of the observation's `base`. */
+  readonly unitPerBase: number;
+  /** `rates['THB']` — baht per one unit of the observation's `base`. */
+  readonly thbPerBase: number;
+}
+
+/**
+ * ⭐ The manual sync's budget, reported so the guard is visible before it refuses rather than
+ * only when it does.
+ *
+ * The provider's free plan allows 1,000 requests a month for the whole system, and the *scheduled*
+ * sync draws on the same pool — so a button spent carelessly today is a stale rate and a refused
+ * quotation next week. That consequence is a week away from the click that causes it, which is
+ * exactly the shape of thing a screen has to say out loud, because nobody will connect the two
+ * on their own.
+ *
+ * ⚠️ Two limits and not one. `remainingToday` is the quota bound; `nextAllowedAt` is a short
+ * minimum interval that exists for a different failure — a held-down button, or a double-submit,
+ * spending the day's whole allowance in four seconds. A single daily cap would permit that, and
+ * a single interval would permit 288 syncs a day.
+ */
+export interface FxManualSyncBudgetWire {
+  /** Manual syncs allowed per rolling 24 hours. A constant server-side, reported down. */
+  readonly dailyLimit: number;
+  /** Manual syncs already attempted in the last 24 hours — successes and failures alike. */
+  readonly usedToday: number;
+  /** `dailyLimit − usedToday`, floored at zero. Zero means the next press is refused. */
+  readonly remainingToday: number;
+  /** The minimum gap between two manual syncs, in seconds. */
+  readonly minIntervalSeconds: number;
+  /**
+   * ISO 8601 of the earliest moment a manual sync would be accepted, or `null` when one would be
+   * accepted right now. Non-`null` for the minimum interval *and* for an exhausted daily quota —
+   * a screen wanting to distinguish them reads `remainingToday`.
+   */
+  readonly nextAllowedAt: string | null;
+}
+
+/**
+ * ⭐ What `POST /admin/fx/sync` answers with — and the reason it is four words rather than a
+ * boolean.
+ *
+ * The free plan updates hourly. A manual sync minutes after the last one therefore fetches **the
+ * same observation the system already had**, appends a row, and moves nothing — which is the
+ * ordinary case, not the exceptional one. Reporting that as success would train staff that the
+ * button does something it did not do, and the next person to press it during a real outage would
+ * read the same green tick.
+ *
+ * ⚠️ `'unchanged'` still spent a provider request and still wrote an `fx_rates` row. It is not a
+ * no-op against the quota, only against the number, and the copy has to keep those apart.
+ */
+export interface FxManualSyncResultWire {
+  /**
+   * - `'stored'` — a new observation landed; `observedAt` moved.
+   * - `'unchanged'` — the provider answered with the observation we already had.
+   * - `'failed'` — the fetch, the parse or the store did not complete. Recorded in
+   *   `fx_sync_failures` exactly as a failed scheduled sync is.
+   * - `'disabled'` — no `OPENEXCHANGERATES_APP_ID` is configured, so nothing was attempted and
+   *   nothing was spent. Its own word rather than a failure, because there is no outage: this is
+   *   a developer environment without a key, and `FxRatesService` treats it the same way.
+   */
+  readonly outcome: 'stored' | 'unchanged' | 'failed' | 'disabled';
+  /** ISO 8601 of the newest observation *after* this sync, or `null` when there is still none. */
+  readonly observedAt: string | null;
+  /** ISO 8601 of the observation the system held *before* it, so a screen can show both. */
+  readonly previousObservedAt: string | null;
+  /**
+   * How far a `'failed'` attempt got — `'fetch' | 'parse' | 'store'` — and `null` otherwise.
+   *
+   * ⚠️ Never a URL, never a response body, never a provider message. `app_id` travels in the
+   * request URL, so `FxHttp` is built never to hand its caller either — see that file. A stage
+   * name is the whole of what a screen gets, and it is enough to say which of a network, a
+   * provider contract, or this database is the thing to chase.
+   */
+  readonly failureStage: string | null;
+  /** The budget as it stands *after* this attempt, so the screen need not refetch to disable. */
+  readonly manualSync: FxManualSyncBudgetWire;
 }

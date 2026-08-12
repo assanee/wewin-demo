@@ -60,6 +60,21 @@ const health = (overrides: Readonly<Partial<FxRateHealthWire>> = {}): FxRateHeal
   warnAfterHours: 10,
   refuseAfterHours: 20,
   warningRecipients: 4,
+  /*
+   * Empty by default, and `dailyLimit: 5` rather than the server's real 10 — the same discipline
+   * the two thresholds above are held to, and for the same reason. A card that hardcoded the real
+   * daily limit would pass a test written against 10 and fail this one, which is exactly the
+   * failure worth catching: a screen promising a budget the server does not enforce.
+   */
+  configuredRates: [],
+  base: 'USD',
+  manualSync: {
+    dailyLimit: 5,
+    usedToday: 0,
+    remainingToday: 5,
+    minIntervalSeconds: 30,
+    nextAllowedAt: null,
+  },
   ...overrides,
 });
 
@@ -462,6 +477,29 @@ describe('the decoder refuses a payload this card would misread', () => {
     warnAfterHours: 36,
     refuseAfterHours: 72,
     warningRecipients: 3,
+    configuredRates: [
+      {
+        countryCode: 'SG',
+        countryNameTh: 'สิงคโปร์',
+        currency: 'SGD',
+        isActive: true,
+        source: 'mid_market',
+        effectiveThbPerUnit: '26.496296',
+        midThbPerUnit: '27.037037',
+        spreadBp: 200,
+        spreadApplied: true,
+        provider: { unitPerBase: 1.35, thbPerBase: 36.5 },
+        problem: null,
+      },
+    ],
+    base: 'USD',
+    manualSync: {
+      dailyLimit: 10,
+      usedToday: 1,
+      remainingToday: 9,
+      minIntervalSeconds: 60,
+      nextAllowedAt: null,
+    },
   };
 
   it('reads a well-formed row field for field', () => {
