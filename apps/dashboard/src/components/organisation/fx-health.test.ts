@@ -35,7 +35,7 @@ import {
   fxSyncOutcomeTitleTh,
   fxSyncOutcomeVariant,
   fxThresholdsTh,
-} from './fx-health';
+} from './fx-health-copy';
 
 /**
  * The words on the exchange-rate health card, asserted as the pure functions that produce them.
