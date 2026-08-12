@@ -69,20 +69,44 @@ export class PaymentLifecycleService {
    * ---------------------------------------------------------------- */
 
   /**
-   * How much is left to pay, from the same fold the staff slip-review screen reads.
+   * The two figures a customer's payment screen needs, from one read.
    *
-   * `LedgerRepository.money()` and `SlipsRepository.orderMoney()` are two callers of the one
-   * SQL function this comes from, `order_outstanding_thb_minor()` — `grand_total_thb_minor`
-   * minus `order_settled_thb_minor()`, which folds every instalment's accepted allocations, not
-   * only the gate instalment's. This is the third caller, and it exists *because*
-   * `OrdersModule` may not import `SlipsModule` (see the module-level note above): the customer
-   * figure has to reach the same fold through this module's one seam rather than by opening a
-   * second path to it, let alone by re-deriving it from `grandTotal − Σ(accepted slips)` —
-   * which disagrees with the fold the moment a slip carries `unallocated_thb_minor` or an
-   * order has more than one instalment.
+   * `LedgerRepository.money()` and `SlipsRepository.orderMoney()` are two callers of the SQL
+   * folds these come from. This is the third, and it exists *because* `OrdersModule` may not
+   * import `SlipsModule` (see the module-level note above): the customer figures have to reach
+   * the same folds through this module's one seam rather than by opening a second path to
+   * them, let alone by re-deriving `outstanding` from `grandTotal − Σ(accepted slips)` — which
+   * disagrees with the fold the moment a slip carries `unallocated_thb_minor` or an order has
+   * more than one instalment.
+   *
+   * ── ⚠️ Two figures and not one, because they answer different questions ──────────
+   *
+   * `outstanding` is everything still owed on the order — `grand_total_thb_minor` minus
+   * `order_settled_thb_minor()`, folding every instalment's accepted allocations rather than
+   * only the gate's. It is what the screen *states*.
+   *
+   * `nextDue` is the owner's rule for what the amount field *opens on*: *"ถ้าเป็นเคสที่ระบุว่าต้อง
+   * มัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอดเต็มเลย"* — the remainder of the first unsettled
+   * instalment. There is no branch for "has a deposit" because `payInFullTerms()` is a schedule
+   * of one row rather than the absence of one (`terms.ts` says so at length), so a deposit
+   * schedule and a pay-in-full schedule are the same fold reading two shapes. It is 0 when
+   * nothing is due — settled in full, or a draft with no schedule.
+   *
+   * The two are equal on a pay-in-full order and differ by the balance on every 30/70. A screen
+   * that opened on `outstanding` while the quotation promised the deposit is the mismatch this
+   * pair exists to close, so they are returned together and never derived from one another.
+   *
+   * One `money()` call: both are columns on the same select, so the second question is free.
    */
-  async outstandingThbMinor(orderId: string): Promise<bigint> {
-    return (await this.ledgerRepository.money(orderId)).outstandingThbMinor;
+  async customerFigures(orderId: string): Promise<{
+    readonly outstandingThbMinor: bigint;
+    readonly nextDueThbMinor: bigint;
+  }> {
+    const money = await this.ledgerRepository.money(orderId);
+    return {
+      outstandingThbMinor: money.outstandingThbMinor,
+      nextDueThbMinor: money.nextDueThbMinor,
+    };
   }
 
   /* ---------------------------------------------------------------- *

@@ -69,9 +69,41 @@ export function crc16ccitt(input: string): string {
  * for. Refusing it is the same choice `accountValue`'s slice already assumed and this is where
  * that assumption gets checked, rather than trusted.
  */
+/**
+ * ⭐ The two shapes, exported — so the front door can be the same rule as this one.
+ *
+ * ⚠️ These used to be regex literals inline below, and the comment above described the gap
+ * they left rather than closing it: `bank_accounts_promptpay_shape`, `bankAccountCreateSchema`
+ * in `@wewin/contract/organisation` and the dashboard's own `bankAccountFormErrors` all
+ * checked `^([0-9]{10}|[0-9]{13})$` — *any* ten digits. So a staff member could type
+ * `1234567890`, be told nothing, have it stored, and the customer's payment screen would show
+ * that account with no QR beside it and no explanation anywhere. That is exactly what the dev
+ * database held, and it is how the QR came to be missing from the one screen it exists for.
+ *
+ * Exporting them makes the generator the definition and the validators its callers, so a
+ * value that passes on the way in is one this module can render on the way out. That is the
+ * same direction of authority `SLIP_ATTACHABLE_STATUSES` uses between the migration and the
+ * service — one rule, copied deliberately, with the copies pointed at the original.
+ *
+ * No `g` flag on either, deliberately: a global regex carries `lastIndex` between calls and
+ * `.test` would answer differently on alternate invocations for the same string.
+ */
+export const PROMPTPAY_MOBILE = /^0[0-9]{9}$/u;
+export const PROMPTPAY_TAX_ID = /^[0-9]{13}$/u;
+
+/**
+ * Whether this id can produce a QR at all.
+ *
+ * The one check a validator should call. It is deliberately the *same* predicate
+ * `promptPayTarget` applies, rather than a looser approximation of it kept somewhere else —
+ * a front door that admits what the renderer refuses is a silent failure by construction.
+ */
+export const isPromptPayId = (id: string): boolean =>
+  PROMPTPAY_MOBILE.test(id) || PROMPTPAY_TAX_ID.test(id);
+
 export function promptPayTarget(id: string): PromptPayTarget | null {
-  if (/^0[0-9]{9}$/u.test(id)) return { kind: 'mobile', digits: id };
-  if (/^[0-9]{13}$/u.test(id)) return { kind: 'taxId', digits: id };
+  if (PROMPTPAY_MOBILE.test(id)) return { kind: 'mobile', digits: id };
+  if (PROMPTPAY_TAX_ID.test(id)) return { kind: 'taxId', digits: id };
   return null;
 }
 

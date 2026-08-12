@@ -340,3 +340,71 @@ describe('⚠️ a currency with no minor unit prints whole units, not hundredth
     expect(inCurrency('SGD', 1_234_567n)).toBe('SGD 12,345.67');
   });
 });
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE DEPOSIT, AND THE DESTINATION IT USED TO DEPEND ON.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `depositThbText` had **no test at all**, which is how it came to be conditioned on `fx`
+ * and stayed that way: `fx === null || !depositIsSeparate ? null : …` hid the deposit on
+ * every domestic order, and nothing noticed because nothing looked.
+ *
+ * It matters now because the payment screen's amount field opens on the next instalment due
+ * — the owner's rule, *"ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอดเต็มเลย"*. A
+ * domestic 30/70 order therefore offers the deposit, and a quotation that never printed one
+ * cannot be the promise that field is honouring.
+ */
+describe('⭐ the deposit is stated wherever there is one to state', () => {
+  const withDeposit = (deposit: bigint | null): PinnedDocument => ({
+    ...DOCUMENT,
+    scheduledDepositThbMinor: deposit,
+  });
+
+  it('⭐ prints the deposit on a DOMESTIC order — the case that was hidden', () => {
+    /*
+     * No `fx`, and the deposit is still new information: it is the only place a Thai customer
+     * is told they may pay 30% now rather than all of it. `payableThbText` stays null in the
+     * same breath, because restating the grand total in baht when the totals are already baht
+     * is the redundancy that condition was originally about.
+     */
+    const printed = printableQuotation(withDeposit(246_913n));
+
+    expect(printed.depositThbText).toBe('฿2,469.13');
+    expect(printed.payableThbText).toBeNull();
+  });
+
+  it('prints it on a foreign order too, beside the baht payable', () => {
+    const printed = printableQuotation({
+      ...withDeposit(246_913n),
+      fx: {
+        currency: 'SGD',
+        source: 'mid_market',
+        spreadBp: 0,
+        rateText: '25.315148',
+        observedAt: null,
+        netMinor: 30_385n,
+        vatMinor: 2_127n,
+        grandTotalMinor: 32_512n,
+      },
+    });
+
+    expect(printed.depositThbText).toBe('฿2,469.13');
+    expect(printed.payableThbText).toBe('฿8,230.44');
+  });
+
+  it('⭐ says nothing when the deposit IS the whole total — a pay-in-full schedule', () => {
+    /*
+     * `payInFullTerms()` is one `remainder` row gating production, so the gated prefix that
+     * `scheduledDepositMinor` folds is the entire order and the pin equals the grand total.
+     * A second identical figure under "ชำระมัดจำก่อน" reads as a second obligation, and it is
+     * also the case the owner's rule calls "ไม่ได้ระบุ" — nothing to promise beyond the total
+     * already printed above it.
+     */
+    expect(printableQuotation(withDeposit(823_044n)).depositThbText).toBeNull();
+  });
+
+  it('says nothing when there is no deposit pinned at all', () => {
+    expect(printableQuotation(withDeposit(null)).depositThbText).toBeNull();
+  });
+});

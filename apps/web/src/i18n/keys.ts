@@ -503,6 +503,25 @@ export interface UiParamsByKey {
   'notFound.body': Plain;
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  /**
+   * ⭐ The way *to* the payment screen — the only key in this block rendered by screens
+   * other than that one. `QuotationIsland` puts it under the totals and `MyQuotations`
+   * puts it on each payable row, so both doors are labelled with one string and cannot
+   * drift apart in seven languages.
+   *
+   * ⚠️ **It must not name an amount, and it must not claim money moves.** The screen it
+   * opens asks for `outstandingThbMinor`, folded live — which on a fresh order equals the
+   * grand total rather than the deposit shown beside this button, and after a deposit is
+   * paid equals neither of the two figures the quotation can see. So the label promises
+   * the screen and lets the screen state the figure.
+   *
+   * The second half is why this is not "confirm payment" in any locale: there is no
+   * gateway behind it. The customer transfers at their own bank and attaches a slip —
+   * hence `payment.heading` reading "แจ้งชำระเงิน" / "Notify us of a payment" on arrival.
+   * This label is the *intent* ("go and pay this"), which is what a customer is looking
+   * for when they scan a quotation, and the heading immediately says how.
+   */
+  'payment.action': Plain;
   'payment.meta.title': Plain;
   'payment.heading': Plain;
   'payment.loading': Plain;
@@ -518,6 +537,22 @@ export interface UiParamsByKey {
   'payment.account.none': Plain;
   'payment.form.legend': Plain;
   'payment.form.image': Plain;
+  /**
+   * ⭐ The button that opens the file picker — the text the *browser* used to write.
+   *
+   * A bare `<input type="file">` paints `Choose File / No file chosen` itself, in the
+   * browser's language and out of CSS's reach, so the one control a customer must press to
+   * pay was hard-coded English on an all-Thai page. `SlipForm` now hides the input (visually
+   * only — it stays focusable and announced) and drives it from a real `<label>`, which
+   * needs a string of its own, in all eight.
+   *
+   * Two of them, because the button's job changes once a file is chosen: the first press is
+   * "pick one", every later press is "replace the one you picked". A single "เลือกไฟล์" that
+   * never changed would leave a customer who attached the wrong screenshot with no visible
+   * way to swap it — the file name beside the button is confirmation, not an affordance.
+   */
+  'payment.form.imageChoose': Plain;
+  'payment.form.imageChange': Plain;
   'payment.form.imageHint': Plain;
   'payment.form.amount': Plain;
   'payment.form.transferredAt': Plain;

@@ -313,14 +313,24 @@ export class OrdersService {
   async paymentInstructions(scope: Scope, orderId: string): Promise<PaymentInstructionsWire> {
     const order = await this.scoped.findOrFail(scope, orderId, 'read');
 
-    const [outstandingThbMinor, accounts] = await Promise.all([
-      this.payments.outstandingThbMinor(order.id),
+    /*
+     * ⭐ `nextDueThbMinor` beside `outstandingThbMinor` — the owner's rule for the amount field.
+     *
+     * *"ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอดเต็มเลย"*. Outstanding is what
+     * the screen *states* is still owed; next-due is what its amount field *opens on*, and on a
+     * 30/70 order those differ by the balance. Both come from `LedgerRepository.money`'s single
+     * round trip — `nextDueThbMinor` is another column on the same select, so this costs no
+     * extra query despite being a second question.
+     */
+    const [money, accounts] = await Promise.all([
+      this.payments.customerFigures(order.id),
       this.organisation.activeAccounts(),
     ]);
 
     return {
       grandTotalThbMinor: encodeThb(order.grandTotalThbMinor ?? 0n),
-      outstandingThbMinor: encodeThb(outstandingThbMinor),
+      outstandingThbMinor: encodeThb(money.outstandingThbMinor),
+      nextDueThbMinor: encodeThb(money.nextDueThbMinor),
       accounts: accounts.map(encodeAccountPublic),
     };
   }

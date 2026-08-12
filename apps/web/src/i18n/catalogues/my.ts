@@ -501,15 +501,12 @@ export const my: PartialUiCatalogue = {
   'notFound.body': 'လင့်ခ် ပြောင်းလဲသွားနိုင်သည်။ ကုန်ပစ္စည်းစာရင်းမှ စတင်ကြည့်ပါ။',
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
+  'payment.action': 'ငွေပေးချေရန်',
   'payment.meta.title': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.heading': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.loading': 'သင့်ငွေပေးချေမှုအချက်အလက်များ ဖွင့်နေသည်…',
   'payment.outstanding': 'ကျန်ရှိနေသေးသောပမာဏ',
-  'payment.outstandingAmount': (p, f) => {
-    const negative = p.owedMinor < 0n;
-    const magnitude = negative ? -p.owedMinor : p.owedMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')}`;
-  },
+  'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'ဤအော်ဒါအတွက် ငွေပေးချေမှု ပြီးပါပြီ',
   'payment.account.legend': 'အောက်ပါဘဏ်အကောင့်များထဲမှ တစ်ခုသို့ လွှဲပါ',
   'payment.account.copy': (p) => `ဘဏ်အကောင့်နံပါတ် ${p.accountDigits} ကို ကူးရန်`,
@@ -520,6 +517,8 @@ export const my: PartialUiCatalogue = {
     'ငွေလက်ခံရန် ဘဏ်အကောင့် မသတ်မှတ်ရသေးပါ။ ငွေပေးချေမှုအချက်အလက်များအတွက် အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
   'payment.form.legend': 'ငွေလွှဲပြေစာ တွဲပို့ရန်',
   'payment.form.image': 'ငွေလွှဲပြေစာဓာတ်ပုံ',
+  'payment.form.imageChoose': 'ပြေစာပုံ ရွေးရန်',
+  'payment.form.imageChange': 'ပုံ ပြောင်းရန်',
   'payment.form.imageHint': 'သင့်ဘဏ်အက်ပ်မှ စကရင်ရှော့လည်း ရပါသည်။ 8 MB အထိ။',
   'payment.form.amount': 'လွှဲထားသောပမာဏ',
   'payment.form.transferredAt': 'လွှဲသည့် ရက်စွဲနှင့် အချိန်',
@@ -531,21 +530,9 @@ export const my: PartialUiCatalogue = {
     'သင့်ငွေလွှဲပြေစာ ရရှိပါပြီ။ ကျွန်ုပ်တို့အဖွဲ့က စစ်ဆေးပြီး ပြန်လည်အကြောင်းကြားပါမည်။',
   'payment.history.heading': 'သင်ပို့ခဲ့သော ငွေလွှဲပြေစာများ',
   'payment.history.empty': 'ငွေလွှဲပြေစာ မပို့ရသေးပါ',
-  'payment.history.submitted': (p, f) => {
-    const negative = p.slipMinor < 0n;
-    const magnitude = negative ? -p.slipMinor : p.slipMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`;
-  },
-  'payment.history.accepted': (p, f) => {
-    const negative = p.slipMinor < 0n;
-    const magnitude = negative ? -p.slipMinor : p.slipMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`;
-  },
-  'payment.history.rejected': (p, f) => {
-    const negative = p.slipMinor < 0n;
-    const magnitude = negative ? -p.slipMinor : p.slipMinor;
-    return `${negative ? '-' : ''}฿${f.plain(magnitude / 100n)}.${String(magnitude % 100n).padStart(2, '0')} · လက်မခံပါ — ${p.reason}`;
-  },
+  'payment.history.submitted': (p, f) => `${f.bahtExact(p.slipMinor)} · ${f.date(p.sentAt)} တွင် ပို့ · စစ်ဆေးဆဲ`,
+  'payment.history.accepted': (p, f) => `${f.bahtExact(p.slipMinor)} · ${f.date(p.sentAt)} တွင် ပို့ · လက်ခံပြီး`,
+  'payment.history.rejected': (p, f) => `${f.bahtExact(p.slipMinor)} · လက်မခံပါ — ${p.reason}`,
   'payment.problem.noImage': 'ငွေလွှဲပြေစာဓာတ်ပုံ တွဲပို့ပေးပါ။',
   'payment.problem.imageTooBig': (p, f) =>
     `ဓာတ်ပုံ ကြီးလွန်းသည် — ${f.plain(p.limitMib)} MB အထိသာ ခွင့်ပြုသည်။`,

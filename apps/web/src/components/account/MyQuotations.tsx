@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactElement } from 'react';
 
+import { acceptsPayment } from '../../lib/payment/payable';
 import { localeHref } from '../../lib/routing';
 import { reviewsApiBaseUrl } from '../../lib/reviews/api';
 import type { Session } from '../../lib/auth/account';
@@ -147,8 +148,42 @@ export function MyQuotations({
           >
             {row.orderNo ?? row.id.slice(0, 8)}
           </a>
-          <span className="numeric text-small text-chalk-2">
-            {row.totalMinor === null ? '' : f.baht(row.totalMinor)}
+          <span className="flex items-baseline gap-3">
+            <span className="numeric text-small text-chalk-2">
+              {row.totalMinor === null ? '' : f.baht(row.totalMinor)}
+            </span>
+            {/*
+              ⭐ THE DOOR FOR SOMEBODY WHO CLOSED THE TAB — task: payment entry points.
+
+              This list is the second entry point and it is the one that matters more, because
+              of who needs it. A customer who still has the quotation open has the button on
+              it; a customer coming back the next day has neither the tab nor, in most cases,
+              the email — `AccountScreen`'s own header records why this page exists at all
+              ("a screen reachable only by typing a URL is a screen nobody uses"), and the
+              cart cannot hold the door because submitting empties it.
+
+              ⚠️ It is *this* page and not `/orders`, which despite the name is the quotation
+              document itself — one order, opened with `?order=` or a token. There is no
+              customer-facing order *list* other than this section, so this is the only place
+              a returning customer can be offered a choice of orders to pay.
+
+              ⚠️ Two links per row, so the row needs the amount and both actions to stay on
+              one baseline — hence the wrapping `<span>` rather than a third `<li>` child,
+              which would have spread the row across the full width with the total marooned
+              in the middle.
+
+              The same `acceptsPayment` the quotation page reads, from the same module, so
+              "delivered" hides the action in both places or in neither. `status` was already
+              decoded here and, like `QuotationIsland`'s, had no reader until now.
+            */}
+            {acceptsPayment(row.status) ? (
+              <a
+                className="text-small text-lime underline"
+                href={`${localeHref(locale, '/payment')}?order=${row.id}`}
+              >
+                {t('payment.action')}
+              </a>
+            ) : null}
           </span>
         </li>
       ))}

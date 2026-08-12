@@ -3,6 +3,17 @@
 import { type ChangeEvent, type ReactElement, type ReactNode } from 'react';
 
 import { useLocale } from '../../state/localeContext';
+import { Button } from '../common/Button';
+import { PaymentFieldset } from './PaymentFieldset';
+
+/**
+ * Stable ids, because two `<label>`s and an `aria-describedby` all have to name the same
+ * input. Constants rather than `useId()` on purpose: there is exactly one slip form on the
+ * page — `PaymentIsland` renders it or the sign-in prompt, never both — so a generated id
+ * would buy nothing and would change between the server render and the client one.
+ */
+const FILE_INPUT_ID = 'payment-slip-image';
+const FILE_HINT_ID = 'payment-slip-image-hint';
 
 /**
  * The state of one submission attempt, following `ChangePassword.tsx:42-46`.
@@ -63,10 +74,8 @@ export function SlipForm({
   };
 
   return (
-    <fieldset className="border border-line bg-panel p-4">
-      <legend className="px-1 text-lead text-chalk">{t('payment.form.legend')}</legend>
-
-      <div className="mt-3 flex flex-col gap-3">
+    <PaymentFieldset legend={t('payment.form.legend')}>
+      <div className="flex flex-col gap-3">
         {phase.kind === 'failed' ? (
           <p className="border border-line bg-panel-2 p-3 text-small text-danger">{phase.message}</p>
         ) : null}
@@ -75,18 +84,57 @@ export function SlipForm({
           <p className="border border-line bg-panel-2 p-3 text-small text-chalk">{t('payment.done')}</p>
         ) : null}
 
-        <Field label={t('payment.form.image')}>
+        {/*
+         * ─────────────────────────────────────────────────────────────────────
+         * ⭐ THE FILE INPUT, WHICH WAS WRITING ENGLISH ONTO AN ALL-THAI PAGE.
+         * ─────────────────────────────────────────────────────────────────────
+         *
+         * A bare `<input type="file">` renders `Choose File  No file chosen` — drawn by the
+         * browser, in the *browser's* language, and unreachable from CSS. On a storefront
+         * whose whole point is eight locales, the one control a customer must press to pay
+         * was hard-coded English on a Thai page.
+         *
+         * ⚠️ The input is still the input. `sr-only` hides it visually while leaving it in
+         * the accessibility tree, focusable and operable exactly as before — the same
+         * technique `FilterPanel` uses for its checkboxes and `AppShell` for its skip link.
+         * `display: none` or `hidden` would have taken it out of the tree and broken keyboard
+         * and screen-reader access, which is the usual way this fix goes wrong.
+         *
+         * The `<label htmlFor>` is a real label, so clicking it opens the picker with no
+         * JavaScript and no `ref.click()`; and because the input is a `peer`, the label can
+         * show the focus ring the hidden input is receiving. Without that last part a
+         * keyboard user would tab onto an invisible control and see nothing at all.
+         *
+         * Two labels point at one input, which is valid and deliberate: the field caption
+         * names it for assistive technology, the button is what a sighted user presses.
+         */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor={FILE_INPUT_ID} className="text-caption text-chalk-2">
+            {t('payment.form.image')}
+          </label>
+
           <input
+            id={FILE_INPUT_ID}
             type="file"
             accept="image/*"
             onChange={onFile}
             disabled={busy}
-            className="w-full border border-line bg-panel-2 px-3 py-2 text-body text-chalk"
+            aria-describedby={FILE_HINT_ID}
+            className="peer sr-only"
           />
-          <span className="text-caption text-chalk-3">
+
+          <label
+            htmlFor={FILE_INPUT_ID}
+            className="inline-flex min-h-11 w-fit cursor-pointer items-center rounded-xs border border-line bg-panel-2 px-4 text-body text-chalk transition-colors duration-180 ease-out hover:border-line-2 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-sel-line peer-disabled:cursor-not-allowed peer-disabled:opacity-60"
+          >
+            {t(file === null ? 'payment.form.imageChoose' : 'payment.form.imageChange')}
+          </label>
+
+          {/* The chosen file's name, where the browser used to print "No file chosen". */}
+          <span id={FILE_HINT_ID} className="text-caption text-chalk-3">
             {file === null ? t('payment.form.imageHint') : file.name}
           </span>
-        </Field>
+        </div>
 
         <Field label={t('payment.form.amount')}>
           <input
@@ -119,20 +167,29 @@ export function SlipForm({
           />
         </Field>
 
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={busy}
-          className="w-fit border border-lime bg-lime px-4 py-2 text-body text-ink disabled:opacity-60"
-        >
+        {/*
+         * ⚠️ Kept lime, and switched to the shared `Button`.
+         *
+         * The filled accent is right here and it is the *one* place on this screen that earns
+         * it: `Button.tsx` reserves `primary` for the main action, `AccountForm` and
+         * `RequestQuotationForm` both spend it on their submit, and the pay action on the
+         * quotation page is the same lime. Toning this one down would have made the only
+         * screen that takes money the only screen with no primary button on it — the account
+         * card's flood was the surplus, not this.
+         *
+         * Going through the component rather than restating its classes is the point of the
+         * round: hover, active, the 44px floor and the disabled treatment now come from the
+         * same place as every other button in the storefront.
+         */}
+        <Button variant="primary" onClick={onSubmit} disabled={busy} className="w-fit">
           {phase.kind === 'uploading'
             ? t('payment.phase.uploading')
             : phase.kind === 'creating'
               ? t('payment.phase.creating')
               : t('payment.form.submit')}
-        </button>
+        </Button>
       </div>
-    </fieldset>
+    </PaymentFieldset>
   );
 }
 

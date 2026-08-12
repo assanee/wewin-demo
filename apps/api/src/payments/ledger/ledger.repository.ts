@@ -73,6 +73,20 @@ export interface OrderMoney {
   /** `settledMinor` — the fold of allocations from accepted slips. Diverges from cash on a fee. */
   readonly settledThbMinor: bigint;
   readonly outstandingThbMinor: bigint;
+  /**
+   * ⭐ What the customer is being asked for *right now* — the remainder of the first instalment
+   * not yet settled, and 0 when nothing is due.
+   *
+   * The owner's rule for the payment screen's amount field: a schedule with a deposit asks for
+   * the deposit, one without asks for the whole amount. Not the same as `outstanding`, which is
+   * everything still owed on the order — those two agree only on a pay-in-full schedule.
+   *
+   * `order_next_due_thb_minor()` (migration 0042), read here rather than assembled from the
+   * instalment rows for the reason this class exists: a second per-instalment fold in
+   * TypeScript would agree with `order_settled_through()` until the day a carried allocation
+   * made it not.
+   */
+  readonly nextDueThbMinor: bigint;
   readonly refundPayableThbMinor: bigint;
   readonly remittanceInTransitThbMinor: bigint;
   /** `terminal_holding_money` · `settled` · `awaiting_review` · `awaiting_customer_transfer` · `closed`. */
@@ -156,6 +170,7 @@ export class LedgerRepository {
              order_held_thb_minor(${orderId}::uuid)::text                          as held,
              order_settled_thb_minor(${orderId}::uuid)::text                       as settled,
              coalesce(order_outstanding_thb_minor(${orderId}::uuid), 0)::text      as outstanding,
+             order_next_due_thb_minor(${orderId}::uuid)::text                      as next_due,
              order_account_thb_minor(${orderId}::uuid, 'refund_payable')::text     as refund_payable,
              order_account_thb_minor(${orderId}::uuid, 'remittance_in_transit')::text
                                                                                    as in_transit,
@@ -169,6 +184,7 @@ export class LedgerRepository {
       heldThbMinor: bigintOf(row['held']),
       settledThbMinor: bigintOf(row['settled']),
       outstandingThbMinor: bigintOf(row['outstanding']),
+      nextDueThbMinor: bigintOf(row['next_due']),
       /* Credited, therefore negative in the fold. Negated so a payable reads as a positive debt. */
       refundPayableThbMinor: -bigintOf(row['refund_payable']),
       remittanceInTransitThbMinor: bigintOf(row['in_transit']),

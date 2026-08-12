@@ -50,6 +50,30 @@ describe('bankAccountFormErrors', () => {
     expect(bankAccountFormErrors({ ...VALID, promptpayId: '1234567890123' }).promptpayId).toBeUndefined();
     expect(bankAccountFormErrors({ ...VALID, promptpayId: '12345' }).promptpayId).toBeDefined();
   });
+
+  it('⭐ refuses ten digits that are not a phone number — the QR that never rendered', () => {
+    /*
+     * ⚠️ THE GAP THAT PUT `1234567890` ON THE ONLY ACTIVE ACCOUNT IN THE DEV DATABASE.
+     *
+     * The test above checks *length* and nothing else, which is precisely how this survived:
+     * `1234567890` is ten digits, so it passed here, passed `bankAccountCreateSchema`, passed
+     * `bank_accounts_promptpay_shape`, and was stored. Then `promptPayTarget` — the one place
+     * that has to turn it into an actual QR — refused it, because every Thai mobile number
+     * starts with `0`. The customer's payment screen rendered that account with no QR beside
+     * it, and nothing told anybody why.
+     *
+     * Refusing it here is not stylistic. Accepting it would mean *guessing* which nine digits
+     * of a non-phone-number to keep, and `promptpay.ts` names the result: "well-formed, scans
+     * fine, moves money to a number nobody asked for."
+     */
+    expect(bankAccountFormErrors({ ...VALID, promptpayId: '1234567890' }).promptpayId).toBeDefined();
+    expect(bankAccountFormErrors({ ...VALID, promptpayId: '9812345678' }).promptpayId).toBeDefined();
+
+    /* And the shapes a QR *can* be built from still pass, so this is not merely stricter. */
+    for (const good of ['0612345678', '0812345678', '0912345678', '0105558012345']) {
+      expect(bankAccountFormErrors({ ...VALID, promptpayId: good }).promptpayId).toBeUndefined();
+    }
+  });
 });
 
 describe('bankAccountFormReady', () => {

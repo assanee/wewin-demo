@@ -44,6 +44,36 @@ export interface Formatters {
   /** Thai baht, whole units, from minor units. Never takes baht — see core's note. */
   baht(minor: bigint): string;
 
+  /**
+   * ⭐ Thai baht **to the satang**, grouped — for a figure somebody is about to transfer.
+   *
+   * `f.baht` rounds to whole baht, which is right for a price on a browsing page and wrong
+   * for the payment screen: the two satang it drops are two satang a customer's bank
+   * transfer will not match.
+   *
+   * ⚠️ **It exists because the payment catalogue was building this string by hand**, as
+   * `` `฿${f.plain(minor / 100n)}.${minor % 100n}` `` — and `f.plain` is the *ungrouped*
+   * formatter, the one whose entire purpose is that a year reads `2026` and not `2,026`.
+   * So the payment screen printed `฿14124.00` while the quotation one click earlier printed
+   * `฿14,124.00`: the same number, written two ways, on two pages a customer walks between.
+   *
+   * ⚠️ **Not `formatMoney(locale, minor, 'THB', 'exact')`, which was the obvious answer and
+   * is the wrong one.** That routes the whole amount through `Intl`, which for German gives
+   * `28.248,24 ฿` and for Burmese `၂၈,၂၄၈.၂၄ ฿` — symbol moved to the end, decimal comma,
+   * and the satang pad in Burmese digits. The quotation page renders the same figure through
+   * `@wewin/core`'s own `money()`, which groups the *baht* through `toLocaleString` and
+   * leaves the fraction ASCII behind a leading `฿`. Using `Intl` for the whole thing would
+   * have fixed the grouping and broken the agreement it was supposed to create.
+   *
+   * So this mirrors core's convention exactly — leading `฿`, grouped baht, ASCII two-digit
+   * satang, sign in front of the symbol — and differs from the code it replaced in precisely
+   * one respect: the baht part is grouped. `catalogue.test.ts` already pins the other three
+   * properties, and pinned them through this change without an edit.
+   *
+   * Nothing is rounded: the split is integer division and remainder, as before.
+   */
+  bahtExact(minor: bigint): string;
+
   /** A plain count: pieces, rows, days, product totals. Grouped. */
   integer(value: number | bigint): string;
 
@@ -160,6 +190,16 @@ export function formattersFor(locale: Locale): Formatters {
     locale,
 
     baht: (minor) => formatMoney(locale, minor, 'THB', 'whole'),
+
+    bahtExact: (minor) => {
+      /* Sign lifted out first: BigInt `/` and `%` truncate toward zero, so `-150n` split
+       * directly renders `-1.-50` — the overpayment bug `catalogue.test.ts` pins. */
+      const negative = minor < 0n;
+      const magnitude = negative ? -minor : minor;
+      const baht = formatCount(locale, magnitude / 100n);
+      const satang = String(magnitude % 100n).padStart(2, '0');
+      return `${negative ? '-' : ''}฿${baht}.${satang}`;
+    },
 
     integer: (value) => formatCount(locale, value),
 

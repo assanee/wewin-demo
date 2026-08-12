@@ -143,7 +143,21 @@ function PaymentForOrder({
       }
       setInstructions({ kind: 'ready', instructions: result.data });
       setSelectedAccountId((current) => current ?? (result.data.accounts[0]?.id ?? null));
-      setAmountText((current) => (current === '' ? satangField(result.data.outstandingThbMinor) : current));
+      /*
+       * ⭐ THE FIELD OPENS ON THE NEXT INSTALMENT DUE, NOT ON THE OUTSTANDING.
+       *
+       * The owner's rule: *"ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอดเต็มเลย"*.
+       * This used to be `outstandingThbMinor`, which meant a 30/70 order whose quotation
+       * printed `ชำระมัดจำก่อน ฿4,320.00` opened a form reading ฿14,400.00 — the customer being
+       * shown one number and asked for another, which is the whole reason this changed.
+       *
+       * ⚠️ The choice is the server's and is not re-made here. `order_next_due_thb_minor()`
+       * answers the deposit for a 30/70 and the full amount for a pay-in-full schedule, so
+       * there is no `deposit ?? total` on this side — a client picking between two figures
+       * would be a second implementation of the rule, and the two would disagree the first
+       * time somebody paid half a deposit.
+       */
+      setAmountText((current) => (current === '' ? satangField(result.data.nextDueThbMinor) : current));
     });
 
     void fetchSlips(orderId, session.accessToken).then((result) => {
