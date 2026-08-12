@@ -120,10 +120,15 @@ import { divRoundHalfUp, minorPerUnit, type Currency } from './money.js';
  *
  * ── Scope ────────────────────────────────────────────────────────────────────────
  *
- * Arithmetic only. Nothing here decides *when* a rate is pinned, which observation counts as
- * "the" rate for a quotation, or how a foreign figure is displayed beside baht — that last
- * one is the question the owner has not answered, and the quotation document is frozen once
- * issued. Nothing in this repository calls this module yet, on purpose.
+ * Arithmetic only. Nothing here decides *when* a rate is pinned or which observation counts as
+ * "the" rate for a quotation — that is `apps/api/src/fx`'s job, and the owner's answer is that
+ * the rate is fixed at the moment staff submits the quotation, falling back to the most recent
+ * cached observation when the daily sync could not reach the provider.
+ *
+ * The display question is now answered too: the destination's currency **replaces** baht on
+ * the customer's page rather than sitting beside it, and the figures are frozen into
+ * `order_documents` at submit — see `OrderDocumentFxWire` in `@wewin/contract/order` for the
+ * field-by-field argument about why that pin has to be complete the first time.
  */
 
 /* ------------------------------------------------------------------ *
@@ -415,6 +420,52 @@ export function convertFromBaht(thbMinor: bigint, rate: FxRate): bigint {
     thbMinor * foreignMinorPerUnit * rate.thbPerUnit.d,
     bahtMinorPerUnit * rate.thbPerUnit.n,
   );
+}
+
+/**
+ * ⭐ A COLUMN OF FIGURES THAT ADDS UP TO ITS OWN TOTAL, IN THE FOREIGN CURRENCY.
+ *
+ * `convertFromBaht` rounds once per call, which is right for one figure and wrong for a
+ * printed column. Converting eight lines independently and converting their baht total
+ * independently gives two numbers that differ by up to four minor units — and a quotation
+ * whose own lines do not add up is `quotation.ts:138-141`'s named failure, arriving in front
+ * of somebody who transfers the printed figure.
+ *
+ * So the conversion is done on the **running total** and each figure is the step:
+ *
+ *     out[i] = convert(thb[0..i]) − convert(thb[0..i−1])
+ *
+ * The sum telescopes — every intermediate term cancels — so
+ *
+ *     Σ out  ≡  convert(Σ thb)
+ *
+ * **exactly**, for any length, any rate, and any mix of signs. That is a stronger statement
+ * than "the residual is small": there is no residual. A credit line (`charges` may be
+ * negative) is handled by the same identity rather than by a special case, and each figure
+ * is still within one minor unit of its own honest conversion.
+ *
+ * Order-dependent, deliberately: the document's line order is pinned, and a reprint walks it
+ * in the order the customer saw. Sorting here would make a reprint differ from the print.
+ *
+ * This is the same lesson as `vat.ts`'s `fromGrand`, which derives VAT by subtraction rather
+ * than by a second multiplication — one rounding per independent quantity, never two.
+ */
+export function convertSeriesFromBaht(
+  thbMinors: readonly bigint[],
+  rate: FxRate,
+): readonly bigint[] {
+  const converted: bigint[] = [];
+  let runningThb = 0n;
+  let runningForeign = 0n;
+
+  for (const thbMinor of thbMinors) {
+    runningThb += thbMinor;
+    const cumulative = convertFromBaht(runningThb, rate);
+    converted.push(cumulative - runningForeign);
+    runningForeign = cumulative;
+  }
+
+  return converted;
 }
 
 export interface FxAmount {
