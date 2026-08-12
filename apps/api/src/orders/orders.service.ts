@@ -838,10 +838,17 @@ export class OrdersService {
      * A *withdrawn* country resolves normally, on purpose: `is_active` governs what a new
      * customer is offered, not whether a cart already carrying it may still be submitted.
      */
-    const destination = await this.taxCountries.resolveDestination(
+    /*
+     * ⭐ ONE read of `tax_countries`, not two. `resolveForSubmit` returns both halves of the
+     * same row — the tax envelope and the fx settings — because this is the only path that
+     * wants both, and reading it twice meant a second round-trip inside a transaction already
+     * holding a row lock on the order. See that method for the measurement.
+     */
+    const resolved = await this.taxCountries.resolveForSubmit(
       body.contact.destinationCountry ?? order.destinationCountry,
       tx,
     );
+    const destination = resolved.tax;
 
     const { document } = await this.quotes.assertSubmittable(tx, order, destination);
 
@@ -877,7 +884,7 @@ export class OrdersService {
        * throws for a destination configured for a currency with no usable rate, and a refusal
        * that lands here rolls the whole submit back rather than leaving a half-written order.
        */
-      fx: await this.fxRate.forDestination(destination.code, tx),
+      fx: await this.fxRate.fromSettings(resolved.fx, tx),
       locale: body.contact.locale ?? order.contactLocale,
       coreVersion: this.env.SERVICE_VERSION,
       revision: (await this.orders.latestRevision(tx, order.id)) + 1,

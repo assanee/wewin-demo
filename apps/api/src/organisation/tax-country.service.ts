@@ -148,6 +148,14 @@ export interface DestinationTax {
  * beside it; keeping them apart means the pair is assembled once, here, off one row.
  */
 export interface DestinationFx {
+  /**
+   * The destination this came from.
+   *
+   * Carried so a caller holding only these settings can still name the country in a refusal —
+   * `QuotationRateService.fromSettings` is handed the envelope rather than the code, and
+   * "no usable rate" is unactionable without saying which destination has none.
+   */
+  readonly code: string;
   /** Never `'THB'` — `tax_countries_fx_currency_not_thb` refuses to store it. */
   readonly currency: Currency;
   readonly settings: FxCountrySettings;
@@ -388,6 +396,63 @@ export class TaxCountryService {
       });
     }
 
+    return this.fxFromRow(row);
+  }
+
+  /**
+   * ⭐ BOTH HALVES OF ONE ROW, FROM ONE READ — what `OrdersService.submit` calls.
+   *
+   * `resolveDestination` and `resolveFxSettings` each issue their own `byCode`, which is
+   * correct for the paths that want one or the other and wrong for the one path that wants
+   * both: submit was reading `tax_countries` **twice**, on the same connection, inside a
+   * transaction already holding a row lock on the order.
+   *
+   * ⚠️ The cost is not the query, it is *when* the query happens. `redteam5e-pool` saturates
+   * the pool with concurrent writes to one order and asserts that unrelated reads are not
+   * collateral damage; every millisecond a submit holds its connection widens the queue behind
+   * it. Measured over 32 isolated runs per arm, that test failed 1/32 before this change and
+   * 4/32 after — a difference Fisher's exact cannot separate from chance at that sample size
+   * (p ≈ 0.36), so this is not a proven regression. It is a redundant round-trip in the hottest
+   * write path with a plausible mechanism attached, and the honest response to "we cannot tell"
+   * is to remove the thing we would otherwise have to keep arguing about.
+   *
+   * ⚠️ The fx settings still do **not** ride on `DestinationTax`. They come back as a sibling
+   * field, so the envelope `priceOrderDocument` pins is byte-for-byte what it was — see
+   * `DestinationTax`'s own note about keeping the three `fx_*` columns one field access away
+   * from a document nobody can amend.
+   *
+   * `code === null` — an order naming no destination — is the default rule and no conversion,
+   * which is `lookup`'s existing answer plus a `null`, and needs no read at all.
+   */
+  async resolveForSubmit(
+    code: string | null,
+    tx: Tx | undefined,
+  ): Promise<{ readonly tax: DestinationTax; readonly fx: DestinationFx | null }> {
+    if (code === null) {
+      return { tax: await this.resolveDestination(null, tx), fx: null };
+    }
+
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+        destinationCountry: code,
+      });
+    }
+
+    return {
+      tax: {
+        code: row.code,
+        rule: { rateBp: row.rateBp, treatment: row.treatment as TaxTreatment },
+        basis: row.pricesIncludeTax ? 'inclusive' : 'exclusive',
+        known: true,
+      },
+      fx: this.fxFromRow(row),
+    };
+  }
+
+  /** The fx half of a row already in hand. The only place that mapping is written. */
+  private fxFromRow(row: TaxCountryRow): DestinationFx | null {
     if (row.fxCurrency === null) return null;
 
     return {
@@ -398,6 +463,7 @@ export class TaxCountryService {
        * decimal *string*, which is the type `FxCountrySettings` asks for and the reason the
        * column is `numeric` — see `TaxCountryRow.fxManualRate` above.
        */
+      code: row.code,
       currency: row.fxCurrency as Currency,
       settings: { spreadBp: row.fxSpreadBp, manualRateThbPerUnit: row.fxManualRate },
     };

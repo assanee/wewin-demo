@@ -3,7 +3,7 @@ import { resolveFxRate, type FxRate, type FxRateProblem, type FxSnapshot } from 
 
 import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
-import { TaxCountryService } from '../organisation/tax-country.service';
+import { TaxCountryService, type DestinationFx } from '../organisation/tax-country.service';
 import { FxRatesRepository, type Tx } from './fx-rates.repository';
 
 /**
@@ -139,10 +139,26 @@ export class QuotationRateService {
     /* No destination is not a failed conversion; it is a baht quotation, which is most of them. */
     if (countryCode === null) return null;
 
-    const fx = await this.countries.resolveFxSettings(countryCode, tx);
+    return this.fromSettings(await this.countries.resolveFxSettings(countryCode, tx), tx);
+  }
+
+  /**
+   * ⭐ The same decision, for a caller that has already read the row.
+   *
+   * `OrdersService.submit` needs the tax envelope *and* the fx settings off one destination, and
+   * getting them from two calls meant reading `tax_countries` twice inside a transaction already
+   * holding a row lock — see `TaxCountryService.resolveForSubmit` for the measurement. This is
+   * the half of `forDestination` after the lookup, so the two paths cannot decide differently:
+   * the cache rule, the manual-override short-circuit and the refusal all live here, once.
+   */
+  async fromSettings(
+    fx: DestinationFx | null,
+    tx: Tx | undefined,
+  ): Promise<ResolvedQuotationRate | null> {
     if (fx === null) return null;
 
     const { currency, settings } = fx;
+    const countryCode = fx.code;
 
     /*
      * ⭐ An override short-circuits the snapshot entirely — it does not merely take precedence
