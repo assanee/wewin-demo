@@ -229,7 +229,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
         <Card className="border-foreground/20">
           <CardHeader>
             <CardTitle className="text-base">ลูกค้าขอแก้ไข</CardTitle>
-            <CardDescription>เปิดเมื่อ {at(order.openChangeRequest.createdAt)}</CardDescription>
+            <CardDescription>เปิดเมื่อ {at(order.openChangeRequest.openedAt)}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <p className="text-sm whitespace-pre-wrap">{order.openChangeRequest.noteTh}</p>
