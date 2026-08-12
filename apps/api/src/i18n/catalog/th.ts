@@ -249,6 +249,24 @@ export const TH: Catalogue = {
   'error.fx.rate_unavailable':
     'ประเทศปลายทางนี้ตั้งค่าให้เสนอราคาเป็นสกุลเงินต่างประเทศ แต่ยังไม่มีอัตราแลกเปลี่ยนที่ใช้ได้ — ' +
     'กรุณากำหนดอัตราแลกเปลี่ยนเองที่ประเทศปลายทาง หรือรอให้ระบบดึงอัตราแลกเปลี่ยนรอบถัดไป',
+  /*
+   * ⭐ Said to staff at submit time, and it stops the submit rather than pinning an old rate.
+   *
+   * Three sentences, in the order a reader needs them: what is true (the newest rate is this
+   * old), why that is refused (the document freezes and cannot be corrected afterwards), and
+   * what to do now. The last one names `fxManualRate` in the words the screen uses for it —
+   * *"อัตราแลกเปลี่ยนกำหนดเอง"* on the destination dialog — because a refusal that says only
+   * "too old" leaves the reader with a blocked submit and no next move, and this system's
+   * whole position on frozen documents is that the recoverable failure is the acceptable one.
+   *
+   * It says an administrator, not "you": the tax-country row needs `organisation.write`, and a
+   * salesperson reading this may not hold it. Telling them to do something they cannot do is
+   * how a fail-closed refusal turns into a support ticket.
+   */
+  'error.fx.rate_too_stale': (p, f) =>
+    `อัตราแลกเปลี่ยนล่าสุดในระบบเก่าเกินไป (เก่ากว่า ${f.count(p.hours)} ชั่วโมง เกินเพดาน ${f.count(p.limitHours)} ชั่วโมง) — ` +
+    'ระบบจึงไม่ออกใบเสนอราคาสกุลเงินต่างประเทศให้ เพราะเอกสารที่ออกแล้วจะถูกแช่แข็งและแก้อัตราภายหลังไม่ได้ — ' +
+    'กรุณาให้ผู้ดูแลระบบกรอก “อัตราแลกเปลี่ยนกำหนดเอง” ที่ประเทศปลายทางนี้ แล้วส่งใหม่อีกครั้ง',
 
   /* ── Staleness ───────────────────────────────────────────────────────────── */
   /*

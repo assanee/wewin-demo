@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { resolveFxRate, type FxRate, type FxRateProblem, type FxSnapshot } from '@wewin/core/fx';
 
 import { AppError } from '../common/errors/app-error';
-import { message } from '../i18n';
+import { count as countParam, message } from '../i18n';
 import { TaxCountryService, type DestinationFx } from '../organisation/tax-country.service';
-import { FxRatesRepository, type Tx } from './fx-rates.repository';
+import { FxRatesRepository, type FxSnapshotRow, type Tx } from './fx-rates.repository';
+import { FX_RATE_REFUSE_AFTER_HOURS, fxRateAgeHours } from './staleness';
 
 /**
  * One quotation's rate, pinned.
@@ -64,9 +65,22 @@ type RateFailure = FxRateProblem | 'no_snapshot';
  *
  * The owner's decision, verbatim: *"ดึงไม่ได้ทำยังไง = ให้ใช้ค่าเดิมที่ cache ไว้ในฐานข้อมูล"* —
  * if the daily sync could not fetch, use what is already cached in the database. So this reads
- * the newest row of `fx_rates` and nothing else. There is no freshness check, no "is today's
- * fetch missing" branch, and no HTTP client reachable from this file: a sync that failed for
- * three days costs three days of staleness, and costs nobody a submit they cannot make.
+ * the newest row of `fx_rates` and nothing else. There is no "is today's fetch missing" branch
+ * and no HTTP client reachable from this file.
+ *
+ * ⚠️ **There IS a freshness check now, and this paragraph used to say there was not.** The
+ * sentence that stood here read: *"a sync that failed for three days costs three days of
+ * staleness, and costs nobody a submit they cannot make."* Both halves were true and the second
+ * was the bug — it described an **unbounded** cost as though three days were the end of it.
+ * Nothing distinguished a rate an hour old from one three weeks old, and the three-week version
+ * quoted a customer at last month's rate and froze it there forever.
+ *
+ * So the cache rule stands unchanged — no live fetch, no refusal merely because *today's* sync
+ * missed — and a bound is added at the far end of it: past `FX_RATE_REFUSE_AFTER_HOURS` the
+ * submit is refused with a sentence naming the way out. See `staleness.ts` for the two
+ * thresholds, and for why the age is measured on `rate_timestamp` while the *ordering* below
+ * stays on `fetched_at`. Three days is now where the cost stops rather than an example of it
+ * continuing, which is what that sentence was reaching for without having.
  *
  * The reason it must never become a live fetch is stronger than tidiness. `forDestination` runs
  * inside `OrdersService.submit`'s transaction, which by then holds a lock on the order row. A
@@ -178,6 +192,29 @@ export class QuotationRateService {
     const snapshot = await this.snapshots.latest(tx);
     if (snapshot === undefined) throw unusable(countryCode, currency, 'no_snapshot');
 
+    /*
+     * ⭐ THE AGE BOUND — the one thing the cache rule never said.
+     *
+     * The owner's rule is "use the cached value", and it stays: everything above this line
+     * still reads the newest stored row and never fetches. What it did not say is that "the
+     * cached value" describes an hour-old rate and a three-week-old rate in the same words,
+     * and only the first is a rate. Past `FX_RATE_REFUSE_AFTER_HOURS` this refuses rather than
+     * pinning a figure `order_documents_freeze` will then make permanent — see `staleness.ts`
+     * for why 72, and for why the age is measured on `rateTimestamp` rather than `fetchedAt`.
+     *
+     * ⚠️ **Below the manual-override branch, and that placement is the escape hatch.** A
+     * hand-typed rate short-circuits at `settings.manualRateThbPerUnit !== null` above and
+     * never reaches this line, so an override is never refused for staleness — correctly, and
+     * not by a special case here: a figure somebody read off a bank's screen has no provider
+     * observation to be old. That is also what makes the refusal below honest when it tells
+     * staff to type one; the way out it names is a way out that actually works, because it
+     * runs before this check rather than around it.
+     */
+    const ageHours = fxRateAgeHours(snapshot.rateTimestamp, new Date());
+    if (ageHours > FX_RATE_REFUSE_AFTER_HOURS) {
+      throw tooStale(countryCode, currency, snapshot, ageHours);
+    }
+
     const resolved = resolveFxRate(currency, settings, {
       base: snapshot.base,
       rates: snapshot.rates,
@@ -213,4 +250,42 @@ function unusable(countryCode: string, currency: string, cause: RateFailure): Ap
     destinationCountry: countryCode,
     currency,
   });
+}
+
+/**
+ * ⭐ The other refusal: there *is* a rate, and it is too old to freeze onto a document.
+ *
+ * A separate `reason` from `fx_rate_unavailable`, and separate deliberately — this is the one
+ * place this module's usual "having no rate is one situation and not three" argument does not
+ * apply. The other three causes are all *"we cannot produce a figure"*; this one is *"we can,
+ * and you should not want it"*, and a client that showed them identically would tell staff to
+ * wait for the next sync when the next sync is exactly what has not been happening.
+ *
+ * `ageHours` is floored into the sentence and kept exact in `details`. A staff member reading
+ * *"เก่ากว่า 72 ชั่วโมง"* does not want 73.4, and a support engineer reading the envelope does.
+ */
+function tooStale(
+  countryCode: string,
+  currency: string,
+  snapshot: FxSnapshotRow,
+  ageHours: number,
+): AppError {
+  return AppError.validationFailed(
+    message('error.fx.rate_too_stale', {
+      hours: countParam(Math.floor(ageHours)),
+      limitHours: countParam(FX_RATE_REFUSE_AFTER_HOURS),
+    }),
+    {
+      reason: 'fx_rate_too_stale',
+      destinationCountry: countryCode,
+      currency,
+      /* Both clocks, because the pair is the diagnosis — see `staleness.ts`. A `fetchedAt`
+       * minutes old beside an `observedAt` three weeks old is a frozen provider feed; the two
+       * ageing together is a sync that has stopped running. */
+      observedAt: snapshot.rateTimestamp.toISOString(),
+      fetchedAt: snapshot.fetchedAt.toISOString(),
+      ageHours,
+      limitHours: FX_RATE_REFUSE_AFTER_HOURS,
+    },
+  );
 }

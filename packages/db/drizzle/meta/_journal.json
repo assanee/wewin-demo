@@ -281,6 +281,13 @@
       "when": 1786400000010,
       "tag": "0039_history_clock",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786400000011,
+      "tag": "0040_fx_sync_failures",
+      "breakpoints": true
     }
   ]
 }

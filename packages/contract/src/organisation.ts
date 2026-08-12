@@ -109,3 +109,54 @@ export interface PaymentInstructionsWire {
   readonly outstandingThbMinor: MoneyWire<'THB'>;
   readonly accounts: readonly BankAccountPublicWire[];
 }
+
+/* ------------------------------------------------------------------ *
+ * The exchange-rate feed, as a screen sees it
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ How old the newest exchange rate is, and how many syncs have failed since it landed.
+ *
+ * Read-only, and there is no request shape beside it on purpose: nothing here is settable.
+ * The two thresholds are constants in `apps/api/src/fx/staleness.ts` and are reported *down*
+ * rather than configured up, so a screen never has to hold a second copy of them — the panel
+ * that renders "36 ชั่วโมง" gets the 36 from the same constant the refusal compares against,
+ * and the two cannot drift into a screen showing green over a submit that is being refused.
+ *
+ * ⚠️ **Both clocks travel, and the pair is the diagnosis.** `observedAt` is when the provider
+ * struck the rate and `fetchedAt` is when we stored it; `ageHours` is measured on the *first*
+ * (see `staleness.ts`). A `fetchedAt` of minutes ago beside an `observedAt` of three weeks ago
+ * is a provider whose feed has frozen while its HTTP endpoint stays healthy — the failure that
+ * is invisible to any check built on fetch time — and it is only legible when a reader can see
+ * both. Neither is derivable from the other, so neither is redundant.
+ */
+export interface FxRateHealthWire {
+  /** `'ok' | 'warn' | 'blocked'`, decided server-side by the same function the refusal uses. */
+  readonly status: string;
+  /**
+   * Hours since `observedAt`, exact. `null` — and only — when `fx_rates` has never had a row,
+   * which is a different fact from "an age of zero" and is reported as `status: 'blocked'`
+   * because that is what a foreign-currency submit already does about it.
+   */
+  readonly ageHours: number | null;
+  /** ISO 8601. `null` when there is no observation at all. */
+  readonly observedAt: string | null;
+  /** ISO 8601. `null` when there is no observation at all. */
+  readonly fetchedAt: string | null;
+  /**
+   * Failed syncs recorded since the newest stored rate — so a landed retry resets it by
+   * arithmetic rather than by anybody clearing a counter.
+   *
+   * ⚠️ A **lower bound**. A failure the database refused to record is a failure that is not
+   * counted; see `FxRatesService.record` for why that path swallows rather than throws. Zero
+   * beside a large `ageHours` is therefore its own signal: it means nothing is even trying,
+   * which is a stopped scheduler rather than a struggling provider.
+   */
+  readonly consecutiveFailures: number;
+  /** ISO 8601 of the newest recorded failure, or `null` when none has been recorded. */
+  readonly lastFailureAt: string | null;
+  /** The soft threshold, in hours — reported so a screen holds no copy of it. */
+  readonly warnAfterHours: number;
+  /** The hard threshold, in hours. Past this a foreign-currency submit is refused. */
+  readonly refuseAfterHours: number;
+}

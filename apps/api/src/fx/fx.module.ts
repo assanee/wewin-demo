@@ -1,10 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 
+import { createEmailTransport } from '../notifications/channels/transports/create-transport';
+import { parseNotificationsConfig } from '../notifications';
+import { EMAIL_TRANSPORT } from '../notifications/notifications.tokens';
 import { OrganisationModule } from '../organisation';
+import { FxController } from './fx.controller';
 import { FxHttp } from './fx-http';
 import { FxRatesRepository } from './fx-rates.repository';
 import { FxRatesService } from './fx-rates.service';
+import {
+  FX_STALENESS_CONFIG,
+  FxStalenessService,
+  type FxStalenessConfig,
+} from './fx-staleness.service';
 import { QuotationRateService } from './quotation-rate.service';
 
 /**
@@ -48,11 +57,43 @@ import { QuotationRateService } from './quotation-rate.service';
  */
 @Module({
   imports: [ScheduleModule.forRoot(), OrganisationModule],
+  controllers: [FxController],
   providers: [
     { provide: FxHttp, useFactory: () => new FxHttp() },
     FxRatesService,
     FxRatesRepository,
     QuotationRateService,
+    FxStalenessService,
+    {
+      provide: EMAIL_TRANSPORT,
+      /*
+       * This module's *own* transport instance, exactly as `PasswordModule` builds one, and
+       * for the reason stated there: importing `NotificationsModule` to share a transport
+       * would bring `NotificationWorker` with it and start a second poller against the same
+       * outbox. `createEmailTransport` stays the one place that decides file-versus-smtp-
+       * versus-resend, so the instances cannot differ in behaviour, only in identity.
+       */
+      useFactory: () => createEmailTransport(parseNotificationsConfig(process.env)),
+    },
+    {
+      provide: FX_STALENESS_CONFIG,
+      /*
+       * The queue address is read through `parseNotificationsConfig` rather than off
+       * `process.env` directly, so this inherits the whole of that file's behaviour for free:
+       * the `.local` development defaults, and the production boot refusal when no queue is
+       * configured. A warning nobody receives is the failure this round exists to fix, and
+       * re-reading the variable by hand here would have quietly opted out of the check that
+       * prevents it.
+       */
+      useFactory: (): FxStalenessConfig => {
+        const config = parseNotificationsConfig(process.env);
+
+        return {
+          from: config.emailFrom,
+          recipient: config.queueAddresses.sales_queue,
+        };
+      },
+    },
   ],
   exports: [QuotationRateService],
 })

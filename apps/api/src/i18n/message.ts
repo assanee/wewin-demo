@@ -354,6 +354,19 @@ const PARAM_SHAPES = {
    * prose a translator owns.
    */
   'error.fx.rate_unavailable': {},
+  /*
+   * ⭐ The rate exists and is too old to freeze onto a document — see `apps/api/src/fx/
+   * staleness.ts` for the two thresholds and for why age is measured on `rate_timestamp`.
+   *
+   * Params, where `error.fx.rate_unavailable` above deliberately has none, and the difference
+   * is what the sentence has to accomplish. That one names a state — there is no rate — and a
+   * state needs no numbers. This one has to persuade somebody that a rate they can see on a
+   * screen must not be used, and *"เก่ากว่า 72 ชั่วโมง"* against an actual 500 is the whole
+   * argument. Both are `count` and both are hours: the country code and the two timestamps
+   * still travel in `details`, for the reason the key above and
+   * `error.stale.destination_changed_under_promise` both give.
+   */
+  'error.fx.rate_too_stale': { hours: 'count', limitHours: 'count' },
 
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},

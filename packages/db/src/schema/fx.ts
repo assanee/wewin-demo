@@ -49,3 +49,50 @@ export const fxRates = pgTable(
     index('fx_rates_fetched_at_idx').on(t.fetchedAt.desc()),
   ],
 );
+
+/**
+ * Every sync that did **not** land — the half of the record `fx_rates` cannot hold.
+ *
+ * `fx_rates` grows a row per success, so a run of failures is an absence, and an absence is
+ * ambiguous: a table with no new rows since the 3rd looks identical whether the provider has
+ * been refusing us for three weeks or nobody ever deployed the cron. Both end with a quotation
+ * priced at a three-week-old rate and frozen there by `order_documents_freeze`, and until this
+ * table existed the only trace of either was a `logger.warn` in a stream nobody reads.
+ *
+ * **Failures only, never successes.** A success already writes an `fx_rates` row carrying its
+ * own `fetched_at`; recording it here as well would be a second copy of one fact with its own
+ * way of being wrong. The consecutive-failure figure is therefore *derived* — the rows in here
+ * newer than the newest `fx_rates.fetched_at` — which is a count that cannot disagree with the
+ * rates it is describing, because it is measured against them.
+ *
+ * **Append-only** (`fx_sync_failures_append_only`, see the migration), on `fx_rates`' own
+ * reasoning: a sync that failed at 01:00 failed at 01:00, and a later retry that succeeded does
+ * not un-happen the four before it. A record that could be tidied is a record that could
+ * summarise a three-week outage as fine.
+ */
+export const fxSyncFailures = pgTable(
+  'fx_sync_failures',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** When we tried. There is no provider clock on a failure — nothing was observed. */
+    attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * How far the attempt got: `fetch` (never reached the provider, or it refused), `parse`
+     * (a body arrived and was not `latest.json`), `store` (the rates were good and the
+     * database would not take them). Three words because the three have different owners —
+     * a network, a provider contract, and us.
+     */
+    stage: text('stage').notNull(),
+    /**
+     * A short, safe-to-log reason: a status code, a schema complaint, a SQLSTATE. ⚠️ Never a
+     * URL and never a response body — `FxHttp` is built so this class never holds one, and
+     * `app_id` travels in the URL. See `FxRatesService`'s header.
+     */
+    detail: text('detail').notNull(),
+  },
+  (t) => [
+    check('fx_sync_failures_stage_known', sql`${t.stage} IN ('fetch', 'parse', 'store')`),
+    /* Newest first, always bounded against the newest `fx_rates.fetched_at`. */
+    index('fx_sync_failures_attempted_at_idx').on(t.attemptedAt.desc()),
+  ],
+);

@@ -3,6 +3,7 @@ import { fxRates } from '@wewin/db/schema';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { QuotationRateService } from '../../src/fx/quotation-rate.service';
+import { FX_RATE_REFUSE_AFTER_HOURS } from '../../src/fx/staleness';
 import { TaxCountryService } from '../../src/organisation/tax-country.service';
 import { createPgHarness } from '../support/pg-harness';
 
@@ -64,17 +65,36 @@ interface SnapshotFixture {
   readonly source: string;
 }
 
+/**
+ * ⚠️ **Relative to now, where these used to be absolute dates — and the change is forced.**
+ *
+ * `QuotationRateService` now refuses an observation older than `FX_RATE_REFUSE_AFTER_HOURS`
+ * (`src/fx/staleness.ts`). The previous fixtures were pinned to fixed 2025/2026 instants, so
+ * every one of them aged past that bound on a wall clock and the whole file would have failed
+ * on a date rather than on a defect. A fixture whose passing depends on what month it is run
+ * in is not a fixture.
+ *
+ * ⭐ **The inversion the file exists to prove is preserved exactly.** `NEWER` is still fetched
+ * *after* `OLDER` while carrying a `rate_timestamp` struck *before* it, which is what a
+ * provider does every time it re-serves a stale `timestamp` after an outage — so an ordering
+ * on the wrong column, or in the wrong direction, still cannot pass. Only the magnitudes moved:
+ * hours instead of months, all of them inside the staleness bound so that the cases about
+ * *which row* stay cases about which row rather than becoming cases about age. The staleness
+ * bound gets its own tests below, where it is the subject rather than an obstacle.
+ */
+const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 60 * 60 * 1000);
+
 const NEWER: SnapshotFixture = {
-  fetchedAt: new Date('2026-06-01T00:00:00Z'),
-  rateTimestamp: new Date('2025-12-01T00:00:00Z'),
+  fetchedAt: hoursAgo(1),
+  rateTimestamp: hoursAgo(6),
   base: 'USD',
   rates: { THB: 40, SGD: 2 },
   source: 'openexchangerates',
 };
 
 const OLDER: SnapshotFixture = {
-  fetchedAt: new Date('2026-01-01T00:00:00Z'),
-  rateTimestamp: new Date('2026-01-01T00:00:00Z'),
+  fetchedAt: hoursAgo(5),
+  rateTimestamp: hoursAgo(2),
   base: 'USD',
   rates: { THB: 36.5, SGD: 1.34 },
   source: 'openexchangerates',
@@ -241,6 +261,100 @@ describeWithPg('QuotationRateService.forDestination against Postgres', () => {
     await expect(fx.forDestination('SG', undefined)).rejects.toMatchObject({
       details: { reason: 'fx_rate_unavailable', cause: 'destination_rate_missing' },
     });
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * The age bound — `src/fx/staleness.ts`
+   * ──────────────────────────────────────────────────────────────────────────── */
+
+  /**
+   * ⭐ The refusal itself: a resolvable rate that is simply too old to freeze onto a document.
+   *
+   * Distinct from every other case in this file, which are all *"we cannot produce a figure"*.
+   * Here we can — 40/2 is right there and converts cleanly — and the submit is refused anyway,
+   * because `order_documents_freeze` means the figure would be permanent and a rate this old is
+   * not a price. That is the whole argument of the round, in one assertion.
+   */
+  it('refuses a foreign-currency quotation when the newest observation is past the refusal limit', async () => {
+    const { fx, countries, actor, snapshot } = await harness();
+    await singapore(countries, actor.id);
+    await snapshot({ ...NEWER, fetchedAt: hoursAgo(100), rateTimestamp: hoursAgo(100) });
+
+    await expect(fx.forDestination('SG', undefined)).rejects.toMatchObject({
+      status: 422,
+      details: {
+        reason: 'fx_rate_too_stale',
+        destinationCountry: 'SG',
+        currency: 'SGD',
+        limitHours: FX_RATE_REFUSE_AFTER_HOURS,
+      },
+    });
+  });
+
+  /**
+   * ⭐ THE CLOCK CHOICE, and the one case that can tell the two apart.
+   *
+   * A row fetched *seconds ago* carrying a `rate_timestamp` from three weeks ago — which is
+   * exactly what a provider produces when its feed freezes but its HTTP endpoint stays healthy.
+   * Measured on `fetched_at` this is the healthiest row imaginable and every quotation prices
+   * against a three-week-old number for as long as the feed stays frozen. Measured on
+   * `rate_timestamp` it is refused.
+   *
+   * This is the single assertion that pins `staleness.ts`'s argument for `rate_timestamp`: swap
+   * the column in `fromSettings` and everything else in this file still passes, and this fails.
+   */
+  it('measures age on rate_timestamp, so a fresh fetch carrying a stale rate is still refused', async () => {
+    const { fx, countries, actor, snapshot } = await harness();
+    await singapore(countries, actor.id);
+    await snapshot({ ...NEWER, fetchedAt: new Date(), rateTimestamp: hoursAgo(24 * 21) });
+
+    await expect(fx.forDestination('SG', undefined)).rejects.toMatchObject({
+      details: { reason: 'fx_rate_too_stale' },
+    });
+  });
+
+  /**
+   * The other side of the same boundary, so the bound is a bound and not a blanket refusal.
+   * An observation comfortably inside the limit resolves exactly as it did before this round —
+   * the mid-market cross-rate through USD, with the row's 200 bp spread applied.
+   */
+  it('still prices normally against an observation inside the limit', async () => {
+    const { fx, countries, actor, snapshot } = await harness();
+    await singapore(countries, actor.id);
+    await snapshot({ ...NEWER, fetchedAt: hoursAgo(2), rateTimestamp: hoursAgo(FX_RATE_REFUSE_AFTER_HOURS - 2) });
+
+    const resolved = await fx.forDestination('SG', undefined);
+
+    expect(resolved?.rate.source).toBe('mid_market');
+    /* 40 THB and 2 SGD to the USD is 20 THB/SGD mid, less 200 bp = 19.60. */
+    expect(thbPerUnitText(resolved!.rate)).toBe('19.600000');
+  });
+
+  /**
+   * ⭐ THE ESCAPE HATCH — and the reason the refusal above is allowed to be as blunt as it is.
+   *
+   * The refusal's Thai sentence tells staff to have an administrator type an override. That
+   * advice is only honest if an override actually clears the block, so this proves it does, at
+   * an age (three weeks) far past the limit that refused the identical snapshot two cases up.
+   *
+   * ⚠️ It is not a special case in the staleness code and there is deliberately no
+   * `if (manual) skipAgeCheck` anywhere. `fromSettings` returns inside the
+   * `manualRateThbPerUnit !== null` branch *before* it reads `fx_rates` at all, so a typed rate
+   * has no observation to be old — the exemption falls out of the ordering rather than being
+   * asserted by a flag. This test is what stops somebody "tidying" the snapshot read above the
+   * branch and silently making every manual destination unquotable during an outage, which is
+   * precisely backwards.
+   */
+  it('accepts a manual override however old the newest observation is', async () => {
+    const { fx, countries, actor, snapshot } = await harness();
+    await singapore(countries, actor.id, '27.05');
+    await snapshot({ ...NEWER, fetchedAt: hoursAgo(24 * 21), rateTimestamp: hoursAgo(24 * 21) });
+
+    const resolved = await fx.forDestination('SG', undefined);
+
+    expect(resolved?.rate.source).toBe('manual');
+    expect(thbPerUnitText(resolved!.rate)).toBe('27.050000');
+    expect(resolved?.observedAt).toBeNull();
   });
 
   it('returns null for an order that names no destination — a baht quotation, not a failure', async () => {

@@ -18,5 +18,5 @@
  * from a package whose export map exists to keep the surface small.
  */
 
-export { and, asc, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
+export { and, asc, count, desc, eq, gt, inArray, max, or, sql } from 'drizzle-orm';
 export type { SQL } from 'drizzle-orm';
