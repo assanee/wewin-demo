@@ -279,6 +279,31 @@ function Sheet({
       </dl>
 
       {/*
+       * ⭐ THE RATE, AND WHY IT IS THE ONLY THING ON THIS PAGE THAT MENTIONS BAHT.
+       *
+       * Every figure above is already in the destination's currency — the owner's requirement
+       * is that it *replaces* baht, not that it sits in a second column beside it. What a
+       * reader still needs is the rate those figures were struck at and when, because that is
+       * what makes the number checkable rather than merely asserted. It is the same rate the
+       * document froze at submit, so a reprint years from now says the same thing.
+       *
+       * ⚠️ `rateText` is a rendering. Dividing the printed total by the printed rate will not
+       * reproduce the figures to the last cent — the conversion used an exact ratio, which is
+       * pinned in the document but is not something to put in front of a customer.
+       */}
+      {quotation.fxRate === null ? null : (
+        <p className="mt-4 ml-auto max-w-[320px] text-caption text-chalk-2">
+          {t('quotation.fx.rate', {
+            currency: quotation.fxRate.currency,
+            rateText: quotation.fxRate.rateText,
+          })}
+          {quotation.fxRate.isManual
+            ? ` · ${t('quotation.fx.manual')}`
+            : ` · ${t('quotation.fx.observedAt', { observedAt: quotation.fxRate.observedAtText })}`}
+        </p>
+      )}
+
+      {/*
        * The hash, small and present. It is what makes "the quotation you sent me in August"
        * a thing two people can check they are holding the same copy of.
        */}

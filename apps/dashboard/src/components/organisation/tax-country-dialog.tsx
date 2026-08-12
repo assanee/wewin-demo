@@ -236,10 +236,18 @@ export function TaxCountryDialog({
           </div>
 
           {/*
-            The exchange-rate settings. Nothing converts a quotation yet — the arithmetic lives
-            in `@wewin/core/fx` and is unwired on purpose — so these are settings being decided
-            ahead of the screen that will use them, which is why the descriptions say what each
-            one *means* rather than what it will look like.
+            ⭐ The exchange-rate settings, and they are live now.
+
+            Setting a currency here means every quotation submitted for this destination from
+            now on **prints in that currency instead of baht**, at a rate frozen into the
+            document at the moment staff submits it. Two consequences worth knowing before
+            typing in this panel:
+
+              - Already-issued quotations do not change. `order_documents` is frozen against
+                UPDATE, so what is on paper stays on paper — this only affects the next submit.
+              - With a currency set and no manual rate, a submit needs a stored observation in
+                `fx_rates`. If the daily sync has never run, the submit is refused with a
+                sentence saying so, and typing a manual rate below is the immediate fix.
           */}
           <div className="border-border/60 flex flex-col gap-4 border-t pt-4">
             <SelectField

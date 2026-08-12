@@ -394,6 +394,16 @@ export interface UiParamsByKey {
    */
   'quotation.vatIncluded': Plain;
   'quotation.total': Plain;
+  /**
+   * ⭐ The exchange rate the quotation was frozen at.
+   *
+   * `currency` is an ISO code and `rateText` a decimal the API already rendered — neither is
+   * formatted here, because both are pinned in the document and a locale-dependent rendering
+   * of a pinned figure is a reprint that differs from the print.
+   */
+  'quotation.fx.rate': { readonly currency: string; readonly rateText: string };
+  'quotation.fx.observedAt': { readonly observedAt: string };
+  'quotation.fx.manual': Plain;
   'quotation.lineNo': Plain;
   'quotation.item': Plain;
   'quotation.qty': Plain;

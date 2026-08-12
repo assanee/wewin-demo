@@ -313,6 +313,24 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
           </tfoot>
         </table>
 
+        {/*
+         * ⭐ The rate, on the staff copy as well as the customer's.
+         *
+         * `printableQuotation` is shared between the two apps precisely so that one document
+         * cannot print two ways — so the moment the customer's page started showing SGD, this
+         * one did too, and a salesperson looking at a figure with no rate beside it is a
+         * salesperson who cannot answer the first question they will be asked about it. Same
+         * fields, same pinned document, no second opinion.
+         */}
+        {sheet.fxRate === null ? null : (
+          <p className="text-muted-foreground mt-4 text-xs print:text-black">
+            อัตราแลกเปลี่ยน 1 {sheet.fxRate.currency} = {sheet.fxRate.rateText} บาท
+            {sheet.fxRate.isManual
+              ? ' · อัตราที่บริษัทกำหนด'
+              : ` · อ้างอิงอัตรา ณ ${sheet.fxRate.observedAtText}`}
+          </p>
+        )}
+
         <p className="text-muted-foreground mt-6 text-xs print:text-black">
           ระยะเวลาส่งมอบโดยประมาณ {sheet.leadTimeText} วันนับจากวันที่ยืนยันการผลิต
         </p>
