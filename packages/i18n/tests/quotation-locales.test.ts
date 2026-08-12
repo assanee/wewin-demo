@@ -38,6 +38,9 @@ describe('every storefront locale renders without degrading', () => {
     grandTotalThbMinor: 107n,
     lines: [],
     charges: [],
+    /* Baht. The currency-replacement path is proved in core and in the storefront; what this
+       file exists to pin is that all eight locales render at all, which is orthogonal. */
+    fx: null,
   };
 
   it.each(LOCALES)('renders %s rather than falling back to Thai', (locale) => {
