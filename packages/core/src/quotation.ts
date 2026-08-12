@@ -114,6 +114,8 @@ export interface PinnedDocument {
   readonly charges: readonly PinnedCharge[];
   /** `null` on a baht quotation, which is every domestic one and every one issued before 5c. */
   readonly fx: PinnedFx | null;
+  /** Satang, off the order row — see `DocumentContext`. `null` when not known. */
+  readonly scheduledDepositThbMinor: bigint | null;
 }
 
 export interface PrintableLine {
@@ -173,6 +175,42 @@ export interface PrintableQuotation {
    * the number is the rate it was struck at and when — not a second column to reconcile.
    */
   readonly fxRate: PrintableFxRate | null;
+  /**
+   * ⭐ WHAT THE CUSTOMER ACTUALLY TRANSFERS, IN BAHT — `null` on a baht quotation.
+   *
+   * The owner's decision is that a foreign destination is quoted in its own currency and
+   * **settled in baht**. So the figures above are the price and this is the payment, and both
+   * have to be on the page: a customer shown only "SGD 653.83" meets the baht figure for the
+   * first time on the payment screen, and two amounts discovered one at a time is how somebody
+   * transfers the wrong one.
+   *
+   * ── ⚠️ Where this number comes from, which is the whole point ─────────────────
+   *
+   * It is `document.grandTotalThbMinor` — **the pinned baht figure the foreign one was derived
+   * from** — and *not* the foreign total converted back at the pinned rate. Those are different
+   * numbers: converting SGD 653.83 back at 26.496296 gives ฿17,325.72, not the ฿17,324.00 that
+   * was actually priced, because the forward conversion rounded once. Printing the back-
+   * conversion would put a figure on the document that no row in the database agrees with.
+   *
+   * Because it is the pinned figure, it is the *same integer* the payment page charges:
+   * `orders.grand_total_thb_minor` is constrained equal to the pinned document's by the
+   * `orders_totals_match_document` trigger (`0007_order_guards.sql:501-529`), which raises on
+   * any write that would let them differ. The two pages cannot disagree — not because they
+   * recompute the same way, but because neither recomputes at all.
+   *
+   * `null` when there is no `fx`, because then the totals above are already baht and a second
+   * line saying so again would be noise.
+   */
+  readonly payableThbText: string | null;
+  /**
+   * The deposit, in baht — `null` unless there is one, it is known, and it differs from the
+   * total.
+   *
+   * The deposit is what the customer pays *first*, so the settle-in-baht statement has to hold
+   * on it too. Suppressed when it equals the grand total (a pay-in-full policy), where a second
+   * identical figure under a different label reads as a second obligation.
+   */
+  readonly depositThbText: string | null;
   /**
    * ⚠️ True when the pinned locale is one this build cannot render.
    *
@@ -312,8 +350,20 @@ export function printableQuotation(document: PinnedDocument): PrintableQuotation
       ? money(minor, locale, fx.currency)
       : money(thbMinor, locale, 'THB');
 
+  /*
+   * ⚠️ The pinned baht figures, never the foreign ones converted back — see `payableThbText`.
+   * `deposit` is suppressed when it equals the total, which is what a pay-in-full policy
+   * produces and which would otherwise print as a second, identical demand.
+   */
+  const deposit = document.scheduledDepositThbMinor;
+  const depositIsSeparate =
+    deposit !== null && deposit !== undefined && deposit !== document.grandTotalThbMinor;
+
   return {
     currency,
+    payableThbText: fx === null ? null : money(document.grandTotalThbMinor, locale, 'THB'),
+    depositThbText:
+      fx === null || !depositIsSeparate ? null : money(deposit, locale, 'THB'),
     fxRate:
       fx === null
         ? null
@@ -474,6 +524,15 @@ export interface DocumentContext {
   readonly orderNo: string | null;
   readonly contactName: string | null;
   readonly submittedAt: string | null;
+  /**
+   * Satang, or `null` when the order names none.
+   *
+   * A payment fact rather than a priced one — it lives on `orders.scheduled_deposit_thb_minor`,
+   * pinned at submit in the same statement that stamps `submitted_at`, and is not inside the
+   * frozen document. Optional on the type so a caller that has not got it (an older client, a
+   * fixture) omits it rather than inventing a zero, which would print as a free deposit.
+   */
+  readonly scheduledDepositThbMinor?: bigint | null | undefined;
 }
 
 /**
@@ -504,6 +563,7 @@ export function pinnedDocumentFrom(
     orderNo: context.orderNo,
     contactName: context.contactName,
     submittedAt: context.submittedAt,
+    scheduledDepositThbMinor: context.scheduledDepositThbMinor ?? null,
     vatRateBp: typeof vat.rateBp === 'number' ? vat.rateBp : 0,
     leadTimeDays: typeof document['leadTimeDays'] === 'number' ? document['leadTimeDays'] : 0,
     netThbMinor: satang(document['netThbMinor'], 'ยอดก่อนภาษี'),

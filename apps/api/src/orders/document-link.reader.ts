@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { encodeThb } from '@wewin/contract/order';
 
 import { encodeProfile } from '../organisation/encode';
 import { OrganisationRepository } from '../organisation/organisation.repository';
@@ -65,6 +66,15 @@ export class DocumentLinkReader {
       contactName: order.contactName,
       submittedAt: order.submittedAt?.toISOString() ?? null,
       document: document.document,
+      /*
+       * Live off the order row, like `contactName` and `submittedAt` above — the deposit is a
+       * payment fact, not part of what was priced, so it is not in the frozen document. See
+       * `LinkedDocumentWire.scheduledDepositThbMinor`.
+       */
+      scheduledDepositThbMinor:
+        order.scheduledDepositThbMinor === null
+          ? null
+          : encodeThb(order.scheduledDepositThbMinor),
       seller: encodeProfile(profile),
     };
   }

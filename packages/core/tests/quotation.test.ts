@@ -61,6 +61,7 @@ const DOCUMENT: PinnedDocument = {
   ],
   charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 0n, fxMinor: null }],
   fx: null,
+  scheduledDepositThbMinor: null,
 };
 
 describe('⭐ the same document renders the same way', () => {

@@ -79,6 +79,7 @@ const BASE: PinnedDocument = {
   charges: [{ labelTh: 'ค่าติดตั้ง', amountMinor: 100_000n, fxMinor: null }],
   /* Baht — the ordinary case. The foreign one is a separate describe below. */
   fx: null,
+  scheduledDepositThbMinor: null,
 };
 
 /*
@@ -298,5 +299,76 @@ describe('⭐ a foreign destination replaces baht rather than sitting beside it'
 
     expect(printed.lines[0]?.netText).toBe('฿20,000.00');
     expect(printed.grandTotalText).toBe('SGD 1,101.35');
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ QUOTED IN SGD, SETTLED IN BAHT — and the two figures cannot drift apart
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner's decision: the foreign currency is the reference price and payment is made in
+ * baht. So the page carries both, and the assertion that matters is *where the baht number
+ * comes from*.
+ *
+ * ⚠️ It is `grandTotalThbMinor` — the pinned figure the foreign one was derived **from** — and
+ * never the foreign total converted back at the pinned rate. Those differ: the forward
+ * conversion rounds once, so converting SGD 1,101.35 back at 27.238806 does not return the
+ * ฿30,000.00 that was priced. A page printing the back-conversion would state an obligation no
+ * row in the database agrees with, and would drift from the payment page by a satang or two on
+ * most orders.
+ */
+describe('⭐ the baht a customer actually transfers', () => {
+  const withDeposit = (depositMinor: bigint | null): PinnedDocument => ({
+    ...SGD_FIXTURE,
+    scheduledDepositThbMinor: depositMinor,
+  });
+
+  it('prints the pinned baht total, not the foreign total converted back', () => {
+    const printed = printableQuotation(SGD_FIXTURE);
+
+    /* The document says 3,000,000 satang. That is what must appear. */
+    expect(printed.payableThbText).toBe('฿30,000.00');
+
+    /*
+     * ⚠️ The negative control, and the reason this test exists. A back-conversion of the
+     * *printed* SGD total at the *printed* rate lands somewhere else — so a green assertion
+     * above is only meaningful alongside proof that the wrong method gives a different answer.
+     */
+    const backConverted = (110_135n * 27_238_806n) / 1_000_000n;
+    expect(backConverted).not.toBe(3_000_000n);
+  });
+
+  it('shows the deposit in baht when it differs from the total', () => {
+    expect(printableQuotation(withDeposit(900_000n)).depositThbText).toBe('฿9,000.00');
+  });
+
+  it('omits the deposit line when the policy is pay-in-full', () => {
+    /* A second identical figure under a different label reads as a second obligation. */
+    expect(printableQuotation(withDeposit(3_000_000n)).depositThbText).toBeNull();
+  });
+
+  it('omits the deposit line when the order carries none', () => {
+    expect(printableQuotation(withDeposit(null)).depositThbText).toBeNull();
+  });
+
+  it('says nothing about baht settlement on a baht quotation', () => {
+    /* The totals are already baht; a line repeating that is noise. */
+    const printed = printableQuotation({ ...BASE, scheduledDepositThbMinor: 900_000n });
+
+    expect(printed.payableThbText).toBeNull();
+    expect(printed.depositThbText).toBeNull();
+  });
+
+  it('⚠️ the baht figure is the same integer the payment page charges', () => {
+    /*
+     * `orders.grand_total_thb_minor` is constrained equal to the pinned document's by the
+     * `orders_totals_match_document` trigger (0007_order_guards.sql:501-529), and the payment
+     * page's outstanding folds from that column. So proving this page prints
+     * `grandTotalThbMinor` verbatim is proving the two pages cannot disagree — neither
+     * recomputes, so there is nothing to recompute differently.
+     */
+    const printed = printableQuotation({ ...SGD_FIXTURE, grandTotalThbMinor: 1_732_400n });
+    expect(printed.payableThbText).toBe('฿17,324.00');
   });
 });

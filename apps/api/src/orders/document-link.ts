@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 import type { OrderDocumentWire } from '@wewin/contract/order';
+import type { MoneyWire } from '@wewin/contract/money';
 import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 
 import { AppError } from '../common/errors/app-error';
@@ -238,6 +239,27 @@ export interface LinkedDocumentWire {
   readonly contactName: string | null;
   readonly submittedAt: string | null;
   readonly document: OrderDocumentWire;
+  /**
+   * ⭐ What the customer is asked for **first**, in baht — the third order-row fact this page
+   * needs and cannot get from the document.
+   *
+   * It matters on a foreign-currency quotation specifically. The page prints in the
+   * destination's currency, but settlement is in baht (the owner's decision), and a customer
+   * who is shown only "SGD 653.83" learns the amount they actually transfer for the first time
+   * on the payment page. Two figures, discovered one at a time, is how somebody transfers the
+   * wrong one.
+   *
+   * ⚠️ Beside `document`, never inside it, and for the same reason `seller` is:
+   * `order_documents` is frozen against UPDATE, and the deposit is a *payment* fact that lives
+   * on the mutable order row (`orders.scheduled_deposit_thb_minor`, pinned at submit in the
+   * same statement that stamps `submitted_at`). It is not part of what was priced, so it does
+   * not belong in a hash of what was priced.
+   *
+   * `null` on an order that was never submitted — unreachable through this route, which
+   * requires a `document_id`, but the column is nullable and the type says so rather than
+   * asserting.
+   */
+  readonly scheduledDepositThbMinor: MoneyWire<'THB'> | null;
   /**
    * ⭐ Fix round 1: the same sibling `GET /orders/:orderId/document` carries, read live rather
    * than pinned — see `OrderDocumentResponseWire`'s own comment for why.

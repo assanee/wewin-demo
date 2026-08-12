@@ -89,6 +89,8 @@ const pin = (document: Record<string, unknown>, order: OrderDetail): PinnedDocum
     orderNo: order.orderNo,
     contactName: order.contact.name,
     submittedAt: order.submittedAt,
+    /* Beside the document, never inside it — a payment fact off the order row. */
+    scheduledDepositThbMinor: order.money?.scheduledDepositThbMinor ?? null,
   });
 
 export function QuotationSheet({ orderId }: { readonly orderId: string }) {
@@ -323,12 +325,31 @@ export function QuotationSheet({ orderId }: { readonly orderId: string }) {
          * fields, same pinned document, no second opinion.
          */}
         {sheet.fxRate === null ? null : (
-          <p className="text-muted-foreground mt-4 text-xs print:text-black">
-            อัตราแลกเปลี่ยน 1 {sheet.fxRate.currency} = {sheet.fxRate.rateText} บาท
-            {sheet.fxRate.isManual
-              ? ' · อัตราที่บริษัทกำหนด'
-              : ` · อ้างอิงอัตรา ณ ${sheet.fxRate.observedAtText}`}
-          </p>
+          <div className="mt-4 text-xs print:text-black">
+            {/*
+             * ⭐ The same settlement statement the customer's copy carries, and it has to be
+             * here for the sharper reason: staff are the ones who answer "so how much do I
+             * actually send you". A salesperson reading only SGD 653.83 cannot.
+             *
+             * Off `printableQuotation`, so it is the pinned baht total — the figure the payment
+             * page charges — and not the foreign total converted back.
+             */}
+            {sheet.payableThbText === null ? null : (
+              <p className="text-foreground">
+                ยอด {sheet.fxRate.currency} เป็นราคาอ้างอิง · ชำระจริง{' '}
+                <span className="font-semibold tabular-nums">{sheet.payableThbText}</span>
+                {sheet.depositThbText === null
+                  ? ''
+                  : ` · มัดจำก่อน ${sheet.depositThbText}`}
+              </p>
+            )}
+            <p className="text-muted-foreground mt-1">
+              อัตราแลกเปลี่ยน 1 {sheet.fxRate.currency} = {sheet.fxRate.rateText} บาท
+              {sheet.fxRate.isManual
+                ? ' · อัตราที่บริษัทกำหนด'
+                : ` · อ้างอิงอัตรา ณ ${sheet.fxRate.observedAtText}`}
+            </p>
+          </div>
         )}
 
         <p className="text-muted-foreground mt-6 text-xs print:text-black">

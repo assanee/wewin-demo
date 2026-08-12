@@ -292,15 +292,42 @@ function Sheet({
        * pinned in the document but is not something to put in front of a customer.
        */}
       {quotation.fxRate === null ? null : (
-        <p className="mt-4 ml-auto max-w-[320px] text-caption text-chalk-2">
-          {t('quotation.fx.rate', {
-            currency: quotation.fxRate.currency,
-            rateText: quotation.fxRate.rateText,
-          })}
-          {quotation.fxRate.isManual
-            ? ` · ${t('quotation.fx.manual')}`
-            : ` · ${t('quotation.fx.observedAt', { observedAt: quotation.fxRate.observedAtText })}`}
-        </p>
+        <div className="mt-4 ml-auto max-w-[320px]">
+          {/*
+           * ⭐ The amount actually transferred, in baht.
+           *
+           * The figures above are the price and this is the payment — the owner's decision is
+           * that a foreign destination is quoted in its own currency and settled in baht. Both
+           * belong on the page: a customer who sees only the SGD total meets the baht figure
+           * for the first time on the payment screen, and two amounts discovered one at a time
+           * is how somebody transfers the wrong one.
+           *
+           * ⚠️ It is the *pinned* baht total, not the SGD total converted back — see
+           * `payableThbText` in `@wewin/core/quotation`. It is therefore the same integer the
+           * payment page charges, which a database trigger keeps equal to the document.
+           */}
+          {quotation.payableThbText === null ? null : (
+            <div className="border-t border-line pt-2">
+              <p className="text-caption text-chalk-2">
+                {t('quotation.fx.settlementNote', { currency: quotation.fxRate.currency })}
+              </p>
+              <Row label={t('quotation.fx.payable')} value={quotation.payableThbText} strong />
+              {quotation.depositThbText === null ? null : (
+                <Row label={t('quotation.fx.deposit')} value={quotation.depositThbText} />
+              )}
+            </div>
+          )}
+
+          <p className="mt-3 text-caption text-chalk-2">
+            {t('quotation.fx.rate', {
+              currency: quotation.fxRate.currency,
+              rateText: quotation.fxRate.rateText,
+            })}
+            {quotation.fxRate.isManual
+              ? ` · ${t('quotation.fx.manual')}`
+              : ` · ${t('quotation.fx.observedAt', { observedAt: quotation.fxRate.observedAtText })}`}
+          </p>
+        </div>
       )}
 
       {/*
