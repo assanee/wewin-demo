@@ -19,6 +19,15 @@ import {
   type AuthorityAssessmentView,
   type DimensionAssessmentView,
 } from './authority-api';
+/*
+ * ⭐ The approver's decision, read by the person who asked for it.
+ *
+ * `components/approvals/` owns the decoding of an `approvals` row — it is the module built around
+ * that resource — so this reads it from there rather than growing a fourth hand-written narrower
+ * for the same wire shape. The dependency runs one way only (`approvals-api` imports this folder's
+ * `decodeCeiling`/`decodeDimension`; nothing there imports this file), so there is no cycle.
+ */
+import { listApprovals, type ApprovalView } from '@/components/approvals/approvals-api';
 import { failureMessage } from './quote-api';
 import type { QuoteEditor } from './use-quote';
 
@@ -110,6 +119,21 @@ export function AuthorityPanel({
     | { readonly status: 'error'; readonly error: unknown }
     | { readonly status: 'ready'; readonly assessment: AuthorityAssessmentView }
   >({ status: 'loading' });
+  /**
+   * ⭐ Requests on this order that came back **refused** — the half of the loop that was missing.
+   *
+   * `AuthorityService.decide` requires a sentence on every rejection *"because the requester has to
+   * be told what to change"*, and until this fetch existed nobody was ever told: the note went into
+   * `approvals.decision_note_th` and no screen in the application read it. The salesperson saw the
+   * quote go back to "needs approval" with the request gone from the panel, which is
+   * indistinguishable from never having asked.
+   *
+   * ⚠️ A **separate, best-effort** read and not part of `state`: it is context beside a refusal, and
+   * a caller who cannot read it (or an endpoint that is down) must not turn the authority panel —
+   * which is what says whether this quote may be sent at all — into an error card. So a failure
+   * here leaves the panel intact and the note absent, which is the pre-existing behaviour.
+   */
+  const [refusals, setRefusals] = useState<readonly ApprovalView[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -117,6 +141,10 @@ export function AuthorityPanel({
     void getAssessment(orderId)
       .then((assessment) => setState({ status: 'ready', assessment }))
       .catch((error: unknown) => setState({ status: 'error', error }));
+
+    void listApprovals({ status: 'rejected', orderId, limit: 20 })
+      .then(setRefusals)
+      .catch(() => setRefusals([]));
   }, [orderId]);
 
   useEffect(() => {
@@ -185,21 +213,58 @@ export function AuthorityPanel({
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
-        <DimensionRow dimension={assessment.margin} busy={busy} mayWrite={mayWrite} onAsk={ask} />
+        <DimensionRow
+          dimension={assessment.margin}
+          refusal={latestRefusal(refusals, 'margin')}
+          busy={busy}
+          mayWrite={mayWrite}
+          onAsk={ask}
+        />
         <Separator />
-        <DimensionRow dimension={assessment.cashflow} busy={busy} mayWrite={mayWrite} onAsk={ask} />
+        <DimensionRow
+          dimension={assessment.cashflow}
+          refusal={latestRefusal(refusals, 'cashflow')}
+          busy={busy}
+          mayWrite={mayWrite}
+          onAsk={ask}
+        />
       </CardContent>
     </Card>
   );
 }
 
+/**
+ * The most recent refusal in one dimension, or `undefined`.
+ *
+ * The list arrives newest first (`inbox` orders decided rows by `created_at` descending), so this
+ * is a `find` and not a sort — restating the ordering here would be a second opinion about it.
+ * Older refusals on the same dimension are deliberately not shown: the one that matters is the
+ * answer to the last thing that was asked.
+ */
+/** Bangkok time, stated — the same rendering the approvals screen uses. */
+const decidedAtTh = (iso: string): string =>
+  new Date(iso).toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+function latestRefusal(
+  refusals: readonly ApprovalView[],
+  dimension: ApprovalDimensionWire,
+): ApprovalView | undefined {
+  return refusals.find((row) => row.dimension === dimension);
+}
+
 function DimensionRow({
   dimension,
+  refusal,
   busy,
   mayWrite,
   onAsk,
 }: {
   readonly dimension: DimensionAssessmentView;
+  readonly refusal: ApprovalView | undefined;
   readonly busy: boolean;
   readonly mayWrite: boolean;
   readonly onAsk: (dimension: ApprovalDimensionWire, reasonTh: string) => Promise<void>;
@@ -233,6 +298,32 @@ function DimensionRow({
 
       <CeilingLine claim={ceilingClaim(dimension)} />
       <Outcome outcome={dimension.outcome} />
+
+      {/*
+       * ⭐ The refusal, with the reason the approver was required to write.
+       *
+       * Shown only while this dimension still needs an approval: once a later request has been
+       * granted, an old refusal is history and belongs on the approvals screen rather than beside a
+       * quote that is now sendable.
+       *
+       * ⚠️ It says which quote the refusal was about. A salesperson who edits after being refused
+       * has changed the document, so the figure in the refusal is not the figure on the screen —
+       * printing the note without that fact invites "but they already said no to this", about a
+       * quote nobody has seen.
+       */}
+      {dimension.outcome === 'needs_approval' && refusal !== undefined && (
+        <div className="border-destructive/40 bg-destructive/5 flex flex-col gap-1 rounded-md border p-3">
+          <span className="text-destructive inline-flex items-center gap-1.5 text-sm font-medium">
+            <ShieldAlert className="size-4" />
+            คำขอก่อนหน้าไม่ได้รับอนุมัติ
+          </span>
+          <p className="text-sm">{refusal.decisionNoteTh ?? 'ผู้อนุมัติไม่ได้ระบุเหตุผล'}</p>
+          <span className="text-muted-foreground text-xs">
+            ขอไว้ {baht(refusal.concessionThbMinor)}
+            {refusal.decidedAt === null ? '' : ` · ตัดสินเมื่อ ${decidedAtTh(refusal.decidedAt)}`}
+          </span>
+        </div>
+      )}
 
       {dimension.outcome !== 'needs_approval' ? null : (
         <div className="flex flex-col gap-2">
@@ -342,5 +433,17 @@ function Outcome({ outcome }: { readonly outcome: DimensionAssessmentView['outco
           เกินอำนาจของคุณ — ต้องมีคนอื่นอนุมัติก่อนส่งใบนี้
         </p>
       );
+    /*
+     * ⚠️ Unreachable from this screen, and handled rather than defaulted.
+     *
+     * `unassessed` is what the API's `bareMeasurementWire` sends for a measurement with nobody's
+     * authority applied — it appears on `GET /quotes/approvals/:id`, which the approver's inbox
+     * reads, and never on `GET /quotes/authority/orders/:orderId`, which is what this panel reads
+     * (every dimension there is judged). It is in the union because the shared decoder is shared;
+     * a `default` clause would have swallowed a real outcome added later, and saying nothing is
+     * the correct rendering for "no verdict was asked for".
+     */
+    case 'unassessed':
+      return null;
   }
 }

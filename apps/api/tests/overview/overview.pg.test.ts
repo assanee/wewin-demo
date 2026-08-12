@@ -143,6 +143,13 @@ describeWithPg('the overview', () => {
       'orders.read',
       'payments.read',
       'quotes.read',
+      /*
+       * ⭐ Added when the pending-approvals card moved behind `quotes.read` + `quotes.approve` —
+       * the pair `/approvals` and its queue endpoint ask for. Without it this actor stops seeing
+       * eight cards, which is what the count below asserts, and the honest reading of "an
+       * administrator" is somebody who holds the decision code too.
+       */
+      'quotes.approve',
       'reviews.moderate',
       'catalog.read',
       'users.read',

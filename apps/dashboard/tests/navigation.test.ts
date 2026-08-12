@@ -52,11 +52,17 @@ describe('navigation derived from permissions', () => {
      * had to, because reaching the ceiling table through ผู้ใช้และสิทธิ์ required `users.read`
      * and so the whole staff directory.
      *
-     * `quotes.approve` is real, is held by approvers, and opens nothing: the approver's inbox
-     * is on the list of screens nobody has built. The distinction being kept is the thing
-     * worth keeping: a permission granting no *section* must still produce no *heading*,
-     * because a heading is itself a disclosure that a section exists — the same rule the
-     * overview's cards follow. When the inbox lands, re-point this again rather than delete it.
+     * ⭐ **The approver's inbox has now landed, and `quotes.approve` is still the right borrow —
+     * for a new reason.** `/approvals` requires `quotes.read` **and** `quotes.approve`, matching
+     * `GET /quotes/approvals/queue` exactly, so this code *alone* still opens nothing. Which is
+     * the third time this premise has held for a different reason, and the interesting one: it now
+     * doubles as the assertion that the inbox is not reachable by holding half of what its queue
+     * demands — `@RequirePermissions` means every code, and a menu that asked for one of the two
+     * would show a screen whose every request 403s. The test below opens it with the pair.
+     *
+     * The distinction being kept is the thing worth keeping: a permission granting no *section*
+     * must still produce no *heading*, because a heading is itself a disclosure that a section
+     * exists — the same rule the overview's cards follow.
      */
     const withNoSectionOfItsOwn = visibleNavigation(new Set(['quotes.approve']));
 
@@ -74,6 +80,45 @@ describe('navigation derived from permissions', () => {
     );
 
     expect(hrefs).toContain('/orders');
+  });
+
+  /**
+   * ⭐⭐ The approver's inbox opens to the pair its queue endpoint asks for, and to nothing less.
+   *
+   * `GET /quotes/approvals/queue` is `@RequirePermissions('quotes.read', 'quotes.approve')`. A menu
+   * entry asking for one of the two would put a screen in front of somebody whose every request
+   * 403s — and asking for `quotes.approve` alone is the specific mistake, because that is the code
+   * that *sounds* like the whole answer.
+   */
+  it('⭐ opens คำขออนุมัติส่วนลด to quotes.read + quotes.approve, and to neither alone', () => {
+    const hrefsFor = (codes: readonly string[]): readonly string[] =>
+      visibleNavigation(new Set(codes)).flatMap((section) =>
+        section.items.map((item) => item.href),
+      );
+
+    expect(hrefsFor(['quotes.read', 'quotes.approve'])).toContain('/approvals');
+    expect(hrefsFor(['quotes.approve'])).not.toContain('/approvals');
+    expect(hrefsFor(['quotes.read'])).not.toContain('/approvals');
+  });
+
+  /**
+   * ⭐ ใบเสนอราคา needs `orders.read`, because that is what decides whether its list has any rows.
+   *
+   * There is no `GET /quotes`: the screen lists `GET /orders?status=…`, which is
+   * `@RequirePrincipal()` and scopes the *rows* by `orderReach` — every order for a holder of
+   * `orders.read`, and the caller's own orders (for staff: none) otherwise. So `quotes.read` alone
+   * produced a menu entry leading to an empty table with a 200 and nothing to explain it, which is
+   * why this asserts the negative as well as the positive.
+   */
+  it('⭐ hides ใบเสนอราคา from quotes.read without orders.read', () => {
+    const hrefsFor = (codes: readonly string[]): readonly string[] =>
+      visibleNavigation(new Set(codes)).flatMap((section) =>
+        section.items.map((item) => item.href),
+      );
+
+    expect(hrefsFor(['quotes.read'])).not.toContain('/quotes');
+    expect(hrefsFor(['orders.read'])).not.toContain('/quotes');
+    expect(hrefsFor(['orders.read', 'quotes.read'])).toContain('/quotes');
   });
 
   /**

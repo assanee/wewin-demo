@@ -167,6 +167,79 @@ export interface ApprovalListWire {
 }
 
 /**
+ * ⭐ May the caller decide this request — the server's answer, not the client's arithmetic.
+ *
+ * Mirrors `ApprovalRights` (`approval-rights.ts`), which is where the rule and the ordering of
+ * `because` are written down. Two booleans rather than one, because refusing needs no ceiling
+ * and approving does: a screen that offered one button for both would either hide a refusal
+ * somebody is entitled to make, or offer an approval that answers 403.
+ */
+export interface ApprovalRightsWire {
+  readonly mayApprove: boolean;
+  readonly mayRefuse: boolean;
+  /**
+   * `may_decide` · `not_an_approver` · `already_decided` · `own_request` · `no_ceiling` ·
+   * `above_ceiling`. The first lock that stops this caller, in the order the decision endpoint
+   * would hit them.
+   */
+  readonly because: string;
+  /** The caller's own ceiling in this request's dimension. Always consulted, so always `known`. */
+  readonly ceiling: CeilingWire;
+}
+
+/**
+ * ⭐ THE APPROVER'S QUEUE: what this person may actually decide, and what they may not.
+ *
+ * ── Why this is not `GET /quotes/approvals?status=pending` ────────────────────────
+ *
+ * That endpoint answers *"what is waiting?"* for anybody holding `quotes.read` — the requester
+ * checking on their own ask, an auditor reading the backlog — and it is unfiltered on purpose.
+ * This one answers *"what is waiting **for me**?"*, and the difference is not a convenience:
+ * `approvals` carries figures that most readers have no authority to approve, and a queue that
+ * lists them teaches the approver to press buttons and read 403s. See `approval-rights.ts`.
+ *
+ * ── ⚠️ Withheld requests are COUNTED and not listed, and the count is not a leak ──
+ *
+ * A queue that silently dropped what the reader cannot approve would say "nothing is waiting"
+ * on the day three requests are stuck above everybody's ceiling — which is fail-closed becoming
+ * invisible, and is the same failure plan 7.13 names: *requests with nowhere to arrive.* So the
+ * screen is told how many it is not being shown, and can say so.
+ *
+ * The overview's `quotes.approvalsPending` card counts **every** pending request in the company,
+ * so `approvals.length + beyondYourAuthority + yourOwnRequests` is what reconciles this screen
+ * with that number. A queue showing two while the dashboard says five, with no explanation, is
+ * how somebody concludes one of the two is broken.
+ *
+ * ⚠️ It discloses nothing new: this route demands `quotes.read`, which already opens the
+ * unfiltered list. `overview/sections.ts`'s rule — never summarise a queue for somebody the
+ * queue itself would refuse — is satisfied because the queue would not refuse them.
+ */
+export interface ApprovalQueueWire {
+  /** Oldest first, and every one of them is a decision this caller may actually take. */
+  readonly approvals: readonly ApprovalWire[];
+  /** The caller's own ceilings, so the screen can say what it is comparing against. */
+  readonly ceilings: {
+    readonly margin: CeilingWire;
+    readonly cashflow: CeilingWire;
+  };
+  readonly withheld: {
+    /** Pending requests somebody else asked for, whose figure this caller's ceiling does not cover. */
+    readonly beyondYourAuthority: number;
+    /** Pending requests this caller raised. The two-person rule, counted rather than hidden. */
+    readonly yourOwnRequests: number;
+  };
+  /**
+   * True when there are more pending requests than one read of this endpoint covers, so the
+   * counts above describe the oldest `APPROVAL_QUEUE_SCAN_MAX` and not the whole table.
+   *
+   * It is a flag rather than a page cursor because a human queue this long is a different
+   * problem from a paging problem, and a screen that quietly showed the first page of an
+   * unbounded backlog would hide it.
+   */
+  readonly isTruncated: boolean;
+}
+
+/**
  * One request as the approver sees it: what was asked, and what the quote concedes **now**.
  *
  * The two differ whenever sales carried on editing after asking. An inbox that showed only the
@@ -175,6 +248,14 @@ export interface ApprovalListWire {
  */
 export interface ApprovalDetailWire {
   readonly approval: ApprovalWire;
+  /**
+   * ⭐ What **the caller** may do about it. See `ApprovalRightsWire`.
+   *
+   * On the detail response and not only on the queue, because this route is reachable by URL —
+   * from the quote editor's `approvalId`, from a colleague's link — and a screen that decided
+   * for itself which buttons to show would be the client re-deriving the rule.
+   */
+  readonly rights: ApprovalRightsWire;
   readonly liveConcession: {
     readonly margin: DimensionAssessmentWire;
     readonly cashflow: DimensionAssessmentWire;

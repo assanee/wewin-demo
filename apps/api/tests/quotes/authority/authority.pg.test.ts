@@ -1,9 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { eq, sql } from '@wewin/db/sql';
-import { authorityLimits, groups, quoteLines, quoteOverrides, userGroups } from '@wewin/db/schema';
+import {
+  approvals,
+  authorityLimits,
+  groups,
+  quoteLines,
+  quoteOverrides,
+  userGroups,
+} from '@wewin/db/schema';
 import type { OrderLineRequestWire, OrderWire } from '@wewin/contract/order';
 
 /*
@@ -1003,6 +1010,311 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
         groupIds: [approverGroupId],
       });
       expect(await service.ceilingFor(approverScope, 'cashflow')).toBeUndefined();
+    });
+  });
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ GET /quotes/approvals/queue — the screen, and the one rule it must never break
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The queue is **company-wide**, so every assertion below is written against ids this block
+   * created or as a *delta* on a count. Earlier describes in this file leave pending rows behind
+   * on purpose (a request that is merely waiting is one of the things they assert), and an
+   * absolute count here would be a test that passes or fails depending on what ran before it.
+   */
+  describe('the queue an approver may actually act on', () => {
+    interface CeilingWire {
+      readonly known: boolean;
+      readonly thbMinor?: string | null;
+    }
+
+    interface QueueWire {
+      readonly approvals: readonly { readonly id: string; readonly dimension: string }[];
+      readonly ceilings: { readonly margin: CeilingWire; readonly cashflow: CeilingWire };
+      readonly withheld: {
+        readonly beyondYourAuthority: number;
+        readonly yourOwnRequests: number;
+      };
+      readonly isTruncated: boolean;
+    }
+
+    const grantCeiling = async (groupId: string, ceilingThbMinor: string): Promise<void> => {
+      const granted = await call('PUT', '/quotes/authority/limits', {
+        token: owner.token,
+        body: {
+          groupId,
+          dimension: 'margin',
+          maxConcessionThbMinor: ceilingThbMinor,
+          noteTh: 'ทดสอบคิวผู้อนุมัติ',
+        },
+      });
+      if (granted.status !== 200) throw new Error(`could not grant: ${JSON.stringify(granted.body)}`);
+    };
+
+    /** ฿10,700 conceded at `overrideTo = 0`, ฿1,070 at `900_000` — the VAT gross-up is included. */
+    const askedBy = async (who: string, actor: Actor, overrideTo: bigint): Promise<string> => {
+      const order = await quote(who);
+      const lineId = await addFreeformLine(order.id, 1, 1_000_000n);
+      await overrideLine(order.id, lineId, 1_000_000n, overrideTo);
+
+      const asked = await call('POST', '/quotes/approvals', {
+        token: actor.token,
+        body: { orderId: order.id, dimension: 'margin', reasonTh: `คำขอ ${who}` },
+      });
+      if (asked.status !== 201) throw new Error(`could not ask: ${JSON.stringify(asked.body)}`);
+      return body<{ id: string }>(asked).id;
+    };
+
+    const queueOf = async (actor: Actor): Promise<QueueWire> => {
+      const response = await call('GET', '/quotes/approvals/queue', { token: actor.token });
+      expect(response.status, JSON.stringify(response.body)).toBe(200);
+      return body<QueueWire>(response);
+    };
+
+    const idsIn = (queue: QueueWire): readonly string[] => queue.approvals.map((row) => row.id);
+
+    afterEach(async () => {
+      await purgeAuthorityLimits(db, approverGroupId);
+      await purgeAuthorityLimits(db, salesGroupId);
+    });
+
+    /**
+     * ⭐⭐ THE ASSERTION THIS WHOLE ROUND EXISTS FOR.
+     *
+     * **An approver is never offered a decision they lack the ceiling to make.**
+     *
+     * Three states of one approver against two requests — ฿1,070 and ฿10,700 — and the queue's
+     * contents change with the ceiling and with nothing else:
+     *
+     *   no live row      neither request is offered, and the wire says *no ceiling* rather than
+     *                    a ceiling of zero. Plan 13's fail-closed, visible on the screen.
+     *   ฿5,000           the small one is offered, the large one is withheld and counted.
+     *   ฿20,000          both are offered.
+     *
+     * ⚠️ The withheld figure is asserted as a delta across **adding two requests at a fixed
+     * ceiling**, and not across moving the ceiling. Moving it moves every pending row in the
+     * company at once — the first draft of this test asserted a delta of one and measured nine,
+     * which is the shared-queue trap this block's header warns about.
+     */
+    it('⭐ never offers a decision the approver lacks the ceiling to make', async () => {
+      const small = await askedBy('queue-small', sales, 900_000n);
+      const large = await askedBy('queue-large', sales, 0n);
+
+      const closed = await queueOf(approver);
+      expect(idsIn(closed)).not.toContain(small);
+      expect(idsIn(closed)).not.toContain(large);
+      /*
+       * `{ known: true, thbMinor: null }` and not `{ known: false }`: this route reads the
+       * ceiling unconditionally, so it may say "you have none" — which is a different sentence
+       * from "this answer did not look", and the difference is what the three-way `CeilingWire`
+       * exists for. A `'0'` here would be a real grant and is not this.
+       */
+      expect(closed.ceilings.margin).toStrictEqual({ known: true, thbMinor: null });
+
+      /* ฿5,000: covers ฿1,070 and not ฿10,700. */
+      await grantCeiling(approverGroupId, '500000');
+      const narrow = await queueOf(approver);
+
+      expect(idsIn(narrow)).toContain(small);
+      expect(idsIn(narrow)).not.toContain(large);
+      expect(narrow.ceilings.margin).toStrictEqual({ known: true, thbMinor: '500000' });
+
+      /*
+       * ⭐ The partition is exact. Two more requests at the *same* ceiling — one inside it, one
+       * outside — move the two figures by one each. A queue that silently dropped what it will
+       * not offer would leave `beyondYourAuthority` where it was, and the screen would tell an
+       * approver nothing is waiting on the day something is stuck above every ceiling.
+       */
+      const alsoSmall = await askedBy('queue-small-two', sales, 900_000n);
+      const alsoLarge = await askedBy('queue-large-two', sales, 0n);
+      const after = await queueOf(approver);
+
+      expect(idsIn(after)).toContain(alsoSmall);
+      expect(idsIn(after)).not.toContain(alsoLarge);
+      expect(after.approvals.length).toBe(narrow.approvals.length + 1);
+      expect(after.withheld.beyondYourAuthority).toBe(narrow.withheld.beyondYourAuthority + 1);
+
+      /* And raising the ceiling past ฿10,700 is all it takes for the withheld ones to appear. */
+      await grantCeiling(approverGroupId, '2000000');
+      const wide = idsIn(await queueOf(approver));
+
+      expect(wide).toContain(large);
+      expect(wide).toContain(alsoLarge);
+    });
+
+    /**
+     * ⭐ The queue and the decision endpoint are the same rule, checked against each other.
+     *
+     * The property that matters is not "the list looks right" — it is that **pressing the button
+     * on anything in it works, and on anything it withheld does not**. Two server-side spellings
+     * of one rule is what `approval-rights.ts` exists to prevent; this is the assertion that
+     * would fail if they ever drifted apart, and it is written against ids this test raised so
+     * that it decides nothing another test is watching.
+     */
+    it('⭐ agrees with the decision endpoint, row by row', async () => {
+      const within = await askedBy('queue-agrees-within', sales, 900_000n);
+      const beyond = await askedBy('queue-agrees-beyond', sales, 0n);
+
+      await grantCeiling(approverGroupId, '500000');
+      const offered = idsIn(await queueOf(approver));
+
+      expect(offered).toContain(within);
+      expect(offered).not.toContain(beyond);
+
+      const takeable = await call('POST', `/quotes/approvals/${within}/decision`, {
+        token: approver.token,
+        body: { decision: 'approved' },
+      });
+      expect(takeable.status, 'the queue offered a decision the endpoint refused').toBe(200);
+
+      const refused = await call('POST', `/quotes/approvals/${beyond}/decision`, {
+        token: approver.token,
+        body: { decision: 'approved' },
+      });
+      expect(refused.status, 'the queue withheld a decision the endpoint would have taken').toBe(403);
+
+      /*
+       * And the request the queue would not let them approve, they may still refuse — with a
+       * sentence. Saying no is not an exercise of authority (`decide` says so in as many words),
+       * which is what stops a fail-closed ceiling from making approval the only working button.
+       */
+      const refusable = await call('POST', `/quotes/approvals/${beyond}/decision`, {
+        token: approver.token,
+        body: { decision: 'rejected', noteTh: 'เกินอำนาจของผม ส่งกลับให้ทบทวน' },
+      });
+      expect(refusable.status).toBe(200);
+      expect(body<{ status: string }>(refusable).status).toBe('rejected');
+    });
+
+    /**
+     * The two-person rule, seen from the queue rather than from a 409.
+     *
+     * The approver raises a request of their own — they hold `quotes.write` — and it is not in
+     * their queue at any ceiling, while it *is* in the queue of the other person who may decide.
+     * A request that is nobody's to answer would be a request that sits for ever, so the second
+     * half is as important as the first.
+     */
+    it('withholds the approver’s own request from them, and offers it to somebody else', async () => {
+      const before = await queueOf(approver);
+      const mine = await askedBy('queue-own', approver, 900_000n);
+
+      await grantCeiling(approverGroupId, '2000000');
+      const after = await queueOf(approver);
+
+      expect(idsIn(after)).not.toContain(mine);
+      expect(after.withheld.yourOwnRequests).toBe(before.withheld.yourOwnRequests + 1);
+
+      /* `sales` holds `quotes.approve` in this fixture on purpose — see the top of the file. */
+      await grantCeiling(salesGroupId, '2000000');
+      expect(idsIn(await queueOf(sales))).toContain(mine);
+    });
+
+    /**
+     * ⚠️ Two codes, and holding one of them is not holding the queue.
+     *
+     * `owner` holds `quotes.read` and not `quotes.approve`. The unfiltered list stays open to
+     * them — a backlog is a legitimate thing to read — and the *queue* does not, because every
+     * row in it is a claim that the reader may act on that row.
+     */
+    it('refuses the queue to a reader who may read quotations but not decide', async () => {
+      const refused = await call('GET', '/quotes/approvals/queue', { token: owner.token });
+      expect(refused.status).toBe(403);
+
+      const listed = await call('GET', '/quotes/approvals?status=pending', { token: owner.token });
+      expect(listed.status).toBe(200);
+    });
+
+    /**
+     * ⭐ The queue accounts for every pending request, so the overview's number reconciles.
+     *
+     * `overview.quotes.approvalsPending` counts every pending row in the company. A screen
+     * showing two of five with no explanation is how somebody concludes one of the two is
+     * broken — so `approvals + beyondYourAuthority + yourOwnRequests` is the whole table, and
+     * `isTruncated` is what says when that stops being true.
+     */
+    it('⭐ accounts for every pending request, so the dashboard’s count reconciles', async () => {
+      await grantCeiling(approverGroupId, '500000');
+      const queue = await queueOf(approver);
+
+      const listed = await call('GET', '/quotes/approvals?status=pending&limit=200', {
+        token: owner.token,
+      });
+      const pending = body<{ approvals: readonly unknown[] }>(listed).approvals.length;
+
+      /* Both reads cap at 200; the assertion below only means something while neither has. */
+      expect(queue.isTruncated).toBe(false);
+      expect(pending).toBeLessThan(200);
+      expect(
+        queue.approvals.length +
+          queue.withheld.beyondYourAuthority +
+          queue.withheld.yourOwnRequests,
+      ).toBe(pending);
+    });
+
+    /**
+     * ⭐⭐ TWO PEOPLE PRESS THE BUTTON AT THE SAME TIME.
+     *
+     * Eight simultaneous decisions on one request, alternating between two approvers who share
+     * one role — and therefore one ceiling, which is the point of a ceiling attaching to a group
+     * — and mixing approvals with refusals so that the winner is not decided by which body was
+     * sent. **Exactly one may land**, and the seven others must read as "already decided" rather
+     * than overwriting the answer or throwing a 500.
+     *
+     * Three mechanisms stand behind that and they are deliberately not all the same: the
+     * `FOR UPDATE` in `lockApproval` serialises them, the `status = 'pending'` in
+     * `recordDecision`'s WHERE makes a second UPDATE match zero rows even without the lock, and
+     * `approvals_guard_write` refuses the write at the database whatever the application thinks.
+     *
+     * ⚠️ **Sample size: 8 requests, and `DATABASE_POOL_MAX` defaults to 10** — so all eight are
+     * genuinely concurrent transactions rather than a queue behind a connection pool. Raising the
+     * count past ten without raising the pool would make this test *less* concurrent than it
+     * reads, which is the trap `support/authority-app.ts` documents.
+     */
+    it('⭐ lets exactly one of eight simultaneous decisions land', async () => {
+      const contested = await askedBy('queue-race', sales, 900_000n);
+      await grantCeiling(approverGroupId, '2000000');
+
+      /*
+       * A second approver in the *same* role. Their authority is the group's row, not a second
+       * grant — so this also shows the ceiling is a property of the role rather than the person.
+       */
+      const second = await makeActor(db, app, `authority approver two ${tag}`, [
+        'quotes.read',
+        'quotes.approve',
+      ]);
+      await db.insert(userGroups).values({ userId: second.userId, groupId: approverGroupId });
+
+      const RACERS = 8;
+      const attempts = await Promise.all(
+        Array.from({ length: RACERS }, (_unused, index) =>
+          call('POST', `/quotes/approvals/${contested}/decision`, {
+            token: index % 2 === 0 ? approver.token : second.token,
+            body:
+              index % 3 === 0
+                ? { decision: 'rejected', noteTh: 'ไม่อนุมัติ — แข่งกันตัดสิน' }
+                : { decision: 'approved' },
+          }),
+        ),
+      );
+
+      const landed = attempts.filter((attempt) => attempt.status === 200);
+      expect(landed, `statuses: ${attempts.map((a) => a.status).join(',')}`).toHaveLength(1);
+      expect(attempts.filter((attempt) => attempt.status === 409)).toHaveLength(RACERS - 1);
+
+      /* One decision on the row, and it names one of the two people who were racing. */
+      const [row] = await db
+        .select({ status: approvals.status, decidedBy: approvals.decidedByUserId })
+        .from(approvals)
+        .where(eq(approvals.id, contested));
+
+      expect(row?.status).not.toBe('pending');
+      expect([approver.userId, second.userId]).toContain(row?.decidedBy);
+
+      /* And it is out of both approvers' queues, because it is no longer waiting for anybody. */
+      expect(idsIn(await queueOf(approver))).not.toContain(contested);
+
+      await db.delete(userGroups).where(eq(userGroups.userId, second.userId));
     });
   });
 });

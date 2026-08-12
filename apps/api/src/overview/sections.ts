@@ -52,7 +52,25 @@ export const OVERVIEW_SECTIONS = {
   slips: ['payments.read', 'orders.read'],
   refunds: ['payments.read'],
   money: ['payments.read'],
-  quotes: ['quotes.read'],
+  /**
+   * ⭐ Two codes, and the second one arrived with the screen.
+   *
+   * This card counts **pending concession approvals** and nothing else, and it now links to
+   * `/approvals` — the approver's queue, which asks for `quotes.read` + `quotes.approve`. While it
+   * asked for `quotes.read` alone it was showing a work queue's total to every salesperson in the
+   * company and pointing them at `/quotes`, a screen that can neither show an approval nor action
+   * one. The rule at the top of this file is the fix: an entry holds the permissions of *the screen
+   * the number is about*, and that screen is the inbox.
+   *
+   * ⚠️ The consequence is deliberate: a salesperson no longer sees this card. The signal they
+   * actually need — *my* request is still waiting — is on the quote editor's authority panel, where
+   * it names their own order; this number is the whole company's backlog and never was about them.
+   *
+   * ⚠️ And since `quotes.approve` is held by nobody at boot, this card is invisible until an
+   * administrator grants it. That is the same fail-closed shape as the empty `authority_limits`
+   * table it is a count of.
+   */
+  quotes: ['quotes.read', 'quotes.approve'],
   reviews: ['reviews.moderate'],
   /** Borrowed, deliberately. See the block comment. */
   notifications: ['orders.read'],

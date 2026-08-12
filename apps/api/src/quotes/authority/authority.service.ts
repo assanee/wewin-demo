@@ -6,6 +6,7 @@ import { AppError } from '../../common/errors/app-error';
 import { DEFAULT_VAT_RULE } from '../../orders/defaults';
 import { GATE_COVERAGE_BP_DEFAULT } from '../../payments/schedule';
 import type { Scope } from '../../rbac';
+import { approvalRights, type ApprovalRights } from './approval-rights';
 import { DEPOSIT_POLICY, type DepositPolicyPort } from './deposit-policy.port';
 import {
   ConcessionIntegrityError,
@@ -117,6 +118,31 @@ export type DimensionOutcome =
 export interface DimensionAssessment {
   readonly measurement: DimensionMeasurement;
   readonly outcome: DimensionOutcome;
+}
+
+/**
+ * How far back the queue reads.
+ *
+ * The filtering is done here rather than in SQL so that `approvalRights` is the *only* statement
+ * of who may decide what — a WHERE clause comparing `concession_thb_minor` against a ceiling
+ * would be a second one, in a second language, and the two would eventually disagree about
+ * `>=`. The cost is that the queue reads pending rows and discards some, which is why the read
+ * is bounded and why exceeding the bound is reported (`isTruncated`) rather than silently
+ * truncating a count somebody is about to reconcile against the overview.
+ *
+ * 200 matches the maximum `approvalQuerySchema` allows the unfiltered list, deliberately: two
+ * different ideas of "too many pending approvals to show at once" would be one more thing to
+ * keep in step.
+ */
+export const APPROVAL_QUEUE_SCAN_MAX = 200;
+
+/** What one approver may decide right now, and how much they are not being shown. */
+export interface ApprovalQueue {
+  readonly approvals: readonly ApprovalRow[];
+  readonly ceilings: Readonly<Record<ApprovalDimension, bigint | undefined>>;
+  readonly beyondYourAuthority: number;
+  readonly yourOwnRequests: number;
+  readonly isTruncated: boolean;
 }
 
 export interface AuthorityAssessment {
@@ -624,6 +650,88 @@ export class AuthorityService {
   }
 
   /**
+   * ⭐ THE APPROVER'S OWN QUEUE — pending requests **this** person may decide, and a count of
+   * the ones they may not.
+   *
+   * ── The one property this method exists to have ───────────────────────────────────
+   *
+   * **Every row it returns is one `decide` would accept.** Not "probably": the same function
+   * answers both, over the same two facts (the requester, and this caller's ceiling in that
+   * row's dimension), so the queue cannot offer a decision the endpoint refuses without
+   * `approvalRights` being wrong for both at once. An approver who is shown a request they lack
+   * the authority to approve learns the ceiling by being refused, and the request that needed
+   * *them* is in the same list.
+   *
+   * ⚠️ The ceilings are read **once per dimension**, not per row. Two rows in one dimension are
+   * judged against one number by construction, and a per-row read would put a window between
+   * them in which the owner could withdraw the ceiling and half the queue would be judged under
+   * the old authority.
+   *
+   * ⚠️ It is a queue and **not a notification**, exactly as `GET /quotes/approvals` is not:
+   * nothing here tells an approver that something arrived, and an approver who does not open the
+   * screen sees nothing. That gap is the controller's note and it is not papered over here.
+   */
+  async queue(scope: Scope): Promise<ApprovalQueue> {
+    /*
+     * Refused with the same sentence `request` and `decide` use, before anything is read. The id
+     * itself is not needed here — `approvalRights` reads it off the scope for the two-person
+     * comparison, so there is one place that knows which field identifies the requester.
+     */
+    staffUserId(scope);
+
+    const [margin, cashflow] = await Promise.all([
+      this.ceilingFor(scope, 'margin'),
+      this.ceilingFor(scope, 'cashflow'),
+    ]);
+    const ceilings: Record<ApprovalDimension, bigint | undefined> = { margin, cashflow };
+
+    /*
+     * One more than the bound, so "there are further requests" is a fact rather than an
+     * inference from a full page. Oldest first — `inbox` reads `approvals_pending_idx` in the
+     * order the index is built, which is the order an approver has to notice.
+     */
+    const pending = await this.repository.inbox(
+      { status: 'pending' },
+      APPROVAL_QUEUE_SCAN_MAX + 1,
+    );
+    const isTruncated = pending.length > APPROVAL_QUEUE_SCAN_MAX;
+    const scanned = isTruncated ? pending.slice(0, APPROVAL_QUEUE_SCAN_MAX) : pending;
+
+    const approvals: ApprovalRow[] = [];
+    let beyondYourAuthority = 0;
+    let yourOwnRequests = 0;
+
+    for (const row of scanned) {
+      const rights = approvalRights(scope, {
+        status: row.status,
+        requestedByUserId: row.requestedByUserId,
+        concessionThbMinor: row.concessionThbMinor,
+        ceilingThbMinor: ceilings[row.dimension],
+      });
+
+      if (rights.mayApprove) {
+        approvals.push(row);
+        continue;
+      }
+
+      /*
+       * `own_request` is counted apart from the ceiling cases because the two are different
+       * news: one is the two-person rule working (somebody else has to answer this, and that is
+       * the feature), the other is a request nobody with this authority can answer at all —
+       * which is a message for the owner about a ceiling, not about this approver.
+       *
+       * ⚠️ `own_request` and not `requestedByUserId === userId`: the reason comes from the same
+       * function the filter does, so a change to the rule cannot leave the tally describing the
+       * old one.
+       */
+      if (rights.because === 'own_request') yourOwnRequests += 1;
+      else beyondYourAuthority += 1;
+    }
+
+    return { approvals, ceilings, beyondYourAuthority, yourOwnRequests, isTruncated };
+  }
+
+  /**
    * One request, with the concession measured **again, now**.
    *
    * The stored figure is what was asked for; the live figure is what the quote concedes at the
@@ -633,18 +741,42 @@ export class AuthorityService {
    * `quoteRevisionNow` is the sharper form of the same warning, and it is the one an approver
    * can act on: when it differs from `row.quoteRevision`, approving this request grants nothing
    * at all, because `judge` will not match it against the quote as it now stands.
+   *
+   * ⭐ `rights` is what **this caller** may do about it, from `approvalRights` — the same function
+   * the queue filters on and the same rule `decide` enforces. It is on the read so that a screen
+   * reached by URL rather than through the queue still shows the buttons the server would honour,
+   * instead of comparing a ceiling against a concession on its own.
    */
-  async approval(approvalId: string): Promise<{
+  async approval(
+    scope: Scope,
+    approvalId: string,
+  ): Promise<{
     readonly row: ApprovalRow;
     readonly live: DocumentConcessions;
     readonly quoteRevisionNow: string;
+    readonly rights: ApprovalRights;
+    /** The caller's ceiling in this request's dimension. `undefined` is no live row at all. */
+    readonly ceilingThbMinor: bigint | undefined;
   }> {
     const row = await this.repository.approvalById(approvalId);
     if (row === undefined) throw AppError.notFound('ไม่พบคำขออนุมัตินี้');
 
     const live = await this.measure(row.orderId);
     const quoteRevisionNow = await this.repository.quoteRevision(row.orderId);
-    return { row, live, quoteRevisionNow };
+    const ceilingThbMinor = await this.ceilingFor(scope, row.dimension);
+
+    return {
+      row,
+      live,
+      quoteRevisionNow,
+      ceilingThbMinor,
+      rights: approvalRights(scope, {
+        status: row.status,
+        requestedByUserId: row.requestedByUserId,
+        concessionThbMinor: row.concessionThbMinor,
+        ceilingThbMinor,
+      }),
+    };
   }
 
   async limits(): Promise<readonly AuthorityLimitRow[]> {

@@ -4,9 +4,12 @@ import type {
   AuthorityLimitRow,
   GroupFacts,
 } from './authority.repository';
-import type { AuthorityAssessment, DimensionAssessment } from './authority.service';
+import type { ApprovalRights } from './approval-rights';
+import type { ApprovalQueue, AuthorityAssessment, DimensionAssessment } from './authority.service';
 import type { DimensionMeasurement } from './concession';
 import type {
+  ApprovalQueueWire,
+  ApprovalRightsWire,
   ApprovalWire,
   AuthorityAssessmentWire,
   AuthorityGroupWire,
@@ -129,6 +132,48 @@ export function approvalWire(row: ApprovalRow): ApprovalWire {
     decisionNoteTh: row.decisionNoteTh,
     decidedCeilingThbMinor: row.decidedCeilingThbMinor?.toString() ?? null,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * ⭐ A ceiling this response **did** consult — so `known` is always true, and `null` means the
+ * caller's roles hold no live row at all.
+ *
+ * Deliberately not `ceilingWire` above. That one answers *"did this outcome look at your
+ * ceiling?"* and returns `{ known: false }` on the outcomes that did not. Here the ceiling is
+ * read unconditionally, for one dimension, in order to decide whether a button appears — so
+ * `{ known: false }` would be a lie about what the server did, and a client that dimmed the
+ * approve button on it would be dimming it for the wrong reason. See `CeilingWire`'s own note:
+ * `thbMinor: '0'` is a real grant and `null` is the absence of one.
+ */
+function callerCeilingWire(ceilingThbMinor: bigint | undefined): CeilingWire {
+  return { known: true, thbMinor: ceilingThbMinor?.toString() ?? null };
+}
+
+export function approvalRightsWire(
+  rights: ApprovalRights,
+  ceilingThbMinor: bigint | undefined,
+): ApprovalRightsWire {
+  return {
+    mayApprove: rights.mayApprove,
+    mayRefuse: rights.mayRefuse,
+    because: rights.because,
+    ceiling: callerCeilingWire(ceilingThbMinor),
+  };
+}
+
+export function approvalQueueWire(queue: ApprovalQueue): ApprovalQueueWire {
+  return {
+    approvals: queue.approvals.map(approvalWire),
+    ceilings: {
+      margin: callerCeilingWire(queue.ceilings.margin),
+      cashflow: callerCeilingWire(queue.ceilings.cashflow),
+    },
+    withheld: {
+      beyondYourAuthority: queue.beyondYourAuthority,
+      yourOwnRequests: queue.yourOwnRequests,
+    },
+    isTruncated: queue.isTruncated,
   };
 }
 
