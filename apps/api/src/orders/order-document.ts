@@ -5,14 +5,17 @@ import { buildSkuCode } from '@wewin/core/sku';
 import { configHash } from '@wewin/core/hash';
 import { hasBlockingError, validate } from '@wewin/core/validation';
 import type { TaxRule } from '@wewin/core/vat';
+import { convertFromBaht, convertSeriesFromBaht, thbPerUnitText, type FxRate } from '@wewin/core/fx';
 import type { Product } from '@wewin/core';
 import { canonicalJson } from '@wewin/db/hash';
 import { encodeUm } from '@wewin/contract/measure';
 import { encodePriceBreakdown, toPriceRequest } from '@wewin/contract/pricing';
 import { toBigInt } from '@wewin/contract/exact';
+import { encodeMinor } from '@wewin/contract/money';
 import {
   ORDER_DOCUMENT_SCHEMA_VERSION,
   encodeThb,
+  type OrderDocumentFxWire,
   type OrderDocumentLineWire,
   type OrderDocumentOverrideWire,
   type OrderDocumentWire,
@@ -52,8 +55,10 @@ import { CATALOG_STALE_MESSAGE } from './pg-errors';
  * tables 5b creates; `pin_schema_version` on the row is what stops a hash made under this
  * recipe being compared against one made under 5b's.
  *
- * The rate pin is deliberately absent rather than seamed: plan 13's default closes the
- * foreign-currency line entirely and every invoice is THB, so there is no rate to pin.
+ * The **exchange rate** is the sixth, and it is pinned here now rather than deferred: the owner
+ * opened the foreign-currency line that plan 13's default had closed, and a rate that is not
+ * frozen in this transaction can never be frozen at all — `order_documents_freeze` raises on
+ * every UPDATE, so there is no backfill. See the fx block inside `priceOrderDocument`.
  *
  * ── Money never arrives from a client ────────────────────────────────────────────
  *
@@ -116,6 +121,19 @@ export interface QuoteDocumentOverride extends LiveOverride {
   readonly setByUserName: string | null;
 }
 
+/**
+ * A rate, resolved and ready to freeze.
+ *
+ * `observedAt` is beside `rate` rather than inside it because `FxRate` is core's type and core
+ * knows nothing about where a snapshot came from — the instant belongs to the `fx_rates` row,
+ * not to the arithmetic. `null` for a manual override, which has no market observation to
+ * report and must not be given the submit time dressed up as one.
+ */
+export interface PinnedFxInput {
+  readonly rate: FxRate;
+  readonly observedAt: string | null;
+}
+
 export interface PriceOrderParams {
   readonly lines: readonly QuoteDocumentLine[];
   readonly charges: readonly QuoteDocumentCharge[];
@@ -135,6 +153,17 @@ export interface PriceOrderParams {
   readonly destinationCountry: string | null;
   /** Which of `fromNet` / `fromGrand` ran. A record of a completed computation. */
   readonly taxBasis: 'inclusive' | 'exclusive';
+  /**
+   * ⭐ The rate this quotation converts at, or `null` for a quotation that stays in baht.
+   *
+   * Resolved by `apps/api/src/fx` inside the submit transaction and handed in already
+   * decided, so this function stays a pure function of its arguments — it reads no table and
+   * no clock, which is what lets the whole of pricing be unit-tested without a database.
+   *
+   * The owner's rule is that the rate is fixed at the moment staff submits
+   * (*"ตรึงเรทตอนที่พนักงานส่งยืนยันใบเสนอราคา"*). This argument is that moment.
+   */
+  readonly fx: PinnedFxInput | null;
   /**
    * The language the customer was reading when they agreed to this — plan 10.6.
    *
@@ -341,6 +370,85 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
 
   const documentPromise = params.overrides.find((override) => override.anchor === 'grand_total');
 
+  /*
+   * ─────────────────────────────────────────────────────────────────────────────
+   * ⭐ THE FOREIGN FIGURES, FROZEN — computed here, once, and never again.
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   * Three identities hold in baht, and all three have to survive the conversion or the printed
+   * page contradicts itself:
+   *
+   *   ① net + vat = grand                       — always, `applyOverrides` guarantees it
+   *   ② Σ(lines) + Σ(charges) = grand           — under an inclusive basis, no grand override
+   *   ③ Σ(lines) + Σ(charges) = net             — under an exclusive basis, no grand override
+   *
+   * ⚠️ ② and ③ are *conditional*: a `grand_total` override replaces the total with a human's
+   * figure and the lines deliberately no longer foot to it — in baht either. Reproducing that
+   * exactly, rather than inventing a footing baht does not have, is the point.
+   *
+   * So:
+   *
+   *   - `net` and `grand` are each converted **once**, independently, and `vat` is the
+   *     **difference** between them. That is `vat.ts:61-74`'s rule — deriving the third figure
+   *     by subtraction rather than by a second multiplication — and it makes ① exact rather
+   *     than exact-to-within-a-cent.
+   *   - Lines and charges are converted as **one telescoping series** in document order, so
+   *     their sum is exactly `convert(Σ baht)`. Under an inclusive basis Σ baht *is* the grand
+   *     total, so the same input gives the same output and ② is exact for free; under an
+   *     exclusive basis it is the net and ③ falls out the same way. Under a grand override it
+   *     is neither, and the lines foot to their own subtotal exactly as they do in baht.
+   *
+   * Converting each line independently instead would satisfy none of this: eleven lines drift
+   * up to four minor units from their own total, and the customer adding up the column is the
+   * one who finds out.
+   */
+  /*
+   * `?? null`, not a bare read. The field is required on `PriceOrderParams`, but vitest
+   * transpiles without typechecking, so a fixture written before this argument existed hands
+   * in `undefined` — and `undefined !== null` takes the foreign branch and dereferences it.
+   * The same two characters guard the same trap in `printableQuotation`.
+   */
+  const fxInput = params.fx ?? null;
+  let fxWire: OrderDocumentFxWire | undefined;
+  let lineFxMinors: readonly bigint[] = [];
+  let chargeFxMinors: readonly bigint[] = [];
+
+  if (fxInput !== null) {
+    const { rate } = fxInput;
+
+    const lineThbMinors = frozenLines.map((line) => toBigInt(line.netMinor));
+    const chargeThbMinors = frozenCharges.map((charge) => toBigInt(charge.netMinor));
+
+    /* One series across both arrays, then split — the telescoping identity is over the whole
+     * column the customer reads, not over each half of it separately. */
+    const converted = convertSeriesFromBaht([...lineThbMinors, ...chargeThbMinors], rate);
+    lineFxMinors = converted.slice(0, lineThbMinors.length);
+    chargeFxMinors = converted.slice(lineThbMinors.length);
+
+    const netMinor = convertFromBaht(effective.money.netThbMinor, rate);
+    const grandTotalMinor = convertFromBaht(effective.money.grandTotalThbMinor, rate);
+
+    fxWire = {
+      currency: rate.currency as OrderDocumentFxWire['currency'],
+      source: rate.source,
+      spreadBp: rate.spreadBp,
+      /*
+       * The exact ratio, as digits. `thbPerUnitText` beside it is the rendering and explicitly
+       * not the divisor: at four decimal places ฿100,000 to SGD comes out a cent away from the
+       * exact chain. What reproduces these figures is this pair.
+       */
+      rateNumerator: rate.thbPerUnit.n.toString(),
+      rateDenominator: rate.thbPerUnit.d.toString(),
+      rateText: thbPerUnitText(rate),
+      observedAt: fxInput.observedAt,
+      provider: rate.provider,
+      netMinor: encodeMinor(netMinor, rate.currency),
+      /* ⭐ The difference, not a second conversion — identity ①. */
+      vatMinor: encodeMinor(grandTotalMinor - netMinor, rate.currency),
+      grandTotalMinor: encodeMinor(grandTotalMinor, rate.currency),
+    };
+  }
+
   const document = withHash({
     documentSchemaVersion: ORDER_DOCUMENT_SCHEMA_VERSION,
     revision: params.revision,
@@ -380,8 +488,20 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
      */
     ...(params.destinationCountry === null ? {} : { destinationCountry: params.destinationCountry }),
     ...(params.destinationCountry === null ? {} : { taxBasis: params.taxBasis }),
-    lines: frozenLines,
-    charges: frozenCharges,
+    /*
+     * Omitted entirely on a baht quotation rather than written as `null`, for the reason the
+     * two spreads above give: the field is optional in `orderDocumentWireSchema`, and an
+     * explicit null would make every domestic document carry a key that means nothing.
+     */
+    ...(fxWire === undefined ? {} : { fx: fxWire }),
+    /*
+     * `fxMinor` is attached here rather than inside the two `map`s above, because the series
+     * it comes from has to be converted across both arrays at once — see the block above.
+     */
+    lines: frozenLines.map((line, index) => withFxMinor(line, lineFxMinors[index], fxWire)),
+    charges: frozenCharges.map((charge, index) =>
+      withFxMinor(charge, chargeFxMinors[index], fxWire),
+    ),
     documentOverride:
       documentPromise === undefined ? null : documentOverrideWire(documentPromise),
     netThbMinor: encodeThb(effective.money.netThbMinor),
@@ -415,6 +535,22 @@ export function priceOrderDocument(params: PriceOrderParams): PricedDocument {
  * hash exists to detect. `documentHash: ''` is excluded by being overwritten, not by being
  * deleted, so the field order of the object that is hashed cannot depend on how it was built.
  */
+/**
+ * A line or charge with its foreign figure attached, or unchanged on a baht quotation.
+ *
+ * Generic over both so the two arrays cannot drift apart: they carry the same optional field,
+ * for the same reason, and a second copy of this three-line function is how one of them ends
+ * up keeping `fxMinor` on a document whose `fx` block was dropped.
+ */
+function withFxMinor<T>(
+  row: T,
+  minor: bigint | undefined,
+  fx: OrderDocumentFxWire | undefined,
+): T {
+  if (fx === undefined || minor === undefined) return row;
+  return { ...row, fxMinor: encodeMinor(minor, fx.currency) };
+}
+
 export function withHash(document: OrderDocumentWire): OrderDocumentWire {
   const { documentHash: _ignored, ...rest } = document;
   const hash = createHash('sha256').update(canonicalJson(rest)).digest('hex');

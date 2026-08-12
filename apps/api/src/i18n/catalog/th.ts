@@ -238,6 +238,18 @@ export const TH: Catalogue = {
     'อัตราแลกเปลี่ยนที่กำหนดเองต้องระบุสกุลเงินปลายทางด้วย — กรุณาเลือกสกุลเงินในคำขอเดียวกัน หรือล้างอัตราแลกเปลี่ยนที่กำหนดเอง',
   'error.tax_country.check_failed': 'ข้อมูลไม่ผ่านเงื่อนไขของประเทศปลายทาง',
 
+  /* ── Exchange rates ──────────────────────────────────────────────────────── */
+  /*
+   * ⭐ Said to staff at submit time, and it fails the submit rather than quietly printing baht.
+   * The sentence names both ways out because both are within reach of the person reading it:
+   * an administrator can type an override on the destination now, or the daily sync will bring
+   * a rate in on its own. See `QuotationRateService.forDestination` for why silence is the one
+   * answer that is not available — the document is frozen the moment it is issued.
+   */
+  'error.fx.rate_unavailable':
+    'ประเทศปลายทางนี้ตั้งค่าให้เสนอราคาเป็นสกุลเงินต่างประเทศ แต่ยังไม่มีอัตราแลกเปลี่ยนที่ใช้ได้ — ' +
+    'กรุณากำหนดอัตราแลกเปลี่ยนเองที่ประเทศปลายทาง หรือรอให้ระบบดึงอัตราแลกเปลี่ยนรอบถัดไป',
+
   /* ── Staleness ───────────────────────────────────────────────────────────── */
   /*
    * Two catalogue-stale sentences and not one. `…กำลังเลือก` is said to a customer in the

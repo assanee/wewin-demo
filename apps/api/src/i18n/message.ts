@@ -340,6 +340,21 @@ const PARAM_SHAPES = {
   'error.tax_country.fx_rate_needs_currency': {},
   'error.tax_country.check_failed': {},
 
+  /*
+   * ── Exchange rates — src/fx/quotation-rate.service.ts ──────────────────────
+   *
+   * The one refusal on the conversion path, and the only one: a destination configured for a
+   * foreign currency that has no usable rate behind it. Said to *staff* at submit time, not to
+   * a customer, and it names the two ways out (type a manual rate, or wait for the daily sync)
+   * because both are things the person reading it can actually do.
+   *
+   * No params. The country code and the currency travel in `details` instead, for the reason
+   * `error.stale.destination_changed_under_promise` gives just below: `ServerParamKind` is
+   * `'money' | 'count'` on purpose, and a currency code is not a thing to interpolate into
+   * prose a translator owns.
+   */
+  'error.fx.rate_unavailable': {},
+
   /* ── Staleness — src/quotes/errors.ts, src/orders/order-document.ts ───────── */
   'error.stale.catalog_while_configuring': {},
   'error.stale.catalog_while_editing_quote': {},

@@ -18,6 +18,7 @@ import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { message } from '../i18n';
 import { CatalogRepository } from '../catalog/catalog.repository';
+import { QuotationRateService } from '../fx/quotation-rate.service';
 import { encodeAccountPublic, encodeProfile } from '../organisation/encode';
 import { OrganisationRepository } from '../organisation/organisation.repository';
 import { TaxCountryService } from '../organisation/tax-country.service';
@@ -152,6 +153,26 @@ export class OrdersService {
      * error at boot, not a silent fallback at runtime.
      */
     private readonly taxCountries: TaxCountryService,
+    /**
+     * ⭐ …and, for a destination that is quoted in something other than baht, the rate it is
+     * quoted at.
+     *
+     * One call site, one line below `resolveDestination` and inside the same transaction: the
+     * argument to `priceOrderDocument`. The split between the two is deliberate and is argued in
+     * `DestinationTax`'s own comment — the tax envelope stays exactly what it was, and the fx
+     * settings reach pricing through a service that owns the cache rule and the refusal rather
+     * than by being added as three more fields nothing was asking for.
+     *
+     * This service never reads `fx_rates`, never decides which observation counts, and never
+     * decides what to do when there is not one. `forDestination` answers `null` for a baht
+     * quotation and throws for a destination configured for a currency it cannot price — see its
+     * header for why silence is not among the options.
+     *
+     * Injectable only because `FxModule` exports `QuotationRateService`; it exported nothing at
+     * all until this round. Same good failure mode as `TaxCountryService` above: a missing export
+     * is "cannot resolve dependencies" at boot, not a silent fallback at runtime.
+     */
+    private readonly fxRate: QuotationRateService,
     @Inject(ENV) private readonly env: Env,
     /**
      * What happens to money when this order moves — 5b's closing seam.
@@ -840,6 +861,23 @@ export class OrdersService {
       vat: destination.rule,
       destinationCountry: destination.code,
       taxBasis: destination.basis,
+      /*
+       * ⭐ The rate the document is quoted at, resolved from the same `tx` and beside the
+       * destination it belongs to — `null` for a baht quotation, which is most of them.
+       *
+       * `tx`, and it matters more here than it does for `resolveDestination` above. That call's
+       * own note is honest that threading `tx` buys no snapshot consistency at READ COMMITTED;
+       * this one reads a *second* table (`fx_rates`) that a concurrent daily sync appends to, and
+       * running it on a pooled connection of its own would mean the document could be priced
+       * against a snapshot that was not the newest one when the destination was read. One
+       * transaction, one connection, one instant — and the only version that is still correct if
+       * the isolation level is ever raised.
+       *
+       * Resolved *inside* the transaction and not before it for the plainer reason too: this
+       * throws for a destination configured for a currency with no usable rate, and a refusal
+       * that lands here rolls the whole submit back rather than leaving a half-written order.
+       */
+      fx: await this.fxRate.forDestination(destination.code, tx),
       locale: body.contact.locale ?? order.contactLocale,
       coreVersion: this.env.SERVICE_VERSION,
       revision: (await this.orders.latestRevision(tx, order.id)) + 1,

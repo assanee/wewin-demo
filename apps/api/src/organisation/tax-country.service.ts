@@ -10,6 +10,8 @@ import type {
   TaxCountryPatchRequest,
   TaxCountryWire,
 } from '@wewin/contract/tax';
+import type { FxCountrySettings } from '@wewin/core/fx';
+import type { Currency } from '@wewin/core/money';
 import type { TaxRule, TaxTreatment } from '@wewin/core/vat';
 
 import { AppError } from '../common/errors/app-error';
@@ -103,11 +105,18 @@ export interface DestinationTax {
   /**
    * ⚠️ The row's three `fx_*` settings are deliberately **not** here, and their absence is
    * the same kind of decision as `basis`'s presence. This envelope is what `priceOrderDocument`
-   * pins; a quotation document is frozen once issued (0018), and the question of how a foreign
-   * figure appears beside or instead of baht has not been answered. Carrying the settings here
-   * would put them one field access away from a document nobody can amend afterwards.
-   * `packages/core/src/fx.ts` is the arithmetic, tested and reachable, and nothing calls it —
-   * on purpose, until that answer exists.
+   * pins; a quotation document is frozen once issued (0018), so carrying the settings here
+   * would put them one field access away from a document nobody can amend afterwards, reachable
+   * by any caller that happened to hold a `DestinationTax` for any other reason.
+   *
+   * ⭐ They are no longer unread, and this comment used to end by saying they were. The answer
+   * that was missing now exists and it has its own path: `resolveFxSettings` below, read by
+   * `QuotationRateService.forDestination` (`apps/api/src/fx/quotation-rate.service.ts`), which
+   * pairs the settings with the newest row of `fx_rates` and hands `priceOrderDocument` one
+   * already-resolved `FxRate`. Two methods and not one widened return type, because the two
+   * questions have different failure modes: an unknown destination is refused by *this*
+   * envelope, and a destination with no usable rate is refused by *that* one, in a sentence
+   * about exchange rates that tells staff to set a manual rate or wait for the sync.
    */
   /** `null` when the order names no destination. */
   readonly code: string | null;
@@ -126,6 +135,22 @@ export interface DestinationTax {
    * editor stays open.
    */
   readonly known: boolean;
+}
+
+/**
+ * What one destination row says about converting out of baht — the fx half of the same row
+ * `DestinationTax` reads the tax half of, kept in its own envelope for the reason stated there.
+ *
+ * `currency` is separate from `settings` rather than a fourth field inside it because
+ * `FxCountrySettings` (`@wewin/core/fx`) is exactly the two knobs an administrator turns, and
+ * `resolveFxRate` takes the currency as its own argument. Widening core's interface to carry a
+ * currency would make it possible to call it with a currency that disagrees with the settings
+ * beside it; keeping them apart means the pair is assembled once, here, off one row.
+ */
+export interface DestinationFx {
+  /** Never `'THB'` — `tax_countries_fx_currency_not_thb` refuses to store it. */
+  readonly currency: Currency;
+  readonly settings: FxCountrySettings;
 }
 
 const encodeChange = (row: {
@@ -325,6 +350,57 @@ export class TaxCountryService {
       reason: 'unknown_destination_country',
       destinationCountry: code,
     });
+  }
+
+  /**
+   * ⭐ The same row's *other* half: what this destination says about converting out of baht.
+   *
+   * Separate from `resolveDestination` rather than folded into `DestinationTax` — see that
+   * interface's own note for why the settings must not ride along on the envelope
+   * `priceOrderDocument` pins. This is the one read that `QuotationRateService` makes, and it is
+   * the only thing outside this module that ever sees the three `fx_*` columns for pricing.
+   *
+   * `null` means **quote in baht**, and it means exactly one thing: the row has no
+   * `fx_currency`. That is the configured, ordinary state of every domestic destination and of
+   * every foreign one nobody has set a currency on yet, and it is not a failure — the document
+   * simply carries no foreign figure. `fx_manual_rate` cannot be set without a currency
+   * (`tax_countries_fx_manual_rate_needs_currency`), so there is no state where a rate is
+   * configured and this still answers `null`.
+   *
+   * ⚠️ A code that names **no row** throws, and does not answer `null`. Answering `null` would
+   * make a tampered or mistyped country code print baht on a document configured for something
+   * else, which is the same silent fallback `resolveDestination` spends a page refusing — and
+   * `order_documents_freeze` means it could never be corrected afterwards. It is the identical
+   * refusal, deliberately: a caller that reached here through `resolveDestination` (which is
+   * every caller today) has already been refused once and cannot reach this line, so the throw
+   * is what keeps that ordering from being load-bearing.
+   *
+   * ⚠️ `tx` is REQUIRED and may be `undefined`, exactly as on `resolveDestination` above, and
+   * for the reason spelled out there: dropping the argument changes nothing a runtime test can
+   * observe, so the compiler is made to notice instead.
+   */
+  async resolveFxSettings(code: string, tx: Tx | undefined): Promise<DestinationFx | null> {
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      throw AppError.validationFailed(message('error.tax_country.unknown_destination'), {
+        reason: 'unknown_destination_country',
+        destinationCountry: code,
+      });
+    }
+
+    if (row.fxCurrency === null) return null;
+
+    return {
+      /*
+       * `char(3, { enum: CURRENCIES })` on the column plus `tax_countries_fx_currency_known` in
+       * the database, so this narrowing restates a guarantee two layers already hold rather than
+       * hoping. `fxManualRate` needs no conversion at all: `numeric` reads back as an exact
+       * decimal *string*, which is the type `FxCountrySettings` asks for and the reason the
+       * column is `numeric` — see `TaxCountryRow.fxManualRate` above.
+       */
+      currency: row.fxCurrency as Currency,
+      settings: { spreadBp: row.fxSpreadBp, manualRateThbPerUnit: row.fxManualRate },
+    };
   }
 
   /**
