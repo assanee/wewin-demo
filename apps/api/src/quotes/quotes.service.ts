@@ -39,6 +39,7 @@ import { TaxCountryService, type DestinationTax } from '../organisation/tax-coun
 import { scopeHolds, type Scope, type UserScope } from '../rbac';
 import { ConcessionIntegrityError, measureMargin } from './authority/concession';
 import { DEFAULT_LEAD_TIME_DAYS, MAX_LEAD_TIME_DAYS, MAX_QUOTE_LINES } from './defaults';
+import { QuotationRateService } from '../fx/quotation-rate.service';
 import { encodeQuote, type QuoteAudience } from './encode';
 import { baselinesStale, catalogStale, destinationChanged, quoteStale } from './errors';
 import { EntryError, normaliseCharge, normaliseEntry } from './entry';
@@ -126,6 +127,17 @@ export class QuotesService {
   constructor(
     private readonly quotes: QuoteRepository,
     /**
+     * ⭐ The indicative destination-currency figure the editor shows beside the baht.
+     *
+     * `preview` and never `fromSettings`: this service answers with the whole quote on every
+     * read *and* every write, so a throw from the fx path would 422 the editor itself. The
+     * refusal belongs at the submit — where `OrdersService` calls `fromSettings` and something
+     * is actually frozen — and this is the same resolution with every failure turned into a
+     * reported absence. One rate service, two entry points, no second opinion about which
+     * observation counts.
+     */
+    private readonly fxRate: QuotationRateService,
+    /**
      * Every load of an order goes through this and through nothing else — the same boundary
      * `OrdersService` draws. A quote line is a child of an order, so "may this caller touch
      * it?" is a question about the order, and the branded `ScopedOrder` is what makes it
@@ -181,10 +193,14 @@ export class QuotesService {
      * (`destination.recognised`) rather than passed off as a real answer, and the refusal stays
      * where the money is frozen: `assertSubmittable` below, and `OrdersService.submit`.
      */
-    const destination = await this.taxCountries.resolveForEditing(
+    /* One read of `tax_countries`, both halves — the tax envelope the money is computed under
+     * and the fx settings the indicative conversion beside it is rendered from. Two calls would
+     * be two reads of the same row for one screen. */
+    const resolvedDestination = await this.taxCountries.resolveForEditingWithFx(
       order.destinationCountry,
       undefined,
     );
+    const destination = resolvedDestination.tax;
 
     const effective = this.effective(lines, overrides, destination);
     const published = await this.publishedIndex();
@@ -221,6 +237,10 @@ export class QuotesService {
        */
       destination,
       staleBaselines,
+      /* Never throws — see `QuotationRateService.preview`. A read that refused over a stale or
+       * missing rate would make the editor itself unopenable, including for the salesperson
+       * trying to correct the order that caused it. */
+      fxPreview: await this.fxRate.preview(resolvedDestination.fx, undefined),
       audience,
     });
   }
@@ -904,10 +924,11 @@ export class QuotesService {
        * already written — see `resolveDestination`'s own note for what it honestly does and
        * does not buy under READ COMMITTED.
        */
-      const destination = await this.taxCountries.resolveForEditing(
+      const resolvedDestination = await this.taxCountries.resolveForEditingWithFx(
         order.destinationCountry,
         tx,
       );
+      const destination = resolvedDestination.tax;
 
       /* ③ …and only now is the body's own schema chosen and run. Trap 4 — see the file note. */
       await apply({ tx, order, user, body, lines, overrides, published, destination });
@@ -942,6 +963,9 @@ export class QuotesService {
          * the heading over the money has to name the rate the money was computed at. */
         destination,
         staleBaselines,
+        /* Same transaction as everything else in this write, so the preview a write answers
+         * with is resolved against the same connection and instant as the money beside it. */
+        fxPreview: await this.fxRate.preview(resolvedDestination.fx, tx),
         audience: 'sales',
       });
     }), operation);

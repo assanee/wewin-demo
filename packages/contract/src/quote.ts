@@ -455,6 +455,73 @@ export interface QuoteSalesViewWire {
   /** The baseline the concession is measured from: no overrides, no negative charges. */
   readonly baselineGrandTotalThbMinor: MoneyWire<'THB'>;
   readonly staleBaselines: readonly StaleBaselineWire[];
+  /**
+   * ⭐ Roughly what this will cost in the destination's currency — **not yet pinned**.
+   *
+   * `null` for every domestic quotation, which is most of them: no destination, no
+   * `fx_currency`, or a country code that names no row.
+   *
+   * ── Why it is in `sales` and not beside `destination` ────────────────────────────
+   *
+   * `destination` is outside `sales` precisely because an unrecognised country is *"a fact
+   * about their own order that only they can correct"*. This is the opposite kind of fact: an
+   * indicative figure at a rate that has not been struck yet, which the customer must never see
+   * as a price. What a customer is entitled to is the frozen document — where the destination
+   * currency *replaces* baht and the rate is pinned, printed and permanent
+   * (`OrderDocumentFxWire`). Showing them a preview would put two different foreign figures in
+   * front of the same person and make the second one look like a change of terms.
+   *
+   * ── ⚠️ The polarity is the reverse of the document's, and that is the whole point ──
+   *
+   * On the pinned quotation the destination currency is the figure and baht is the settlement
+   * note. Here **baht is the figure** and this is the annotation. Nothing is decided from it,
+   * nothing is stored from it, and `grandTotalMinor` is a *rendering* — the submit recomputes
+   * everything from the rate it resolves at that moment, which is the only figure that is ever
+   * binding. Between a salesperson reading this and pressing send, the daily sync can land and
+   * move it; that is not a defect, it is what "not yet pinned" means.
+   */
+  readonly fxPreview: QuoteFxPreviewWire | null;
+}
+
+/**
+ * The indicative conversion, and — when there is not one — why.
+ *
+ * `available: false` never fails the request. `GET /orders/:id/quote` and every quote write
+ * answer with the whole quote, so a rate problem that threw would make the editor itself
+ * unopenable, including for the salesperson trying to fix the order that caused it. The
+ * refusal belongs at the submit, which freezes something; a read freezes nothing.
+ */
+export interface QuoteFxPreviewWire {
+  readonly available: boolean;
+  /** The destination currency. Present even when `available` is false, so a screen can name it. */
+  readonly currency: string;
+  /**
+   * The grand total converted at the indicative rate, in that currency's **minor units** — so
+   * `'65383'` is SGD 653.83 and VND carries no decimal at all. Null when `available` is false.
+   *
+   * A digit string rather than a number, for `money.ts`'s reason: a decimal that survives a
+   * float round-trip is luck. It is not a `MoneyWire<'THB'>` because it is not baht and not
+   * `Exact<'THB.satang'>`; the unit is the destination currency's minor unit and the currency
+   * beside it is what names which.
+   */
+  readonly grandTotalMinor: string | null;
+  /** Baht per one whole unit, rendered for reading. ⚠️ Never the divisor — see `thbPerUnitText`. */
+  readonly rateText: string | null;
+  /** `'mid_market' | 'manual'`. A manual override is neither stale nor observed. */
+  readonly source: string | null;
+  /** ISO 8601 of the provider's observation. Null for a manual override, and when unavailable. */
+  readonly observedAt: string | null;
+  /**
+   * ⭐ True when the rate is past the refusal threshold — i.e. **the submit will refuse this
+   * quotation**. Shown rather than hidden: a salesperson needs to know both what it will
+   * roughly cost and that it is not going to go out, and a screen that showed only one of those
+   * would either withhold a useful figure or let somebody promise a price that cannot be issued.
+   */
+  readonly stale: boolean;
+  /** Whole hours since `observedAt`, for a sentence. Null for a manual override or no rate. */
+  readonly ageHours: number | null;
+  /** Machine-readable why-not when `available` is false: `'no_snapshot'`, `'same_currency'`, … */
+  readonly reason: string | null;
 }
 
 /**
@@ -676,6 +743,25 @@ export const quoteDestinationWireSchema: z.ZodType<QuoteDestinationWire> = z.obj
   basis: z.literal(DESTINATION_TAX_BASES),
 });
 
+/**
+ * ⚠️ `grandTotalMinor` is a digit string with an optional sign and is **not** `thb` / `Exact`.
+ * Those carry `unit: 'THB.satang'`, and this is not baht — the unit is the destination
+ * currency's minor unit, named by `currency` beside it. Reusing the baht shape would put a
+ * `'THB.satang'` tag on an SGD figure, which is exactly the mislabelling `Exact` exists to make
+ * impossible.
+ */
+export const quoteFxPreviewWireSchema: z.ZodType<QuoteFxPreviewWire> = z.object({
+  available: z.boolean(),
+  currency: z.string().regex(/^[A-Z]{3}$/u),
+  grandTotalMinor: z.string().regex(/^-?\d+$/u).nullable(),
+  rateText: z.string().min(1).nullable(),
+  source: z.string().min(1).nullable(),
+  observedAt: z.iso.datetime().nullable(),
+  stale: z.boolean(),
+  ageHours: z.number().nonnegative().nullable(),
+  reason: z.string().min(1).nullable(),
+});
+
 export const quoteWireSchema: z.ZodType<QuoteWire> = z.object({
   orderId: z.uuid(),
   quoteRevision: z.string().regex(QUOTE_REVISION_PATTERN),
@@ -691,6 +777,7 @@ export const quoteWireSchema: z.ZodType<QuoteWire> = z.object({
       marginConcessionThbMinor: thb,
       baselineGrandTotalThbMinor: thb,
       staleBaselines: z.array(staleBaselineWireSchema),
+      fxPreview: quoteFxPreviewWireSchema.nullable(),
     })
     .nullable(),
 });

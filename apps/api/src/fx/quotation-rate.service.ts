@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { resolveFxRate, type FxRate, type FxRateProblem, type FxSnapshot } from '@wewin/core/fx';
+import type { Currency } from '@wewin/core/money';
 
 import { AppError } from '../common/errors/app-error';
 import { count as countParam, message } from '../i18n';
@@ -229,7 +230,107 @@ export class QuotationRateService {
      */
     return { rate: resolved.rate, observedAt: snapshot.rateTimestamp.toISOString() };
   }
+
+  /**
+   * ⭐ THE SAME RATE, FOR A SCREEN — and the one method here that never throws.
+   *
+   * Staff compose a whole quotation in baht and the first anybody sees of the destination
+   * currency is the issued document, at which point `order_documents_freeze` has already made
+   * it permanent. This is what lets the editor show the figure *while it can still be changed*.
+   *
+   * ── ⚠️ WHY IT CANNOT REUSE `fromSettings`, EVEN THOUGH IT WANTS THE SAME ANSWER ──
+   *
+   * `fromSettings` throws — that is its job, and every one of its refusals is right *for a
+   * submit*. On a read they would be catastrophic in a way that is easy to miss: `getQuote` and
+   * every quote *write* answer with the whole quote, so a throw from here would 422 the editor
+   * itself. A destination with no rate behind it would produce a quote screen that cannot be
+   * opened, and a stale feed would make every existing foreign quotation unopenable and
+   * uneditable — including the ones a salesperson is trying to correct. That is
+   * `resolveForEditing`'s own lesson, verbatim: *"a read that refused would leave a cart
+   * carrying a mistyped country permanently unopenable"*, and it applies with more force here,
+   * because the whole point of the refusal is that staff should still be able to work.
+   *
+   * So every failure becomes a *reported absence*: `unavailable`, with a reason the screen can
+   * phrase, and never an exception. The submit still refuses. The read still opens.
+   *
+   * ── ⭐ AND WHY IT REPORTS STALENESS RATHER THAN HIDING IT ────────────────────────
+   *
+   * A stale rate does **not** collapse to `unavailable` here. The figure is still returned,
+   * with `stale: true` beside it, because the two facts a salesperson needs are different from
+   * the two a submit needs: *roughly what will this cost in SGD*, and *will this actually go
+   * out*. Hiding the number would answer neither, and showing it silently would let them
+   * promise a customer a figure the submit is about to refuse. Both, together, is the only
+   * version that tells them what is going to happen before it happens.
+   */
+  async preview(fx: DestinationFx | null, tx: Tx | undefined): Promise<QuotationRatePreview> {
+    if (fx === null) return { ok: false, reason: 'no_destination_currency' };
+
+    const { currency, settings } = fx;
+
+    if (settings.manualRateThbPerUnit !== null) {
+      const resolved = resolveFxRate(currency, settings, NO_SNAPSHOT_NEEDED);
+      if (!resolved.ok) return { ok: false, reason: resolved.reason, currency };
+
+      /* A typed rate has no observation, so it cannot be stale — the same statement the
+       * refusal path makes by branching before it reads `fx_rates` at all. */
+      return { ok: true, rate: resolved.rate, observedAt: null, stale: false, ageHours: null };
+    }
+
+    const snapshot = await this.snapshots.latest(tx);
+    if (snapshot === undefined) return { ok: false, reason: 'no_snapshot', currency };
+
+    const resolved = resolveFxRate(currency, settings, {
+      base: snapshot.base,
+      rates: snapshot.rates,
+    });
+    if (!resolved.ok) return { ok: false, reason: resolved.reason, currency };
+
+    const ageHours = fxRateAgeHours(snapshot.rateTimestamp, new Date());
+
+    return {
+      ok: true,
+      rate: resolved.rate,
+      observedAt: snapshot.rateTimestamp.toISOString(),
+      /* The identical comparison the submit makes, from the identical constant — so the badge
+       * that says "this will be refused" and the refusal itself cannot disagree. */
+      stale: ageHours > FX_RATE_REFUSE_AFTER_HOURS,
+      ageHours,
+    };
+  }
 }
+
+/**
+ * An indicative rate for a screen, or the reason there is not one. Never an exception.
+ *
+ * `stale: true` with `ok: true` is the deliberate combination: there is a figure, it is the
+ * figure the submit *would* use, and the submit is going to refuse it. A shape that could not
+ * express that would force the screen to choose between showing a number it cannot vouch for
+ * and showing nothing about a submit that is about to fail.
+ */
+export type QuotationRatePreview =
+  | {
+      readonly ok: true;
+      readonly rate: FxRate;
+      /** ISO 8601, or `null` for a manual override — same rule as `ResolvedQuotationRate`. */
+      readonly observedAt: string | null;
+      /** Past the refusal threshold: the figure is shown, and the submit will refuse it. */
+      readonly stale: boolean;
+      /** `null` for a manual override, which has no observation to age. */
+      readonly ageHours: number | null;
+    }
+  /**
+   * There is no destination currency at all — a domestic quotation, an order naming no country,
+   * or a code `tax_countries` has no row for. Its own arm, with no `currency` field, because
+   * there is genuinely no currency to name and a `currency: null` would invite a screen to
+   * render an empty one.
+   */
+  | { readonly ok: false; readonly reason: 'no_destination_currency' }
+  /**
+   * A currency is configured and no rate could be produced for it. The currency is always known
+   * here — it came off the same row — which is what lets the screen say *"SGD, and we have no
+   * rate"* rather than the uselessly generic "no rate".
+   */
+  | { readonly ok: false; readonly reason: RateFailure; readonly currency: Currency };
 
 /**
  * The one refusal, built once so the three throw sites cannot drift apart.

@@ -495,6 +495,45 @@ export class TaxCountryService {
     return this.lookup(code, tx);
   }
 
+  /**
+   * ⭐ The editing read, with the fx half of the same row — `resolveForSubmit`'s shape, for the
+   * screen rather than for the pin.
+   *
+   * The quote editor now prints an indicative destination-currency figure beside the baht, so
+   * the read path wants exactly what the submit path wanted: the tax envelope *and* the three
+   * `fx_*` settings, off one row. `resolveForEditing` above answers only the tax half, and a
+   * caller that wanted both had the choice of reading `tax_countries` a second time — which on
+   * `QuotesService.write` would be a third read inside a transaction already holding a row lock
+   * on the order, the exact cost `resolveForSubmit` was extracted to remove.
+   *
+   * ⚠️ `fx` is `null` for an **unrecognised** code as well as for a destination with no
+   * `fx_currency`, and the two are deliberately one answer here. `lookup` degrades an unknown
+   * country to the default rule with `known: false`; inventing fx settings for a row that does
+   * not exist would put a currency on a screen for a country this company does not sell to. No
+   * preview is the right amount of preview for a code that names nothing.
+   */
+  async resolveForEditingWithFx(
+    code: string | null,
+    tx: Tx | undefined,
+  ): Promise<{ readonly tax: DestinationTax; readonly fx: DestinationFx | null }> {
+    if (code === null) return { tax: await this.lookup(null, tx), fx: null };
+
+    const [row] = await this.repository.byCode(code, tx);
+    if (row === undefined) {
+      return { tax: { code, rule: DEFAULT_VAT_RULE, basis: 'exclusive', known: false }, fx: null };
+    }
+
+    return {
+      tax: {
+        code: row.code,
+        rule: { rateBp: row.rateBp, treatment: row.treatment as TaxTreatment },
+        basis: row.pricesIncludeTax ? 'inclusive' : 'exclusive',
+        known: true,
+      },
+      fx: this.fxFromRow(row),
+    };
+  }
+
   /** One statement and one interpretation of the row, shared by both readings above. */
   private async lookup(code: string | null, tx: Tx | undefined): Promise<DestinationTax> {
     if (code === null) {

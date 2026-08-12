@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { CatalogModule } from '../catalog/catalog.module';
 import { OrderScopeModule } from '../orders/scope';
+import { FxModule } from '../fx/fx.module';
 import { OrganisationModule } from '../organisation';
 import { QuoteRepository } from './quote.repository';
 import { QuotesController } from './quotes.controller';
@@ -44,7 +45,7 @@ import { QuotesService } from './quotes.service';
  * body rather than the quote, so the editor's output was consumed by nothing.
  */
 @Module({
-  imports: [CatalogModule, OrderScopeModule, OrganisationModule],
+  imports: [CatalogModule, FxModule, OrderScopeModule, OrganisationModule],
   controllers: [QuotesController],
   providers: [QuotesService, QuoteRepository],
   exports: [QuotesService],

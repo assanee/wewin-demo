@@ -300,6 +300,7 @@ describe('boot-time route audit', () => {
       'GET /admin/catalog/products [permissions]',
       'GET /admin/catalog/products/:productId [permissions]',
       'GET /admin/catalog/products/:productId/draft [permissions]',
+      'GET /admin/fx/health [permissions]',
       'GET /admin/groups [permissions]',
       'GET /admin/media [permissions]',
       'GET /admin/media/:mediaId [permissions]',

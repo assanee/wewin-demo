@@ -36,6 +36,19 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['GET /admin/catalog/option-groups', ['catalog.read']],
 
   /*
+   * ⭐ The exchange-rate feed's own health. `organisation.read` and not a new code: it is the
+   * permission that already opens the screen this renders on and the `tax_countries` rows whose
+   * `fxManualRate` is the way out of a stale rate. A fresh code would have to be granted to
+   * every group that already holds `organisation.read` on day one, which is a migration to
+   * express "the same people".
+   *
+   * Read-only, and there is deliberately no write route beside it: the thresholds are constants
+   * and the *rate* is settable only through `PATCH /admin/organisation/tax-countries/:code`,
+   * where it lands in `tax_country_changes` with an actor and a before/after.
+   */
+  ['GET /admin/fx/health', ['organisation.read']],
+
+  /*
    * Media. Same two permissions as the catalogue it illustrates, deliberately: a person
    * who may change what a product is may change the picture of it, and nobody else needs
    * a third grant to reason about. Listing them here is what the audit is for — these
