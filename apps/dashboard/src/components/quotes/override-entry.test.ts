@@ -145,19 +145,25 @@ describe('the preview and the write cannot disagree', () => {
   });
 
   /*
-   * ⚠️ The **money**-discount box is deliberately left as it was: `-291` and `291` are both ฿291
-   * off, and `+291` is refused. That box draws `฿` rather than a sign, and a minus in front of an
-   * amount is not the demonstrated ambiguity a minus in front of a percentage was. Flagged for the
-   * owner rather than changed unasked — the instruction named the percentage field.
+   * ⚠️ The money box was flagged for the owner rather than changed unasked, on the grounds that a
+   * minus in front of an amount was not the *demonstrated* ambiguity a minus in front of a percentage
+   * had been. The owner's call was to close it anyway, before anyone was burned: whoever types `-291`
+   * believes something different from whoever types `291`, and making both mean ฿291 off left one of
+   * them uncorrected. Same rule, same reason codes, the other unit.
    */
-  it('refuses a surcharge in the money-discount box by name too', () => {
-    expect(refusal(preview(LINE, 'discount_amount', '+291'))).toContain('เพิ่มราคาไม่ได้');
+  it('refuses a sign in the money-discount box with the same instruction as the percent box', () => {
+    for (const typed of ['+291', '-291']) {
+      expect(refusal(preview(LINE, 'discount_amount', typed)), typed).toContain('ไม่ต้องใส่เครื่องหมาย');
+    }
   });
 
-  it('reads a money discount the same whether or not the salesperson typed the minus', () => {
-    for (const typed of ['291', '-291']) {
-      expect(shown(preview(LINE, 'discount_amount', typed)).anchorThbMinor).toBe(850_000n);
-    }
+  it('refuses a typed ฿ in the money-discount box', () => {
+    expect(refusal(preview(LINE, 'discount_amount', '฿291'))).toContain('ไม่ต้องพิมพ์ ฿');
+  });
+
+  it('prices a money discount from the one accepted spelling', () => {
+    expect(shown(preview(LINE, 'discount_amount', '291')).anchorThbMinor).toBe(850_000n);
+    expect(shown(preview(LINE, 'discount_amount', ' 291 ')).anchorThbMinor).toBe(850_000n);
   });
 
   it('previews on the whole baht, because that is the unit the write stores', () => {
@@ -211,11 +217,16 @@ describe('what a person types reaches the server as something it accepts', () =>
     expect(shown(preview(LINE, 'percent_discount', '5')).enteredValueText).not.toContain('-');
   });
 
-  /* The other three modes are already in the form the server parses, so nothing is added to them. */
+  /*
+   * The other three modes are already in the form the server parses, so nothing is added to them.
+   * The money-discount box therefore records `entered_value_text` character-for-character — a
+   * stronger form of plan 7.9(ก)'s record than the percentage box can manage, since that one must
+   * append the `%` its field only draws.
+   */
   it('leaves the absolute and money-discount modes exactly as typed', () => {
     expect(shown(preview(LINE, 'line_total', ' 8500 ')).enteredValueText).toBe('8500');
     expect(shown(preview(LINE, 'discount_amount', ' 291 ')).enteredValueText).toBe('291');
-    expect(shown(preview(LINE, 'discount_amount', '-291')).enteredValueText).toBe('-291');
+    expect(shown(preview(LINE, 'discount_amount', '1,234.50')).enteredValueText).toBe('1,234.50');
   });
 
   /**
@@ -238,10 +249,12 @@ describe('what a person types reaches the server as something it accepts', () =>
     expect(refusal(preview(LINE, 'percent_discount', '0'))).toContain('0%');
   });
 
-  /* The other modes keep their own blank sentences, now that no blanket one preempts them. */
-  it('still refuses a blank box in the money modes, in their own words', () => {
+  /* Each mode keeps its own blank sentence, now that no blanket one preempts them. */
+  it('refuses a blank box in every mode, each in its own words', () => {
     expect(refusal(preview(LINE, 'line_total', ''))).toContain('กรอกจำนวนเงิน');
-    expect(refusal(preview(LINE, 'discount_amount', '  '))).toContain('กรอกจำนวนเงิน');
+    /* The two discount boxes teach their format instead of only reporting the emptiness. */
+    expect(refusal(preview(LINE, 'discount_amount', '  '))).toContain('กรอกเป็นตัวเลขเท่านั้น');
+    expect(refusal(preview(LINE, 'percent_discount', '  '))).toContain('กรอกเป็นตัวเลขเท่านั้น');
     const lead: OverrideContext = { anchor: 'lead_time_days', computedDays: 30 };
     expect(refusal(preview(lead, 'lead_time_days', ''))).toContain('กรอกจำนวนวัน');
   });

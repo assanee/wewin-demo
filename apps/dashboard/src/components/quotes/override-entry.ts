@@ -301,11 +301,19 @@ function readMoneyEntry(
     }
 
     case 'discount_amount': {
-      /* `readDiscountBaht` and not `readBaht`: `-291` is ฿291 off, which is the server's reading
-       * of the same keystroke and was not this screen's. */
+      /*
+       * `readDiscountBaht` and not `readBaht`: one accepted spelling, a plain positive number, with
+       * `-291` and `฿291` refused by name. Its `wireText` is the typed text unchanged — a money
+       * discount needs no decoration appended, unlike the percentage above, so this field's
+       * `entered_value_text` is character-for-character what the salesperson wrote.
+       *
+       * The refusal for a discount larger than the price is `preview`'s `minor < 0n` check, not this
+       * reader's: it needs the baseline, and `readBaht` already argues there why a negative price is
+       * not a price.
+       */
       const parsed = readDiscountBaht(text);
       if (!parsed.ok) return parsed;
-      return asTyped(context.computedThbMinor - parsed.value);
+      return ok({ minor: context.computedThbMinor - parsed.value.minor, wireText: parsed.value.wireText });
     }
 
     case 'lead_time_days':

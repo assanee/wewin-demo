@@ -4,8 +4,12 @@ import {
   discountBp,
   discountMinor,
   FULL_DISCOUNT_BP,
+  normaliseAmountEntry,
   normalisePercentEntry,
   priceAfterPercentDiscount,
+  screenTypedDiscount,
+  type AmountEntry,
+  type AmountEntryRefusal,
   type DiscountRule,
   type PercentEntry,
   type PercentEntryRefusal,
@@ -154,10 +158,10 @@ describe('a typed percentage: everything else is refused, by name', () => {
   });
 
   it('refuses a typed %, because the field already shows one', () => {
-    expect(refused(normalisePercentEntry('5%'))).toBe('percent_typed');
-    expect(refused(normalisePercentEntry('5 %'))).toBe('percent_typed');
-    expect(refused(normalisePercentEntry('7.5%'))).toBe('percent_typed');
-    expect(refused(normalisePercentEntry('%5'))).toBe('percent_typed');
+    expect(refused(normalisePercentEntry('5%'))).toBe('unit_typed');
+    expect(refused(normalisePercentEntry('5 %'))).toBe('unit_typed');
+    expect(refused(normalisePercentEntry('7.5%'))).toBe('unit_typed');
+    expect(refused(normalisePercentEntry('%5'))).toBe('unit_typed');
   });
 
   it('refuses a space inside the number', () => {
@@ -205,6 +209,10 @@ describe('a typed percentage: everything else is refused, by name', () => {
    * figure the server derives from `wireText`. The two halves are asserted in the dashboard and api
    * suites; this pins that one parse feeds both.
    */
+  it('names the sign before the unit, so -5% teaches the more dangerous mistake first', () => {
+    expect(refused(normalisePercentEntry('-5%'))).toBe('signed');
+  });
+
   it('produces a wire text that still describes the same discount', () => {
     for (const typed of ['5', '7.5', '3.31', '0.05', '100']) {
       const value = entry(normalisePercentEntry(typed));
@@ -219,5 +227,121 @@ describe('a typed percentage: everything else is refused, by name', () => {
       expect(entry(normalisePercentEntry(value.wireText.replace(/%$/, ''))).bp, typed).toBe(value.bp);
       expect(value.wireText).toBe(`${typed}%`);
     }
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE MONEY DISCOUNT BOX — THE SAME RULE, THE OTHER UNIT
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner extended the percentage field's ruling here on the reasoning that decided it: somebody
+ * who types `-291` believes they are asking for something different from somebody who types `291`.
+ * Both used to mean ฿291 off, so one of those two people was wrong and the system never said so.
+ *
+ * Nothing about the *grammar* is new — `readSatang`'s `AMOUNT` is reused, separators and all — and
+ * nothing about the *screening* is new either, because `screenTypedDiscount` is the percentage
+ * field's. What these assert is that the two fields refuse the same shapes for the same reasons
+ * while keeping the units that genuinely differ.
+ */
+const amount = (result: Ruled<AmountEntry, AmountEntryRefusal>): AmountEntry => {
+  if (!result.ok) throw new Error(`expected success, got refusal: ${result.refusal}`);
+  return result.value;
+};
+
+const amountRefused = (result: Ruled<AmountEntry, AmountEntryRefusal>): AmountEntryRefusal => {
+  if (result.ok) throw new Error(`expected a refusal, got ${String(result.value.minor)}`);
+  return result.refusal;
+};
+
+describe('a typed money discount: one accepted format', () => {
+  it('accepts a plain positive number, to the satang', () => {
+    expect(amount(normaliseAmountEntry('291')).minor).toBe(29_100n);
+    expect(amount(normaliseAmountEntry('291.50')).minor).toBe(29_150n);
+    expect(amount(normaliseAmountEntry('291.5')).minor).toBe(29_150n);
+    expect(amount(normaliseAmountEntry('0.01')).minor).toBe(1n);
+  });
+
+  /* `readSatang`'s grammar, not a second one — so the separators it accepts, this accepts. */
+  it('accepts the thousands separators the repo money parser already accepts', () => {
+    expect(amount(normaliseAmountEntry('1,234.50')).minor).toBe(123_450n);
+    expect(amount(normaliseAmountEntry('1234.50')).minor).toBe(123_450n);
+    expect(amountRefused(normaliseAmountEntry('12,34'))).toBe('unreadable');
+  });
+
+  /**
+   * ⭐ **Nothing is appended.** The percentage field must add the `%` its box only draws, because the
+   * server's guard requires a literal one. A money discount needs no decoration, so this field's
+   * `entered_value_text` is what the person typed, character for character — the strongest form of
+   * plan 7.9(ก)'s record, and better than the percentage field can manage.
+   */
+  it('sends exactly what was typed, with nothing added', () => {
+    expect(amount(normaliseAmountEntry('291')).wireText).toBe('291');
+    expect(amount(normaliseAmountEntry('  1,234.50  ')).wireText).toBe('1,234.50');
+    expect(amount(normaliseAmountEntry('291')).wireText).not.toContain('฿');
+  });
+});
+
+describe('a typed money discount: everything else is refused, by name', () => {
+  it('refuses a sign — the ambiguity the owner closed before anyone was burned by it', () => {
+    expect(amountRefused(normaliseAmountEntry('-291'))).toBe('signed');
+    expect(amountRefused(normaliseAmountEntry('+291'))).toBe('signed');
+    expect(amountRefused(normaliseAmountEntry('-1,234.50'))).toBe('signed');
+  });
+
+  it('refuses a typed ฿, because the field already shows one', () => {
+    expect(amountRefused(normaliseAmountEntry('฿291'))).toBe('unit_typed');
+    expect(amountRefused(normaliseAmountEntry('291฿'))).toBe('unit_typed');
+  });
+
+  it('refuses zero, a blank box, and what is not a number', () => {
+    expect(amountRefused(normaliseAmountEntry('0'))).toBe('no_change');
+    expect(amountRefused(normaliseAmountEntry('0.00'))).toBe('no_change');
+    expect(amountRefused(normaliseAmountEntry(''))).toBe('empty');
+    expect(amountRefused(normaliseAmountEntry('   '))).toBe('empty');
+    for (const typed of ['abc', '291.123', '2 91', '.5', '291.']) {
+      expect(amountRefused(normaliseAmountEntry(typed)), typed).toBe('unreadable');
+    }
+  });
+
+  /* The regression guard: every spelling the lenient version accepted must now refuse. */
+  it('refuses every spelling the lenient version accepted', () => {
+    for (const typed of ['-291', '฿291', '-฿291']) {
+      expect(normaliseAmountEntry(typed).ok, typed).toBe(false);
+    }
+    expect(normaliseAmountEntry('291').ok).toBe(true);
+  });
+});
+
+describe('the two discount fields share one idea of shape', () => {
+  /**
+   * ⭐ The property that keeps them from drifting: for every shape that is about the *shape* rather
+   * than the unit, both fields answer with the same reason code. Two near-copies of these checks is
+   * how the money box would fall behind the percentage box the first time either was edited — and
+   * drift between two readers of a typed discount is what this module exists because of.
+   */
+  it('refuses a sign and a blank box identically in both units', () => {
+    for (const typed of ['-1', '+1', '', '   ']) {
+      const inPercent = normalisePercentEntry(typed);
+      const inMoney = normaliseAmountEntry(typed);
+      expect(inPercent.ok, typed).toBe(false);
+      expect(inMoney.ok, typed).toBe(false);
+      if (!inPercent.ok && !inMoney.ok) expect(inMoney.refusal, typed).toBe(inPercent.refusal);
+    }
+  });
+
+  it('screens each field against its own unit symbol and not the other', () => {
+    /* A `฿` is not a percentage's unit, so it is simply unreadable there — and the reverse. */
+    expect(refused(normalisePercentEntry('5%'))).toBe('unit_typed');
+    expect(refused(normalisePercentEntry('฿5'))).toBe('unreadable');
+    expect(amountRefused(normaliseAmountEntry('฿291'))).toBe('unit_typed');
+    expect(amountRefused(normaliseAmountEntry('291%'))).toBe('unreadable');
+  });
+
+  it('exposes the screening on its own, so a third field could not invent a fourth answer', () => {
+    expect(screenTypedDiscount(' 5 ', '%')).toEqual({ ok: true, value: '5' });
+    expect(screenTypedDiscount('-5', '%')).toEqual({ ok: false, refusal: 'signed' });
+    expect(screenTypedDiscount('5%', '%')).toEqual({ ok: false, refusal: 'unit_typed' });
+    expect(screenTypedDiscount('  ', '฿')).toEqual({ ok: false, refusal: 'empty' });
   });
 });

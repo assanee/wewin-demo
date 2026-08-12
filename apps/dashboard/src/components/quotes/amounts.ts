@@ -1,11 +1,11 @@
 import { MAX_QTY, MIN_QTY } from '@wewin/core/constants';
 import {
-  discountMinor,
+  normaliseAmountEntry,
   normalisePercentEntry,
-  type DiscountRefusal,
+  type AmountEntry,
+  type AmountEntryRefusal,
   type PercentEntry,
   type PercentEntryRefusal,
-  type TypedSign,
 } from '@wewin/core/discount';
 import { formatLength } from '@wewin/core/format';
 import type { AuthoredUnit } from '@wewin/core';
@@ -59,13 +59,15 @@ const BP_PER_PERCENT = 100n;
  * ------------------------------------------------------------------ */
 
 /**
- * ⚠️ **Both discount boxes on this screen defer to `@wewin/core/discount` for what a sign
- * means.** They used to decide it here, in a comment, in the opposite direction from the server's
- * comment — which is how `-5%` came to preview a five percent surcharge and store a five percent
- * discount. What is left here is the mapping from the rule's verdict to a Thai sentence.
+ * ⚠️ **Neither discount box on this screen decides anything about what was typed.**
+ * `@wewin/core/discount` reads both — `normalisePercentEntry` and `normaliseAmountEntry`, over one
+ * shared `screenTypedDiscount` — and this file maps their verdicts to Thai. The percentage box used
+ * to decide its own sign here, in a comment, in the opposite direction from the server's comment,
+ * which is how `-5%` came to preview a five percent surcharge and store a five percent discount.
+ *
+ * Both boxes now take **one spelling: a plain positive number.** Sharing the screening is what keeps
+ * that sentence true of both of them a year from now.
  */
-const signOf = (sign: string): TypedSign =>
-  sign === '-' ? 'negative' : sign === '+' ? 'positive' : 'unsigned';
 
 /**
  * The surcharge refusal **names the two routes that do raise a price**, because a refusal that
@@ -77,9 +79,19 @@ const signOf = (sign: string): TypedSign =>
 const SURCHARGE_TH =
   'ช่องส่วนลดใช้เพิ่มราคาไม่ได้ — ถ้าต้องการขึ้นราคา ให้กรอกยอดเป็นจำนวนเงิน หรือเปิดเป็นรายการใหม่';
 
-const REFUSAL_TH: Readonly<Record<DiscountRefusal, string>> = {
-  surcharge: SURCHARGE_TH,
-  above_full: 'ส่วนลดเกิน 100% จะทำให้ยอดติดลบ',
+/**
+ * Thai prose for `normaliseAmountEntry`'s reasons — the money box's half of the shared vocabulary.
+ *
+ * The sign message is the same instruction as the percentage box's and deliberately so: the two
+ * fields refuse a sign for one reason, and a salesperson who meets it in both should read the same
+ * sentence. What differs is the unit named in each, which is the only thing that actually differs.
+ */
+const AMOUNT_REFUSAL_TH: Readonly<Record<AmountEntryRefusal, string>> = {
+  empty: 'กรอกเป็นตัวเลขเท่านั้น เช่น 291 = ลด ฿291',
+  signed: 'ไม่ต้องใส่เครื่องหมาย + หรือ − — ช่องนี้เป็นส่วนลดอยู่แล้ว กรอก 291 = ลด ฿291',
+  unit_typed: 'ไม่ต้องพิมพ์ ฿ — ช่องนี้เป็นบาทอยู่แล้ว กรอก 291 = ลด ฿291',
+  unreadable: 'กรอกเป็นตัวเลขเท่านั้น ทศนิยมไม่เกิน 2 ตำแหน่ง เช่น 291 หรือ 1,234.50',
+  no_change: 'ส่วนลด ฿0 ไม่เปลี่ยนอะไร — กรอกตัวเลขมากกว่า 0 เช่น 291 = ลด ฿291',
 };
 
 /* ------------------------------------------------------------------ *
@@ -147,29 +159,25 @@ export function readCharge(text: string): ParseResult<bigint> {
   return parsed;
 }
 
-/** As `MONEY`, but `+` is matched so the shared rule can refuse it by name rather than as a typo. */
-const DISCOUNT_MONEY = /^([-+]?)(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{1,2}))?$/;
-
 /**
- * Satang **off**, from a discount typed as money.
+ * Satang **off**, from a discount typed as money — and the text to send.
  *
- * `'291'` and `'-291'` are both ฿291 off, and `'+291'` is a surcharge. That is `discountMinor`'s
- * rule and not this file's, for the same reason `readPercentBp` no longer owns the percentage
- * one: `readBaht` used to refuse `-291` outright here while the server read it as ฿291 off, so
- * the two discount boxes disagreed about a minus sign in opposite directions.
+ * ⚠️ **One accepted spelling: a plain positive number**, with the thousands separators `readSatang`
+ * already accepts. `'-291'` and `'฿291'` are refused, each with the instruction that names it.
+ *
+ * This had two previous lives and both were wrong in the same shape. It began as `readBaht`, which
+ * refused `-291` outright while the server read that as ฿291 off; then it took the magnitude, so
+ * `-291` and `291` meant the same thing and the person who typed the minus was never told their
+ * theory was unnecessary. Now there is one format and a visible refusal, and neither the grammar
+ * (`readSatang`) nor the screening (`screenTypedDiscount`) is decided in this file.
+ *
+ * The `฿` leniency `readBaht` keeps above is deliberately **not** copied here: that box has no
+ * decoration of its own to duplicate, this one draws a `฿` prefix, and pasting into a box that
+ * already shows the symbol is the one case where accepting it teaches nobody anything.
  */
-export function readDiscountBaht(text: string): ParseResult<bigint> {
-  const trimmed = clean(text);
-  if (trimmed === '') return fail('กรอกจำนวนเงิน');
-
-  const match = DISCOUNT_MONEY.exec(trimmed);
-  if (match === null) return fail('กรอกเป็นจำนวนเงินบาท ทศนิยมไม่เกิน 2 ตำแหน่ง');
-
-  const [, sign = '', whole = '0', fraction = ''] = match;
-  const magnitude = BigInt(whole.replace(/,/g, '')) * MINOR_PER_BAHT + BigInt(fraction.padEnd(2, '0'));
-
-  const ruled = discountMinor(signOf(sign), magnitude);
-  return ruled.ok ? ok(ruled.value) : fail(REFUSAL_TH[ruled.refusal]);
+export function readDiscountBaht(text: string): ParseResult<AmountEntry> {
+  const ruled = normaliseAmountEntry(text);
+  return ruled.ok ? ok(ruled.value) : fail(AMOUNT_REFUSAL_TH[ruled.refusal]);
 }
 
 const groups = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -227,7 +235,7 @@ export function bahtInput(minor: bigint): string {
 const PERCENT_REFUSAL_TH: Readonly<Record<PercentEntryRefusal, string>> = {
   empty: 'กรอกเป็นตัวเลขเท่านั้น เช่น 5 = ลด 5%',
   signed: 'ไม่ต้องใส่เครื่องหมาย + หรือ − — ช่องนี้เป็นส่วนลดอยู่แล้ว กรอก 5 = ลด 5%',
-  percent_typed: 'ไม่ต้องพิมพ์ % — ช่องนี้เป็น % อยู่แล้ว กรอก 5 = ลด 5%',
+  unit_typed: 'ไม่ต้องพิมพ์ % — ช่องนี้เป็น % อยู่แล้ว กรอก 5 = ลด 5%',
   unreadable: 'กรอกเป็นตัวเลขเท่านั้น ทศนิยมไม่เกิน 2 ตำแหน่ง เช่น 5 หรือ 7.5',
   no_change: 'ส่วนลด 0% ไม่เปลี่ยนอะไร — กรอกตัวเลขมากกว่า 0 เช่น 5 = ลด 5%',
   above_full: 'ส่วนลดเกิน 100% จะทำให้ยอดติดลบ — กรอกระหว่าง 0.01 ถึง 100',

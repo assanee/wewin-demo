@@ -1,4 +1,4 @@
-import { divRoundHalfUp, roundToUnit } from './money.js';
+import { divRoundHalfUp, readSatang, roundToUnit } from './money.js';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -23,8 +23,8 @@ import { divRoundHalfUp, roundToUnit } from './money.js';
  * salesperson was routed onto it by the server's own error text, which suggests `"-15%"`.
  *
  * So the rule is arithmetic that runs in one place and is imported by both, rather than prose
- * restated at each site. `grep -rn 'discountBp\|priceAfterPercentDiscount' apps` naming exactly
- * the two entry points is what makes that checkable rather than merely stated.
+ * restated at each site. `grep -rn '@wewin/core/discount' apps` naming every place a discount is
+ * read — two in the dashboard, one in the api — is what makes that checkable rather than stated.
  *
  * ## The rule, and why this direction rather than the other
  *
@@ -36,9 +36,15 @@ import { divRoundHalfUp, roundToUnit } from './money.js';
  * submitted `entered_value_text`, and they stay lenient on purpose: rows written before the screen
  * tightened say `'-15%'`, and a guard that only holds when the client is well-behaved is no guard.
  *
- * What a *person* may type is `normalisePercentEntry` at the foot of this file, and it accepts
- * exactly one spelling — a plain positive number. The two layers disagree in the safe direction:
- * the screen refuses more than the server does, so nothing the screen accepts can surprise it.
+ * What a *person* may type is `normalisePercentEntry` and `normaliseAmountEntry` at the foot of this
+ * file, and **both accept exactly one spelling — a plain positive number.** The owner's instruction
+ * was *"ถ้าใส่ผิดให้ขึ้นแดงเลยจะได้กรอกรูปแบบเดียว ไม่งงด้วย"*: somebody who types `-291` believes they
+ * are asking for something different from somebody who types `291`, so making both mean ฿291 off
+ * left one of the two uncorrected. They share `screenTypedDiscount`, which is the only reason that
+ * sentence will still be true of both fields a year from now.
+ *
+ * The two layers disagree in the safe direction: the screen refuses strictly more than the server
+ * does, so nothing the screen accepts can surprise it.
  *
  * The dashboard's reading — negative raises the price — lost on four counts:
  *
@@ -169,19 +175,50 @@ export const priceAfterPercentDiscount = (computedMinor: bigint, bp: bigint): bi
 const TYPED_PERCENT = /^\d+(?:\.\d{1,2})?$/;
 
 /**
- * Why a typed percentage is not usable.
+ * What every discount field refuses **before its own unit's grammar is consulted**.
  *
- * `signed` and `percent_typed` are separate codes rather than one `unreadable`, because the whole
- * point of refusing them is to teach the format: "drop the minus" and "drop the %" are different
+ * `signed` and `unit_typed` are separate codes rather than one `unreadable`, because the point of
+ * refusing them is to teach the format: "drop the minus" and "drop the ฿" are different
  * instructions, and a single "invalid" would leave the person guessing at which.
  */
-export type PercentEntryRefusal =
-  | DiscountRefusal
-  | 'empty'
-  | 'signed'
-  | 'percent_typed'
-  | 'unreadable'
-  | 'no_change';
+export type TypedDiscountRefusal = 'empty' | 'signed' | 'unit_typed';
+
+/**
+ * ⭐ The three refusals both discount fields share, in one function.
+ *
+ * The percentage box and the money box have genuinely different *grammars* — a percentage with
+ * thousands separators is nonsense and its ceiling is 100, while an amount groups digits and has no
+ * ceiling of its own — so they are not forced through one parser. What they must never disagree
+ * about is the **shape**: a discount field takes a bare positive number, and a sign or a unit symbol
+ * is a refusal that says so.
+ *
+ * That is this function, and it is the whole of the sharing. Two near-copies of these three checks
+ * is how the money box would drift away from the percentage box the first time either was touched —
+ * and drift between two readers of a typed discount is the defect this module exists because of.
+ *
+ * @param unit the symbol the field already draws beside itself: `%` or `฿`.
+ */
+export function screenTypedDiscount(typed: string, unit: string): Ruled<string, TypedDiscountRefusal> {
+  const trimmed = typed.trim();
+  if (trimmed === '') return { ok: false, refusal: 'empty' };
+
+  /*
+   * The sign is named before the unit because on `-฿291` it is the more dangerous of the two: a
+   * minus in a discount box is the character this module was written for. `+` and `-` are one
+   * refusal because the instruction is the same — the caption gives the direction, so neither
+   * belongs in the box.
+   */
+  if (trimmed.startsWith('-') || trimmed.startsWith('+')) return { ok: false, refusal: 'signed' };
+  if (trimmed.includes(unit)) return { ok: false, refusal: 'unit_typed' };
+
+  return { ok: true, value: trimmed };
+}
+
+/** Why a typed percentage is not usable. */
+export type PercentEntryRefusal = DiscountRefusal | TypedDiscountRefusal | 'unreadable' | 'no_change';
+
+/** Why a typed money discount is not usable. It has no ceiling of its own — see the function. */
+export type AmountEntryRefusal = TypedDiscountRefusal | 'unreadable' | 'no_change';
 
 export interface PercentEntry {
   /** Basis points off. `5`, `-5`, `5%` and `-5%` all produce 500. */
@@ -211,18 +248,10 @@ export interface PercentEntry {
  * number the server normalises come from one parse of one string.
  */
 export function normalisePercentEntry(typed: string): Ruled<PercentEntry, PercentEntryRefusal> {
-  const trimmed = typed.trim();
-  if (trimmed === '') return { ok: false, refusal: 'empty' };
+  const screened = screenTypedDiscount(typed, '%');
+  if (!screened.ok) return screened;
 
-  /*
-   * The sign and the `%` are checked *before* the regex, and in this order, so that each gets its
-   * own instruction. Left to the regex they would both come back as "not a number", which is the
-   * refusal that teaches nothing — and the sign is named first because on `-5%` it is the more
-   * dangerous of the two: a minus in a discount box is the character that started all of this.
-   */
-  if (trimmed.startsWith('-') || trimmed.startsWith('+')) return { ok: false, refusal: 'signed' };
-  if (trimmed.includes('%')) return { ok: false, refusal: 'percent_typed' };
-
+  const trimmed = screened.value;
   if (!TYPED_PERCENT.test(trimmed)) return { ok: false, refusal: 'unreadable' };
 
   const [whole = '0', fraction = ''] = trimmed.split('.');
@@ -242,3 +271,45 @@ export function normalisePercentEntry(typed: string): Ruled<PercentEntry, Percen
 
 /** Two decimal places of a *percent* is exactly one basis point, so `7.5%` is 750 bp. */
 const PERCENT_TO_BP = 100n;
+
+export interface AmountEntry {
+  /** Satang **off** the baseline. */
+  readonly minor: bigint;
+  /**
+   * The characters to put on the wire — here, exactly what was typed.
+   *
+   * ⭐ **Nothing is appended.** The percentage field has to add the `%` its box only draws, because
+   * the server's `percent_discount` guard requires a literal one. A money discount needs no such
+   * decoration: `apps/api`'s `magnitude()` reads `291` as ฿291 off already. So this field's
+   * `entered_value_text` is what the salesperson typed, character for character — the strongest
+   * form of plan 7.9(ก)'s record, and better than the percentage field can manage.
+   */
+  readonly wireText: string;
+}
+
+/**
+ * A discount typed as money: satang off, from one accepted spelling.
+ *
+ * **The grammar is `readSatang`'s and not a new one.** That function's `AMOUNT` regex is already
+ * exactly what is wanted here — optional thousands separators, at most two decimal places, and no
+ * sign — and its header already argues the case this field needs: *"a minus is a typo here and not a
+ * credit — refused with a sentence rather than sent and 422'd"*. `amounts.ts`'s `readBaht` keeps its
+ * own leniency for the absolute-price boxes, where a pasted `฿8,500` is not a mistake; a discount
+ * box has one format, so it screens the `฿` out by name first and then hands the digits over.
+ *
+ * ⚠️ **No ceiling here.** Whether ฿291 is more than the line costs is a comparison against a
+ * baseline this function has not been given, and `override-entry.ts`'s `preview` already refuses a
+ * discount that drives the price below zero — with `readBaht`'s own reasoning about why a negative
+ * price is not a price. Restating it here would be a second answer to one question.
+ */
+export function normaliseAmountEntry(typed: string): Ruled<AmountEntry, AmountEntryRefusal> {
+  const screened = screenTypedDiscount(typed, '฿');
+  if (!screened.ok) return screened;
+
+  const trimmed = screened.value;
+  const parsed = readSatang(trimmed);
+  if (!parsed.ok) return { ok: false, refusal: 'unreadable' };
+  if (parsed.value === 0n) return { ok: false, refusal: 'no_change' };
+
+  return { ok: true, value: { minor: parsed.value, wireText: trimmed } };
+}

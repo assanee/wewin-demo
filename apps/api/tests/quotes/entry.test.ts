@@ -1,4 +1,4 @@
-import { normalisePercentEntry, priceAfterPercentDiscount } from '@wewin/core/discount';
+import { normaliseAmountEntry, normalisePercentEntry, priceAfterPercentDiscount } from '@wewin/core/discount';
 import { describe, expect, it } from 'vitest';
 
 import { EntryError, normaliseCharge, normaliseEntry } from '../../src/quotes/entry';
@@ -226,6 +226,36 @@ describe('a discount may only discount', () => {
       expect(normalisePercentEntry(typed).ok, typed).toBe(false);
       expect(() => money('percent_discount', typed)).toThrow(EntryError);
     }
+  });
+
+  /**
+   * ⭐ The same loop for the **money** discount box, which the owner brought under the one-format
+   * rule in the last round.
+   *
+   * `normaliseAmountEntry` sends the typed text unchanged — no `%` to append — so the assertion is
+   * that this function reads every string the screen would send and lands on the figure the screen
+   * previewed. `1,234.50` is in the list because the grammar is `readSatang`'s, separators and all,
+   * and `scan` here has to agree about where a comma may sit.
+   */
+  it('accepts every money-discount text the dashboard sends, and agrees on the figure', () => {
+    for (const typed of ['291', ' 291 ', '291.50', '1,234.50', '0.01']) {
+      const entry = normaliseAmountEntry(typed);
+      if (!entry.ok) throw new Error(`the screen would refuse ${typed}: ${entry.refusal}`);
+
+      expect(money('discount_amount', entry.value.wireText), typed).toEqual({
+        kind: 'money',
+        overrideThbMinor: BASELINE - entry.value.minor,
+      });
+    }
+  });
+
+  /*
+   * And the same asymmetry as the percentage: the server still reads `-291` as ฿291 off for the rows
+   * already written that way, while the screen refuses it. Stricter client, unchanged server.
+   */
+  it('still reads the signed money discount the screen no longer sends', () => {
+    expect(normaliseAmountEntry('-291').ok).toBe(false);
+    expect(money('discount_amount', '-291')).toEqual({ kind: 'money', overrideThbMinor: 850_000n });
   });
 });
 

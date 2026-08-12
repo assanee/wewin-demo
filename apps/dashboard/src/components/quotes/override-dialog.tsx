@@ -239,6 +239,13 @@ const DESCRIPTION_TH: Readonly<Record<OverrideEntryModeWire, string>> = {
 
 function hintFor(context: OverrideContext, enteredAs: OverrideEntryModeWire): string {
   if (context.anchor === 'lead_time_days') return '';
+  /*
+   * The money-discount box states its format rather than showing the computed total. It used to
+   * echo `bahtInput(computedThbMinor)` like the absolute boxes do — a placeholder of `13200` in a
+   * box captioned ส่วนลดเป็นจำนวนเงิน, which reads as an invitation to type the whole price as the
+   * discount. The absolute boxes keep that echo, where it is exactly the right suggestion.
+   */
+  if (enteredAs === 'discount_amount') return 'เช่น 291 = ลด ฿291';
   if (enteredAs === 'unit_price' && context.anchor === 'line_total') {
     return bahtInput(unitPriceOf(context.computedThbMinor, context.qty));
   }

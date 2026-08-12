@@ -171,14 +171,37 @@ describe('percent', () => {
     }
   });
 
-  it('reads a money discount as a magnitude too, and refuses a surcharge in that box', () => {
-    expect(value(readDiscountBaht('291'))).toBe(29_100n);
-    expect(value(readDiscountBaht('-291'))).toBe(29_100n);
-    expect(value(readDiscountBaht('1,234.50'))).toBe(123_450n);
+  /**
+   * ⚠️ **The money box now has the percentage box's rule, and this test has had all three of its
+   * answers.** It expected `-291` to be refused as a negative price; then to mean ฿291 off, the same
+   * as `291`; now to be refused with the instruction to drop the sign. The owner's reasoning, applied
+   * consistently: whoever typed the minus believed something different from whoever did not, and
+   * making both mean ฿291 off told one of them nothing.
+   */
+  it('takes one spelling and refuses the rest, in baht as in percent', () => {
+    expect(value(readDiscountBaht('291')).minor).toBe(29_100n);
+    expect(value(readDiscountBaht('291.50')).minor).toBe(29_150n);
+    /* `readSatang`'s separators, because the grammar is its and not a second one. */
+    expect(value(readDiscountBaht('1,234.50')).minor).toBe(123_450n);
 
-    const refused = readDiscountBaht('+291');
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.reasonTh).toContain('เพิ่มราคาไม่ได้');
+    for (const [typed, instruction] of [
+      ['-291', 'ไม่ต้องใส่เครื่องหมาย'],
+      ['+291', 'ไม่ต้องใส่เครื่องหมาย'],
+      ['฿291', 'ไม่ต้องพิมพ์ ฿'],
+      ['0', 'ส่วนลด ฿0'],
+      ['', 'กรอกเป็นตัวเลขเท่านั้น'],
+      ['291.123', 'ทศนิยมไม่เกิน 2 ตำแหน่ง'],
+    ] as const) {
+      const refused = readDiscountBaht(typed);
+      expect(refused.ok, typed).toBe(false);
+      if (!refused.ok) expect(refused.reasonTh, typed).toContain(instruction);
+    }
+  });
+
+  /* Nothing is appended here — unlike the percentage box, which must add its `%`. */
+  it('sends a money discount exactly as typed', () => {
+    expect(value(readDiscountBaht('291')).wireText).toBe('291');
+    expect(value(readDiscountBaht(' 1,234.50 ')).wireText).toBe('1,234.50');
   });
 
   it('renders basis points without inventing trailing zeros', () => {
