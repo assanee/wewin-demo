@@ -19,7 +19,28 @@ import { fileURLToPath } from 'node:url';
 
 const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
-const tsc = require.resolve('typescript/bin/tsc');
+
+/*
+ * ⚠️ Resolved through `package.json` and the `bin` field it declares, not as the subpath
+ * `typescript/bin/tsc`.
+ *
+ * TypeScript 6 shipped no `exports` map, so every file inside the package was reachable by
+ * path and the subpath form worked. 7 added one, and an `exports` map is a closed list: the
+ * compiler binary is still there and still declared in `bin`, but the only subpaths it now
+ * answers to are `.`, `./package.json` and a handful under `./unstable/`. Asking for
+ * `typescript/bin/tsc` gets ERR_PACKAGE_PATH_NOT_EXPORTED and `pnpm dev` dies before Docker
+ * is even up.
+ *
+ * `./package.json` is on that list, and `bin.tsc` is where the package itself says its
+ * compiler lives — so this reads the answer from the package rather than guessing a layout.
+ * Works on 6 and 7 alike, and survives whatever the next major does to the file tree.
+ *
+ * Nothing in `pnpm typecheck` or the test suite covers this line: `nest build` reaches the
+ * compiler another way, and vitest strips types with swc without ever loading tsc. It broke
+ * on the TypeScript 7 upgrade and only `pnpm dev` said so.
+ */
+const typescriptPackageJson = require.resolve('typescript/package.json');
+const tsc = resolve(dirname(typescriptPackageJson), require(typescriptPackageJson).bin.tsc);
 
 /** Docker not being up is a nuisance, not a reason to refuse to start the compiler. */
 const dockerExit = await run('docker', ['compose', 'up', '-d', '--wait'], { allowFailure: true });
