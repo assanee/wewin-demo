@@ -157,7 +157,26 @@ export function OptionGroupList() {
              */
             <>
               {' · '}
-              <span className="text-amber-500">{counts.unavailable} รายการปิดการขายอยู่</span>
+              {/*
+               * ⚠️ Two shades, because one amber cannot sit on both a white page and a black
+               * one. `text-amber-500` alone measured **2.13:1 on the light background** — a
+               * warning nobody can read is worse than no warning, and this is the count the
+               * comment above says nobody goes looking for. It passed in dark (9.27:1), which
+               * is why it survived: it was never rendered on a light page.
+               *
+               * It also never rendered *at all* on the seed data — `counts.unavailable` is 0
+               * until somebody switches a value off — so this was latent rather than visible,
+               * and would have appeared for the first time in front of whoever did that.
+               *
+               * ⚠️ Both spellings must stay literal in this file. Tailwind emits only the
+               * classes it finds in source, so `text-amber-700` exists as CSS *because it is
+               * written here*; building the name up at runtime would produce no rule and the
+               * text would silently fall back to `--foreground`, which is precisely the trap
+               * globals.css describes and the reason this is not a computed class.
+               */}
+              <span className="text-amber-700 dark:text-amber-500">
+                {counts.unavailable} รายการปิดการขายอยู่
+              </span>
             </>
           )}
         </p>

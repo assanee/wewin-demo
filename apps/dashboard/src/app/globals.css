@@ -62,10 +62,45 @@
     --muted-foreground: oklch(0.556 0 0);
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
+    /*
+     * ⚠️ 0.51 and not shadcn's stock 0.577 — measured, not taste.
+     *
+     * `--destructive` in this app is never a fill: there is no `bg-destructive` without an
+     * alpha anywhere in src, and no `--destructive-foreground` at all. It is only ever ink
+     * (`text-destructive`) or a wash (`bg-destructive/10`, `ring-destructive/20`). That makes
+     * the badge and button destructive variants a red on a 10%-red tint, and at 0.577 over a
+     * white card that measured **3.97:1 at 12px** — under the 4.5:1 that size needs. Visible
+     * on ปิดบัญชีแล้ว / ยกเลิกแล้ว / ปิดใช้งาน and every ระงับ-style button, on four screens.
+     *
+     * The dark block passes the same test untouched (it pairs a lighter red with a /20 tint
+     * on a near-black card), which is why this line moves and its counterpart below does not
+     * — the failure was never in the palette's structure, only in the half nobody had looked
+     * at. 0.51 measures 4.80:1 on the tint and 5.79:1 as plain ink on a card; 0.53 was the
+     * bare pass at 4.51 and left no room for a card that is not pure white.
+     */
+    --destructive: oklch(0.51 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    /*
+     * ⚠️ 0.556 and not shadcn's stock 0.708 — the focus ring, and the same story.
+     *
+     * A keyboard focus indicator has to reach 3:1 against what surrounds it. At 0.708 the
+     * solid ring measured **2.48:1** on the sidebar and 2.58:1 on a white page; the identical
+     * ring in the dark block measured 3.78:1 and passed. So this was light-only, and it was
+     * every focusable control in the app at once.
+     *
+     * 0.556 is deliberately the value `.dark` already uses for its own `--ring`: it measures
+     * 4.54:1 on the sidebar and 4.74:1 on white, and it means the two themes now state the
+     * same number instead of two that happen to differ by an accident of the generator.
+     *
+     * ⚠️ This fixes the *solid* ring only. `ring-ring/50`, which shadcn's own component
+     * variants use for the soft 3px halo, cannot reach 3:1 at **any** lightness — 50% of a
+     * grey over white tops out near 2.1:1 — so on a Button the contrast is carried by
+     * `focus-visible:border-ring`, which is solid and is this value. That is a real limit of
+     * the generated components rather than of the palette, and it is written up rather than
+     * changed here: raising that alpha touches every primitive in both themes.
+     */
+    --ring: oklch(0.556 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -79,9 +114,46 @@
     --sidebar-accent: oklch(0.97 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    /* Moves with `--ring` above, and for the same measurement: the sidebar is where the
+     * first Tab of every session lands, so a ring nobody can see there is the one that
+     * matters most. `.dark` already pairs its own `--sidebar-ring` with its `--ring`. */
+    --sidebar-ring: oklch(0.556 0 0);
 }
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⚠️ `@media screen` around the dark palette — this wrapper is a bug fix.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * A quotation printed while the dashboard was in dark mode came out **black on black and
+ * completely unreadable**. Reproduced by rendering `/quotes/<id>/print` to PDF with the theme
+ * set to dark; the light theme's output was already correct, which is why nobody had seen it.
+ *
+ * The print block at the bottom of this file forces `background: #fff` and `color: #000`, and
+ * it was doing exactly that — on `html`, `body` and `main`, which is everything *except* the
+ * document. `quotation-sheet.tsx` opens with `<article className="bg-background text-foreground">`,
+ * so the article repainted itself near-black on top of the white `main`, and the sheet's own
+ * `print:text-black` then wrote black text onto it. The table rules have the same shape in
+ * reverse: `border-foreground/20` is a near-*white* line in dark, so even a fixed background
+ * would have printed a document with no rules on it.
+ *
+ * Restricting the dark palette to `screen` fixes all of that at the root instead of chasing
+ * each surface: in print media the `.dark` declarations simply do not apply, `:root` wins, and
+ * every token-driven colour on the page — background, ink, borders, muted text — is the light
+ * value. It needs no second copy of the palette, which is the reason it is done this way
+ * rather than by restating the light values inside `@media print`; a third copy of 31
+ * variables is a third thing to keep in step.
+ *
+ * On screen this changes nothing: `screen` matches every normal rendering, and "Save as PDF"
+ * uses `print`, which is the case being fixed.
+ *
+ * ⚠️ One thing it deliberately does **not** change: utilities written with Tailwind's `dark:`
+ * variant still match in print, because `class="dark"` is still on `<html>` — only the token
+ * *values* revert. That is safe for the quotation, which uses no `dark:` utility (every one in
+ * this app is inside `src/components/ui/**`), but a `dark:` utility added to something printable
+ * would need its own `print:` counterpart.
+ */
+@media screen {
 .dark {
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
@@ -115,6 +187,7 @@
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
 }
+} /* @media screen — see the note above `.dark` */
 
 @layer base {
   * {
@@ -207,6 +280,31 @@
  * is printing having remembered to turn background graphics off.
  */
 @media print {
+  /*
+   * ⚠️ `color-scheme: light`, `!important`, and this line is the other half of the black-page
+   * bug fixed at `.dark` above.
+   *
+   * `next-themes` writes `style="color-scheme: dark"` onto `<html>` as an inline style. A
+   * `color-scheme` of dark tells the browser to paint the **canvas** — the area outside any
+   * element's own background, which on paper is the whole sheet including the `@page` margin —
+   * with its dark default. And `print-color-adjust: economy` immediately below explicitly
+   * permits the browser to discard the `background: #fff` that would otherwise have covered
+   * it. The two together printed a quotation as a white document floating on a full-page
+   * near-black rectangle: verified in the PDF's own content stream, which opened with
+   * `.0706 .0706 .0706` filling all 816×1056 points of the sheet.
+   *
+   * `!important` is load-bearing rather than defensive: a normal declaration loses to the
+   * style attribute, and an author `!important` one beats it. Nothing here can remove the
+   * inline value — only outrank it.
+   *
+   * Fixing this at `color-scheme` rather than by switching `economy` to `exact` keeps the
+   * intent of the rule below intact: the printer is still free to save ink, and now the colour
+   * it falls back to is the right one.
+   */
+  html {
+    color-scheme: light !important;
+  }
+
   [data-slot='sidebar-wrapper'] > [data-slot='sidebar'],
   [data-slot='sidebar-trigger'],
   [data-sonner-toaster] {
