@@ -19,7 +19,8 @@ export function PrincipalCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>บัญชีที่กำลังใช้งาน</CardTitle>
+        {/* Keeps its Card: a collapsed diagnostic dump *is* self-contained reference. */}
+        <CardTitle className="type-section">บัญชีที่กำลังใช้งาน</CardTitle>
         <CardDescription>ข้อมูลนี้มาจาก /me ของ API โดยตรง เมนูด้านซ้ายคำนวณจากรายการสิทธิ์ด้านล่าง</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">

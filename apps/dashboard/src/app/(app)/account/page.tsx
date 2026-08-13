@@ -1,14 +1,15 @@
 import { AccountSettings } from '@/components/account/account-settings';
+import { PageHeader } from '@/components/page-header';
 import { PrincipalCard } from '@/components/principal-card';
 
 /** Your own account. Inside `(app)` — it needs a session, which is what the shell provides. */
 export default function AccountPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">ตั้งค่าบัญชีของฉัน</h1>
-        <p className="text-muted-foreground">รหัสผ่าน บัญชีที่เชื่อมไว้ และอุปกรณ์ที่เข้าสู่ระบบอยู่</p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title="ตั้งค่าบัญชีของฉัน"
+        description="รหัสผ่าน บัญชีที่เชื่อมไว้ และอุปกรณ์ที่เข้าสู่ระบบอยู่"
+      />
 
       <AccountSettings />
 
@@ -25,7 +26,7 @@ export default function AccountPage() {
        * permission codes in the way, and somebody debugging access knows to open it.
        */}
       <details className="group">
-        <summary className="text-muted-foreground hover:text-foreground w-fit list-none text-sm select-none">
+        <summary className="text-muted-foreground hover:text-foreground focus-visible:outline-ring type-body -mx-1 w-fit list-none rounded px-1 py-0.5 select-none focus-visible:outline-2 focus-visible:outline-offset-2">
           <span className="group-open:hidden">▸ ดูสิทธิ์ที่บัญชีนี้ถืออยู่</span>
           <span className="hidden group-open:inline">▾ สิทธิ์ที่บัญชีนี้ถืออยู่</span>
         </summary>

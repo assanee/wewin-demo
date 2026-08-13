@@ -189,6 +189,94 @@
 }
 } /* @media screen — see the note above `.dark` */
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE TYPE SCALE. Five steps, and the point of it is the one that is missing.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner's complaint was that every screen is ลายตา and has ไม่มีจุดเด่น. That was
+ * measured rather than felt, and the measurement is worth keeping written down because it
+ * explains why this block exists:
+ *
+ *   `CardTitle` in `components/ui/card.tsx` is **`text-base`** — 16px — and `Card` itself
+ *   sets **`text-sm`** on everything inside it. So a card heading was 2px larger than its
+ *   own body copy, in **39 of the 41 `<CardTitle>`s in the app** (only the overview's two
+ *   money figures said otherwise, at `text-3xl`). A 2px step is not a weak hierarchy, it is
+ *   the absence of one, and no amount of spacing rescues it.
+ *
+ * ── Why these five and not Tailwind's eleven ─────────────────────────────────
+ *
+ * The scale is deliberately **short and semantic**. `text-lg` says how big; `type-section`
+ * says what the thing *is*, which is the part a reviewer can check and the part that makes
+ * phase 2 mechanical instead of a fresh set of decisions per screen. Sizes:
+ *
+ *   type-page      30px semibold   the page's name. **Once per screen**, in `PageHeader`.
+ *   type-focal     24px medium     the one primary statement. **At most once per screen.**
+ *   type-section   18px semibold   a section title, and what a `CardTitle` should be.
+ *   type-body      14px            body copy. Same size `Card` already imposes.
+ *   type-caption   12px            metadata, help text, the reading under a number.
+ *
+ * 14 → 18 → 24 → 30 are steps of 1.29, 1.33 and 1.25. **Nothing sits at 16px any more**,
+ * which is the whole fix: 16 was the value that collided with the 14 underneath it.
+ *
+ * ⚠️ **`type-caption` and `type-body` are 1.17 apart, and that is on purpose.** A caption is
+ * separated from body copy by *colour* (`text-muted-foreground`) as much as by size, so it
+ * does not need a big step and would look silly with one. Colour is not carrying hierarchy
+ * anywhere else here — see the `--lime` note below.
+ *
+ * ⚠️ **No negative `letter-spacing`, at any size.** Thai stacks vowels above the line and
+ * tone marks above those; the `line-height: 1.6` on `body` further down exists for exactly
+ * that reason. Tightening tracking on a สระอี under a ไม้โท is how a heading starts clipping
+ * at the one size somebody chose it to be readable at. The large steps carry themselves.
+ *
+ * ── ⚠️ What is deliberately NOT changed here ─────────────────────────────────
+ *
+ * `CardTitle`'s own default is still `text-base`. Changing that one word to `type-section`
+ * would fix the remaining eleven screens in a single line — and it would also *restyle* all
+ * eleven without anybody having looked at them, which is phase 2 arriving by side effect.
+ * Phase 1 applies `type-section` at its own call sites and leaves the primitive alone; the
+ * one-line lever is the owner's to pull.
+ */
+@utility type-page {
+    font-size: 1.875rem;
+    line-height: 1.3;
+    font-weight: 600;
+}
+
+/*
+ * ⚠️ `600` and not the `500` this started as, and a browser is what settled it.
+ *
+ * At 500 the focal statement on an order (`รอชำระเงิน`, 24px) sat above the spine's
+ * `type-section` heading (18px, 600) and read as the *weaker* of the two: 18px of semibold
+ * outweighs 24px of medium, especially in Thai, where a weight step is less legible than a size
+ * step because the stacked vowels and tone marks thicken with it.
+ *
+ * So the three heading steps all carry 600 and are ordered by **size alone** — 30 / 24 / 18 —
+ * which is unambiguous and cannot be undone by a weight choice further down the page. Body and
+ * caption stay at 400. The whole scale is now two weights and five sizes.
+ */
+@utility type-focal {
+    font-size: 1.5rem;
+    line-height: 1.35;
+    font-weight: 600;
+}
+
+@utility type-section {
+    font-size: 1.125rem;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
+@utility type-body {
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+@utility type-caption {
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

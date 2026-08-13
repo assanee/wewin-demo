@@ -21,10 +21,11 @@ import {
 } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { failureMessage } from '@/lib/api/errors';
 import { fetchOverview, type Overview } from './overview-api';
+import { overviewFocus } from './overview-focus';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +44,25 @@ import { fetchOverview, type Overview } from './overview-api';
  *   ⓶ **ออเดอร์** — where the work in the building actually is.
  *   ⓷ **เงิน** — taken this month, still owed.
  *   ⓸ **แคตตาล็อกและระบบ** — health, not work. Slowest-moving, so last.
+ *
+ * ── ⭐ One primary thing, and it is a sentence rather than a card ─────────────
+ *
+ * This screen rendered **ten `<Card>`s** on a full-permission account — five queue tiles, the
+ * order row, two money cards, catalogue and users — each with the same ring, ground and
+ * padding. (The source holds five `<Card>` literals; `QueueTile`'s is one literal that renders
+ * once per queue, which is why counting the file undercounts the screen.) With four section
+ * headings all at `text-base` and the two money figures at `text-3xl`, the loudest things on
+ * the page were the two numbers nobody acts on, and the question the screen exists to answer —
+ * *does the company owe anybody an afternoon?* — had no visual home at all.
+ *
+ * It now opens with `overviewFocus()`'s sentence at `type-focal`, on the page ground with no
+ * border around it, and **one** Card survives: เงิน, which is an amounts breakdown and is the
+ * kind of self-contained reference that earns one. The queues became a list of aligned
+ * numbers, which is both quieter and denser than five tiles in a grid.
+ *
+ * ⚠️ Every number below `type-focal` is `text-xl`, including money, which used to be
+ * `text-3xl`. That is deliberate: a figure larger than the page's primary statement *is* the
+ * page's primary statement, whatever the layout intended.
  *
  * ── ⚠️ Two honesty rules this screen keeps ───────────────────────────────────
  *
@@ -192,7 +212,7 @@ export function OverviewScreen() {
       : []),
   ];
 
-  const waiting = queues.reduce((total, queue) => total + queue.count, 0);
+  const focus = overviewFocus(queues);
   const nothingAtAll = Object.keys(overview).length === 0;
 
   if (nothingAtAll) {
@@ -212,213 +232,270 @@ export function OverviewScreen() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      {queues.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-base font-semibold">ต้องมีคนทำ</h2>
-            <p className="text-muted-foreground text-sm">
-              {waiting === 0 ? 'ไม่มีงานค้างในคิวที่คุณดูได้' : `${waiting} รายการรอดำเนินการ`}
-            </p>
-          </div>
+    <div className="flex flex-col gap-10">
+      {/*
+       * ⭐ THE PRIMARY THING. On the page ground, no border, type doing the work.
+       *
+       * Rendered even when `queues` is empty — a reader holding no queue permission still
+       * gets told that, rather than being left to infer it from an absence.
+       */}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="type-focal text-balance">{focus.headlineTh}</p>
+          {focus.detailTh === null ? null : (
+            <p className="text-muted-foreground type-body">{focus.detailTh}</p>
+          )}
+        </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {queues.length > 0 && (
+          /*
+           * A list of aligned numbers, not a grid of tiles. Five bordered cards were five
+           * repetitions of the same chrome around one integer each; a column puts every count
+           * in the same place so the eye compares them without reading, and takes about a third
+           * of the height. Density where density helps.
+           */
+          <ul className="flex flex-col">
             {queues.map((queue) => (
-              <QueueTile key={queue.label} queue={queue} />
+              <QueueRow key={queue.label} queue={queue} />
             ))}
-          </div>
-        </section>
-      )}
+          </ul>
+        )}
+      </section>
 
       {overview.orders && (
-        <section className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-base font-semibold">ออเดอร์</h2>
-            <Link
-              href="/orders"
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
-            >
-              เปิดรายการออเดอร์ <ArrowRight className="size-3" />
-            </Link>
+        <Section title="ออเดอร์" more={{ href: '/orders', label: 'เปิดรายการออเดอร์' }}>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
+            <Figure label="รอชำระเงิน" value={overview.orders.awaitingPayment} />
+            <Figure label="ยืนยันผลิตแล้ว" value={overview.orders.productionConfirmed} />
+            <Figure label="กำลังผลิต" value={overview.orders.inProduction} />
+            <Figure label="รอติดตั้ง" value={overview.orders.awaitingInstallation} />
+            <Figure label="ขอแก้แบบ" value={overview.orders.redesign} />
+            {/*
+             * Deliberately last and deliberately dimmed. A draft is an abandoned cart, not
+             * work — it is the only number in this row nobody is supposed to act on, and
+             * putting it beside `กำลังผลิต` at the same weight would say otherwise.
+             */}
+            <Figure label="ตะกร้าที่ยังไม่ส่ง" value={overview.orders.draft} muted />
           </div>
-
-          <Card>
-            <CardContent className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
-              <Figure label="รอชำระเงิน" value={overview.orders.awaitingPayment} />
-              <Figure label="ยืนยันผลิตแล้ว" value={overview.orders.productionConfirmed} />
-              <Figure label="กำลังผลิต" value={overview.orders.inProduction} />
-              <Figure label="รอติดตั้ง" value={overview.orders.awaitingInstallation} />
-              <Figure label="ขอแก้แบบ" value={overview.orders.redesign} />
-              {/*
-               * Deliberately last and deliberately dimmed. A draft is an abandoned cart, not
-               * work — it is the only number in this row nobody is supposed to act on, and
-               * putting it beside `กำลังผลิต` at the same weight would say otherwise.
-               */}
-              <Figure label="ตะกร้าที่ยังไม่ส่ง" value={overview.orders.draft} muted />
-            </CardContent>
-          </Card>
-        </section>
+        </Section>
       )}
 
       {overview.money && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">เงิน</h2>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-2">
-                  <Banknote className="size-4" />
-                  รับชำระเดือนนี้
-                </CardDescription>
-                <CardTitle className="text-3xl tabular-nums">
-                  {formatBaht(overview.money.receivedThisMonth)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {/*
+        <Section title="เงิน">
+          {/*
+           * ⭐ The one Card left on this screen, and it earns it under the house rule: two
+           * figures that are only meaningful read against each other, each needing a sentence
+           * saying which of the several possible money numbers it is. That is a self-contained
+           * amounts breakdown — the case a border is *for*.
+           */}
+          <Card>
+            <CardContent className="grid gap-6 sm:grid-cols-2">
+              <MoneyFigure
+                label="รับชำระเดือนนี้"
+                value={overview.money.receivedThisMonth}
+                /*
                  * The API's contract says which of the several possible money numbers this
                  * is, and a screen that shows money without saying which one is how two
                  * departments end up quoting different figures from the same dashboard.
-                 */}
-                <p className="text-muted-foreground text-xs">
-                  ยอดหน้าสลิปที่อนุมัติแล้ว นับตามเดือนเวลาไทย — ไม่ใช่ยอดที่ลูกค้าแจ้งว่าโอน
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-2">
-                  <Banknote className="size-4" />
-                  ยอดค้างชำระ
-                </CardDescription>
-                <CardTitle className="text-3xl tabular-nums">
-                  {formatBaht(overview.money.outstanding)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground text-xs">
-                  รวมทุกออเดอร์ที่ยังเดินอยู่ ไม่นับตะกร้า ออเดอร์ที่ยกเลิก และที่ถูกแทนที่
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+                 */
+                noteTh="ยอดหน้าสลิปที่อนุมัติแล้ว นับตามเดือนเวลาไทย — ไม่ใช่ยอดที่ลูกค้าแจ้งว่าโอน"
+              />
+              <MoneyFigure
+                label="ยอดค้างชำระ"
+                value={overview.money.outstanding}
+                noteTh="รวมทุกออเดอร์ที่ยังเดินอยู่ ไม่นับตะกร้า ออเดอร์ที่ยกเลิก และที่ถูกแทนที่"
+              />
+            </CardContent>
+          </Card>
+        </Section>
       )}
 
       {(overview.catalog ?? overview.users) && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">แคตตาล็อกและระบบ</h2>
-
-          <div className="grid gap-3 sm:grid-cols-2">
+        <Section title="แคตตาล็อกและระบบ">
+          <div className="grid gap-x-6 gap-y-8 sm:grid-cols-2">
             {overview.catalog && (
-              <Card>
-                <CardContent className="flex flex-col gap-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <Figure label="สินค้า" value={overview.catalog.products} icon={Boxes} />
-                    <Figure
-                      label="ชุดตัวเลือก"
-                      value={overview.catalog.optionGroups}
-                      icon={SlidersHorizontal}
-                    />
-                    <Figure
-                      label="ร่างที่ยังไม่เผยแพร่"
-                      value={overview.catalog.unpublishedDrafts}
-                      icon={ImageIcon}
-                    />
-                  </div>
-                  <Link
-                    href="/products"
-                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
-                  >
-                    เปิดแคตตาล็อก <ArrowRight className="size-3" />
-                  </Link>
-                </CardContent>
-              </Card>
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <Figure label="สินค้า" value={overview.catalog.products} icon={Boxes} />
+                  <Figure
+                    label="ชุดตัวเลือก"
+                    value={overview.catalog.optionGroups}
+                    icon={SlidersHorizontal}
+                  />
+                  <Figure
+                    label="ร่างที่ยังไม่เผยแพร่"
+                    value={overview.catalog.unpublishedDrafts}
+                    icon={ImageIcon}
+                  />
+                </div>
+                <MoreLink href="/products" label="เปิดแคตตาล็อก" />
+              </div>
             )}
 
             {overview.users && (
-              <Card>
-                <CardContent className="flex flex-col gap-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <Figure label="ผู้ใช้ที่ใช้งานอยู่" value={overview.users.active} icon={UsersIcon} />
-                    <Figure label="ถูกระงับ" value={overview.users.suspended} muted />
-                  </div>
-                  <Link
-                    href="/users"
-                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
-                  >
-                    จัดการผู้ใช้และสิทธิ์ <ArrowRight className="size-3" />
-                  </Link>
-                </CardContent>
-              </Card>
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <Figure label="ผู้ใช้ที่ใช้งานอยู่" value={overview.users.active} icon={UsersIcon} />
+                  <Figure label="ถูกระงับ" value={overview.users.suspended} muted />
+                </div>
+                <MoreLink href="/users" label="จัดการผู้ใช้และสิทธิ์" />
+              </div>
             )}
           </div>
-        </section>
+        </Section>
       )}
     </div>
   );
 }
 
 /**
- * One queue.
+ * A band of the page. Its title is `type-section` — 18px against the 14px underneath it, where
+ * both used to be within 2px of each other and neither read as a heading.
  *
- * Zero is styled *down*, not up. The instinct on a dashboard is to make every number loud,
- * and the result is a page where nothing stands out on the day something does. An empty
- * queue is good news and should read as calm; a non-zero one gets the foreground colour and
- * a sentence saying what the number means somebody has to do.
+ * A `<section>` with a heading and no border. The content of these bands does not need
+ * separating from the band above it, and `gap-10` on the page is what separates them; a ring
+ * around each one was six statements that they might be confused.
  */
-function QueueTile({ queue }: { readonly queue: QueueCard }) {
-  const idle = queue.count === 0;
-  const Icon = queue.icon;
-
-  const body = (
-    <Card
-      className={
-        idle
-          ? 'h-full'
-          : 'border-foreground/20 bg-accent/40 h-full transition-colors hover:bg-accent/60'
-      }
-    >
-      <CardContent className="flex items-start gap-4">
-        <Icon className={idle ? 'text-muted-foreground mt-1 size-5' : 'mt-1 size-5'} />
-
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className={`text-3xl leading-none tabular-nums ${idle ? 'text-muted-foreground' : 'font-semibold'}`}>
-            {queue.count}
-          </span>
-          <span className="text-sm font-medium">{queue.label}</span>
-
-          {idle ? null : <span className="text-muted-foreground text-xs">{queue.action}</span>}
-
-          {queue.href === undefined ? (
-            /*
-             * Said out loud rather than hidden. The API for every one of these queues is
-             * finished; the screen is not. A reader who sees "4 สลิปรอตรวจ" and cannot find
-             * where to do it should learn why from this page, not from clicking around.
-             */
-            <span className="text-muted-foreground/70 text-xs">ยังไม่มีหน้าจัดการ</span>
-          ) : (
-            <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
-              เปิดหน้าจัดการ <ArrowRight className="size-3" />
-            </span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+function Section({
+  title,
+  more,
+  children,
+}: {
+  readonly title: string;
+  readonly more?: { readonly href: Route; readonly label: string };
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="type-section">{title}</h2>
+        {more === undefined ? null : <MoreLink href={more.href} label={more.label} />}
+      </div>
+      {children}
+    </section>
   );
+}
 
-  return queue.href === undefined ? (
-    body
-  ) : (
-    <Link href={queue.href} className="rounded-xl focus-visible:ring-2 focus-visible:outline-none">
-      {body}
+function MoreLink({ href, label }: { readonly href: Route; readonly label: string }) {
+  return (
+    <Link
+      href={href}
+      className="text-muted-foreground hover:text-foreground type-caption focus-visible:outline-ring -mx-1 inline-flex w-fit items-center gap-1 rounded px-1 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      {label} <ArrowRight className="size-3" aria-hidden />
     </Link>
   );
 }
 
-/** A labelled number. `muted` is for the ones that are context rather than work. */
+/**
+ * One queue, as a row.
+ *
+ * Zero is styled *down*, not up — unchanged from the tile this replaces, and the argument is
+ * the same: the instinct on a dashboard is to make every number loud, and the result is a page
+ * where nothing stands out on the day something does. An empty queue is good news and reads as
+ * calm; a non-zero one gets the foreground colour, the weight, and a sentence saying what the
+ * number means somebody has to do.
+ *
+ * ⚠️ The old tile carried `border-foreground/20` on its non-idle `Card` and **that class
+ * painted nothing**. `Card` draws its edge with `ring-1 ring-foreground/10` and has no
+ * border-*width*; Tailwind's preflight sets `border-width: 0` on every element, so a
+ * `border-color` utility on its own is inert. The tile's "this one is live" edge had never
+ * rendered — the wash was doing all the work. Exactly the failure mode `order-spine.tsx`
+ * warns about, found by counting borders that were supposed to be there.
+ */
+function QueueRow({ queue }: { readonly queue: QueueCard }) {
+  const idle = queue.count === 0;
+  const Icon = queue.icon;
+
+  const inner = (
+    <>
+      <span
+        className={`w-10 shrink-0 text-right text-xl leading-tight tabular-nums ${
+          idle ? 'text-muted-foreground' : 'font-semibold'
+        }`}
+      >
+        {queue.count}
+      </span>
+      <Icon
+        className={idle ? 'text-muted-foreground size-4 shrink-0' : 'size-4 shrink-0'}
+        aria-hidden
+      />
+      <span className="flex min-w-0 flex-col">
+        <span className="type-body font-medium">{queue.label}</span>
+        {idle ? null : <span className="text-muted-foreground type-caption">{queue.action}</span>}
+        {queue.href === undefined && (
+          /*
+           * Said out loud rather than hidden. The API for every one of these queues is
+           * finished; the screen is not. A reader who sees "4 สลิปรอตรวจ" and cannot find
+           * where to do it should learn why from this page, not from clicking around.
+           */
+          <span className="text-muted-foreground/70 type-caption">ยังไม่มีหน้าจัดการ</span>
+        )}
+      </span>
+      {queue.href === undefined ? null : (
+        <ArrowRight
+          className="text-muted-foreground ml-auto size-4 shrink-0 self-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          aria-hidden
+        />
+      )}
+    </>
+  );
+
+  /* `py-2.5 -mx-2 px-2` keeps the row's hit area generous while the text stays on the page's
+   * own left edge — the number column lines up with the headline above it. */
+  const shape = 'group flex items-start gap-3 rounded-md -mx-2 px-2 py-2.5';
+
+  return (
+    <li>
+      {queue.href === undefined ? (
+        <div className={shape}>{inner}</div>
+      ) : (
+        <Link
+          href={queue.href}
+          className={`${shape} focus-visible:outline-ring hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2`}
+        >
+          {inner}
+        </Link>
+      )}
+    </li>
+  );
+}
+
+/**
+ * One money figure with the sentence that says which number it is.
+ *
+ * `bigint` and not `number`: these are satang, `formatBaht` takes the minor unit, and the
+ * contract carries them as bigint precisely so a total cannot silently lose precision.
+ */
+function MoneyFigure({
+  label,
+  value,
+  noteTh,
+}: {
+  readonly label: string;
+  readonly value: bigint;
+  readonly noteTh: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-muted-foreground type-caption flex items-center gap-2">
+        <Banknote className="size-3.5" aria-hidden />
+        {label}
+      </span>
+      <span className="text-xl leading-tight font-semibold tabular-nums">{formatBaht(value)}</span>
+      <p className="text-muted-foreground type-caption">{noteTh}</p>
+    </div>
+  );
+}
+
+/**
+ * A labelled number. `muted` is for the ones that are context rather than work.
+ *
+ * ⚠️ `text-xl` and not the `text-2xl` this used to be — and the money figures came down from
+ * `text-3xl` to match. `type-focal` is 24px, so a figure at 24px tied with the page's primary
+ * statement and one at 30px beat it. The counts on this screen are supporting evidence for the
+ * sentence at the top; they are not allowed to outrank it.
+ */
 function Figure({
   label,
   value,
@@ -433,12 +510,12 @@ function Figure({
   return (
     <div className="flex flex-col gap-1">
       <span
-        className={`text-2xl leading-none tabular-nums ${muted ? 'text-muted-foreground' : 'font-semibold'}`}
+        className={`text-xl leading-tight tabular-nums ${muted ? 'text-muted-foreground' : 'font-semibold'}`}
       >
         {value}
       </span>
-      <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-        {Icon === undefined ? null : <Icon className="size-3" />}
+      <span className="text-muted-foreground type-caption flex items-center gap-1.5">
+        {Icon === undefined ? null : <Icon className="size-3" aria-hidden />}
         {label}
       </span>
     </div>

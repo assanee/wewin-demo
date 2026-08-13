@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -105,32 +104,36 @@ export function MfaPanel() {
 
   if (state === null) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>การยืนยันตัวตนสองขั้น (MFA)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-20 w-full" />
-        </CardContent>
-      </Card>
+      <section className="flex flex-col gap-4">
+        <h2 className="type-section">การยืนยันตัวตนสองขั้น (MFA)</h2>
+        <Skeleton className="h-20 w-full" />
+      </section>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="size-5" />
+    /*
+     * A `<section>` and not a `Card` — the last one on this screen to go. It was tempting to
+     * keep it: MFA enrolment is genuinely self-contained, with a QR code and a set of recovery
+     * codes inside it. But it would then have been the *only* bordered thing on `/account`,
+     * which reads as "this one is special" rather than as "this one is separable", and the four
+     * bands of this page are peers in one subject. It still has the loudest control on the
+     * screen; a ring is not what was giving it that.
+     */
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="type-section flex items-center gap-2">
+          <ShieldCheck className="size-5" aria-hidden />
           การยืนยันตัวตนสองขั้น (MFA)
-        </CardTitle>
-        <CardDescription>
+        </h2>
+        <p className="text-muted-foreground type-body max-w-2xl">
           {state.enabled
             ? 'เปิดอยู่ — ตอนเข้าสู่ระบบจะถามรหัสหกหลักจากแอปยืนยันตัวตนเพิ่มอีกขั้น'
             : 'ยังไม่ได้เปิด — เปิดแล้วรหัสผ่านอย่างเดียวจะเข้าบัญชีนี้ไม่ได้อีก'}
-        </CardDescription>
-      </CardHeader>
+        </p>
+      </div>
 
-      <CardContent className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
         {problem !== null && (
           <Alert variant="destructive">
             <AlertTriangle />
@@ -339,8 +342,8 @@ export function MfaPanel() {
               : ` · เปิดใช้เมื่อ ${new Date(state.confirmedAt).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium' })}`}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 

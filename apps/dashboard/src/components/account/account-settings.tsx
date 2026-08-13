@@ -7,7 +7,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { MfaPanel } from './mfa-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,6 +42,26 @@ import {
  * reads as "this system has none" *and* as "I must have missed the setting", and only one
  * of those was true. `MfaPanel` replaces it — see plan 6.4 for the design it implements.
  *
+ * ── ⭐ Sections, not a stack of cards, and one primary fact ───────────────────
+ *
+ * This screen was the worst case of the pattern the owner was complaining about: **five Cards
+ * of identical weight**, each headed at `text-base` above `text-sm` body copy, and inside the
+ * device card **seven more bordered rows** — chrome nested inside chrome, so the page read as
+ * boxes all the way down and nothing on it was primary.
+ *
+ * What is primary here is *how many ways into this account exist*, because that is the fact the
+ * whole screen is arranged around: unlink the only provider with no password behind it and
+ * there is nothing left. So `waysIn` is now a `type-focal` statement at the top, on the page
+ * ground, and the identity that used to be the บัญชี card is folded into it — the card was two
+ * lines of text with a ring around them.
+ *
+ * The other three became `<section>`s with `type-section` headings, and the provider and device
+ * rows became `divide-y` lists. **No Card survives on this screen.** Nothing here is
+ * self-contained reference; it is all one subject — this account — read top to bottom.
+ *
+ * ⚠️ The `waysIn <= 1` **Alert** stays an Alert. It is a warning about a consequence rather
+ * than a heading, `Alert` is the app's established shape for exactly that, and it is the one
+ * element on the page that should look different from its neighbours.
  */
 
 type State =
@@ -142,8 +161,21 @@ export function AccountSettings() {
     confirm === next &&
     (!account.hasPassword || current !== '');
 
+  /*
+   * The API holds the rule and this screen only reports it — a browser-side copy of "does this
+   * still leave a way in" would disagree the day somebody has a password and no verified
+   * address, which is precisely the case the rule exists for.
+   *
+   * ⚠️ `null` at one way in, and that is the point rather than an oversight. The `Alert` above
+   * already states that case *with its consequence*, which is the stronger sentence and the one
+   * that should be the only one — two elements a centimetre apart both saying
+   * "มีทางเข้าสู่ระบบทางเดียว" is the duplication this whole pass is trying to remove. So this
+   * caption speaks only when the count is unremarkable, and the Alert speaks when it is not.
+   */
+  const waysInTh = account.waysIn <= 1 ? null : `มีทางเข้าสู่ระบบ ${account.waysIn} ทาง`;
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-10">
       {problem !== null && (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" />
@@ -173,12 +205,20 @@ export function AccountSettings() {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>บัญชี</CardTitle>
-          <CardDescription>{account.displayName ?? '(ไม่มีชื่อ)'}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm">
+      {/*
+       * ⭐ THE PRIMARY THING: who this is, and how many ways in there are.
+       *
+       * The บัญชี Card that used to hold the name and the addresses was two lines of text with a
+       * ring around it. Folded in here, it becomes the identity half of the one statement this
+       * screen is about — and the ways-in count, which was previously visible only as a warning
+       * when it hit 1, is now always stated.
+       */}
+      <section className="flex flex-col gap-1">
+        <p className="type-focal">{account.displayName ?? '(ไม่มีชื่อ)'}</p>
+        {waysInTh === null ? null : (
+          <p className="text-muted-foreground type-body">{waysInTh}</p>
+        )}
+        <div className="type-body mt-2 flex flex-col gap-1">
           {account.emails.length === 0 ? (
             <p className="text-muted-foreground">
               ยังไม่มีอีเมลที่ยืนยันแล้ว — ลิงก์ตั้งรหัสผ่านใหม่จะส่งไปไม่ได้
@@ -191,19 +231,18 @@ export function AccountSettings() {
               </span>
             ))
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>รหัสผ่าน</CardTitle>
-          <CardDescription>
-            {account.hasPassword
-              ? 'เมื่อเปลี่ยนแล้ว อุปกรณ์อื่นทั้งหมดจะถูกออกจากระบบ — เครื่องนี้ยังอยู่'
-              : 'บัญชีนี้ยังไม่มีรหัสผ่าน ตั้งได้เลยโดยไม่ต้องกรอกรหัสเดิม'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex max-w-md flex-col gap-3">
+      <Section
+        title="รหัสผ่าน"
+        descriptionTh={
+          account.hasPassword
+            ? 'เมื่อเปลี่ยนแล้ว อุปกรณ์อื่นทั้งหมดจะถูกออกจากระบบ — เครื่องนี้ยังอยู่'
+            : 'บัญชีนี้ยังไม่มีรหัสผ่าน ตั้งได้เลยโดยไม่ต้องกรอกรหัสเดิม'
+        }
+      >
+        <div className="flex max-w-md flex-col gap-3">
           {account.hasPassword && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="current-password">รหัสผ่านปัจจุบัน</Label>
@@ -229,7 +268,7 @@ export function AccountSettings() {
               disabled={busy === 'password'}
               aria-invalid={tooShort}
             />
-            <p className={tooShort ? 'text-destructive text-sm' : 'text-muted-foreground text-sm'}>
+            <p className={tooShort ? 'text-destructive type-body' : 'text-muted-foreground type-body'}>
               อย่างน้อย {PASSWORD_MIN_LENGTH} ตัวอักษร
             </p>
           </div>
@@ -245,7 +284,7 @@ export function AccountSettings() {
               disabled={busy === 'password'}
               aria-invalid={mismatch}
             />
-            {mismatch && <p className="text-destructive text-sm">สองช่องไม่ตรงกัน</p>}
+            {mismatch && <p className="text-destructive type-body">สองช่องไม่ตรงกัน</p>}
           </div>
 
           <div>
@@ -272,26 +311,30 @@ export function AccountSettings() {
               {account.hasPassword ? 'เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่าน'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>บัญชีที่เชื่อมไว้</CardTitle>
-          <CardDescription>เข้าสู่ระบบด้วยผู้ให้บริการเหล่านี้ได้</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+      <Section title="บัญชีที่เชื่อมไว้" descriptionTh="เข้าสู่ระบบด้วยผู้ให้บริการเหล่านี้ได้">
+        {/*
+         * ⚠️ `divide-y` and not a border per row. Each provider used to be a `rounded-lg border`
+         * *inside* a Card — a box in a box, which is where the ลายตา came from on this screen more
+         * than anywhere else. A hairline between rows says "these are separate items" with one
+         * edge instead of four, and it is the same statement.
+         */}
+        <div className="divide-border/60 flex flex-col divide-y">
           {account.providers.length === 0 ? (
-            <p className="text-muted-foreground text-sm">ยังไม่ได้เชื่อมกับผู้ให้บริการใด</p>
+            <p className="text-muted-foreground type-body">ยังไม่ได้เชื่อมกับผู้ให้บริการใด</p>
           ) : (
             account.providers.map((provider) => (
               <div
                 key={provider.provider}
-                className="border-border/60 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
                 <div className="flex flex-col">
-                  <span>{PROVIDER_LABEL[provider.provider] ?? provider.provider}</span>
-                  <span className="text-muted-foreground text-xs">
+                  <span className="type-body">
+                    {PROVIDER_LABEL[provider.provider] ?? provider.provider}
+                  </span>
+                  <span className="text-muted-foreground type-caption">
                     {provider.assertedEmail ?? 'ไม่ทราบอีเมล'} · ใช้ล่าสุด{' '}
                     {when(provider.lastAuthenticatedAt)}
                   </span>
@@ -318,30 +361,28 @@ export function AccountSettings() {
               </div>
             ))
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>อุปกรณ์ที่เข้าสู่ระบบอยู่</CardTitle>
-          <CardDescription>
-            เห็นเครื่องที่ไม่รู้จัก ให้กดออกจากระบบแล้วเปลี่ยนรหัสผ่านทันที
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+      <Section
+        title="อุปกรณ์ที่เข้าสู่ระบบอยู่"
+        descriptionTh="เห็นเครื่องที่ไม่รู้จัก ให้กดออกจากระบบแล้วเปลี่ยนรหัสผ่านทันที"
+      >
+        {/* Seven of these used to be seven bordered boxes inside a bordered box. */}
+        <div className="divide-border/60 flex flex-col divide-y">
           {account.sessions.map((session) => (
             <div
               key={session.id}
-              className="border-border/60 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+              className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0"
             >
               <div className="flex items-center gap-3">
-                <Monitor className="text-muted-foreground size-4" />
+                <Monitor className="text-muted-foreground size-4" aria-hidden />
                 <div className="flex flex-col">
-                  <span className="flex items-center gap-2">
+                  <span className="type-body flex items-center gap-2">
                     {deviceName(session.userAgent)}
                     {session.current && <Badge variant="secondary">เครื่องนี้</Badge>}
                   </span>
-                  <span className="text-muted-foreground text-xs">
+                  <span className="text-muted-foreground type-caption">
                     เข้าใช้ล่าสุด {when(session.lastSeenAt ?? session.createdAt)}
                   </span>
                 </div>
@@ -364,7 +405,7 @@ export function AccountSettings() {
           ))}
 
           {account.sessions.length > 1 && (
-            <div>
+            <div className="pt-3">
               <Button
                 variant="destructive"
                 size="sm"
@@ -382,10 +423,41 @@ export function AccountSettings() {
               </Button>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Section>
 
       <MfaPanel />
     </div>
+  );
+}
+
+/**
+ * One band of the account screen.
+ *
+ * The three that used to be Cards are these now. A `<section>` with a `type-section` heading and
+ * `gap-10` above it: everything on this page is one subject read top to bottom, so there is
+ * nothing here that needed separating from its neighbour by a ring.
+ *
+ * ⚠️ `descriptionTh` is `type-body` rather than the `text-sm` `CardDescription` it replaces —
+ * the same size, but named, so the next person applying this to phase 2 does not have to know
+ * that `text-sm` happened to be the body step.
+ */
+function Section({
+  title,
+  descriptionTh,
+  children,
+}: {
+  readonly title: string;
+  readonly descriptionTh: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="type-section">{title}</h2>
+        <p className="text-muted-foreground type-body max-w-2xl">{descriptionTh}</p>
+      </div>
+      {children}
+    </section>
   );
 }

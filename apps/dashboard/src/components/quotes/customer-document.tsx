@@ -58,7 +58,7 @@ export function CustomerDocument({ view }: { readonly view: QuoteView }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2">
+        <CardTitle className="type-section flex flex-wrap items-center gap-2">
           <FileText className="size-4" />
           ใบเสนอราคาที่ลูกค้าเห็น
           <Badge variant="outline">ตัวอย่าง — ยังไม่ได้แช่แข็ง</Badge>

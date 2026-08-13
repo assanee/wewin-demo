@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AvailableTransition, OrderEvent } from './order-api';
 import { eventLabelTh, statusLabel, transitionForm } from './order-language';
 import {
@@ -22,12 +21,23 @@ import {
  * ⭐ One spine. The past is written; the future is offered.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * This card replaces two that a staff member always read together and the page presented apart:
- * `เปลี่ยนสถานะ`, a box of buttons, and `ลำดับเหตุการณ์`, a list of rows. They are the same table.
- * `availableTransitions` and the events both come from `order_status_transitions` — the history
- * is the rows that exist and the buttons are the rows that could — so the buttons are the
+ * This rail replaces two cards that a staff member always read together and the page presented
+ * apart: `เปลี่ยนสถานะ`, a box of buttons, and `ลำดับเหตุการณ์`, a list of rows. They are the same
+ * table. `availableTransitions` and the events both come from `order_status_transitions` — the
+ * history is the rows that exist and the buttons are the rows that could — so the buttons are the
  * terminus of the rail rather than a separate box, and the old separation hid that they were one
  * thing.
+ *
+ * ── ⚠️ The Card around it is gone, and the rail is *more* whole for it ───────
+ *
+ * **Still one rail. Nothing was split.** What changed is that the region no longer has a ring
+ * around it, so the status statement `order-detail.tsx` now renders directly above — the same
+ * fact the first event on this rail records — is continuous with it instead of being a separate
+ * peer above a box. The join this file exists to make now extends one element further up.
+ *
+ * The heading moved from `CardTitle` (`text-base`, i.e. 16px, two pixels above the 14px body
+ * underneath it) to `type-section` at 18px. That 2px step, repeated in 39 of the app's 41 card
+ * titles, is what the owner was reading as ไม่มีจุดเด่น.
  *
  * ── ⚠️ What this component may and may not do ────────────────────────────────
  *
@@ -48,7 +58,7 @@ import {
  *
  * `globals.css` caps the lime accent at two places per screen on purpose, so nothing here is
  * colour-coded by event type. Every class in this file resolves to a **token** — `bg-foreground`,
- * `bg-card`, `border-border`, `text-muted-foreground` — each of which is redefined in the `.dark`
+ * `bg-background`, `border-border`, `text-muted-foreground` — each of which is redefined in the `.dark`
  * block, so the rail, the markers, the disclosure and the gap labels are all defined in both
  * themes by construction rather than by inspection.
  *
@@ -77,12 +87,22 @@ const RAIL_GAP = 'border-border absolute top-0 bottom-0 left-2.5 border-l border
  *   gate     one of the two irreversible points the transition table names itself
  *   offered  the row that does not exist yet
  *
- * `bg-card` on the two hollow markers is load-bearing: it breaks the rail behind them so a ring
+ * The fill on the two hollow markers is load-bearing: it breaks the rail behind them so a ring
  * reads as a ring rather than as a line passing through a circle.
+ *
+ * ⚠️ **`bg-background` and not `bg-card` — this moved when the Card around the rail did, and
+ * getting it wrong is invisible in the light theme.** These markers have to be filled with
+ * whatever is actually behind them. While the spine lived in a `Card` that was `--card`; on the
+ * page ground it is `--background`. In light both are `oklch(1 0 0)` and the mistake shows
+ * nothing at all, but in dark `--card` is `oklch(0.205 0 0)` against a `--background` of
+ * `oklch(0.145 0 0)` — the markers would have been three lighter-grey discs sitting on a darker
+ * page, and only a dark-theme screenshot could have told anybody. Verified in the browser in
+ * both themes rather than reasoned about.
  */
 const MARKER_STEP = 'bg-foreground size-2.5 rounded-full';
-const MARKER_GATE = 'border-foreground bg-card size-3.5 rounded-full border-2';
-const MARKER_OFFERED = 'border-muted-foreground bg-card size-3.5 rounded-full border border-dashed';
+const MARKER_GATE = 'border-foreground bg-background size-3.5 rounded-full border-2';
+const MARKER_OFFERED =
+  'border-muted-foreground bg-background size-3.5 rounded-full border border-dashed';
 
 /* A row of the rail: the marker column, then everything else. */
 const ROW = 'relative grid grid-cols-[1.25rem_1fr] gap-x-3';
@@ -134,20 +154,20 @@ export function OrderTimeline({
   const shown = events.slice(hidden);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">ลำดับเหตุการณ์และการเปลี่ยนสถานะ</CardTitle>
-        <CardDescription>
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h3 className="type-section">ลำดับเหตุการณ์และการเปลี่ยนสถานะ</h3>
+        <p className="text-muted-foreground type-body max-w-2xl">
           {/*
-           * Both halves of the card in one sentence, because the point of merging them is that
+           * Both halves of the rail in one sentence, because the point of merging them is that
            * they are one table read in two directions.
            */}
           ทุกบรรทัดเขียนโดยการเปลี่ยนสถานะที่ทำให้เกิดขึ้น — แก้ไม่ได้ ปุ่มที่ปลายเส้นคือแถวที่ยังไม่ได้เขียน
           และมาจากตารางสถานะของ API โดยตรง
-        </CardDescription>
-      </CardHeader>
+        </p>
+      </div>
 
-      <CardContent>
+      <div>
         {events.length === 0 && <p className="text-muted-foreground text-sm">ยังไม่มีเหตุการณ์</p>}
 
         {hidden > 0 && (
@@ -271,8 +291,8 @@ export function OrderTimeline({
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 

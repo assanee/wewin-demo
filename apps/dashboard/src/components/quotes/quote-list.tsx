@@ -8,6 +8,7 @@ import { orderSummaryWireSchema } from '@wewin/contract/order';
 import type { OrderSummaryWire } from '@wewin/contract';
 
 import { formatTimestamp } from '@/components/products/publish-state';
+import { PageHeader } from '@/components/page-header';
 import { apiJson } from '@/lib/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,21 @@ const listQuotableOrders = (): Promise<readonly OrderSummaryWire[]> => {
   });
 };
 
+/**
+ * ⚠️ The header is rendered in **all four** states, not only when the rows arrived.
+ *
+ * It used to be an `<h1 className="text-xl font-semibold">` inside the ready branch, so a
+ * failed fetch and an empty list both produced a screen with no title on it — a reader could
+ * not tell "this is broken" from "I clicked the wrong menu item". `PageHeader` now sits above
+ * the switch, which is also how the page title stops being a fourth spelling of itself.
+ */
+const HEADER = (
+  <PageHeader
+    title="ใบเสนอราคา"
+    description="ออร์เดอร์ที่ยังแก้ใบเสนอราคาได้ — ฉบับร่าง รอชำระเงิน และตีกลับมาแก้แบบ"
+  />
+);
+
 export function QuoteListScreen() {
   const [state, setState] = useState<
     | { readonly status: 'loading' }
@@ -81,61 +97,77 @@ export function QuoteListScreen() {
 
   useEffect(load, [load]);
 
-  if (state.status === 'loading') return <Skeleton className="h-64 w-full" />;
+  if (state.status === 'loading') {
+    return (
+      <div className="flex flex-col gap-8">
+        {HEADER}
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
   if (state.status === 'error') {
     return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>โหลดรายการใบเสนอราคาไม่สำเร็จ</EmptyTitle>
-          <EmptyDescription>{failureMessage(state.error)}</EmptyDescription>
-        </EmptyHeader>
-        <Button variant="outline" onClick={load}>
-          ลองอีกครั้ง
-        </Button>
-      </Empty>
+      <div className="flex flex-col gap-8">
+        {HEADER}
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>โหลดรายการใบเสนอราคาไม่สำเร็จ</EmptyTitle>
+            <EmptyDescription>{failureMessage(state.error)}</EmptyDescription>
+          </EmptyHeader>
+          <Button variant="outline" onClick={load}>
+            ลองอีกครั้ง
+          </Button>
+        </Empty>
+      </div>
     );
   }
 
   if (state.orders.length === 0) {
     return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>ยังไม่มีใบเสนอราคาที่แก้ไขได้</EmptyTitle>
-          <EmptyDescription>
-            ใบเสนอราคาแก้ได้เฉพาะออร์เดอร์ที่อยู่ในสถานะฉบับร่าง รอชำระเงิน หรือตีกลับมาแก้แบบ — หลังเปิดสายการผลิตแล้ว
-            เข้าผลิตแล้ว การเปลี่ยนราคาจึงเป็นใบลดหนี้หรือการคืนเงิน
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <div className="flex flex-col gap-8">
+        {HEADER}
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>ยังไม่มีใบเสนอราคาที่แก้ไขได้</EmptyTitle>
+            <EmptyDescription>
+              ใบเสนอราคาแก้ได้เฉพาะออร์เดอร์ที่อยู่ในสถานะฉบับร่าง รอชำระเงิน หรือตีกลับมาแก้แบบ — หลังเปิดสายการผลิตแล้ว
+              เข้าผลิตแล้ว การเปลี่ยนราคาจึงเป็นใบลดหนี้หรือการคืนเงิน
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">ใบเสนอราคา</h1>
+    <div className="flex flex-col gap-8">
+      {HEADER}
+
+      {/* The list is the primary thing on a list screen, so it gets the page ground and no ring. */}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>เลขที่</TableHead>
-              <TableHead>สถานะ</TableHead>
-              <TableHead className="text-end">ยอดรวม</TableHead>
-              <TableHead>แก้ล่าสุด</TableHead>
+              <TableHead className="type-caption h-8">เลขที่</TableHead>
+              <TableHead className="type-caption h-8">สถานะ</TableHead>
+              <TableHead className="type-caption h-8 text-end">ยอดรวม</TableHead>
+              {/* Slack goes to the last column — see the note in `order-list.tsx`. */}
+              <TableHead className="type-caption h-8 w-full">แก้ล่าสุด</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {state.orders.map((order) => (
               <TableRow key={order.id}>
-                <TableCell>
+                <TableCell className="px-2 py-1.5">
                   <Link
                     href={`/quotes/${order.id}`}
-                    className="font-medium underline-offset-4 hover:underline"
+                    className="focus-visible:outline-ring type-body rounded font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     {order.orderNo ?? 'ฉบับร่าง'}
                   </Link>
                 </TableCell>
-                <TableCell>
+                <TableCell className="px-2 py-1.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="outline">
                       {STATUS_LABEL_TH[order.status] ?? order.status}
@@ -153,12 +185,12 @@ export function QuoteListScreen() {
                     ) : null}
                   </div>
                 </TableCell>
-                <TableCell className="text-end font-mono tabular-nums">
+                <TableCell className="type-body px-2 py-1.5 text-end font-mono tabular-nums">
                   {order.grandTotalThbMinor === null
                     ? '—'
                     : baht(thbMinorOf(order.grandTotalThbMinor))}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
                   {formatTimestamp(order.updatedAt)}
                 </TableCell>
               </TableRow>

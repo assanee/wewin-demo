@@ -3,16 +3,18 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useState } from 'react';
-import { ArrowLeft, Printer, ShieldCheck } from 'lucide-react';
+import { Printer, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/page-header';
 import { useSession } from '@/lib/auth/session';
 
+import { baht } from './amounts';
+import { thbMinorOf } from './quote-wire';
 import { AuthorityPanel } from './authority-panel';
 import { CustomerDocument } from './customer-document';
 import { LineTable } from './line-table';
@@ -98,49 +100,81 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
   const overridden = view.lines.filter((line) => line.provenance.kind === 'overridden').length;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/quotes">
-            <ArrowLeft data-icon="inline-start" />
-            ใบเสนอราคาทั้งหมด
-          </Link>
-        </Button>
-        <h1 className="text-xl font-semibold">ใบเสนอราคา</h1>
-        {/*
-          * ⚠️ Prints the **pinned** document, not what is on this screen.
-          *
-          * The two differ the moment somebody edits, and that is the point:
-          * `printable-quotation.ts` refuses an order with no pinned document, because before
-          * submit there is no quotation — there is a cart, and on paper they look the same.
-          */}
-        <Button asChild variant="outline" size="sm">
-          <Link href={`/quotes/${orderId}/print` as Route}>
-            <Printer data-icon="inline-start" />
-            พิมพ์ / PDF
-          </Link>
-        </Button>
-        <Badge variant="outline" className="font-mono text-xs" title="โทเคนของฉบับที่กำลังแก้อยู่">
-          {view.wire.quoteRevision}
-        </Badge>
-        {overridden === 0 ? null : (
-          <Badge title="จำนวนบรรทัดที่มีคนตั้งราคาทับค่าที่คำนวณได้">
-            แก้ราคาแล้ว {overridden} บรรทัด
-          </Badge>
-        )}
-        {view.staleLines.length === 0 ? null : (
-          <Badge variant="destructive">ต้องยืนยันราคา {view.staleLines.length} บรรทัด</Badge>
-        )}
-        {view.unrecognisedDestination === null ? null : (
-          /* In the strip as well as the banner below — not because either is pinned in place:
-             nothing in this dashboard is `sticky` or `fixed`, so both scroll away together
-             with the rest of the page. It sits here for the same reason the other summary
-             badges do (the revision token, "แก้ราคาแล้ว", "ต้องยืนยันราคา") — visible at a
-             glance beside them, not because it survives scrolling that they do not. */
-          <Badge variant="destructive" title="ยอดที่แสดงคิดจากอัตราภาษีเริ่มต้น ไม่ใช่ของประเทศปลายทางนี้">
-            ประเทศปลายทาง &quot;{view.unrecognisedDestination}&quot; ไม่มีในระบบ
-          </Badge>
-        )}
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title="ใบเสนอราคา"
+        back={{ href: '/quotes', label: 'ใบเสนอราคาทั้งหมด' }}
+        meta={
+          <>
+            <Badge
+              variant="outline"
+              className="type-caption font-mono"
+              title="โทเคนของฉบับที่กำลังแก้อยู่"
+            >
+              {view.wire.quoteRevision}
+            </Badge>
+            {overridden === 0 ? null : (
+              <Badge title="จำนวนบรรทัดที่มีคนตั้งราคาทับค่าที่คำนวณได้">
+                แก้ราคาแล้ว {overridden} บรรทัด
+              </Badge>
+            )}
+            {view.staleLines.length === 0 ? null : (
+              <Badge variant="destructive">ต้องยืนยันราคา {view.staleLines.length} บรรทัด</Badge>
+            )}
+            {view.unrecognisedDestination === null ? null : (
+              /* In the strip as well as the banner below — not because either is pinned in place:
+                 nothing in this dashboard is `sticky` or `fixed`, so both scroll away together
+                 with the rest of the page. It sits here for the same reason the other summary
+                 badges do (the revision token, "แก้ราคาแล้ว", "ต้องยืนยันราคา") — visible at a
+                 glance beside them, not because it survives scrolling that they do not. */
+              <Badge
+                variant="destructive"
+                title="ยอดที่แสดงคิดจากอัตราภาษีเริ่มต้น ไม่ใช่ของประเทศปลายทางนี้"
+              >
+                ประเทศปลายทาง &quot;{view.unrecognisedDestination}&quot; ไม่มีในระบบ
+              </Badge>
+            )}
+          </>
+        }
+        actions={
+          /*
+           * ⚠️ Prints the **pinned** document, not what is on this screen.
+           *
+           * The two differ the moment somebody edits, and that is the point:
+           * `printable-quotation.ts` refuses an order with no pinned document, because before
+           * submit there is no quotation — there is a cart, and on paper they look the same.
+           */
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/quotes/${orderId}/print` as Route}>
+              <Printer data-icon="inline-start" />
+              พิมพ์ / PDF
+            </Link>
+          </Button>
+        }
+      />
+
+      {/*
+       * ⭐ THE PRIMARY THING: the number the whole screen exists to arrive at.
+       *
+       * `TotalsCard` below is the *breakdown* — net, VAT, the deposit, each with its own
+       * override control — and a breakdown answers "how did we get here". This answers "what is
+       * it", which is the question somebody opens a quote with and the one they leave with.
+       *
+       * ⚠️ It reads the same `view` the breakdown does, so the two cannot disagree. That is the
+       * whole reason this is a second *rendering* of one figure rather than a second source for
+       * it — and it is a figure, not a gate: the sendability verdict is asserted by the banners
+       * and by ตรวจก่อนส่ง, and deliberately not repeated here. Two components asserting one gate
+       * is how they end up disagreeing after one of them is edited.
+       */}
+      <div className="flex flex-col gap-1">
+        <p className="text-muted-foreground type-caption">ยอดรวมสุทธิ (รวม VAT)</p>
+        <p className="type-focal tabular-nums">
+          {baht(thbMinorOf(view.wire.money.grandTotalThbMinor))}
+        </p>
+        <p className="text-muted-foreground type-body">
+          {view.lines.length} บรรทัด
+          {overridden === 0 ? ' — ทุกยอดมาจากการคำนวณ' : ` · คนตั้งราคาเอง ${overridden} บรรทัด`}
+        </p>
       </div>
 
       {editor.conflict === null ? null : (
@@ -156,36 +190,40 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
       <StaleBaselineBanner view={view} />
       <IntegrityAlarms alarms={view.alarms} />
 
-      <Tabs defaultValue="edit">
+      {/* `gap-6`: the root's own `gap-2` left the first section heading crammed under the tabs. */}
+      <Tabs defaultValue="edit" className="gap-6">
         <TabsList>
           <TabsTrigger value="edit">แก้ไขใบเสนอราคา</TabsTrigger>
           <TabsTrigger value="document">ใบที่ลูกค้าเห็น</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="edit" className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>รายการ</CardTitle>
-              <CardDescription>
+        <TabsContent value="edit" className="flex flex-col gap-8">
+          {/*
+           * De-carded. `LineTable` is a `<Table>`, which is already a grid of rules — the Card
+           * put a ring around a thing that draws its own edges. What the section needs is a
+           * heading and the sentence explaining the provenance notation, not a border.
+           */}
+          <section className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="type-section">รายการ</h2>
+              <p className="text-muted-foreground type-body max-w-2xl">
                 {!view.showsProvenance
                   ? 'บัญชีของคุณเห็นเฉพาะยอดที่ถูกเสนอ ไม่เห็นที่มาของตัวเลข'
                   : hasHumanFigures(view)
                     ? 'ตัวเลขที่มีกรอบทึบคือตัวเลขที่คนตั้ง ตัวเลขธรรมดาคือตัวเลขที่ระบบคำนวณ'
                     : 'ยังไม่มีใครแก้ตัวเลขในใบนี้ — ทุกยอดมาจากการคำนวณ'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {view.showsProvenance ? <ProvenanceLegend /> : null}
-              <LineTable
-                orderId={orderId}
-                lines={view.lines}
-                busy={editor.busy}
-                mayWrite={mayWrite && view.showsProvenance}
-                onWrite={editor.write}
-                onOverride={(context, subjectTh) => setPricing({ context, subjectTh })}
-              />
-            </CardContent>
-          </Card>
+              </p>
+            </div>
+            {view.showsProvenance ? <ProvenanceLegend /> : null}
+            <LineTable
+              orderId={orderId}
+              lines={view.lines}
+              busy={editor.busy}
+              mayWrite={mayWrite && view.showsProvenance}
+              onWrite={editor.write}
+              onOverride={(context, subjectTh) => setPricing({ context, subjectTh })}
+            />
+          </section>
 
           <TotalsCard
             view={view}
@@ -204,15 +242,20 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
             />
           ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>ตรวจก่อนส่ง</CardTitle>
-              <CardDescription>
+          {/*
+           * De-carded. A heading, a paragraph and one button do not need separating from the
+           * page — there is nothing here that could be confused with its neighbour.
+           */}
+          <section className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="type-section">ตรวจก่อนส่ง</h2>
+              <p className="text-muted-foreground type-body max-w-2xl">
                 ตรวจว่าราคาฐานของทุกการแก้ราคายังตรงกับที่บันทึกไว้ — เป็นการตรวจชุดเดียวกับที่ระบบทำตอนยืนยันการชำระเงิน
-                และ<strong>ไม่ได้แทนการตรวจตอนนั้น</strong> เพราะแคตตาล็อกเปลี่ยนระหว่างสองจังหวะได้
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
+                และ<strong className="font-semibold">ไม่ได้แทนการตรวจตอนนั้น</strong>{' '}
+                เพราะแคตตาล็อกเปลี่ยนระหว่างสองจังหวะได้
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
               <Button
                 variant="outline"
                 className="self-start"
@@ -227,7 +270,7 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
                 ตรวจราคาที่ตกลงไว้
               </Button>
               {view.hasStaleBaselines ? (
-                <p className="text-sm text-destructive">
+                <p className="text-destructive type-body">
                   ยังส่งใบนี้ไม่ได้ — มี {view.staleLines.length} บรรทัดที่ต้องยืนยันราคาก่อน
                 </p>
               ) : null}
@@ -237,10 +280,10 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
                 same gate is how they end up disagreeing after one of them is edited.
               */}
               {mayWrite ? null : (
-                <p className="text-sm text-muted-foreground">บัญชีของคุณไม่มีสิทธิ์แก้ใบเสนอราคา</p>
+                <p className="text-muted-foreground type-body">บัญชีของคุณไม่มีสิทธิ์แก้ใบเสนอราคา</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         </TabsContent>
 
         <TabsContent value="document">
