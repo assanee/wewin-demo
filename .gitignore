@@ -44,3 +44,12 @@ tmp/
 # Subagent-driven-development scratch: ledgers, briefs, review packages.
 # Git history is the durable record; this is the controller working memory.
 .superpowers/
+
+# Throwaway checkouts an agent works in so parallel branches cannot collide.
+# Scoped to `worktrees/` rather than all of `.claude/` on purpose: agents,
+# skills and settings.json in there are meant to be shared, and ignoring the
+# whole directory would swallow them silently the day somebody adds one.
+.claude/worktrees/
+
+# Per-machine Claude Code settings. The shared ones live in settings.json.
+.claude/settings.local.json
