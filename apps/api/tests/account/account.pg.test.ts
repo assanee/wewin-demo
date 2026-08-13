@@ -32,6 +32,20 @@ const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL'];
 const describeWithPg = url === undefined ? describe.skip : describe;
 
 const tag = randomUUID().slice(0, 8);
+
+/**
+ * One row of `phones` on `AccountWire`, as the profile tab reads it.
+ *
+ * ⚠️ Spelled out here rather than inlined per assertion so that a field *renamed* on the wire is
+ * one compile error instead of three tests silently asserting `undefined === undefined`.
+ */
+interface PhoneRow {
+  readonly number: string;
+  readonly isPrimary: boolean;
+  readonly verifiedAt: string | null;
+  readonly verifiedByStaff: boolean;
+}
+
 const PASSWORD = 'รหัสผ่านเดิมที่ยาวพอสำหรับกฎ';
 const NEW_PASSWORD = 'รหัสผ่านใหม่ที่ยาวพอเช่นกัน';
 
@@ -144,13 +158,135 @@ describeWithPg('my own account', () => {
       insert into user_phones (user_id, number) values (${actor.userId}::uuid, '+66811111111')
     `);
 
-    const body = (await overview(actor)).body as { phones: { number: string; isPrimary: boolean }[] };
-    expect(body.phones).toEqual([{ number: '+66811111111', isPrimary: false }]);
+    const body = (await overview(actor)).body as { phones: PhoneRow[] };
+    expect(body.phones).toEqual([
+      /*
+       * ⭐ `verifiedAt` and `verifiedByStaff` are on this wire as of the profile-tab round, and
+       * this row is the reason: a self-registered number is a *claim*, and the storefront now
+       * shows it back to its owner with a word beside it. Before these two fields the only
+       * verification signal here was `isPrimary`, which the screen would have had to read as
+       * "verified" — sound for the primary number and wrong for every verified number that is
+       * not primary. See `PhoneWire`.
+       */
+      { number: '+66811111111', isPrimary: false, verifiedAt: null, verifiedByStaff: false },
+    ]);
+  });
+
+  it('⭐ says a staff-verified number was verified by staff, without naming the staff member', async () => {
+    /*
+     * ─────────────────────────────────────────────────────────────────────────
+     * The distinction `user_phones.verified_by_user_id` exists to carry.
+     * ─────────────────────────────────────────────────────────────────────────
+     *
+     * Its schema comment asks that "a reader of this row should be able to tell the two apart"
+     * — a member of staff asserting a number over the telephone, versus possession proved
+     * directly by an OTP. This wire carries that as a boolean, so the customer's own screen can
+     * say which happened.
+     *
+     * ⚠️ **And the assertion that the id is absent is the one that matters.** `/admin/users`
+     * carries `verifiedByUserId` for a staff reader who may see it; this endpoint answers the
+     * customer whose number it is, and a staff member's user UUID is not theirs to receive.
+     *
+     * There is a second reason, found while writing this: `ERASURE_TREATMENTS` declares
+     * `'user_phones.verified_by_user_id': 'scrub'`, but no version of `erase_user()` contains
+     * the statement, and `erasure.test.ts`'s generic loop only checks the `delete` treatments.
+     * So that id can outlive the erasure that promised to remove it. A boolean cannot: "a person
+     * vouched" is the part of the column erasure is entitled to keep.
+     */
+    const { actor } = await person('vouched', { password: true });
+    const staff = await makeActor(db, app, `account voucher ${tag}`, []);
+
+    await db.execute(sql`
+      insert into user_phones (user_id, number, verified_at, verified_by_user_id, is_primary)
+      values (${actor.userId}::uuid, '+66833333333', now(), ${staff.userId}::uuid, true)
+    `);
+
+    const answer = await overview(actor);
+    const phones = (answer.body as { phones: PhoneRow[] }).phones;
+
+    expect(phones).toHaveLength(1);
+    expect(phones[0]?.number).toBe('+66833333333');
+    expect(phones[0]?.verifiedAt).toBeTypeOf('string');
+    expect(phones[0]?.verifiedByStaff).toBe(true);
+
+    // The id itself, in any spelling, must not be anywhere in the response.
+    const raw = JSON.stringify(answer.body);
+    expect(raw).not.toContain(staff.userId);
+    expect(raw).not.toContain('verifiedByUserId');
+    expect(raw).not.toContain('verified_by_user_id');
   });
 
   it('answers no phones for an account that never claimed one', async () => {
     const { actor } = await person('nophone', { password: true });
     expect((( await overview(actor)).body as { phones: unknown[] }).phones).toEqual([]);
+  });
+
+  it('⭐⭐ answers with the caller’s own row and never another account’s', async () => {
+    /*
+     * ─────────────────────────────────────────────────────────────────────────
+     * ⭐ The assertion the profile tab rests on.
+     * ─────────────────────────────────────────────────────────────────────────
+     *
+     * The storefront's `ข้อมูลผู้ใช้งาน` tab renders whatever this endpoint returns: a name, a
+     * telephone number, an email address. If the scoping were ever wrong, the failure is not a
+     * blank screen — it is one customer being shown another customer's name and number, on a
+     * page that looks entirely normal.
+     *
+     * ⚠️ **Two people with everything different**, asserted in both directions rather than one.
+     * A one-directional check ("A sees A's number") passes against an implementation that
+     * returns *every* row, which is exactly the bug a `WHERE user_id = …` omitted from one of
+     * the four sub-queries would produce. So each half asserts both what is present and what is
+     * absent.
+     *
+     * ⚠️ `overview` is scoped by construction rather than by a filter — the id comes from the
+     * verified access token and there is no path segment, body field or query parameter on this
+     * route that names a user. The last two expectations are about that: an id offered in the
+     * URL must not be read, in either shape a client might try.
+     */
+    const alice = await person('own-alice', { password: true });
+    const bob = await person('own-bob', { password: true });
+
+    await db.execute(sql`
+      insert into user_phones (user_id, number) values (${alice.actor.userId}::uuid, '+66844444444')
+    `);
+    await db.execute(sql`
+      insert into user_phones (user_id, number) values (${bob.actor.userId}::uuid, '+66855555555')
+    `);
+
+    const seen = async (actor: Actor): Promise<string> => JSON.stringify((await overview(actor)).body);
+
+    const asAlice = await seen(alice.actor);
+    const asBob = await seen(bob.actor);
+
+    /* Alice sees Alice: her id, her number, her address — and none of Bob's. */
+    expect(asAlice).toContain(alice.actor.userId);
+    expect(asAlice).toContain('+66844444444');
+    expect(asAlice).toContain(alice.address);
+    expect(asAlice).not.toContain(bob.actor.userId);
+    expect(asAlice).not.toContain('+66855555555');
+    expect(asAlice).not.toContain(bob.address);
+
+    /* And the same in the other direction, which is what makes "own row" mean one row. */
+    expect(asBob).toContain(bob.actor.userId);
+    expect(asBob).toContain('+66855555555');
+    expect(asBob).toContain(bob.address);
+    expect(asBob).not.toContain(alice.actor.userId);
+    expect(asBob).not.toContain('+66844444444');
+    expect(asBob).not.toContain(alice.address);
+
+    /*
+     * ⭐ There is no id to offer. A path segment is a route that does not exist, and a query
+     * parameter is read by nothing — both must answer about Alice, or not at all.
+     */
+    const byPath = await call('GET', `/me/account/${bob.actor.userId}`, { token: alice.actor.token });
+    expect(byPath.status, JSON.stringify(byPath.body)).toBe(404);
+
+    const byQuery = await call('GET', `/me/account?userId=${bob.actor.userId}`, {
+      token: alice.actor.token,
+    });
+    expect(byQuery.status).toBe(200);
+    expect(JSON.stringify(byQuery.body)).not.toContain(bob.actor.userId);
+    expect(JSON.stringify(byQuery.body)).toContain(alice.actor.userId);
   });
 
   it('refuses a caller with no session at all', async () => {

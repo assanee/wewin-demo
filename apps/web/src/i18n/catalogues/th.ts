@@ -361,6 +361,21 @@ export const th: UiCatalogue = {
   'account.noQuotations': 'ยังไม่มีใบเสนอราคา',
   'account.tabs.label': 'ส่วนต่าง ๆ ของบัญชี',
 
+  'account.profile.section': 'ข้อมูลผู้ใช้งาน',
+  'account.profile.name': 'ชื่อ',
+  'account.profile.nameUnset': 'ยังไม่ได้ระบุชื่อ',
+  'account.profile.email': 'อีเมล',
+  'account.profile.noEmail': 'ยังไม่มีอีเมลที่ยืนยันแล้ว',
+  'account.profile.noPhone': 'ยังไม่มีเบอร์โทร',
+  'account.profile.verified': 'ยืนยันแล้ว',
+  'account.profile.verifiedByStaff': 'เจ้าหน้าที่ยืนยันแล้ว',
+  'account.profile.unverified': 'ยังไม่ได้ยืนยัน',
+  'account.profile.unverifiedNote':
+    'เจ้าหน้าที่จะยืนยันเบอร์ให้เมื่อได้พูดคุยกันทางโทรศัพท์ — ท่านไม่ต้องทำอะไรเพิ่ม',
+  'account.profile.readOnly':
+    'หน้านี้แสดงข้อมูลที่เรามีอยู่เท่านั้น หากต้องการแก้ไข โปรดติดต่อทีมขาย',
+  'account.profile.languageElsewhere': 'ตั้งค่าภาษาได้ที่หน้าตั้งค่า',
+
   'submit.heading': 'ขอใบเสนอราคา',
   'submit.intro':
     'กรอกชื่อและช่องทางติดต่อ แล้วเราจะออกใบเสนอราคาให้ทันที — ราคาและรายละเอียดจะถูกตรึงไว้ตามที่เห็นในตะกร้านี้',

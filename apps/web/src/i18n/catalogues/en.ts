@@ -387,6 +387,21 @@ export const en: PartialUiCatalogue = {
   'account.noQuotations': 'No quotations yet',
   'account.tabs.label': 'Account sections',
 
+  'account.profile.section': 'Your details',
+  'account.profile.name': 'Name',
+  'account.profile.nameUnset': 'No name on file',
+  'account.profile.email': 'Email',
+  'account.profile.noEmail': 'No confirmed email address',
+  'account.profile.noPhone': 'No telephone number',
+  'account.profile.verified': 'Confirmed',
+  'account.profile.verifiedByStaff': 'Confirmed by our staff',
+  'account.profile.unverified': 'Not confirmed',
+  'account.profile.unverifiedNote':
+    'Our staff confirm a number when they speak with you on the telephone — there is nothing for you to do.',
+  'account.profile.readOnly':
+    'This page shows what we have on record. To change any of it, please contact the sales team.',
+  'account.profile.languageElsewhere': 'Your language is set on the settings page.',
+
   'submit.heading': 'Request a quotation',
   'submit.intro':
     'Give us a name and one way to reach you, and we will issue the quotation immediately — the prices and details are frozen exactly as they appear in this cart.',

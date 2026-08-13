@@ -386,6 +386,21 @@ export const my: PartialUiCatalogue = {
   'account.noQuotations': 'စျေးနှုန်းစာရွက် မရှိသေးပါ',
   'account.tabs.label': 'အကောင့် အပိုင်းများ',
 
+  'account.profile.section': 'အသုံးပြုသူ အချက်အလက်',
+  'account.profile.name': 'အမည်',
+  'account.profile.nameUnset': 'အမည် မထည့်ရသေးပါ',
+  'account.profile.email': 'အီးမေးလ်',
+  'account.profile.noEmail': 'အတည်ပြုထားသော အီးမေးလ် လိပ်စာ မရှိသေးပါ',
+  'account.profile.noPhone': 'ဖုန်းနံပါတ် မရှိသေးပါ',
+  'account.profile.verified': 'အတည်ပြုပြီး',
+  'account.profile.verifiedByStaff': 'ဝန်ထမ်းက အတည်ပြုပြီး',
+  'account.profile.unverified': 'အတည်ပြုရသေးပါ',
+  'account.profile.unverifiedNote':
+    'ဖုန်းဖြင့် ဆက်သွယ်စဉ် ကျွန်ုပ်တို့၏ ဝန်ထမ်းက နံပါတ်ကို အတည်ပြုပေးပါမည် — သင်ဘက်မှ ဆောင်ရွက်ရန် မလိုပါ။',
+  'account.profile.readOnly':
+    'ဤစာမျက်နှာသည် ကျွန်ုပ်တို့ မှတ်တမ်းတွင် ရှိသည်ကိုသာ ပြသပါသည်။ ပြင်ဆင်လိုပါက အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
+  'account.profile.languageElsewhere': 'ဘာသာစကားကို ဆက်တင် စာမျက်နှာတွင် သတ်မှတ်ပါသည်။',
+
   'submit.heading': 'စျေးနှုန်းစာရွက် တောင်းခံရန်',
   'submit.intro':
     'အမည်တစ်ခုနှင့် ဆက်သွယ်နိုင်သည့်နည်းလမ်းတစ်ခုပေးပါ၊ ကျွန်ုပ်တို့ စျေးနှုန်းစာရွက်ကို ချက်ချင်းထုတ်ပေးပါမည် — စျေးနှုန်းများနှင့် အသေးစိတ်များကို ဤစာရင်းတွင်ပေါ်နေသည့်အတိုင်း အတိအကျ ပုံသေထားပါမည်။',

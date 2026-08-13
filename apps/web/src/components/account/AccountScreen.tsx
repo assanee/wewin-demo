@@ -2,11 +2,13 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
 
+import type { Session } from '../../lib/auth/account';
 import { localeHref } from '../../lib/routing';
 import { useLocale } from '../../state/localeContext';
 import { useUrlSearch } from '../../state/useUrlSearch';
 import { AccountGate } from './AccountGate';
 import { ChangePassword } from './ChangePassword';
+import { MyProfile } from './MyProfile';
 import { MyQuotations } from './MyQuotations';
 import {
   ACCOUNT_TABS,
@@ -28,7 +30,12 @@ import {
  * — by which time customers have learned the old name and links to it exist.
  *
  * So the page is the account and the quotations are one **tab** of it. Adding the next one is
- * an entry in `ACCOUNT_TABS`, a label key and a panel, with nothing above it to reconsider.
+ * an entry in `ACCOUNT_TABS`, a label key and a branch in `AccountPanel`, with nothing above it
+ * to reconsider — and the third tab, `ข้อมูลผู้ใช้งาน`, arrived that way and proved the claim
+ * half true. The list, the label and the URL cost three lines exactly as promised. The **panel**
+ * did not: it was a two-armed ternary, which is correct for two tabs and silently serves the
+ * password form for a third. See `AccountPanel` at the bottom of this file for what replaced it
+ * and why the replacement is a `switch` with no `default`.
  *
  * ── The sections are tabs, and the default one is not a style choice ─────────
  *
@@ -41,8 +48,8 @@ import {
  * ── Hand-rolled, because there is nothing here to lean on ────────────────────
  *
  * `apps/dashboard` has `components/ui/tabs.tsx` over Radix. `apps/web` has no component
- * library and no Radix, deliberately — adding one for two tabs would be a new dependency in
- * the bundle every customer downloads. It does have a **house dialect for exactly this**, and
+ * library and no Radix, deliberately — adding one for a handful of tabs would be a new dependency
+ * in the bundle every customer downloads. It does have a **house dialect for exactly this**, and
  * this follows it rather than inventing a second: `OptionGroupBase` is the roving-tabindex
  * keyboard group (container `onKeyDown`, `querySelectorAll` by role, wrap, Home/End), and
  * `UnitPicker` is the segmented look (one hairline frame, `bg-sel-bg` fill, `border-sel-line`
@@ -51,7 +58,7 @@ import {
  *
  * ⚠️ Those two are `radiogroup`s and this is not, which is the one place the dialect could not
  * be copied wholesale. A radio group is "pick a value"; a tab set is "show me that part", and
- * a screen reader has to say "tab, 1 of 2, selected" and be able to jump to the panel. Hence
+ * a screen reader has to say "tab, 1 of 3, selected" and be able to jump to the panel. Hence
  * real `role="tab"`/`role="tabpanel"` with `aria-controls`/`aria-labelledby` rather than the
  * native radios `UnitPicker` gets its arrow keys free from.
  *
@@ -61,17 +68,22 @@ import {
  * The old `<Section>` wrapper is gone with them: `h1` is still the page, and the outline below
  * it is the tablist.
  *
- * ⚠️ **Both panels are rendered, with `hidden` on the one that is not showing** — and this is a
+ * ⚠️ **Every panel is rendered, with `hidden` on the ones not showing** — and this is a
  * reversal that the browser caught. Rendering only the selected panel is what Radix does by
  * default and it looked right; reading the live accessibility tree showed the consequence, which
  * is that the *unselected* tab's `aria-controls` points at an element that does not exist. A
  * dangling IDREF is a real defect and it is invisible on screen, which is the only kind this
  * page is likely to keep.
  *
- * The cost of the fix is one `GET /orders?limit=50` for a customer sitting on the password tab,
- * because `MyQuotations` fetches on mount. That is worth an accurate accessibility tree, and it
- * buys something else: the password form keeps what has been typed into it across a tab press,
- * where unmounting would have silently emptied three fields.
+ * The cost of the fix is that every panel's mount effect runs on every visit: `GET /orders?limit=50`
+ * for a customer sitting on the password tab, and — since `ข้อมูลผู้ใช้งาน` landed — `GET /me/account`
+ * beside it. That is worth an accurate accessibility tree, and it buys something else: the password
+ * form keeps what has been typed into it across a tab press, where unmounting would have silently
+ * emptied three fields.
+ *
+ * ⚠️ The wording above is deliberately not a *count* of panels or of requests. Both numbers have
+ * already changed once, and a comment that says "both" over three things is the same defect this
+ * project's catalogue shipped as "all four" over a three-item list.
  *
  * No transition on the tab change. There is nothing to animate that would tell the customer
  * anything, so there is nothing for `prefers-reduced-motion` to have an opinion about.
@@ -127,7 +139,7 @@ export function AccountScreen(): ReactElement {
    *
    * Automatic activation is what the ARIA practices call for when showing a panel is
    * immediate, and it is what the two existing groups in this app already do — arrowing in
-   * `OptionGroupBase` selects as it moves. With two tabs and a panel that is already in the
+   * `OptionGroupBase` selects as it moves. With every panel already in the
    * bundle there is nothing an explicit `Enter` would be protecting the customer from.
    *
    * ⚠️ Left/Right and Home/End only. This tablist is horizontal, and binding Up/Down would
@@ -243,18 +255,14 @@ export function AccountScreen(): ReactElement {
                 tabIndex={0}
                 className="border border-line bg-panel p-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sel-line"
               >
-                {candidate === 'quotations' ? (
-                  <MyQuotations session={session} />
-                ) : (
-                  <ChangePassword session={session} />
-                )}
+                <AccountPanel tab={candidate} session={session} />
               </section>
             ))}
           </div>
 
           {/*
             The next section goes here — a shipping address — as an entry in `ACCOUNT_TABS`, a
-            label key and one more branch in the panel above.
+            label key and one more branch in `AccountPanel`.
 
             ⚠️ Append it, do not put it first, and do not touch `DEFAULT_ACCOUNT_TAB`: a fresh
             visit landing on anything but the quotations closes the only payment door a
@@ -271,4 +279,37 @@ export function AccountScreen(): ReactElement {
       )}
     </AccountGate>
   );
+}
+
+/**
+ * ⭐ Which section's content a panel holds — an exhaustive `switch`, and that is the point.
+ *
+ * ⚠️ **This replaced a two-armed ternary, which was a trap with a third tab in it.** The old form
+ * was `candidate === 'quotations' ? <MyQuotations/> : <ChangePassword/>`: correct for two tabs,
+ * and *silently wrong* for three. Appending `profile` to `ACCOUNT_TABS` would have given the new
+ * tab a label, a URL, a panel, an accessible name and the password form inside it — a defect that
+ * typechecks, renders, and is invisible to every scan in `accountTabs.test.ts`, because a panel
+ * holding the wrong component still holds a component.
+ *
+ * A `switch` over the union with **no `default` and a declared return type** cannot do that: a
+ * fourth tab added to `ACCOUNT_TABS` without a branch here is `error TS2366`, "function lacks
+ * ending return statement". That is the same mechanism `matchScope` and `matchUserStatus` exist
+ * for on the API side, and it is why this is a function rather than a longer ternary — a `default`
+ * or an `else` would restore exactly the failure it is here to prevent.
+ */
+function AccountPanel({
+  tab,
+  session,
+}: {
+  readonly tab: AccountTab;
+  readonly session: Session;
+}): ReactElement {
+  switch (tab) {
+    case 'quotations':
+      return <MyQuotations session={session} />;
+    case 'password':
+      return <ChangePassword session={session} />;
+    case 'profile':
+      return <MyProfile session={session} />;
+  }
 }

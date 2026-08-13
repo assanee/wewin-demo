@@ -51,7 +51,7 @@ export const ACCOUNT_TAB_PARAM = 'tab';
  * `DEFAULT_ACCOUNT_TAB` says which one that is, so that adding the shipping address at the
  * front cannot silently take the payment door off a fresh visit.
  */
-export const ACCOUNT_TABS = ['quotations', 'password'] as const;
+export const ACCOUNT_TABS = ['quotations', 'password', 'profile'] as const;
 
 export type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -63,14 +63,21 @@ export const DEFAULT_ACCOUNT_TAB: AccountTab = 'quotations';
 /**
  * The catalogue key each tab is labelled with.
  *
- * Both are existing keys, reused rather than reinvented, and they read as labels because they
- * were already written as section titles: `ใบเสนอราคาของฉัน` and `เปลี่ยนรหัสผ่าน` are noun
- * phrases naming a part of the account in all eight locales. A second pair of keys saying the
- * same words would be eight more strings to keep in step with these ones for no gain.
+ * The first two are existing keys, reused rather than reinvented, and they read as labels
+ * because they were already written as section titles: `ใบเสนอราคาของฉัน` and `เปลี่ยนรหัสผ่าน`
+ * are noun phrases naming a part of the account in all eight locales. A second pair of keys
+ * saying the same words would be eight more strings to keep in step with these ones for no gain.
+ *
+ * ⚠️ `profile` is a **new** key and not a reuse, which is the honest answer rather than an
+ * inconsistency. There was no existing section title for it because there was no section, and
+ * every near-miss says something else: `account.title` is the name of the whole page, and
+ * `account.username` is a sign-in form's prompt for a way in, not a heading over somebody's
+ * details. Eight new strings, written once.
  */
 export const ACCOUNT_TAB_LABEL_KEYS: Record<AccountTab, PlainKey> = {
   quotations: 'account.myQuotations',
   password: 'account.password.section',
+  profile: 'account.profile.section',
 };
 
 const isAccountTab = (value: string): value is AccountTab =>

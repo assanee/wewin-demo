@@ -64,6 +64,15 @@ const files = (directory: string): string[] =>
  * can show somebody their own number back, which is showing a claim to the person who made
  * it, not attaching one to a stranger who found it.
  *
+ * ⚠️ It now **selects** `userPhones.verifiedAt` and `userPhones.verifiedByUserId` as well, so
+ * that a customer's own profile screen can say whether their number was proved and by whom —
+ * before that, the only verification signal on the wire was `isPrimary`, which is a sound
+ * reading for the primary number and calls every *verified non-primary* one an unproven claim.
+ * Reporting those columns is not filtering by them, and this file must not confuse the two:
+ * see `withoutProjections` below for the scan that keeps them apart and for why deleting this
+ * entry from the `unfiltered` expectation would have re-introduced the very weakness the
+ * `verified_at` scan's own warning was written about.
+ *
  * `users/users.repository.ts` — the staff-verification screen, added for the same reason
  * `account.repository.ts` is safe and one step further from the number than it is: every
  * query here is keyed by the phone row's own `id` or by `userId`, and none takes a `number`
@@ -83,6 +92,49 @@ const READERS: readonly string[] = [
 ];
 
 const relative = (path: string): string => path.slice(SOURCE.length + 1).replaceAll('\\', '/');
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ Naming a column as an output is not the same as filtering on it.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Every scan below asks "does this file *use* `userPhones.<column>` in a position that
+ * decides which rows come back". A Drizzle projection mentions the column in a position that
+ * decides nothing:
+ *
+ *     .select({ verifiedAt: userPhones.verifiedAt })     ← reports the column
+ *     .where(sql`${userPhones.verifiedAt} is not null`)  ← restricts by the column
+ *     .where(eq(userPhones.number, number))             ← keyed by the column
+ *
+ * Stripping the first shape and re-testing is what tells them apart. It is the same class of
+ * confusion the `verified_at` scan below already carries a warning about one level down — that
+ * one was satisfied by a mention of a *different table*, this one by a mention in a *different
+ * position* — and it arrived the same way: `GET /me/account` gained `verifiedAt` on its wire so
+ * a customer's own profile screen could say whether their number was proved, the projection
+ * made `account.repository.ts` look filtered, and the file silently left the `unfiltered` list
+ * that its own entry in `READERS` argues at length it belongs in.
+ *
+ * ⚠️ **Deleting it from the expectation was the tempting fix and would have been the bug.** It
+ * would make this file assert that `account.repository.ts` filters on `verified_at`, which it
+ * does not and must not — leaving nothing to notice the day the filter that matters was
+ * removed from somewhere that does. The detector is what changed; the expectation below is
+ * byte-for-byte what it was before the wire grew the column, which is the evidence that
+ * nothing was weakened to make this pass.
+ *
+ * ⚠️ Known limit, stated rather than papered over: a mention inside `orderBy(desc(…))` survives
+ * the strip and would read as a restriction. Nothing does that today. The scan is blunt on
+ * purpose — see the file header — and the assertion that actually carries the property is
+ * `keyed by a telephone number`, below, which does not depend on this distinction at all.
+ */
+const PROJECTED = /\b[A-Za-z_$][\w$]*\s*:\s*userPhones\.[A-Za-z_$][\w$]*\b/gu;
+
+const withoutProjections = (source: string): string => source.replaceAll(PROJECTED, '');
+
+/** Files with a query reading `user_phones`, as repository-relative paths. */
+const phoneReaders = (): readonly { path: string; source: string }[] =>
+  files(SOURCE)
+    .map((path) => ({ path: relative(path), source: readFileSync(path, 'utf8') }))
+    .filter((file) => /\bfrom\(userPhones\)/u.test(file.source));
 
 describe('⭐ a telephone number is a way in, not an authority', () => {
   it('⭐ has exactly one reader of `user_phones`, and it is the sign-in lookup', () => {
@@ -111,22 +163,78 @@ describe('⭐ a telephone number is a way in, not an authority', () => {
      * two methods above. A predicate about one table satisfied by a mention of another is a
      * test that would go green the day somebody removed the filter that matters.
      */
-    const unfiltered = files(SOURCE).flatMap((path) => {
-      const source = readFileSync(path, 'utf8');
-      if (!/\bfrom\(userPhones\)/u.test(source)) return [];
-      return /userPhones\.verifiedAt/u.test(source) ? [] : [relative(path)];
-    });
+    /*
+     * ⚠️⚠️ And `withoutProjections` first, which is the other half of the same lesson — see its
+     * own header. `account.repository.ts` *selects* `userPhones.verifiedAt` to report it to the
+     * number's owner and filters on nothing; without the strip, reporting a column would count
+     * as restricting by it, and this list would quietly shrink by one.
+     */
+    const unfiltered = phoneReaders().flatMap((file) =>
+      /userPhones\.verifiedAt/u.test(withoutProjections(file.source)) ? [] : [file.path],
+    );
 
     /*
-     * Two now, not one — see `READERS` above for why `account.repository.ts` earns the
-     * second slot: it is keyed by `userId`, never by `number`, so it cannot be the reader
-     * ⓶ warns about. Both stay named explicitly rather than counted, so a *third* unfiltered
-     * query still turns this red.
+     * Two, not one — see `READERS` above for why `account.repository.ts` earns the second slot:
+     * it is keyed by `userId`, never by `number`, so it cannot be the reader ⓶ warns about. Both
+     * stay named explicitly rather than counted, so a *third* unfiltered query still turns this
+     * red.
      */
     expect(unfiltered).toStrictEqual([
       'account/account.repository.ts',
       'auth/password/password.repository.ts',
     ]);
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   * ⭐⭐ THE ASSERTION THAT ACTUALLY CARRIES ⓶.
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   * The scan above counts *unfiltered queries*, which is a proxy. The property the file header
+   * states is narrower and sharper, and every entry in `READERS` is argued in its terms rather
+   * than in the proxy's:
+   *
+   *   `account.repository.ts` — "keyed by `userId`, never by `number` … there is no number in
+   *      its input at all"
+   *   `users/users.repository.ts` — "none takes a `number` as input at all — grep the file for
+   *      `eq(userPhones.number` and it is not there"
+   *
+   * Both comments are telling the reader to run *this* scan, which until now did not exist. So
+   * it exists: **a query keyed on `userPhones.number` is the dangerous shape**, because that and
+   * only that can answer "whose claim is this number?" — the question that turns a squat from a
+   * denial of service into a takeover.
+   *
+   * ⚠️ This is deliberately not derived from the `unfiltered` list, and the reason is worth
+   * having: `users/users.repository.ts` is absent from that list only because of
+   * `sql`${userPhones.verifiedAt} is null`` — the guard that stops re-verifying an already
+   * verified number. That is a restriction on `verified_at` and it is emphatically **not** a
+   * requirement that the row be proved; the proxy reads it as one. This scan does not care, and
+   * would redden for that file the day it grew a by-number lookup.
+   *
+   * ⚠️ Projections stripped here too. `account.repository.ts` selects `number: userPhones.number`
+   * to show a customer their own number back, which names the column without keying on it.
+   */
+  it('⭐⭐ nothing looks an account up by telephone number except the sign-in lookup', () => {
+    const keyedByNumber = phoneReaders()
+      .filter((file) => /userPhones\.number/u.test(withoutProjections(file.source)))
+      .map((file) => file.path);
+
+    /*
+     * One, and it is the sign-in lookup — `findByClaimedPhone`, whose own comment says "No
+     * `verified_at` term, and its absence is the design" and explains why `user_phones_number_key`
+     * makes that safe: it returns the account that *made* the claim, never a customer somebody
+     * else was looking for.
+     *
+     * A second entry here is the takeover ⓶ forbids, and the fix is never to add it to this list.
+     * It is either to key the new query on `userId` — the shape `account.repository.ts` and
+     * `users/users.repository.ts` both use — or, if it truly must take a number, to require
+     * `verified_at is not null` on it and say here why the row it returns cannot reach a
+     * customer.
+     */
+    expect(
+      keyedByNumber,
+      'a query now finds an account by telephone number — see ⓶ at the top of this file',
+    ).toStrictEqual(['auth/password/password.repository.ts']);
   });
 
   it('⭐ password reset never accepts a telephone number', () => {
