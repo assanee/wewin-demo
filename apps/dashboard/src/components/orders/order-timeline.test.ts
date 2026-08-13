@@ -422,7 +422,7 @@ const render = (
 const gapLabels = (markup: string): readonly string[] =>
   [...markup.matchAll(/col-start-2 text-xs">([^<]*)</g)].map((match) => match[1] ?? '');
 
-describe('the card', () => {
+describe('the rail', () => {
   it('⚠️ renders an unknown payload key with its visible fallback', () => {
     const markup = render([event({ payload: { warranty_years: 5 } })]);
 
@@ -512,9 +512,9 @@ describe('the card', () => {
     /*
      * A class Tailwind never saw written in source emits no CSS and the element silently
      * inherits — which looks like a design choice. This asserts the literal strings reached the
-     * markup, and that they are `--foreground`/`--card`/`--border` tokens, each of which the
-     * `.dark` block in globals.css redefines, rather than a stock palette colour that would only
-     * be defined once.
+     * markup, and that they are `--foreground`/`--background`/`--border` tokens, each of which
+     * the `.dark` block in globals.css redefines, rather than a stock palette colour that would
+     * only be defined once.
      */
     const markup = render([
       event({ id: 'a', seq: 1 }),
@@ -530,8 +530,22 @@ describe('the card', () => {
     ]);
 
     expect(markup).toContain('bg-foreground size-2.5 rounded-full');
-    expect(markup).toContain('border-foreground bg-card size-3.5 rounded-full border-2');
-    expect(markup).toContain('border-muted-foreground bg-card size-3.5 rounded-full');
+    /*
+     * ⚠️ `bg-background`, and this assertion is the reason to keep reading.
+     *
+     * The two hollow markers are filled so that they break the rail behind them — a ring has to
+     * read as a ring, not as a line passing through a circle. The fill must therefore match
+     * **whatever is actually behind the rail**, and that changed when the `Card` around the spine
+     * was removed: it used to be `--card`, and on the page ground it is `--background`.
+     *
+     * In the light theme both tokens are `oklch(1 0 0)`, so the wrong one of the two looks
+     * perfect. In dark, `--card` is `oklch(0.205 0 0)` on a `--background` of `oklch(0.145 0 0)`
+     * — three lighter-grey discs on a darker page. This test held the old string and failed the
+     * moment the Card came off, which is what caught it; if a future change puts the rail back
+     * inside a surface of its own, this line has to move with it.
+     */
+    expect(markup).toContain('border-foreground bg-background size-3.5 rounded-full border-2');
+    expect(markup).toContain('border-muted-foreground bg-background size-3.5 rounded-full');
     expect(markup).toContain('bg-border absolute');
     /* And the gap label between the two, on the rail. */
     expect(markup).toContain('6 ชม. 34 นาที');

@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { formatBaht } from '@wewin/core/format';
-import { AlertTriangle, ArrowLeft, Lock, Printer } from 'lucide-react';
+import { AlertTriangle, Lock, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/page-header';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -33,7 +33,8 @@ import {
   type OrderDetail as Order,
   type OrderEvent,
 } from './order-api';
-import { statusLabel, statusTone, transitionForm } from './order-language';
+import { orderFocus } from './order-focus';
+import { statusLabel, transitionForm } from './order-language';
 import { OrderTimeline } from './order-spine';
 
 /**
@@ -59,14 +60,40 @@ import { OrderTimeline } from './order-spine';
  * `orders.read` gets the staff member's id and the prose they typed, a customer's token does
  * not. This screen renders whatever arrived — there is no "show staff view" toggle, because
  * there is no way to ask for it without holding the permission.
+ *
+ * ── ⭐ The primary thing is the status, and the reading order changed for it ──
+ *
+ * The reason somebody opens an order is *where is this, and what can I do next*. That fact was
+ * previously a **badge** beside the title — smaller than the three card headings under it —
+ * while the moves lived at the bottom of the third card. Three Cards of identical weight meant
+ * ผู้ติดต่อ, ยอดเงิน and the entire history read as peers.
+ *
+ * Now: the status is a `type-focal` statement on the page ground, directly above the spine,
+ * and the spine has lost its Card so the two are one continuous region — status, then what
+ * happened, then what may happen next, with no border cutting between them.
+ *
+ * ⚠️ **The transition buttons did not move and must not.** `order-spine.tsx` puts them at the
+ * terminus of the rail on purpose: `availableTransitions` is the rows of
+ * `order_status_transitions` that *could* be written and the events are the ones that *were*,
+ * so the buttons are the end of the same line. Lifting them up beside the status would split
+ * the thing that file was written to join, and would also make two places on one screen assert
+ * the same gate. The status statement therefore *names* what is possible and points down the
+ * rail; it does not duplicate the controls.
+ *
+ * ⚠️ **ผู้ติดต่อ and ยอดเงิน moved below the spine.** Both keep their Cards — contact details
+ * and an amounts breakdown are exactly the self-contained reference a border is for — but
+ * reference is not what the screen is for, so it no longer opens with it.
  */
 
-const TONE: Record<ReturnType<typeof statusTone>, 'default' | 'secondary' | 'outline'> = {
-  attention: 'default',
-  live: 'secondary',
-  done: 'outline',
-  over: 'outline',
-};
+/*
+ * ⚠️ The `TONE` map that used to be here is gone, along with the `Badge` it fed.
+ *
+ * It translated `statusTone`'s four tones into badge variants for the chip beside the title.
+ * With the status promoted to a `type-focal` statement and `orderFocus` saying in words what
+ * the tone was gesturing at, the chip was printing the same Thai word a second time. `TONE`
+ * survives in `order-list.tsx`, where a badge in a table cell is still the right shape and a
+ * 24px heading per row obviously is not.
+ */
 
 const at = (iso: string): string =>
   new Date(iso).toLocaleString('th-TH', {
@@ -113,36 +140,36 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
 
   const { order, events } = state;
 
-  return (
-    <div className="flex flex-col gap-6">
-      <Link
-        href="/orders"
-        className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm"
-      >
-        <ArrowLeft className="size-4" /> กลับไปรายการออเดอร์
-      </Link>
+  const focus = orderFocus(order.availableTransitions);
 
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="font-mono text-2xl font-semibold">
-          {order.orderNo ?? `ร่าง ${order.id.slice(0, 8)}`}
-        </h1>
-        <Badge variant={TONE[statusTone(order.status)]}>{statusLabel(order.status)}</Badge>
-        {/* The quotation lives with the order, so the way to it does too. */}
-        {order.documentRevision !== null && (
-          <Link
-            href={`/quotes/${order.id}/print` as Route}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
-          >
-            <Printer className="size-3.5" /> ใบเสนอราคา
-          </Link>
-        )}
-        {order.isFrozen && (
-          <span className="text-muted-foreground inline-flex items-center gap-1.5 text-sm">
-            <Lock className="size-3.5" />
-            เริ่มผลิตแล้ว {order.frozenAt === null ? '' : `เมื่อ ${at(order.frozenAt)}`}
-          </span>
-        )}
-      </div>
+  return (
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title={order.orderNo ?? `ร่าง ${order.id.slice(0, 8)}`}
+        mono={order.orderNo !== null}
+        back={{ href: '/orders', label: 'รายการออเดอร์' }}
+        meta={
+          <>
+            {order.isFrozen && (
+              <span className="text-muted-foreground type-caption inline-flex items-center gap-1.5">
+                <Lock className="size-3.5" aria-hidden />
+                เริ่มผลิตแล้ว {order.frozenAt === null ? '' : `เมื่อ ${at(order.frozenAt)}`}
+              </span>
+            )}
+          </>
+        }
+        actions={
+          /* The quotation lives with the order, so the way to it does too. */
+          order.documentRevision === null ? undefined : (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/quotes/${order.id}/print` as Route}>
+                <Printer data-icon="inline-start" />
+                ใบเสนอราคา
+              </Link>
+            </Button>
+          )
+        }
+      />
 
       {/*
        * Both directions of a supersession, when there is one. An order that replaced another
@@ -167,73 +194,24 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
         </Alert>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">ผู้ติดต่อ</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">ชื่อ</dt>
-              <dd>{order.contact.name ?? '—'}</dd>
-              <dt className="text-muted-foreground">อีเมล</dt>
-              <dd className="break-all">{order.contact.email ?? '—'}</dd>
-              <dt className="text-muted-foreground">โทรศัพท์</dt>
-              <dd>{order.contact.phone ?? '—'}</dd>
-              <dt className="text-muted-foreground">สร้างเมื่อ</dt>
-              <dd>{at(order.createdAt)}</dd>
-              <dt className="text-muted-foreground">ส่งเมื่อ</dt>
-              <dd>{order.submittedAt === null ? 'ยังไม่ได้ส่ง' : at(order.submittedAt)}</dd>
-            </dl>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">ยอดเงิน</CardTitle>
-            {order.money === null && (
-              <CardDescription>
-                {/* A draft has no contract — that is the whole draft/redesign split. */}
-                ยังไม่มีสัญญา — ตะกร้าที่ยังไม่ได้ส่งจึงยังไม่มียอด
-              </CardDescription>
-            )}
-          </CardHeader>
-          {order.money !== null && (
-            <CardContent>
-              <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm">
-                <dt className="text-muted-foreground">ก่อนภาษี</dt>
-                <dd className="tabular-nums">{formatBaht(order.money.netThbMinor)}</dd>
-                <dt className="text-muted-foreground">ภาษีมูลค่าเพิ่ม</dt>
-                <dd className="tabular-nums">{formatBaht(order.money.vatThbMinor)}</dd>
-                <dt className="font-medium">ยอดรวม</dt>
-                <dd className="tabular-nums font-medium">
-                  {formatBaht(order.money.grandTotalThbMinor)}
-                </dd>
-                <dt className="text-muted-foreground">มัดจำตามสัญญา</dt>
-                <dd className="tabular-nums">
-                  {formatBaht(order.money.scheduledDepositThbMinor)}
-                  {/*
-                   * Pinned at submit, not recomputed. It is a term of the contract and the
-                   * ceiling on what may ever be forfeited — plan 7.13 — so a screen that
-                   * recalculated it from today's price would be showing a different number
-                   * from the one the customer agreed to.
-                   */}
-                  <span className="text-muted-foreground ml-2 text-xs">ตรึงไว้ตั้งแต่ตอนส่ง</span>
-                </dd>
-              </dl>
-            </CardContent>
-          )}
-        </Card>
-      </div>
-
       {order.openChangeRequest !== null && (
-        <Card className="border-foreground/20">
+        /*
+         * ⭐ Above the status, because it outranks it: a customer waiting on an answer is the
+         * only thing on this screen more urgent than where the order is.
+         *
+         * ⚠️ `ring-foreground/25` and not the `border-foreground/20` this used to carry. `Card`
+         * draws its edge with `ring-1 ring-foreground/10` and sets no border-*width*, and
+         * Tailwind's preflight zeroes border-width on every element — so the old class set a
+         * colour on an edge that was never drawn and the emphasis had never rendered. Same bug
+         * `QueueTile` on the overview was carrying.
+         */
+        <Card className="bg-accent/40 ring-foreground/25">
           <CardHeader>
-            <CardTitle className="text-base">ลูกค้าขอแก้ไข</CardTitle>
+            <CardTitle className="type-section">ลูกค้าขอแก้ไข</CardTitle>
             <CardDescription>เปิดเมื่อ {at(order.openChangeRequest.openedAt)}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <p className="text-sm whitespace-pre-wrap">{order.openChangeRequest.noteTh}</p>
+            <p className="type-body whitespace-pre-wrap">{order.openChangeRequest.noteTh}</p>
             <div className="flex flex-wrap gap-2">
               {(['accepted', 'rejected', 'withdrawn'] as const).map((resolution) => (
                 <Button
@@ -270,22 +248,107 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
       )}
 
       {/*
-       * ⭐ One card, where there were two. See `order-spine.tsx`.
+       * ⭐ THE PRIMARY THING, and then the rail it belongs to — one region, no border between.
        *
-       * `เปลี่ยนสถานะ` and `ลำดับเหตุการณ์` were a box of buttons and a list of rows, always read
-       * together and presented apart. They are the same table — `availableTransitions` is the
-       * rows of `order_status_transitions` that *could* be written and the spine is the ones that
-       * *were* — so the buttons are now the terminus of the same rail.
-       *
-       * ⚠️ `setMoving` is passed, not moved. The dialog below, `transitionForm`'s per-kind bodies
-       * and the post-freeze cancellation that needs a reason *and* a fault are untouched: the
-       * timeline calls `onMove` with the same `AvailableTransition` the old button did.
+       * The status was a badge; it is now the statement. `orderFocus` supplies the line under
+       * it, which *names* what can be done next and points at the buttons rather than repeating
+       * them — see that module's header, and `order-spine.tsx`'s, for why the controls stay at
+       * the terminus.
        */}
-      <OrderTimeline
-        events={events}
-        availableTransitions={order.availableTransitions}
-        onMove={setMoving}
-      />
+      <section className="flex flex-col gap-6">
+        <div className="flex flex-col gap-1">
+          {/*
+           * ⚠️ No `Badge` beside this, deliberately. The first draft of this block kept the
+           * status chip next to the heading and printed the same Thai word twice, two
+           * centimetres apart. The badge existed because the status had nowhere better to be;
+           * at `type-focal` it does, and `statusTone`'s four tones now say nothing the sentence
+           * underneath does not say in words.
+           */}
+          <h2 className="type-focal">{statusLabel(order.status)}</h2>
+          <p className="text-muted-foreground type-body">{focus.nextTh}</p>
+        </div>
+
+        {/*
+         * ⭐ One rail, where there were two cards. See `order-spine.tsx`.
+         *
+         * `เปลี่ยนสถานะ` and `ลำดับเหตุการณ์` were a box of buttons and a list of rows, always read
+         * together and presented apart. They are the same table — `availableTransitions` is the
+         * rows of `order_status_transitions` that *could* be written and the spine is the ones that
+         * *were* — so the buttons are the terminus of the same rail.
+         *
+         * ⚠️ `setMoving` is passed, not moved. The dialog below, `transitionForm`'s per-kind bodies
+         * and the post-freeze cancellation that needs a reason *and* a fault are untouched: the
+         * timeline calls `onMove` with the same `AvailableTransition` the old button did.
+         */}
+        <OrderTimeline
+          events={events}
+          availableTransitions={order.availableTransitions}
+          onMove={setMoving}
+        />
+      </section>
+
+      {/*
+       * Reference, below the thing the screen is for. Both keep a Card: contact details and an
+       * amounts breakdown are the self-contained reference the house rule reserves borders for.
+       */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="type-section">ผู้ติดต่อ</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="type-body grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2">
+              <dt className="text-muted-foreground">ชื่อ</dt>
+              <dd>{order.contact.name ?? '—'}</dd>
+              <dt className="text-muted-foreground">อีเมล</dt>
+              <dd className="break-all">{order.contact.email ?? '—'}</dd>
+              <dt className="text-muted-foreground">โทรศัพท์</dt>
+              <dd>{order.contact.phone ?? '—'}</dd>
+              <dt className="text-muted-foreground">สร้างเมื่อ</dt>
+              <dd>{at(order.createdAt)}</dd>
+              <dt className="text-muted-foreground">ส่งเมื่อ</dt>
+              <dd>{order.submittedAt === null ? 'ยังไม่ได้ส่ง' : at(order.submittedAt)}</dd>
+            </dl>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="type-section">ยอดเงิน</CardTitle>
+            {order.money === null && (
+              <CardDescription>
+                {/* A draft has no contract — that is the whole draft/redesign split. */}
+                ยังไม่มีสัญญา — ตะกร้าที่ยังไม่ได้ส่งจึงยังไม่มียอด
+              </CardDescription>
+            )}
+          </CardHeader>
+          {order.money !== null && (
+            <CardContent>
+              <dl className="type-body grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2">
+                <dt className="text-muted-foreground">ก่อนภาษี</dt>
+                <dd className="tabular-nums">{formatBaht(order.money.netThbMinor)}</dd>
+                <dt className="text-muted-foreground">ภาษีมูลค่าเพิ่ม</dt>
+                <dd className="tabular-nums">{formatBaht(order.money.vatThbMinor)}</dd>
+                <dt className="font-medium">ยอดรวม</dt>
+                <dd className="tabular-nums font-medium">
+                  {formatBaht(order.money.grandTotalThbMinor)}
+                </dd>
+                <dt className="text-muted-foreground">มัดจำตามสัญญา</dt>
+                <dd className="tabular-nums">
+                  {formatBaht(order.money.scheduledDepositThbMinor)}
+                  {/*
+                   * Pinned at submit, not recomputed. It is a term of the contract and the
+                   * ceiling on what may ever be forfeited — plan 7.13 — so a screen that
+                   * recalculated it from today's price would be showing a different number
+                   * from the one the customer agreed to.
+                   */}
+                  <span className="text-muted-foreground type-caption ml-2">ตรึงไว้ตั้งแต่ตอนส่ง</span>
+                </dd>
+              </dl>
+            </CardContent>
+          )}
+        </Card>
+      </div>
 
       {moving !== null && (
         <TransitionDialog

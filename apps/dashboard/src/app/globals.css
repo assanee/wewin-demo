@@ -243,10 +243,22 @@
     font-weight: 600;
 }
 
+/*
+ * ⚠️ `600` and not the `500` this started as, and a browser is what settled it.
+ *
+ * At 500 the focal statement on an order (`รอชำระเงิน`, 24px) sat above the spine's
+ * `type-section` heading (18px, 600) and read as the *weaker* of the two: 18px of semibold
+ * outweighs 24px of medium, especially in Thai, where a weight step is less legible than a size
+ * step because the stacked vowels and tone marks thicken with it.
+ *
+ * So the three heading steps all carry 600 and are ordered by **size alone** — 30 / 24 / 18 —
+ * which is unambiguous and cannot be undone by a weight choice further down the page. Body and
+ * caption stay at 400. The whole scale is now two weights and five sizes.
+ */
 @utility type-focal {
     font-size: 1.5rem;
     line-height: 1.35;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 @utility type-section {
