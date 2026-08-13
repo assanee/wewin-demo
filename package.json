@@ -23,12 +23,14 @@
     "db:studio": "turbo run db:studio"
   },
   "devDependencies": {
-    "oxlint": "^1.75.0",
-    "turbo": "^2.5.9",
+    "oxlint": "^1.78.0",
+    "turbo": "^2.10.9",
     "typescript": "~6.0.2"
   },
   "pnpm": {
     "//": "pnpm 10 refuses to run a dependency's install script unless it is named here, and Nest's watch mode reaches for @swc/core's native binary — without this it installs 'successfully' and fails at first invocation. This key belongs in package.json, not pnpm-workspace.yaml: the workspace-file location only exists from pnpm 10.6 and packageManager pins 10.0.0.",
-    "onlyBuiltDependencies": ["@swc/core"]
+    "onlyBuiltDependencies": [
+      "@swc/core"
+    ]
   }
 }
