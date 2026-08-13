@@ -89,6 +89,19 @@ const MARKER_OFFERED = 'border-muted-foreground bg-card size-3.5 rounded-full bo
 const ROW = 'relative grid grid-cols-[1.25rem_1fr] gap-x-3';
 
 /*
+ * ⚠️ `relative` on the marker wrapper is load-bearing, and it was a visible bug before it was
+ * there.
+ *
+ * The rail is `absolute` and the marker was `static`, so within the row's stacking context the
+ * rail painted *over* it: every filled dot came out with a hairline through its middle and every
+ * ring read as a circle with a line drawn across it — the `bg-card` that is supposed to break the
+ * rail behind a hollow marker was underneath the thing it was meant to hide. Positioning the
+ * wrapper puts it after the rail in paint order at the same z-index, which is the whole fix. Only
+ * a browser could show this; it is invisible to a markup assertion.
+ */
+const MARKER_CELL = 'relative flex h-6 items-center justify-center';
+
+/*
  * The two real controls in this card.
  *
  * ⚠️ `focus-visible:outline-*` and not a `ring-*` halo. `globals.css` records that
@@ -199,7 +212,7 @@ export function OrderTimeline({
                     }
                     aria-hidden
                   />
-                  <span className="flex h-6 items-center justify-center">
+                  <span className={MARKER_CELL}>
                     <span
                       className={markerFor(group.events[0]?.eventType ?? '') === 'gate' ? MARKER_GATE : MARKER_STEP}
                       aria-hidden
@@ -224,7 +237,7 @@ export function OrderTimeline({
           {availableTransitions.length > 0 && (
             <>
               <span className={RAIL_TO_MARKER} aria-hidden />
-              <span className="flex h-6 items-center justify-center">
+              <span className={MARKER_CELL}>
                 <span className={MARKER_OFFERED} aria-hidden />
               </span>
             </>
@@ -380,10 +393,10 @@ function Record({
           <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-xs">
             {lines.map((line) => (
               <div key={line.key} className="col-span-2 grid grid-cols-subgrid items-baseline">
-                <dt className="text-muted-foreground min-w-0 break-words">
+                <dt className="text-muted-foreground min-w-0 wrap-break-word">
                   {line.known ? line.labelTh : <span className="font-mono">{line.key}</span>}
                 </dt>
-                <dd className="min-w-0 break-words whitespace-pre-wrap">
+                <dd className="min-w-0 wrap-break-word whitespace-pre-wrap">
                   {line.valueText}
                   {/*
                    * ⚠️ The visible fallback, and it is a *sentence* rather than a symbol.
