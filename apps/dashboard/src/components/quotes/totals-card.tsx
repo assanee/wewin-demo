@@ -95,7 +95,7 @@ export function TotalsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>ยอดรวม</CardTitle>
+        <CardTitle className="type-section">ยอดรวม</CardTitle>
         <CardDescription>
           ยอดรวมสุทธิรวม VAT เสมอ — เป็นยอดเดียวที่งวดชำระ มัดจำ การริบ และการคืนเงินอ้างถึง
         </CardDescription>
@@ -136,7 +136,7 @@ export function TotalsCard({
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col">
-            <span className="text-base font-semibold">ยอดรวมสุทธิ (รวม VAT)</span>
+            <span className="type-body font-semibold">ยอดรวมสุทธิ (รวม VAT)</span>
             <span className="text-xs text-muted-foreground">ยอดที่ลูกค้าโอนจริง</span>
           </div>
           <div className="flex flex-col items-end gap-1">
