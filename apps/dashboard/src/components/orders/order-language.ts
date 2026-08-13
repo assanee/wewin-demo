@@ -1,6 +1,6 @@
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * The two tables the order screens keep about the API's vocabulary.
+ * The three tables the order screens keep about the API's vocabulary.
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * ⚠️ Restated from `packages/contract/src/order.ts`, not imported — `turbo boundaries`
@@ -9,9 +9,25 @@
  * plan 12.1, mitigated the same way: `tests/order-transitions.test.ts` walks both tables and
  * fails when one is short.
  *
- * No React in this file on purpose. Both tables are decisions about *what the API accepts*
- * rather than about layout, and a decision like that should be testable without rendering
- * anything.
+ * No React in this file on purpose. All three tables are decisions about *what the API says and
+ * accepts* rather than about layout, and a decision like that should be testable without
+ * rendering anything.
+ *
+ * ── ⚠️ Why the payload-key table is NOT in this file ─────────────────────────
+ *
+ * `order-timeline.ts` holds a table of `order_events.payload` keys → Thai labels, and it was
+ * asked whether that should be merged with `FORMS` below. It should not, and the axis is the
+ * reason: `FORMS` is keyed on **`payloadKind`** and answers *what body may this screen POST* —
+ * a question about a request, in `camelCase`, whose entries are `reason` / `noteTh` /
+ * `attributeFaultToCompany`. The other is keyed on **a payload key** and answers *how do I read
+ * what the API already stored* — a question about a response, in `snake_case`, whose entries
+ * include `fault`, `document_hash` and `absorbed_delta_thb_minor`, none of which any form on
+ * this screen can send because the API derives all three itself.
+ *
+ * The two overlap in exactly two names (`reason`, `note_th`/`noteTh`) and disagree about their
+ * spelling. Merged, the table would need a column saying which direction each row is for, and
+ * the first reader to add a request field to a response row would be right to think the table
+ * told them to.
  */
 
 export const ORDER_STATUSES = [
@@ -71,6 +87,63 @@ export function statusTone(status: OrderStatus): 'attention' | 'live' | 'done' |
     default:
       return 'over';
   }
+}
+
+/**
+ * ⭐ The third table: what *happened*, as opposed to where the order now is.
+ *
+ * ⚠️ **Not a duplicate of `STATUS_TH`, and the spine needs both.** A status is a place and an
+ * event is an act, and two of them cannot be recovered from a status at all:
+ * `change_requested` and `change_resolved` are written with `from_status` and `to_status` both
+ * `null` — an objection is a fact about an order that does not move it — so
+ * `statusLabel(event.toStatus)` has nothing to label. The old spine rendered `event.eventType`
+ * as its primary heading and that is the machine's word for it on a Thai-only screen.
+ *
+ * `quote_revised` is declared by the API and has no producer in it yet. It is labelled anyway:
+ * the day something writes one, the label should already be here rather than arriving as a
+ * bug report from whoever first saw `quote_revised` on a screen.
+ */
+export const ORDER_EVENT_TYPES = [
+  'created',
+  'quote_revised',
+  'submitted_for_payment',
+  'payment_confirmed',
+  'production_started',
+  'installation_scheduled',
+  'delivered',
+  'bounced_to_redesign',
+  'redesign_approved',
+  'cancelled',
+  'superseded',
+  'change_requested',
+  'change_resolved',
+] as const;
+
+export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
+
+const EVENT_TH: Record<OrderEventType, string> = {
+  created: 'สร้างตะกร้า',
+  quote_revised: 'แก้ใบเสนอราคา',
+  submitted_for_payment: 'ส่งเข้ารอชำระเงิน',
+  payment_confirmed: 'ยืนยันการชำระเงิน',
+  production_started: 'เริ่มตัดอะลูมิเนียม',
+  installation_scheduled: 'นัดติดตั้ง',
+  delivered: 'ส่งมอบ',
+  bounced_to_redesign: 'ตีกลับไปแก้แบบ',
+  redesign_approved: 'อนุมัติแบบที่แก้',
+  cancelled: 'ยกเลิก',
+  superseded: 'ถูกแทนที่ด้วยใบใหม่',
+  change_requested: 'ลูกค้าขอแก้ไข',
+  change_resolved: 'ตอบคำขอแก้ไข',
+};
+
+/**
+ * ⚠️ Falls back to the code itself, never to an empty string — the same rule as `statusLabel`
+ * and for the same reason. `eventType` arrives here typed `string` rather than as this union,
+ * because it comes off a wire this bundle is versioned separately from.
+ */
+export function eventLabelTh(eventType: string): string {
+  return EVENT_TH[eventType as OrderEventType] ?? eventType;
 }
 
 export const PAYLOAD_KINDS = [

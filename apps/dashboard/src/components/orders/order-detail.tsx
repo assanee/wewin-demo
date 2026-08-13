@@ -34,6 +34,7 @@ import {
   type OrderEvent,
 } from './order-api';
 import { statusLabel, statusTone, transitionForm } from './order-language';
+import { OrderTimeline } from './order-spine';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -268,80 +269,23 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">เปลี่ยนสถานะ</CardTitle>
-          <CardDescription>
-            {/*
-             * Said out loud, because it is the reason there is no greyed-out button here for
-             * a move that is merely unavailable: an unavailable move is not in the list at
-             * all, and the list came from the database.
-             */}
-            ปุ่มเหล่านี้มาจากตารางสถานะของ API โดยตรง — สิ่งที่ไม่ปรากฏคือสิ่งที่ทำไม่ได้จริง
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {order.availableTransitions.length === 0 && (
-            <p className="text-muted-foreground text-sm">
-              ออเดอร์นี้เดินต่อไม่ได้แล้ว — เป็นสถานะปลายทาง
-            </p>
-          )}
-          {order.availableTransitions.map((available) => {
-            const form = transitionForm(available.payloadKind);
-
-            return form.offered ? (
-              <Button key={available.toStatus} variant="outline" onClick={() => setMoving(available)}>
-                {available.descriptionTh}
-              </Button>
-            ) : (
-              <div
-                key={available.toStatus}
-                className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs"
-              >
-                {available.descriptionTh} — {form.whyNotTh}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">สันประวัติ</CardTitle>
-          <CardDescription>ทุกบรรทัดเขียนโดยการเปลี่ยนสถานะที่ทำให้เกิดขึ้น — แก้ไม่ได้</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="flex flex-col gap-4">
-            {events.map((event) => (
-              <li key={event.id} className="flex gap-4">
-                <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs">
-                  {event.seq}
-                </span>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <span className="text-sm">
-                    <span className="font-medium">{event.eventType}</span>
-                    {event.toStatus !== null && (
-                      <>
-                        {' → '}
-                        {statusLabel(event.toStatus)}
-                      </>
-                    )}
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {at(event.createdAt)} · {event.actorKind}
-                    {event.actorUserId === null ? '' : ` · ${event.actorUserId.slice(0, 8)}`}
-                  </span>
-                  {Object.keys(event.payload).length > 0 && (
-                    <pre className="bg-muted/50 mt-1 max-w-full overflow-x-auto rounded p-2 text-xs">
-                      {JSON.stringify(event.payload, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
+      {/*
+       * ⭐ One card, where there were two. See `order-spine.tsx`.
+       *
+       * `เปลี่ยนสถานะ` and `สันประวัติ` were a box of buttons and a list of rows, always read
+       * together and presented apart. They are the same table — `availableTransitions` is the
+       * rows of `order_status_transitions` that *could* be written and the spine is the ones that
+       * *were* — so the buttons are now the terminus of the same rail.
+       *
+       * ⚠️ `setMoving` is passed, not moved. The dialog below, `transitionForm`'s per-kind bodies
+       * and the post-freeze cancellation that needs a reason *and* a fault are untouched: the
+       * timeline calls `onMove` with the same `AvailableTransition` the old button did.
+       */}
+      <OrderTimeline
+        events={events}
+        availableTransitions={order.availableTransitions}
+        onMove={setMoving}
+      />
 
       {moving !== null && (
         <TransitionDialog

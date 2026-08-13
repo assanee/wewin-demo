@@ -69,6 +69,14 @@ export interface OrderEventRow {
   readonly actorKind: OrderActorKind;
   readonly actorUserId: string | null;
   readonly payload: unknown;
+  /**
+   * `pg_current_xact_id()::text` — which transaction wrote this row.
+   *
+   * A `text` and not a `bigint` because a 64-bit xid8 does not survive a JSON number, and
+   * because nothing arithmetic is ever done to it: it is only ever compared for equality with
+   * the txid of the row beside it. Two rows sharing it were one atomic act.
+   */
+  readonly writeTxid: string;
   readonly createdAt: Date;
 }
 
@@ -152,6 +160,7 @@ export class OrderRepository {
         actorKind: orderEvents.actorKind,
         actorUserId: orderEvents.actorUserId,
         payload: orderEvents.payload,
+        writeTxid: orderEvents.writeTxid,
         createdAt: orderEvents.createdAt,
       })
       .from(orderEvents)

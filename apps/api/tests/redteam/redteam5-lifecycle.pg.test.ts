@@ -696,7 +696,7 @@ describeWithPg('RED TEAM 5a — the order lifecycle', () => {
 
     const seen = await call('GET', `/orders/${order.id}/events`, { token: customerA.token });
     expect(seen.status).toBe(200);
-    const events = (seen.body as { events: readonly { eventType: string; actorUserId: string | null; payload: Record<string, unknown> }[] }).events;
+    const events = (seen.body as { events: readonly { eventType: string; actorUserId: string | null; writeTxid: string | null; payload: Record<string, unknown> }[] }).events;
     const bounce = events.find((e) => e.eventType === 'bounced_to_redesign');
 
     expect(bounce).toBeDefined();
@@ -705,9 +705,36 @@ describeWithPg('RED TEAM 5a — the order lifecycle', () => {
     expect(bounce?.payload['reason']).toBeUndefined();
     expect(bounce?.actorUserId).toBeNull();
 
-    /* Staff still see both — an audit trail that cannot attribute its writes is not one. */
+    /*
+     * ⚠️ And neither does `write_txid`, which is the third withheld field rather than a
+     * decoration on the first two.
+     *
+     * A transaction id is not personal data and not a secret, but it is monotonic across the
+     * **whole database**: two of them subtracted give the number of write transactions the
+     * company committed in between. A customer holding the spines of two of their own orders
+     * could read the company's throughput off them — WW-1045's own rows differ by ~53,000 across
+     * six and a half hours. Staff hold `orders.read` over the whole table and can see that
+     * traffic directly, so the same figure tells them nothing they could not already count.
+     */
+    for (const event of events) {
+      expect(event.writeTxid, `${event.eventType} leaked its txid to the customer`).toBeNull();
+    }
+
+    /* Staff still see all three — an audit trail that cannot attribute its writes is not one. */
     const asStaff = await call('GET', `/orders/${order.id}/events`, { token: staff.token });
     expect(JSON.stringify(asStaff.body)).toContain(secret);
+
+    const staffEvents = (asStaff.body as { events: readonly { seq: number; writeTxid: string | null }[] }).events;
+    /*
+     * Digits off `pg_current_xact_id()`, and **distinct per event** — which is the fact the
+     * dashboard's `groupByTransaction` is written against. Every API path appends exactly one
+     * event per order per transaction, so nothing on a single order's spine shares a txid today;
+     * the one request that writes two (`supersede`) puts them on two different orders.
+     */
+    for (const event of staffEvents) {
+      expect(event.writeTxid, `seq ${event.seq} has no txid`).toMatch(/^\d+$/);
+    }
+    expect(new Set(staffEvents.map((event) => event.writeTxid)).size).toBe(staffEvents.length);
   });
 
   /* ================================================================= *
