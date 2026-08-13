@@ -134,6 +134,23 @@ describe('the tabs are labelled from the catalogues', () => {
  * ⚠️ Comments are stripped first. Every word this file greps for also appears in the prose
  * explaining it, and a scan that matched the explanation would pass a component that had lost
  * the code — which is exactly the false green `cache-policy.test.ts` documents.
+ *
+ * ⚠️⚠️ **And stripping the comments was not enough.** Mutation testing this block caught five
+ * of ten breakages on the first pass, and every one of the five misses was the same shape: the
+ * grep matched a *second, surviving* copy of the word rather than the code that was deleted.
+ *
+ *   - `accountTabFromSearch` and `SubmittedNotice` survive in the **import statement** when the
+ *     call and the element are gone. So the scans below look for `accountTabFromSearch(search)`
+ *     and `<SubmittedNotice`, not for the bare names.
+ *   - `onKeyDown` survives as the **handler's own declaration** when the binding is unbound. So
+ *     the scan looks for `onKeyDown={onKeyDown}`.
+ *   - `role="tab"` survives inside `querySelectorAll('[role="tab"]')` when the attribute is
+ *     gone from the element, and `focus-visible:outline-2` survives on the **panel** when it is
+ *     stripped from the tabs.
+ *
+ * Those last two are why the element scans run against a slice of the JSX rather than the whole
+ * file: `tabButton` is the one `<button …>` in this component, and an attribute asserted inside
+ * it cannot be satisfied by a string literal three functions up.
  */
 describe('AccountScreen is wired to this module', () => {
   const source = readFileSync(
@@ -145,34 +162,62 @@ describe('AccountScreen is wired to this module', () => {
     .replaceAll(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
     .replaceAll(/(^|[^:])\/\/.*$/gm, '$1');
 
+  /** The single `<button …>` opening tag — the tab itself, with none of the file around it. */
+  const tabButton = code.slice(code.indexOf('<button'), code.indexOf('>\n', code.indexOf('<button')));
+  /** The `<section …>` opening tag that is the panel. */
+  const panel = code.slice(code.indexOf('<section'), code.indexOf('>\n', code.indexOf('<section')));
+
   it('stripped the comments without stripping the component', () => {
-    // Half of the scans below would pass vacuously against an empty string.
+    // Every scan below would pass or fail vacuously against an empty string.
     expect(code).toContain('export function AccountScreen');
     expect(code.length).toBeGreaterThan(400);
+    expect(tabButton).toContain('<button');
+    expect(tabButton.length).toBeGreaterThan(120);
+    expect(panel).toContain('<section');
+    expect(panel.length).toBeGreaterThan(80);
   });
 
   it('⭐ asks accountTabFromSearch which tab to show rather than hard-coding one', () => {
-    expect(code).toContain('accountTabFromSearch');
-    expect(code).toContain('useUrlSearch');
+    // The call, not the import — see the header. This is the assertion that the URL, and so the
+    // `?tab=` default that keeps the payment door open, actually reaches the component.
+    expect(code).toContain('accountTabFromSearch(search)');
+    expect(code).toContain('useUrlSearch()');
   });
 
   it('renders real tab semantics and not a row of buttons', () => {
     expect(code).toContain('role="tablist"');
-    expect(code).toContain('role="tab"');
     expect(code).toContain('role="tabpanel"');
-    expect(code).toContain('aria-selected');
-    expect(code).toContain('aria-controls');
-    expect(code).toContain('aria-labelledby');
+
+    expect(tabButton).toContain('role="tab"');
+    expect(tabButton).toContain('aria-selected');
+    expect(tabButton).toContain('aria-controls');
+    expect(tabButton).toContain('tabIndex');
+
+    expect(panel).toContain('aria-labelledby');
   });
 
   it('moves between tabs with the arrow keys', () => {
     expect(code).toContain('ArrowRight');
     expect(code).toContain('ArrowLeft');
-    expect(code).toContain('onKeyDown');
+    // Home/End too: with the roving tabindex there is one Tab stop, so these are the only way
+    // to reach the far tab in one press.
+    expect(code).toContain("case 'Home'");
+    expect(code).toContain("case 'End'");
+    // The binding, not the handler's declaration.
+    expect(code).toContain('onKeyDown={onKeyDown}');
   });
 
-  it('keeps a visible focus ring on the tabs', () => {
-    expect(code).toContain('focus-visible:outline-2');
+  it('keeps a visible focus ring on the tabs themselves', () => {
+    expect(tabButton).toContain('focus-visible:outline-2');
+    expect(tabButton).toContain('focus-visible:outline-sel-line');
+  });
+
+  it('writes the tab back without a history entry', () => {
+    // `replaceState`, so Back leaves the account rather than walking through tabs, and no
+    // router navigation asking the server for a page it already has.
+    expect(code).toContain('accountTabSearch(');
+    expect(code).toContain('window.history.replaceState');
+    expect(code).not.toContain('pushState');
   });
 });
 
@@ -201,10 +246,14 @@ describe('the cart page does not render the account list', () => {
     expect(code).not.toContain('MyQuotations');
   });
 
-  it('still tells a customer who just submitted how to reach the quotation', () => {
+  it('⭐ still tells a customer who just submitted how to reach the quotation', () => {
     // The gap removing the list opens. `SubmittedNotice` carries the link to `?order=`, so the
     // customer who committed to a total is one press from the document — and from the payment
-    // button on it. If this ever stops being rendered, the submit branch is a dead end.
-    expect(code).toContain('SubmittedNotice');
+    // button on it. If this stops being rendered, the submit branch is a dead end.
+    //
+    // ⚠️ `<SubmittedNotice` and not `SubmittedNotice`: the bare name survives in the import
+    // statement, so the loose spelling passed a mutation that replaced the element with `<p>`.
+    expect(code).toContain('<SubmittedNotice');
+    expect(code).toContain('justSubmitted.orderId');
   });
 });
