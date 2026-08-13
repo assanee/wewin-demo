@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "//": "The root export is types only, for the same reason core's and contract's are: a component that only needs the `Locale` union must not drag eight catalogues and an Intl cache into its bundle. Every runtime value comes from a subpath.",
-  "sideEffects": ["./dist/coverage-cli.js"],
+  "sideEffects": [
+    "./dist/coverage-cli.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts"
@@ -32,7 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "typescript": "~6.0.2",
+    "typescript": "~7.0.2",
     "vitest": "^4.1.10"
   }
 }

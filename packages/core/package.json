@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
-  "//": "The root export is types only, on purpose. Every runtime value comes from a subpath so that importing one concern never drags another into the bundle \u2014 see docs/monorepo-plan.md section 1.",
+  "//": "The root export is types only, on purpose. Every runtime value comes from a subpath so that importing one concern never drags another into the bundle — see docs/monorepo-plan.md section 1.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts"
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "typescript": "~6.0.2",
+    "typescript": "~7.0.2",
     "vitest": "^4.1.10"
   }
 }
