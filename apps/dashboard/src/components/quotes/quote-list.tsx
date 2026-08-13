@@ -104,7 +104,7 @@ export function QuoteListScreen() {
           <EmptyTitle>ยังไม่มีใบเสนอราคาที่แก้ไขได้</EmptyTitle>
           <EmptyDescription>
             ใบเสนอราคาแก้ได้เฉพาะออร์เดอร์ที่อยู่ในสถานะฉบับร่าง รอชำระเงิน หรือตีกลับมาแก้แบบ — หลังเปิดสายการผลิตแล้ว
-            อะลูมิเนียมถูกตัดไปแล้ว การเปลี่ยนราคาจึงเป็นใบลดหนี้หรือการคืนเงิน
+            เข้าผลิตแล้ว การเปลี่ยนราคาจึงเป็นใบลดหนี้หรือการคืนเงิน
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -146,7 +146,7 @@ export function QuoteListScreen() {
                       "was anything already cut?" — the contract says so in its own comment.
                     */}
                     {order.isFrozen ? (
-                      <Badge variant="secondary" title="ตัดอะลูมิเนียมไปแล้ว">
+                      <Badge variant="secondary" title="เริ่มผลิตแล้ว">
                         <Lock data-icon="inline-start" />
                         แช่แข็งแล้ว
                       </Badge>

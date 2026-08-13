@@ -139,7 +139,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
         {order.isFrozen && (
           <span className="text-muted-foreground inline-flex items-center gap-1.5 text-sm">
             <Lock className="size-3.5" />
-            ตัดอะลูมิเนียมแล้ว {order.frozenAt === null ? '' : `เมื่อ ${at(order.frozenAt)}`}
+            เริ่มผลิตแล้ว {order.frozenAt === null ? '' : `เมื่อ ${at(order.frozenAt)}`}
           </span>
         )}
       </div>

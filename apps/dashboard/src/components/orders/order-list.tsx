@@ -130,7 +130,7 @@ export function OrderList() {
                 <TableRow>
                   <TableHead>เลขที่</TableHead>
                   <TableHead>สถานะ</TableHead>
-                  <TableHead>ตัดอะลูมิเนียมแล้ว</TableHead>
+                  <TableHead>เริ่มผลิตแล้ว</TableHead>
                   <TableHead className="text-right">ยอดรวม</TableHead>
                   <TableHead>อัปเดตล่าสุด</TableHead>
                 </TableRow>
@@ -157,7 +157,7 @@ export function OrderList() {
                       {order.isFrozen ? (
                         <span className="inline-flex items-center gap-1.5 text-sm">
                           <Lock className="size-3.5" />
-                          ตัดแล้ว
+                          เริ่มแล้ว
                         </span>
                       ) : (
                         <span className="text-muted-foreground text-sm">ยัง</span>

@@ -126,7 +126,7 @@ const EVENT_TH: Record<OrderEventType, string> = {
   quote_revised: 'แก้ใบเสนอราคา',
   submitted_for_payment: 'ส่งเข้ารอชำระเงิน',
   payment_confirmed: 'ยืนยันการชำระเงิน',
-  production_started: 'เริ่มตัดอะลูมิเนียม',
+  production_started: 'เริ่มผลิต',
   installation_scheduled: 'นัดติดตั้ง',
   delivered: 'ส่งมอบ',
   bounced_to_redesign: 'ตีกลับไปแก้แบบ',
