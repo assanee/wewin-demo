@@ -1,5 +1,6 @@
 import { AppSidebar } from '@/components/app-sidebar';
 import { RequireSession } from '@/components/require-session';
+import { ThemeChoice } from '@/components/theme-choice';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 
@@ -44,13 +45,53 @@ export default function AppLayout({ children }: { readonly children: React.React
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          {/*
+            ⚠️ `print:hidden`, and it is a fix rather than a precaution.
+
+            `/quotes/[orderId]/print` is inside this route group and has no layout of its own,
+            so it inherits this header. globals.css's `@media print` block hides the sidebar
+            and the `sidebar-trigger` *by slot* — it never hid the bar they sit in, so every
+            quotation printed since that route landed has carried an empty 14px strip with a
+            `border-b` across the top of page one. Invisible on screen, which is why it
+            survived: the only way to see it is to print.
+
+            Found while adding the theme control below, which would have printed a sun icon
+            onto a document going to a customer. Hiding the header here rather than adding a
+            third selector to globals.css follows what that file already asks for — "`print:hidden`
+            on the controls plus this block on the shell" — and keeps the rule next to the
+            element, where somebody restructuring the shell will see it.
+          */}
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 print:hidden">
             <SidebarTrigger />
             <Separator orientation="vertical" className="h-4" />
             {/*
               The page owns its own title. This slot stays empty rather than holding a
               breadcrumb the shell would have to be taught about every new route.
             */}
+
+            {/*
+              ⭐ The theme control, and `ml-auto` is the whole of its layout.
+
+              It is in the shell rather than on `/account`, and the argument is about *what
+              kind of setting it is* rather than about convention. The sidebar was the wrong
+              home for the obvious reason — a personal display preference is not a section of
+              the business, and the ระบบ group is a list of screens. But `/account` was the
+              wrong home too, for a less obvious one: everything on that page is a fact the
+              **API** holds about you (your password, your linked providers, your live
+              sessions, your MFA secret), and every control there is a round trip that can
+              fail. The theme is none of those. It is a `localStorage` key belonging to this
+              browser, it applies before the session even resolves, and it would be the only
+              thing on that page that keeps working while the API is down.
+
+              It also has to be reachable from the screen you are complaining about. The
+              reason somebody wants this is that a table of quotations is hard to read in the
+              light they are sitting in, and a control two clicks away in a menu they have to
+              already know about does not answer that. It is kept off paper by the
+              `print:hidden` on the header above — see the note there.
+            */}
+            <div className="ml-auto">
+              <ThemeChoice />
+            </div>
           </header>
           <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">{children}</div>
         </SidebarInset>
