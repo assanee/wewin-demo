@@ -179,6 +179,21 @@ export function encodeEvent(row: OrderEventRow, audience: EventAudience = 'staff
      * quoting an internal note. SEAM: `reason_th_for_customer` on the transition payloads.
      */
     payload: audience === 'staff' ? stored : withoutStaffProse(stored),
+    /*
+     * Which transaction wrote the row — withheld from the customer, and the reasoning is on
+     * `OrderEventWire.writeTxid` rather than repeated here.
+     *
+     * The short of it: it is not personal data and not a secret, but it is monotonic across the
+     * whole database, so a difference between two of them is a count of the company's write
+     * transactions. Staff hold `orders.read` over the whole table and can see that traffic
+     * anyway; a customer holding two of their own orders' spines could not, until this field.
+     *
+     * ⚠️ Note what it is *for*, because it is not decoration. `created_at` defaults to `now()`,
+     * which is the transaction's start time — so it cannot distinguish "three things a person
+     * did" from "one act that wrote three rows", and neither can a minute-precision clock on a
+     * screen. This can. It is the audit trail's own answer to what was atomic.
+     */
+    writeTxid: audience === 'staff' ? row.writeTxid : null,
     createdAt: row.createdAt.toISOString(),
   };
 }

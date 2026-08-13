@@ -108,6 +108,19 @@ export interface OrderEvent {
   readonly actorKind: 'customer' | 'guest' | 'staff' | 'system';
   readonly actorUserId: string | null;
   readonly payload: Readonly<Record<string, unknown>>;
+  /**
+   * Which transaction wrote this row — `order_events.write_txid`, staff only.
+   *
+   * ⚠️ Nullable **on the wire**, not merely optional here: `encodeEvent` sends `null` to a
+   * customer audience, so a decoder that required a string would throw on a response the
+   * contract permits. This screen only ever holds `orders.read`, so in practice it is present —
+   * but the whole `openChangeRequest`/`openedAt` scar on this file was a decoder refusing a
+   * legal shape, and that is not worth repeating for the sake of a non-null type.
+   *
+   * Two adjacent events sharing it were **one atomic act**. Nothing else on the row can say so:
+   * `created_at` defaults to `now()`, which is the transaction's *start* time.
+   */
+  readonly writeTxid: string | null;
   readonly createdAt: string;
 }
 
@@ -245,6 +258,7 @@ const decodeEvent = (raw: unknown): OrderEvent => {
       event['payload'] === null || event['payload'] === undefined
         ? {}
         : asRecord(event['payload'], 'event.payload'),
+    writeTxid: asTextOrNull(event['writeTxid'], 'event.writeTxid'),
     createdAt: asText(event['createdAt'], 'event.createdAt'),
   };
 };

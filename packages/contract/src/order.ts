@@ -610,6 +610,23 @@ export interface OrderEventWire {
   /** The person, when there is one. `system` borrows nobody's name (`order_events_actor_shape`). */
   readonly actorUserId: string | null;
   readonly payload: Readonly<Record<string, unknown>>;
+  /**
+   * ⚠️ Which transaction wrote this row — **staff only**, `null` for the customer.
+   *
+   * `order_events.write_txid` is `pg_current_xact_id()::text`, and it is the only column on the
+   * table that answers "were these two rows one act?". `created_at` cannot: it defaults to
+   * `now()`, which in Postgres is the *transaction's* start time, so rows written together
+   * carry an identical instant — and rows written seconds apart in separate transactions can
+   * still render as the same minute. `seq` orders the spine; this says which writes were atomic.
+   *
+   * Withheld from the customer for the same class of reason as `actorUserId`, one step further
+   * out. A txid is neither personal data nor a secret, but it is monotonic across the *whole
+   * database*: two of them subtracted give the number of write transactions the company
+   * committed in between, so a customer holding events from two of their own orders could read
+   * the company's transaction volume off them. Staff already hold `orders.read` over the whole
+   * table and can see the traffic directly, so the same figure tells them nothing new.
+   */
+  readonly writeTxid: string | null;
   readonly createdAt: string;
 }
 
@@ -954,5 +971,7 @@ export const orderEventWireSchema: z.ZodType<OrderEventWire> = z.object({
   actorKind: z.literal(ORDER_ACTOR_KINDS_WIRE),
   actorUserId: z.uuid().nullable(),
   payload: z.record(z.string(), z.unknown()),
+  /* Digits, not a uuid and not a number: see the note on `OrderEventWire.writeTxid`. */
+  writeTxid: z.string().regex(/^\d+$/).nullable(),
   createdAt: z.iso.datetime(),
 });

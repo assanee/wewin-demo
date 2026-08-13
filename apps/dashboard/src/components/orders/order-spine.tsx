@@ -1,0 +1,458 @@
+'use client';
+
+import { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import type { AvailableTransition, OrderEvent } from './order-api';
+import { eventLabelTh, statusLabel, transitionForm } from './order-language';
+import {
+  actorLabelTh,
+  fromLabelTh,
+  gapLabelTh,
+  gateNoteTh,
+  groupByTransaction,
+  hiddenCount,
+  markerFor,
+  payloadLines,
+} from './order-timeline';
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ One spine. The past is written; the future is offered.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * This card replaces two that a staff member always read together and the page presented apart:
+ * `เปลี่ยนสถานะ`, a box of buttons, and `สันประวัติ`, a list of rows. They are the same table.
+ * `availableTransitions` and the events both come from `order_status_transitions` — the history
+ * is the rows that exist and the buttons are the rows that could — so the buttons are the
+ * terminus of the rail rather than a separate box, and the old separation hid that they were one
+ * thing.
+ *
+ * ── ⚠️ What this component may and may not do ────────────────────────────────
+ *
+ * It may lay things out. It decides nothing: the elapsed-time label, the payload reading, the
+ * marker shape, the transaction grouping and the fold arithmetic are all in `order-timeline.ts`
+ * with no React in them, because `apps/dashboard`'s vitest is `environment: 'node'` and a
+ * `.test.tsx` is silently never collected — logic in a `.tsx` here is logic that cannot be
+ * proved. Read that file's header for the line between *the reading* (an interpretation, free to
+ * improve) and *the record* (the citable bytes, which nothing here writes to).
+ *
+ * ⚠️ **`setMoving` is not touched.** The transition dialog, the per-`payloadKind` forms and the
+ * post-freeze cancellation that needs both a reason and a fault all live in `order-detail.tsx`
+ * exactly as they did; this card receives `onMove` and calls it with the same
+ * `AvailableTransition` the old buttons passed. The one load-bearing path on this screen was
+ * moved by reference, not rewritten.
+ *
+ * ── ⚠️ Colour, and why there is none ────────────────────────────────────────
+ *
+ * `globals.css` caps the lime accent at two places per screen on purpose, so nothing here is
+ * colour-coded by event type. Every class in this file resolves to a **token** — `bg-foreground`,
+ * `bg-card`, `border-border`, `text-muted-foreground` — each of which is redefined in the `.dark`
+ * block, so the rail, the markers, the disclosure and the gap labels are all defined in both
+ * themes by construction rather than by inspection.
+ *
+ * ⚠️ Every conditional class below is a **complete literal string** chosen by a ternary, never a
+ * template built from parts. Tailwind emits a rule only for a class it can see written in the
+ * source; `` `border-${tone}-600` `` compiles, renders, and paints nothing, and an element whose
+ * colour class produced no CSS silently inherits — which looks like a design choice rather than
+ * a bug. Hence the four `RAIL_*` constants and the three `MARKER_*` constants.
+ */
+
+/*
+ * The rail, in four states. `left-2.5` is the centre of the 1.25rem marker column, and the
+ * segments stop at a marker's centre (`h-3` / `top-3`) so the line reads as beginning and ending
+ * at an event rather than running off the ends of the card.
+ */
+const RAIL_FULL = 'bg-border absolute top-0 bottom-0 left-2.5 w-px';
+const RAIL_FROM_MARKER = 'bg-border absolute top-3 bottom-0 left-2.5 w-px';
+const RAIL_TO_MARKER = 'bg-border absolute top-0 left-2.5 h-3 w-px';
+/* Dashed, and only ever behind a gap label: the rail is thinner evidence where time passed. */
+const RAIL_GAP = 'border-border absolute top-0 bottom-0 left-2.5 border-l border-dashed';
+
+/*
+ * Shape, not colour — and three shapes, not an icon vocabulary.
+ *
+ *   step     a transition that happened and could in principle be walked back
+ *   gate     one of the two irreversible points the transition table names itself
+ *   offered  the row that does not exist yet
+ *
+ * `bg-card` on the two hollow markers is load-bearing: it breaks the rail behind them so a ring
+ * reads as a ring rather than as a line passing through a circle.
+ */
+const MARKER_STEP = 'bg-foreground size-2.5 rounded-full';
+const MARKER_GATE = 'border-foreground bg-card size-3.5 rounded-full border-2';
+const MARKER_OFFERED = 'border-muted-foreground bg-card size-3.5 rounded-full border border-dashed';
+
+/* A row of the rail: the marker column, then everything else. */
+const ROW = 'relative grid grid-cols-[1.25rem_1fr] gap-x-3';
+
+/*
+ * The two real controls in this card.
+ *
+ * ⚠️ `focus-visible:outline-*` and not a `ring-*` halo. `globals.css` records that
+ * `ring-ring/50` — what shadcn's own variants use for the soft 3px ring — cannot reach the 3:1 a
+ * focus indicator needs at *any* lightness, because 50% of a grey over a background tops out
+ * near 2.1:1. A solid outline in `--ring` is the value that file measured at 4.5:1+ in both
+ * themes, so that is what both of these use.
+ */
+const FOCUSABLE =
+  'focus-visible:outline-ring rounded focus-visible:outline-2 focus-visible:outline-offset-2';
+
+const at = (iso: string): string =>
+  new Date(iso).toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+export function OrderTimeline({
+  events,
+  availableTransitions,
+  onMove,
+}: {
+  readonly events: readonly OrderEvent[];
+  readonly availableTransitions: readonly AvailableTransition[];
+  readonly onMove: (available: AvailableTransition) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  /*
+   * Grouped before folding, because the fold is about how many *moments* are on screen. Today
+   * every group holds exactly one event — no API path writes two events to one order in one
+   * transaction, which `groupByTransaction` documents and checks — so this is currently a
+   * one-to-one relabelling of the list.
+   */
+  const groups = groupByTransaction(events);
+  const hidden = expanded ? 0 : hiddenCount(groups.length);
+  const shown = groups.slice(hidden);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">สันประวัติและการเปลี่ยนสถานะ</CardTitle>
+        <CardDescription>
+          {/*
+           * Both halves of the card in one sentence, because the point of merging them is that
+           * they are one table read in two directions.
+           */}
+          ทุกบรรทัดเขียนโดยการเปลี่ยนสถานะที่ทำให้เกิดขึ้น — แก้ไม่ได้ ปุ่มที่ปลายเส้นคือแถวที่ยังไม่ได้เขียน
+          และมาจากตารางสถานะของ API โดยตรง
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent>
+        {events.length === 0 && <p className="text-muted-foreground text-sm">ยังไม่มีเหตุการณ์</p>}
+
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className={`text-muted-foreground hover:text-foreground mb-3 inline-flex w-fit items-center gap-1.5 text-xs ${FOCUSABLE}`}
+          >
+            <ChevronDown className="size-3.5" aria-hidden />
+            ดูอีก {hidden} รายการก่อนหน้า
+          </button>
+        )}
+
+        <ol>
+          {shown.map((group, index) => {
+            /*
+             * The gap is measured against the moment before this one **in the whole spine**, not
+             * in the visible slice — otherwise folding the older events would invent a first row
+             * with no elapsed time and quietly change what the rail says about the same order.
+             * It is only *rendered* from the second visible row down, because there is nothing
+             * above the first one to measure a gap against on screen.
+             */
+            const previous = groups[hidden + index - 1];
+            const gap =
+              previous === undefined || index === 0
+                ? null
+                : gapLabelTh(
+                    previous.events[previous.events.length - 1]?.createdAt ?? '',
+                    group.events[0]?.createdAt ?? '',
+                  );
+
+            const last = index === shown.length - 1;
+            /* The rail stops at the terminus when there is one, and at the final event when the
+             * order is terminal and there is nothing more to offer. */
+            const capped = last && availableTransitions.length === 0;
+
+            return (
+              <li key={group.events[0]?.id ?? index}>
+                {gap !== null && (
+                  <div className={`${ROW} py-1`}>
+                    <span className={RAIL_GAP} aria-hidden />
+                    <span className="text-muted-foreground col-start-2 text-xs">{gap}</span>
+                  </div>
+                )}
+
+                <div className={ROW}>
+                  <span
+                    className={
+                      index === 0 && gap === null
+                        ? RAIL_FROM_MARKER
+                        : capped
+                          ? RAIL_TO_MARKER
+                          : RAIL_FULL
+                    }
+                    aria-hidden
+                  />
+                  <span className="flex h-6 items-center justify-center">
+                    <span
+                      className={markerFor(group.events[0]?.eventType ?? '') === 'gate' ? MARKER_GATE : MARKER_STEP}
+                      aria-hidden
+                    />
+                  </span>
+
+                  <div className="col-start-2 min-w-0 pb-4">
+                    <Moment group={group} />
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        {/*
+         * The terminus. No marker at all when the order is terminal: the *absence* of an unwritten
+         * row is the statement, which is why `markerFor` has no fourth shape for "finished" — a
+         * ring on `delivered` would spend the vocabulary on a fact the ending rail already tells.
+         */}
+        <div className={ROW}>
+          {availableTransitions.length > 0 && (
+            <>
+              <span className={RAIL_TO_MARKER} aria-hidden />
+              <span className="flex h-6 items-center justify-center">
+                <span className={MARKER_OFFERED} aria-hidden />
+              </span>
+            </>
+          )}
+
+          <div className="col-start-2 flex min-w-0 flex-col gap-2">
+            {availableTransitions.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                ออเดอร์นี้เดินต่อไม่ได้แล้ว — เป็นสถานะปลายทาง
+              </p>
+            ) : (
+              <>
+                <span className="text-muted-foreground text-sm">ทำต่อได้จากที่นี่</span>
+                <div className="flex flex-wrap gap-2">
+                  {availableTransitions.map((available) => {
+                    const form = transitionForm(available.payloadKind);
+
+                    return form.offered ? (
+                      <Button
+                        key={available.toStatus}
+                        variant="outline"
+                        onClick={() => onMove(available)}
+                      >
+                        {available.descriptionTh}
+                      </Button>
+                    ) : (
+                      <div
+                        key={available.toStatus}
+                        className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs"
+                      >
+                        {available.descriptionTh} — {form.whyNotTh}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * One moment on the rail: **the reading**, with the record folded behind a disclosure.
+ *
+ * A moment is a transaction rather than a row — see `groupByTransaction`. When it holds more than
+ * one event the heading is the newest of them and the rest are listed as its parts, because they
+ * were one act and numbering them as separate steps a person took would be false.
+ */
+function Moment({ group }: { readonly group: { readonly events: readonly OrderEvent[] } }) {
+  const events = group.events;
+  const head = events[events.length - 1];
+  if (head === undefined) return null;
+
+  const from = fromLabelTh(head.fromStatus);
+  const note = gateNoteTh(head.eventType);
+  const lines = events.flatMap((event) => payloadLines(event.payload));
+
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="text-sm font-medium">
+          {/*
+           * ⚠️ The Thai label leads and the machine string does not appear here at all.
+           *
+           * `toStatus` is null on the two events that move nothing — `change_requested` and
+           * `change_resolved` — so a heading of `statusLabel(toStatus)` alone would be blank for
+           * exactly the rows a person is most likely to be hunting for. `eventLabelTh` covers
+           * both cases: for a move it names the act, and the destination follows it.
+           */}
+          {head.toStatus === null ? eventLabelTh(head.eventType) : statusLabel(head.toStatus)}
+          {note !== null && <span className="text-muted-foreground font-normal"> · {note}</span>}
+        </span>
+        <span className="text-muted-foreground text-xs">{at(head.createdAt)}</span>
+      </div>
+
+      <div className="text-muted-foreground flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
+        <span>
+          {eventLabelTh(head.eventType)}
+          {from !== null && ` · จาก ${from}`}
+          {` · ${actorLabelTh(head.actorKind)}`}
+        </span>
+        {/*
+         * `seq` kept and demoted. This is an append-only audit trail and citability is the whole
+         * of its value, so the number stays — but small, monospace and muted, because the fact a
+         * reader scanning the rail wants is the time. A range when the moment holds several rows.
+         */}
+        <span className="font-mono tabular-nums">
+          {events.length > 1 ? `${events[0]?.seq}–${head.seq}` : head.seq}
+        </span>
+      </div>
+
+      {events.length > 1 && (
+        <p className="text-muted-foreground mt-1 text-xs">
+          {events.length} เหตุการณ์ในทรานแซกชันเดียว — เกิดขึ้นพร้อมกันทั้งหมด
+        </p>
+      )}
+
+      <Record events={events} lines={lines} />
+    </>
+  );
+}
+
+/**
+ * **The record**, opened on demand: everything `order_events` stored about this moment.
+ *
+ * ⚠️ A native `<details>`/`<summary>`, deliberately. It is focusable, it toggles on Enter *and*
+ * Space, it exposes its expanded state to a screen reader, and it needs no JavaScript — four
+ * things a `<div onClick>` would each have had to reimplement, and the fourth is why the old
+ * `<pre>` was the only detail view this screen had. `globals.css` already gives `summary` a
+ * pointer cursor in its base layer, which is the house saying this is the intended element.
+ *
+ * The chevron's rotation is the only animation in the card and it is dropped under
+ * `prefers-reduced-motion` (`motion-reduce:transition-none`) — the rotation itself still happens,
+ * so the control's state is never conveyed by motion alone.
+ *
+ * ── What is inside, in two parts, and why in this order ───────────────────────
+ *
+ * First **the reading of the payload**: Thai labels and formatted values, so
+ * `slip_amount_thb_minor: "860152"` reads `ยอดในสลิป ฿8,601.52` instead of asking a person to
+ * know the field is satang and divide by a hundred. Then **the stored row**, verbatim, because a
+ * reading is an interpretation and an audit trail has to be quotable past it. A key this build
+ * has no label for still appears in both halves, marked — `payloadLines` exists to guarantee it.
+ */
+function Record({
+  events,
+  lines,
+}: {
+  readonly events: readonly OrderEvent[];
+  readonly lines: readonly {
+    readonly key: string;
+    readonly labelTh: string;
+    readonly valueText: string;
+    readonly known: boolean;
+  }[];
+}) {
+  return (
+    <details className="group mt-1.5">
+      <summary
+        className={`text-muted-foreground hover:text-foreground inline-flex w-fit list-none items-center gap-1 text-xs [&::-webkit-details-marker]:hidden ${FOCUSABLE}`}
+      >
+        <ChevronRight
+          className="size-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          aria-hidden
+        />
+        รายละเอียด
+      </summary>
+
+      <div className="mt-2 flex flex-col gap-3">
+        {lines.length > 0 && (
+          <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-xs">
+            {lines.map((line) => (
+              <div key={line.key} className="col-span-2 grid grid-cols-subgrid items-baseline">
+                <dt className="text-muted-foreground min-w-0 break-words">
+                  {line.known ? line.labelTh : <span className="font-mono">{line.key}</span>}
+                </dt>
+                <dd className="min-w-0 break-words whitespace-pre-wrap">
+                  {line.valueText}
+                  {/*
+                   * ⚠️ The visible fallback, and it is a *sentence* rather than a symbol.
+                   *
+                   * A newer API adding a payload key must not make it vanish from an audit trail,
+                   * and it must not appear indistinguishable from a key this build understands
+                   * either — a reader has to know which of the two they are looking at before
+                   * they quote it. Same posture as `transitionForm` refusing an unknown
+                   * `payloadKind` out loud instead of guessing a body.
+                   */}
+                  {!line.known && (
+                    <span className="text-muted-foreground block">
+                      แดชบอร์ดรุ่นนี้ยังไม่รู้จักค่านี้ — แสดงตามที่บันทึกไว้
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        <div className="border-border/60 rounded border border-dashed p-2">
+          <p className="text-muted-foreground mb-1.5 text-xs">ข้อมูลที่บันทึกไว้</p>
+          <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 font-mono text-xs">
+            {events.map((event) => (
+              <div key={event.id} className="col-span-2 grid grid-cols-subgrid gap-y-1">
+                <dt className="text-muted-foreground">seq</dt>
+                <dd className="tabular-nums">{event.seq}</dd>
+
+                <dt className="text-muted-foreground">event_type</dt>
+                <dd className="break-all">{event.eventType}</dd>
+
+                <dt className="text-muted-foreground">status</dt>
+                <dd className="break-all">
+                  {event.fromStatus ?? '—'} → {event.toStatus ?? '—'}
+                </dd>
+
+                <dt className="text-muted-foreground">actor</dt>
+                <dd className="break-all">
+                  {event.actorKind}
+                  {event.actorUserId !== null && ` · ${event.actorUserId}`}
+                </dd>
+
+                {/*
+                 * ⚠️ `null` here is not a missing value, it is the audience gate: `encodeEvent`
+                 * withholds the txid from a customer. This screen holds `orders.read`, so seeing
+                 * a dash would itself be worth reporting.
+                 */}
+                <dt className="text-muted-foreground">write_txid</dt>
+                <dd className="break-all">{event.writeTxid ?? '—'}</dd>
+
+                <dt className="text-muted-foreground">created_at</dt>
+                <dd className="break-all">{event.createdAt}</dd>
+
+                <dt className="text-muted-foreground">payload</dt>
+                <dd className="break-all">
+                  {Object.keys(event.payload).length === 0
+                    ? '{}'
+                    : Object.entries(event.payload).map(([key, value]) => (
+                        <span key={key} className="block">
+                          {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
+                        </span>
+                      ))}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+    </details>
+  );
+}
