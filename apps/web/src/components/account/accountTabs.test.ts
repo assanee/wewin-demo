@@ -196,6 +196,18 @@ describe('AccountScreen is wired to this module', () => {
     expect(panel).toContain('aria-labelledby');
   });
 
+  it("keeps every tab's aria-controls pointing at a panel that exists", () => {
+    /*
+     * The browser found this one. Rendering only the selected panel left the *unselected* tab's
+     * `aria-controls` aimed at nothing — a dangling IDREF, invisible on screen. The fix is a
+     * panel per tab with `hidden` on the one not showing, so the scan is for both halves of it:
+     * the panel is produced by mapping the tabs, and it takes `hidden`.
+     */
+    expect(panel).toContain('hidden=');
+    expect(panel).toContain('id={panelId(candidate)}');
+    expect(panel).toContain('aria-labelledby={tabId(candidate)}');
+  });
+
   it('moves between tabs with the arrow keys', () => {
     expect(code).toContain('ArrowRight');
     expect(code).toContain('ArrowLeft');

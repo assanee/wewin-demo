@@ -61,9 +61,17 @@ import {
  * The old `<Section>` wrapper is gone with them: `h1` is still the page, and the outline below
  * it is the tablist.
  *
- * ⚠️ **Only the selected panel is rendered**, not both with one hidden. Two mounted
- * `MyQuotations` would mean the fetch runs for a panel nobody is looking at, and the cost of
- * unmounting is one `no-store` refetch on return — which is fresher, not staler.
+ * ⚠️ **Both panels are rendered, with `hidden` on the one that is not showing** — and this is a
+ * reversal that the browser caught. Rendering only the selected panel is what Radix does by
+ * default and it looked right; reading the live accessibility tree showed the consequence, which
+ * is that the *unselected* tab's `aria-controls` points at an element that does not exist. A
+ * dangling IDREF is a real defect and it is invisible on screen, which is the only kind this
+ * page is likely to keep.
+ *
+ * The cost of the fix is one `GET /orders?limit=50` for a customer sitting on the password tab,
+ * because `MyQuotations` fetches on mount. That is worth an accurate accessibility tree, and it
+ * buys something else: the password form keeps what has been typed into it across a tab press,
+ * where unmounting would have silently emptied three fields.
  *
  * No transition on the tab change. There is nothing to animate that would tell the customer
  * anything, so there is nothing for `prefers-reduced-motion` to have an opinion about.
@@ -222,21 +230,26 @@ export function AccountScreen(): ReactElement {
               quotations panel is a list of links when there are orders and the bare sentence
               "ยังไม่มีใบเสนอราคา" when there are none, so on a new account arrowing off the
               tablist would otherwise skip straight past the panel to the products link and the
-              customer would never hear why the page was empty.
+              customer would never hear why the page was empty. A `hidden` panel is not
+              focusable, so this adds one stop and not two.
             */}
-            <section
-              role="tabpanel"
-              id={panelId(tab)}
-              aria-labelledby={tabId(tab)}
-              tabIndex={0}
-              className="border border-line bg-panel p-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sel-line"
-            >
-              {tab === 'quotations' ? (
-                <MyQuotations session={session} />
-              ) : (
-                <ChangePassword session={session} />
-              )}
-            </section>
+            {ACCOUNT_TABS.map((candidate) => (
+              <section
+                key={candidate}
+                role="tabpanel"
+                id={panelId(candidate)}
+                aria-labelledby={tabId(candidate)}
+                hidden={candidate !== tab}
+                tabIndex={0}
+                className="border border-line bg-panel p-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sel-line"
+              >
+                {candidate === 'quotations' ? (
+                  <MyQuotations session={session} />
+                ) : (
+                  <ChangePassword session={session} />
+                )}
+              </section>
+            ))}
           </div>
 
           {/*
