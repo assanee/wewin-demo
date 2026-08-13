@@ -64,13 +64,41 @@ export class AccountRepository {
    * `user_phones_primary_is_verified` check makes it false for exactly the unverified numbers
    * this method exists to surface, so a caller after "the" number should not read it as a
    * signal of anything.
+   *
+   * ⭐ **`verified_at` and a voucher flag travel with each row**, because `isPrimary` was being
+   * asked a question it cannot answer. The CHECK makes `isPrimary` imply verified, so reading
+   * it as the verification signal is safe in one direction only — a verified number that is
+   * not the primary one would have read as an unproven claim. A profile screen showing that
+   * would tell a customer their confirmed number is unconfirmed.
+   *
+   * ⚠️ **`verified_by_user_id` is reduced to a boolean here and the id never leaves this
+   * method.** The projection is what enforces that, not a mapping the caller could bypass: a
+   * customer asking about their own number has no business receiving a member of staff's user
+   * UUID. `/admin/users` carries the id, on its own wire, for a reader who may see it.
    */
   async listPhones(userId: string): Promise<readonly PhoneWire[]> {
-    return this.db
-      .select({ number: userPhones.number, isPrimary: userPhones.isPrimary })
+    const rows = await this.db
+      .select({
+        number: userPhones.number,
+        isPrimary: userPhones.isPrimary,
+        verifiedAt: userPhones.verifiedAt,
+        verifiedByUserId: userPhones.verifiedByUserId,
+      })
       .from(userPhones)
       .where(eq(userPhones.userId, userId))
       .orderBy(desc(userPhones.isPrimary), asc(userPhones.createdAt));
+
+    return rows.map((row) => ({
+      number: row.number,
+      isPrimary: row.isPrimary,
+      verifiedAt: row.verifiedAt?.toISOString() ?? null,
+      /*
+       * `user_phones_voucher_needs_a_verification` already refuses a voucher on an unverified
+       * row, so this cannot be true while `verifiedAt` is null — the CHECK is what makes the
+       * pair coherent rather than a conjunction written here.
+       */
+      verifiedByStaff: row.verifiedByUserId !== null,
+    }));
   }
 
   async listProviders(userId: string): Promise<readonly LinkedProviderWire[]> {
