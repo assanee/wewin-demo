@@ -12,7 +12,6 @@ import {
   fromLabelTh,
   gapLabelTh,
   gateNoteTh,
-  groupByTransaction,
   hiddenCount,
   markerFor,
   payloadLines,
@@ -33,7 +32,7 @@ import {
  * ── ⚠️ What this component may and may not do ────────────────────────────────
  *
  * It may lay things out. It decides nothing: the elapsed-time label, the payload reading, the
- * marker shape, the transaction grouping and the fold arithmetic are all in `order-timeline.ts`
+ * marker shape and the fold arithmetic are all in `order-timeline.ts`
  * with no React in them, because `apps/dashboard`'s vitest is `environment: 'node'` and a
  * `.test.tsx` is silently never collected — logic in a `.tsx` here is logic that cannot be
  * proved. Read that file's header for the line between *the reading* (an interpretation, free to
@@ -131,15 +130,8 @@ export function OrderTimeline({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  /*
-   * Grouped before folding, because the fold is about how many *moments* are on screen. Today
-   * every group holds exactly one event — no API path writes two events to one order in one
-   * transaction, which `groupByTransaction` documents and checks — so this is currently a
-   * one-to-one relabelling of the list.
-   */
-  const groups = groupByTransaction(events);
-  const hidden = expanded ? 0 : hiddenCount(groups.length);
-  const shown = groups.slice(hidden);
+  const hidden = expanded ? 0 : hiddenCount(events.length);
+  const shown = events.slice(hidden);
 
   return (
     <Card>
@@ -170,22 +162,24 @@ export function OrderTimeline({
         )}
 
         <ol>
-          {shown.map((group, index) => {
+          {shown.map((event, index) => {
             /*
-             * The gap is measured against the moment before this one **in the whole spine**, not
-             * in the visible slice — otherwise folding the older events would invent a first row
-             * with no elapsed time and quietly change what the rail says about the same order.
-             * It is only *rendered* from the second visible row down, because there is nothing
-             * above the first one to measure a gap against on screen.
+             * ⚠️ No label above the first visible row — a gap sits *between* two rows on screen,
+             * and above the first one there is nothing to sit between. When rows are folded away, a
+             * label there would attribute the hidden wait to a boundary the reader cannot see
+             * either side of.
+             *
+             * ⚠️ Indexed into `events` rather than `shown` **and the two are equivalent today**,
+             * because the `index === 0` guard is exactly what makes them so — `events[hidden + 0 - 1]`
+             * is the only subscript where they differ, and it is never read. Written in the `events`
+             * form deliberately: it is the one that stays correct if that guard is ever relaxed to
+             * show the wait that straddles the fold, which is a defensible thing to want.
              */
-            const previous = groups[hidden + index - 1];
+            const previous = events[hidden + index - 1];
             const gap =
               previous === undefined || index === 0
                 ? null
-                : gapLabelTh(
-                    previous.events[previous.events.length - 1]?.createdAt ?? '',
-                    group.events[0]?.createdAt ?? '',
-                  );
+                : gapLabelTh(previous.createdAt, event.createdAt);
 
             const last = index === shown.length - 1;
             /* The rail stops at the terminus when there is one, and at the final event when the
@@ -193,7 +187,7 @@ export function OrderTimeline({
             const capped = last && availableTransitions.length === 0;
 
             return (
-              <li key={group.events[0]?.id ?? index}>
+              <li key={event.id}>
                 {gap !== null && (
                   <div className={`${ROW} py-1`}>
                     <span className={RAIL_GAP} aria-hidden />
@@ -214,13 +208,13 @@ export function OrderTimeline({
                   />
                   <span className={MARKER_CELL}>
                     <span
-                      className={markerFor(group.events[0]?.eventType ?? '') === 'gate' ? MARKER_GATE : MARKER_STEP}
+                      className={markerFor(event.eventType) === 'gate' ? MARKER_GATE : MARKER_STEP}
                       aria-hidden
                     />
                   </span>
 
                   <div className="col-start-2 min-w-0 pb-4">
-                    <Moment group={group} />
+                    <Moment event={event} />
                   </div>
                 </div>
               </li>
@@ -283,20 +277,14 @@ export function OrderTimeline({
 }
 
 /**
- * One moment on the rail: **the reading**, with the record folded behind a disclosure.
+ * One event on the rail: **the reading**, with the record folded behind a disclosure.
  *
- * A moment is a transaction rather than a row — see `groupByTransaction`. When it holds more than
- * one event the heading is the newest of them and the rest are listed as its parts, because they
- * were one act and numbering them as separate steps a person took would be false.
+ * One event, one row — see the "One event per row" block in `order-timeline.ts` for the finding
+ * that removed the transaction grouping this used to render.
  */
-function Moment({ group }: { readonly group: { readonly events: readonly OrderEvent[] } }) {
-  const events = group.events;
-  const head = events[events.length - 1];
-  if (head === undefined) return null;
-
-  const from = fromLabelTh(head.fromStatus);
-  const note = gateNoteTh(head.eventType);
-  const lines = events.flatMap((event) => payloadLines(event.payload));
+function Moment({ event }: { readonly event: OrderEvent }) {
+  const from = fromLabelTh(event.fromStatus);
+  const note = gateNoteTh(event.eventType);
 
   return (
     <>
@@ -310,41 +298,33 @@ function Moment({ group }: { readonly group: { readonly events: readonly OrderEv
            * exactly the rows a person is most likely to be hunting for. `eventLabelTh` covers
            * both cases: for a move it names the act, and the destination follows it.
            */}
-          {head.toStatus === null ? eventLabelTh(head.eventType) : statusLabel(head.toStatus)}
+          {event.toStatus === null ? eventLabelTh(event.eventType) : statusLabel(event.toStatus)}
           {note !== null && <span className="text-muted-foreground font-normal"> · {note}</span>}
         </span>
-        <span className="text-muted-foreground text-xs">{at(head.createdAt)}</span>
+        <span className="text-muted-foreground text-xs">{at(event.createdAt)}</span>
       </div>
 
       <div className="text-muted-foreground flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
         <span>
-          {eventLabelTh(head.eventType)}
+          {eventLabelTh(event.eventType)}
           {from !== null && ` · จาก ${from}`}
-          {` · ${actorLabelTh(head.actorKind)}`}
+          {` · ${actorLabelTh(event.actorKind)}`}
         </span>
         {/*
          * `seq` kept and demoted. This is an append-only audit trail and citability is the whole
          * of its value, so the number stays — but small, monospace and muted, because the fact a
-         * reader scanning the rail wants is the time. A range when the moment holds several rows.
+         * reader scanning the rail wants is the time.
          */}
-        <span className="font-mono tabular-nums">
-          {events.length > 1 ? `${events[0]?.seq}–${head.seq}` : head.seq}
-        </span>
+        <span className="font-mono tabular-nums">{event.seq}</span>
       </div>
 
-      {events.length > 1 && (
-        <p className="text-muted-foreground mt-1 text-xs">
-          {events.length} เหตุการณ์ในทรานแซกชันเดียว — เกิดขึ้นพร้อมกันทั้งหมด
-        </p>
-      )}
-
-      <Record events={events} lines={lines} />
+      <Record event={event} lines={payloadLines(event.payload)} />
     </>
   );
 }
 
 /**
- * **The record**, opened on demand: everything `order_events` stored about this moment.
+ * **The record**, opened on demand: everything `order_events` stored about this row.
  *
  * ⚠️ A native `<details>`/`<summary>`, deliberately. It is focusable, it toggles on Enter *and*
  * Space, it exposes its expanded state to a screen reader, and it needs no JavaScript — four
@@ -365,10 +345,10 @@ function Moment({ group }: { readonly group: { readonly events: readonly OrderEv
  * has no label for still appears in both halves, marked — `payloadLines` exists to guarantee it.
  */
 function Record({
-  events,
+  event,
   lines,
 }: {
-  readonly events: readonly OrderEvent[];
+  readonly event: OrderEvent;
   readonly lines: readonly {
     readonly key: string;
     readonly labelTh: string;
@@ -421,48 +401,49 @@ function Record({
         <div className="border-border/60 rounded border border-dashed p-2">
           <p className="text-muted-foreground mb-1.5 text-xs">ข้อมูลที่บันทึกไว้</p>
           <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 font-mono text-xs">
-            {events.map((event) => (
-              <div key={event.id} className="col-span-2 grid grid-cols-subgrid gap-y-1">
-                <dt className="text-muted-foreground">seq</dt>
-                <dd className="tabular-nums">{event.seq}</dd>
+            <dt className="text-muted-foreground">seq</dt>
+            <dd className="tabular-nums">{event.seq}</dd>
 
-                <dt className="text-muted-foreground">event_type</dt>
-                <dd className="break-all">{event.eventType}</dd>
+            <dt className="text-muted-foreground">event_type</dt>
+            <dd className="break-all">{event.eventType}</dd>
 
-                <dt className="text-muted-foreground">status</dt>
-                <dd className="break-all">
-                  {event.fromStatus ?? '—'} → {event.toStatus ?? '—'}
-                </dd>
+            <dt className="text-muted-foreground">status</dt>
+            <dd className="break-all">
+              {event.fromStatus ?? '—'} → {event.toStatus ?? '—'}
+            </dd>
 
-                <dt className="text-muted-foreground">actor</dt>
-                <dd className="break-all">
-                  {event.actorKind}
-                  {event.actorUserId !== null && ` · ${event.actorUserId}`}
-                </dd>
+            <dt className="text-muted-foreground">actor</dt>
+            <dd className="break-all">
+              {event.actorKind}
+              {event.actorUserId !== null && ` · ${event.actorUserId}`}
+            </dd>
 
-                {/*
-                 * ⚠️ `null` here is not a missing value, it is the audience gate: `encodeEvent`
-                 * withholds the txid from a customer. This screen holds `orders.read`, so seeing
-                 * a dash would itself be worth reporting.
-                 */}
-                <dt className="text-muted-foreground">write_txid</dt>
-                <dd className="break-all">{event.writeTxid ?? '—'}</dd>
+            {/*
+             * ⚠️ `null` here is not a missing value, it is the audience gate: `encodeEvent`
+             * withholds the txid from a customer. This screen holds `orders.read`, so seeing a dash
+             * would itself be worth reporting.
+             *
+             * It is also the field whose grouping was removed and which stays anyway: it is the
+             * only column that says which transaction wrote this row, and that is what an audit
+             * layer wants to cite. `redteam5-lifecycle` A9 pins both halves — staff see it, the
+             * customer gets null, and every txid on a spine is distinct.
+             */}
+            <dt className="text-muted-foreground">write_txid</dt>
+            <dd className="break-all">{event.writeTxid ?? '—'}</dd>
 
-                <dt className="text-muted-foreground">created_at</dt>
-                <dd className="break-all">{event.createdAt}</dd>
+            <dt className="text-muted-foreground">created_at</dt>
+            <dd className="break-all">{event.createdAt}</dd>
 
-                <dt className="text-muted-foreground">payload</dt>
-                <dd className="break-all">
-                  {Object.keys(event.payload).length === 0
-                    ? '{}'
-                    : Object.entries(event.payload).map(([key, value]) => (
-                        <span key={key} className="block">
-                          {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
-                        </span>
-                      ))}
-                </dd>
-              </div>
-            ))}
+            <dt className="text-muted-foreground">payload</dt>
+            <dd className="break-all">
+              {Object.keys(event.payload).length === 0
+                ? '{}'
+                : Object.entries(event.payload).map(([key, value]) => (
+                    <span key={key} className="block">
+                      {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
+                    </span>
+                  ))}
+            </dd>
           </dl>
         </div>
       </div>

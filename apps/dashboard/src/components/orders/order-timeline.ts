@@ -35,7 +35,7 @@ import { statusLabel, type OrderStatus } from './order-language';
  *
  * ── What is decided here ─────────────────────────────────────────────────────
  *
- * Four decisions, none of them about layout, all of them previously either absent or done in
+ * Three decisions, none of them about layout, all of them previously either absent or done in
  * the reader's head:
  *
  *   1. **The gap.** How long the order sat between two events. Two adjacent rows of the old
@@ -45,12 +45,15 @@ import { statusLabel, type OrderStatus } from './order-language';
  *      staff member clicking through three steps in one sitting). A screen that prints both
  *      pairs the same way has hidden the only fact that distinguishes them.
  *   2. **The payload, as sentences.** `{"slip_amount_thb_minor":"860152"}` in a `<pre>` is the
- *      system talking to itself: satang, and a reader who divides by 100 by hand.
- *   3. **What was atomic.** `write_txid` is the only column that answers it; see
- *      `groupByTransaction`, and read its warning before believing the grouping does anything
- *      today.
- *   4. **How much of a long spine to show at once**, so the transition buttons at the end of
+ *      system talking to itself: satang, and a reader who divides by 100 by hand. Read
+ *      `SATANG_READERS` before adding a key — deciding a payload number is money is done in
+ *      exactly one place on purpose.
+ *   3. **How much of a long spine to show at once**, so the transition buttons at the end of
  *      the rail are not thirty rows below the fold.
+ *
+ * A fourth — folding rows written by one transaction into one moment — was built and then removed.
+ * See the block headed "One event per row" for the finding that settled it; `write_txid` itself
+ * stays.
  *
  * No React here, for the reason every `*-fields.ts` in `components/organisation` gives:
  * `apps/dashboard`'s vitest is `environment: 'node'` with no jsdom and no `.test.tsx`
@@ -212,69 +215,43 @@ export function hiddenCount(total: number): number {
 }
 
 /* ------------------------------------------------------------------ *
- * What was atomic
- * ------------------------------------------------------------------ */
-
-export interface TransactionGroup<T> {
-  /** `null` when the server withheld it — see below, this never groups. */
-  readonly writeTxid: string | null;
-  readonly events: readonly T[];
-}
-
-/**
- * Fold **adjacent** events that share a `write_txid` into one moment.
+ * ⚠️ One event per row, and why there is no grouping here
+ * ------------------------------------------------------------------ *
  *
- * Two rows written by one transaction are one act, and presenting them as two steps a person
- * took is untrue. Nothing else on the row can tell: `created_at` defaults to `now()`, which in
- * Postgres is the *transaction's start*, so rows written together carry an identical instant —
- * and the screen's `timeStyle: 'short'` drops seconds, so rows written 22 seconds apart in
- * separate transactions also print the same minute. Neither the clock nor its rendering can
- * distinguish the two cases. This can.
+ * There was a `groupByTransaction` in this file that folded adjacent events sharing a
+ * `write_txid` into one "moment", on the reasoning that two rows written by one transaction are
+ * one act and showing them as two steps a person took is untrue. **It was removed because nothing
+ * produces the state it handled** — not because wanting it was wrong.
  *
- * ⚠️ **ADJACENCY IS PART OF THE RULE, not an optimisation.** Grouping by txid through a `Map`
- * would let two non-neighbouring rows collapse together and silently reorder an append-only
- * spine. `seq` is the ordering authority; this function may merge neighbours and may never move
- * anything.
+ * The finding, so the next person to reach for it does not repeat the investigation:
  *
- * ⚠️ **`null` never groups with anything, including another `null`.** `encodeEvent` sends
- * `writeTxid: null` to a customer audience, so on a customer's spine *every* row is null — and a
- * rule that folded equal values would collapse an entire order's history into a single moment
- * claiming it was one transaction. `null` is "the server did not say", which is the opposite of
- * "the same as its neighbour".
+ *   **Every writer appends exactly one event per order per transaction.** There are two inserts
+ *   into `order_events` (`order.repository.ts`'s `createDraft` and `appendEvent`) and five
+ *   callers — `orders.service.ts` at `record()`, submit, `change_requested`, `change_resolved`,
+ *   and `slips.service.ts`'s acceptance. `record()` is one `appendEvent` plus one `moveStatus`,
+ *   and each HTTP transition runs in its own transaction.
  *
- * ⚠️⚠️ **NO API PATH PRODUCES A GROUP LARGER THAN ONE TODAY, and this was checked rather than
- * assumed.** There are two inserts into `order_events` (`order.repository.ts` `createDraft` and
- * `appendEvent`) and five callers, and every one of them writes exactly one event per order per
- * transaction: `record()` is one `appendEvent` plus one `moveStatus`, and each HTTP transition is
- * its own transaction. The one request that writes two events — `supersede` — writes `created`
- * to the **successor** order and `superseded` to the **predecessor**, so they share a txid across
- * two different `order_id`s and this function, which only ever sees one order's spine, correctly
- * groups neither.
+ *   **The one request that writes two events puts them on two different orders.** `supersede`
+ *   writes `created` to the *successor* and `superseded` to the *predecessor*. They do share a
+ *   txid — but `GET /orders/:id/events` returns one order's spine, so the two never appear in the
+ *   same list and there is nothing to group.
  *
- * It is built anyway, because the grouping is what makes the `writeTxid` field mean something the
- * moment a batch path exists, and because a rail that would present a future atomic write as
- * three separate human steps is a wrong screen waiting for a backend change. The multi-event
- * branch is proved by `renderToStaticMarkup` in the tests rather than by a browser, since no
- * fixture in the dev database can reach it.
+ * `redteam5-lifecycle`'s A9 asserts the consequence directly: every txid on a spine is distinct.
+ * That assertion is the tripwire — if a batching path is ever added, it fails, and this comment is
+ * what to read next.
+ *
+ * ⚠️ **The observation that originally motivated the grouping was a formatting artefact, and it is
+ * worth naming so it is not re-derived.** WW-1045's seq 4 and 5 both display `21:56`, which looked
+ * like two rows written in one transaction stamped with `now()` — the transaction's start time.
+ * They are 22 seconds apart (`14:56:23.302Z` and `14:56:45.087Z`) with txids `3034438` and
+ * `3034439`. They print alike because `at()` uses `timeStyle: 'short'`, which drops seconds.
+ * `created_at DEFAULT now()` *is* transaction-start time; that is simply not what those two rows
+ * were showing.
+ *
+ * `writeTxid` stays on the wire and in the record layer. It stopped being grouping input and is
+ * what it always was on its own terms: which transaction wrote this row, which is exactly the fact
+ * an audit layer wants to be able to cite.
  */
-export function groupByTransaction<T extends { readonly writeTxid: string | null }>(
-  events: readonly T[],
-): readonly TransactionGroup<T>[] {
-  const groups: { writeTxid: string | null; events: T[] }[] = [];
-
-  for (const event of events) {
-    const open = groups.at(-1);
-
-    if (open !== undefined && event.writeTxid !== null && open.writeTxid === event.writeTxid) {
-      open.events.push(event);
-      continue;
-    }
-
-    groups.push({ writeTxid: event.writeTxid, events: [event] });
-  }
-
-  return groups;
-}
 
 /* ------------------------------------------------------------------ *
  * The transition, as a sentence
@@ -375,18 +352,46 @@ const PAYLOAD_LABEL_TH: Readonly<Record<(typeof PAYLOAD_ORDER)[number], string>>
 };
 
 /**
- * ⚠️ Payload money is a **bare digit string**, not the `{unit,digits}` envelope.
+ * ⚠️⚠️⭐ THE ONE PLACE THAT DECIDES A PAYLOAD NUMBER IS MONEY, AND WHICH MONEY.
  *
- * Every other amount on this API is a `MoneyWire` and `order-api.ts` checks its `unit` tag
- * before believing it, precisely because a rate rendered as a total is a number nobody catches
- * by looking. Event payloads predate that convention and bypass it: `slip_amount_thb_minor` is
- * `bigint.toString()`, and its unit is carried only by the `_thb_minor` in its name. So the
- * suffix is the contract, and reading one of these as anything but satang is the mistake to
- * avoid — `"860152"` is ฿8,601.52 and not ฿860,152.
+ * Payload money is a **bare digit string**, not the `{unit,digits}` envelope. Every other amount
+ * on this API is a `MoneyWire` whose `unit` tag `order-api.ts` checks before believing it,
+ * precisely because a rate rendered as a total is a number nobody catches by looking. Event
+ * payloads predate that convention and bypass it: `slip_amount_thb_minor` is `bigint.toString()`,
+ * and its unit is carried **only by the `_thb_minor` in its name**.
  *
- * `null` on anything unparseable rather than a throw or a guess: a formatter that threw would
- * blank the whole card over one odd row, and the caller's fallback prints the raw value with the
- * key beside it, which is strictly more information than a wrong amount.
+ * So the key name is the entire contract, and reading one wrong is a hundredfold error. This
+ * repository has already shipped one of exactly that family: `money()` dividing by a hardcoded
+ * `100n`, which was right for THB and wrong for VND and LAK. That bug was possible because the
+ * "this is satang" inference sat at each call site instead of in one table.
+ *
+ * Hence this table, and two guarantees from it:
+ *
+ *   1. **The currency is checked by the compiler.** The `satisfies` clause types every key as
+ *      `` `${string}_thb_minor` ``, so a key that does not say `_thb_minor` — a hypothetical
+ *      `refund_amount_vnd_minor`, or a plain `amount` — **cannot be added to this table**. Verified
+ *      by mutation: adding one is `TS2353`, not a code-review conversation. `baht()` is a THB-only
+ *      formatter and this is what keeps it pointed only at THB.
+ *   2. **Anything not in the table refuses.** There is deliberately no suffix-matching fallback:
+ *      a key that merely *looks* like money is not read as money. It falls through to
+ *      `payloadLines`' unknown branch, which prints the raw digits with the key beside them and
+ *      marks it — strictly more information than a confidently wrong amount, and it makes a new
+ *      money key from a newer API a visible "add me here" rather than a silent misreading.
+ *
+ * `absorbed_delta_thb_minor` gets `signedBaht` because its sign is the point — it is what the
+ * company gave away — and `signedBaht` prints `฿0` rather than `+฿0` for the commonest answer.
+ */
+const SATANG_READERS = {
+  slip_amount_thb_minor: baht,
+  absorbed_delta_thb_minor: signedBaht,
+} as const satisfies Readonly<Record<`${string}_thb_minor`, (minor: bigint) => string>>;
+
+/**
+ * Satang off the wire, or `null` when the text is not an integer.
+ *
+ * `null` rather than a throw or a coercion: a formatter that threw would blank the whole card over
+ * one odd row, and `Number()`-style coercion would turn `"8,601.52"` or `"1e3"` into a plausible
+ * wrong number. The caller's fallback prints the raw value with its key, which is honest.
  */
 const readSatang = (value: unknown): bigint | null => {
   if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return null;
@@ -427,17 +432,11 @@ function readValue(key: (typeof PAYLOAD_ORDER)[number], value: unknown): string 
     case 'note_th':
       return typeof value === 'string' && value.trim() !== '' ? value : null;
 
-    case 'slip_amount_thb_minor': {
-      const minor = readSatang(value);
-      return minor === null ? null : baht(minor);
-    }
-
+    /* Both money keys go through `SATANG_READERS` and nothing else may. See its header. */
+    case 'slip_amount_thb_minor':
     case 'absorbed_delta_thb_minor': {
-      /* Signed, and the sign is the point: this is what the company gave away, and `0` is the
-       * commonest and most reassuring answer. `signedBaht` prints `฿0` for zero rather than
-       * `+฿0`, which is the reading somebody wants. */
       const minor = readSatang(value);
-      return minor === null ? null : signedBaht(minor);
+      return minor === null ? null : SATANG_READERS[key](minor);
     }
 
     case 'fault':

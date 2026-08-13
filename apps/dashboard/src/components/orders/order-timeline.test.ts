@@ -13,7 +13,6 @@ import {
   fromLabelTh,
   gapLabelTh,
   gateNoteTh,
-  groupByTransaction,
   hiddenCount,
   markerFor,
   payloadLines,
@@ -29,12 +28,9 @@ import {
  * `authority-limits.test.ts` reaches its panel: `renderToStaticMarkup`, which is enough because
  * `OrderTimeline` takes everything it renders as a prop.
  *
- * ⚠️ Two of the assertions below cover branches **no fixture in the dev database can reach**, and
- * they are the reason the component is tested at all rather than left to the screenshots:
- *
- *   - a moment holding more than one event. No API path writes two events to one order in one
- *     transaction (see `groupByTransaction`), so the grouped rendering has no producer yet.
- *   - a payload key this build has no label for. By definition it arrives from a *newer* API.
+ * ⚠️ One of the assertions below covers a branch **no fixture in the dev database can reach** — a
+ * payload key this build has no label for, which by definition arrives from a *newer* API. That is
+ * the reason the component is rendered here at all rather than left to the screenshots.
  *
  * Everything a screenshot can show is left to the screenshots.
  */
@@ -194,68 +190,6 @@ describe('⭐ how much of a long spine is shown at once', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * What was atomic
- * ------------------------------------------------------------------ */
-
-describe('grouping by the transaction that wrote the rows', () => {
-  it('leaves the real dev spine as five separate moments', () => {
-    /* WW-1045's txids, verbatim: five transactions, five moments. Nothing groups today. */
-    const spine = ['2981065', '2981066', '3034437', '3034438', '3034439'].map((txid, index) =>
-      event({ id: `e${index}`, seq: index + 1, writeTxid: txid }),
-    );
-
-    expect(groupByTransaction(spine)).toHaveLength(5);
-  });
-
-  it('folds adjacent rows that share a txid into one moment', () => {
-    const groups = groupByTransaction([
-      event({ id: 'a', seq: 1, writeTxid: '100' }),
-      event({ id: 'b', seq: 2, writeTxid: '200' }),
-      event({ id: 'c', seq: 3, writeTxid: '200' }),
-      event({ id: 'd', seq: 4, writeTxid: '300' }),
-    ]);
-
-    expect(groups.map((group) => group.events.length)).toStrictEqual([1, 2, 1]);
-    expect(groups[1]?.writeTxid).toBe('200');
-  });
-
-  it('⚠️ never reaches past a neighbour, so the spine cannot be reordered', () => {
-    /*
-     * A `Map` keyed on txid would return two groups here and move seq 3 above seq 2. `seq` is
-     * the ordering authority of an append-only trail; this function may merge neighbours and may
-     * never move anything.
-     */
-    const groups = groupByTransaction([
-      event({ id: 'a', seq: 1, writeTxid: '100' }),
-      event({ id: 'b', seq: 2, writeTxid: '200' }),
-      event({ id: 'c', seq: 3, writeTxid: '100' }),
-    ]);
-
-    expect(groups).toHaveLength(3);
-    expect(groups.flatMap((group) => group.events.map((e) => e.seq))).toStrictEqual([1, 2, 3]);
-  });
-
-  it('⚠️⚠️ never groups nulls — a customer audience gets null on every row', () => {
-    /*
-     * `encodeEvent` withholds the txid from a customer, so on their spine every row is `null`. A
-     * rule that folded equal values would collapse an entire order's history into one moment
-     * claiming it was a single transaction. `null` means "the server did not say".
-     */
-    const groups = groupByTransaction([
-      event({ id: 'a', seq: 1, writeTxid: null }),
-      event({ id: 'b', seq: 2, writeTxid: null }),
-      event({ id: 'c', seq: 3, writeTxid: null }),
-    ]);
-
-    expect(groups).toHaveLength(3);
-  });
-
-  it('handles an empty spine', () => {
-    expect(groupByTransaction([])).toStrictEqual([]);
-  });
-});
-
-/* ------------------------------------------------------------------ *
  * ⭐ The payload, as Thai
  * ------------------------------------------------------------------ */
 
@@ -292,6 +226,53 @@ describe('⭐ a payload read as Thai sentences', () => {
     expect(payloadLines({ absorbed_delta_thb_minor: '0' })[0]?.valueText).toBe('฿0');
     expect(payloadLines({ absorbed_delta_thb_minor: '-123456' })[0]?.valueText).toBe('-฿1,234.56');
     expect(payloadLines({ absorbed_delta_thb_minor: '50000' })[0]?.valueText).toBe('+฿500');
+  });
+
+  it('⚠️⚠️ refuses to read a key that merely looks like money', () => {
+    /*
+     * THE `money()`-BY-`100n` FAMILY, HELD SHUT. That bug divided by a hardcoded hundred — right
+     * for THB, wrong for VND and LAK — and it was possible because "this is satang" was inferred
+     * at each call site instead of stated once.
+     *
+     * `SATANG_READERS` is now the only place that decides a payload number is money, and there is
+     * deliberately **no suffix-matching fallback**. So a currency this formatter cannot render, and
+     * a new THB key nobody has added to the table yet, both come out as raw digits with the key
+     * beside them and `known: false` — which is a visible "add me" rather than a confident
+     * hundredfold error. `baht()` is never reached.
+     *
+     * The compiler holds the other half: `SATANG_READERS` is `satisfies
+     * Readonly<Record<`${string}_thb_minor`, …>>`, so a non-THB key cannot be added to it at all.
+     */
+    for (const key of [
+      'refund_amount_vnd_minor',
+      'deposit_amount_lak_minor',
+      'amount',
+      'total_minor',
+      /* Even a well-formed THB key: recognised shape is not recognised meaning. */
+      'forfeited_amount_thb_minor',
+    ]) {
+      const line = payloadLines({ [key]: '860152' })[0];
+
+      expect(line?.key, `${key} was dropped`).toBe(key);
+      expect(line?.known, `${key} was read as money`).toBe(false);
+      expect(line?.valueText, `${key} went through a baht formatter`).toBe('860152');
+      expect(line?.valueText).not.toContain('฿');
+    }
+  });
+
+  it('⚠️ does not coerce a malformed amount into a plausible one', () => {
+    /*
+     * `Number('8,601.52')` and `Number('1e3')` both produce something; `readSatang` produces
+     * nothing. A wrong amount that looks right is the failure mode worth spending a branch on.
+     */
+    for (const text of ['8,601.52', '1e3', '860152.00', ' 860152', '', '0x10']) {
+      const line = payloadLines({ slip_amount_thb_minor: text })[0];
+      expect(line?.known, `"${text}" was read as an amount`).toBe(false);
+      expect(line?.valueText).toBe(text);
+    }
+
+    /* A JSON number where the wire promises a string is also not an amount. */
+    expect(payloadLines({ slip_amount_thb_minor: 860152 })[0]?.known).toBe(false);
   });
 
   it('reads the two enums in the words this screen already uses elsewhere', () => {
@@ -430,40 +411,18 @@ const render = (
     }),
   );
 
+/**
+ * The gap labels on the rail, in order.
+ *
+ * ⚠️ Extracted rather than substring-matched. `expect(markup).not.toContain('3 ชม.')` passes or
+ * fails on whether `'13 ชม.'` happens to be elsewhere on the rail, which made an earlier version of
+ * the fold test fail against output that was correct. `col-start-2 text-xs` is the gap label's own
+ * class pair and nothing else in the card carries it.
+ */
+const gapLabels = (markup: string): readonly string[] =>
+  [...markup.matchAll(/col-start-2 text-xs">([^<]*)</g)].map((match) => match[1] ?? '');
+
 describe('the card', () => {
-  it('⚠️ presents one transaction that wrote several rows as one moment, not three steps', () => {
-    /*
-     * No API path can produce this today — every caller writes one event per order per
-     * transaction — so this branch has no fixture in the dev database and no screenshot. It is
-     * here because the rail would otherwise be a wrong screen waiting for a backend change.
-     */
-    const markup = render([
-      event({ id: 'a', seq: 1, writeTxid: '900', toStatus: 'draft' }),
-      event({
-        id: 'b',
-        seq: 2,
-        writeTxid: '901',
-        eventType: 'submitted_for_payment',
-        fromStatus: 'draft',
-        toStatus: 'awaiting_payment',
-      }),
-      event({
-        id: 'c',
-        seq: 3,
-        writeTxid: '901',
-        eventType: 'payment_confirmed',
-        fromStatus: 'awaiting_payment',
-        toStatus: 'production_confirmed',
-      }),
-    ]);
-
-    /* One heading for the pair, `seq` shown as the range it covers, and the fact said out loud. */
-    expect(markup).toContain('2–3');
-    expect(markup).toContain('2 เหตุการณ์ในทรานแซกชันเดียว');
-    /* The newest of the pair leads: `production_confirmed`, not `awaiting_payment`. */
-    expect(markup).toContain('ยืนยันผลิตแล้ว');
-  });
-
   it('⚠️ renders an unknown payload key with its visible fallback', () => {
     const markup = render([event({ payload: { warranty_years: 5 } })]);
 
@@ -471,7 +430,7 @@ describe('the card', () => {
     expect(markup).toContain('แดชบอร์ดรุ่นนี้ยังไม่รู้จักค่านี้');
   });
 
-  it('offers the fold at eight moments and not at seven', () => {
+  it('offers the fold at eight events and not at seven', () => {
     const spine = (count: number) =>
       Array.from({ length: count }, (_, index) =>
         event({ id: `e${index}`, seq: index + 1, writeTxid: `${1000 + index}` }),
@@ -479,6 +438,47 @@ describe('the card', () => {
 
     expect(render(spine(7))).not.toContain('รายการก่อนหน้า');
     expect(render(spine(8))).toContain('ดูอีก 3 รายการก่อนหน้า');
+  });
+
+  it('⚠️ prints no gap above the first visible row, and every gap below it', () => {
+    /*
+     * A gap label sits *between* two rows on screen. Above the first visible row there is nothing
+     * to sit between, so a label there would be timing the fold rather than the order — and with
+     * three rows hidden it would attribute the seq 3 → 4 wait to a boundary the reader cannot see
+     * either side of.
+     *
+     * Gaps in hours: 1→2 = 4, 2→3 = 6, 3→4 = 5, 4→5 = 7, 5→6 = 11, 6→7 = 19, 7→8 = 23. Chosen so
+     * that no label is a substring of another — `'3 ชม.'` inside `'13 ชม.'` made an earlier version
+     * of this test fail against correct output, which is why it now compares the extracted list
+     * exactly rather than asking `toContain`.
+     */
+    const offsets = [0, 4, 10, 15, 22, 33, 52, 75];
+    const spine = offsets.map((hours, index) =>
+      event({
+        id: `e${index}`,
+        seq: index + 1,
+        writeTxid: `${1000 + index}`,
+        createdAt: new Date(
+          Date.parse('2026-08-13T00:00:00.000Z') + hours * 3_600_000,
+        ).toISOString(),
+      }),
+    );
+
+    const folded = render(spine);
+    expect(folded).toContain('ดูอีก 3 รายการก่อนหน้า');
+
+    /* Exactly the four gaps between the five visible rows — seq 3 → 4's five hours is not one. */
+    expect(gapLabels(folded)).toStrictEqual(['7 ชม.', '11 ชม.', '19 ชม.', '23 ชม.']);
+
+    /* Expanded, every gap is on the rail, still one fewer than the rows. */
+    expect(gapLabels(render(spine.slice(0, 7)))).toStrictEqual([
+      '4 ชม.',
+      '6 ชม.',
+      '5 ชม.',
+      '7 ชม.',
+      '11 ชม.',
+      '19 ชม.',
+    ]);
   });
 
   it('⭐ puts the transition buttons on the rail, and says so when there are none', () => {
