@@ -49,10 +49,21 @@ export interface OverviewFocus {
  * refunds, reviews, notifications). `Array.prototype.sort` is required to be stable, so this
  * is a guarantee rather than an accident — and it matters, because five queues holding one
  * item each is a real state and shuffling it per render would be worse than any ordering.
+ *
+ * ⚠️ **`filter` before `sort`, and that ordering is what makes the sort safe** — not a spread.
+ *
+ * This was written as `[...queues].filter(…).sort(…)`, and a mutation test showed the spread was
+ * dead code: removing it changed nothing, because `filter` already returns a fresh array and
+ * `sort` therefore reorders *that* rather than the caller's. The spread was decoration implying
+ * a protection it was not providing, so it is gone.
+ *
+ * What would genuinely mutate is `queues.sort(…).filter(…)` — sorting first, in place, on the
+ * very array `overview-screen.tsx` renders its tiles from. `overview-focus.test.ts`'s
+ * "does not mutate" case was mutation-tested against exactly that shape and fails on it.
  */
 export function overviewFocus(queues: readonly CountedQueue[]): OverviewFocus {
   const waiting = queues.reduce((total, queue) => total + queue.count, 0);
-  const pressing = [...queues]
+  const pressing = queues
     .filter((queue) => queue.count > 0)
     .sort((left, right) => right.count - left.count);
 

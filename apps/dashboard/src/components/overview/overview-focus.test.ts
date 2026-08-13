@@ -70,7 +70,17 @@ describe('overviewFocus', () => {
   });
 
   it('does not mutate the list it was handed', () => {
-    /* `pressing` sorts, and sorting in place would reorder the tiles the screen renders. */
+    /*
+     * `pressing` sorts, and sorting in place would reorder the very array
+     * `overview-screen.tsx` renders its tiles from — the queue list and the summary line would
+     * disagree about the order of the working day.
+     *
+     * ⚠️ What protects this is that `filter` runs **before** `sort` and returns a fresh array.
+     * Mutation-tested: rewriting the chain as `queues.sort(…).filter(…)` fails this case, which
+     * is the check being load-bearing. The same test also proved an earlier `[...queues]` spread
+     * was dead code — removing it changed nothing — so the spread was deleted rather than left
+     * standing as a protection it did not provide.
+     */
     const queues = [q('สลิปรอตรวจ', 1), q('คำขอคืนเงิน', 9)];
     overviewFocus(queues);
 
