@@ -272,7 +272,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
       {/*
        * ⭐ One card, where there were two. See `order-spine.tsx`.
        *
-       * `เปลี่ยนสถานะ` and `สันประวัติ` were a box of buttons and a list of rows, always read
+       * `เปลี่ยนสถานะ` and `ลำดับเหตุการณ์` were a box of buttons and a list of rows, always read
        * together and presented apart. They are the same table — `availableTransitions` is the
        * rows of `order_status_transitions` that *could* be written and the spine is the ones that
        * *were* — so the buttons are now the terminus of the same rail.

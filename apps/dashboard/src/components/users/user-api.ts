@@ -236,7 +236,7 @@ export const listAuditTrail = (userId?: string): Promise<readonly AdminEvent[]> 
     `/admin/audit${userId === undefined ? '' : `?userId=${encodeURIComponent(userId)}`}`,
     (body) => {
       const events = (body as { readonly events?: unknown }).events;
-      if (!Array.isArray(events)) throw new TypeError('สันประวัติ: ไม่ใช่รายการ');
+      if (!Array.isArray(events)) throw new TypeError('บันทึกการจัดการ: ไม่ใช่รายการ');
 
       return events.map((raw) => {
         const event = raw as Record<string, unknown>;
@@ -245,7 +245,7 @@ export const listAuditTrail = (userId?: string): Promise<readonly AdminEvent[]> 
          * precisely because `db.execute` returns `int8` as a string; checking rather than
          * coercing is what keeps a regression there visible instead of repaired here.
          */
-        if (typeof event['seq'] !== 'number') throw new TypeError('สันประวัติ: seq ไม่ใช่ตัวเลข');
+        if (typeof event['seq'] !== 'number') throw new TypeError('บันทึกการจัดการ: seq ไม่ใช่ตัวเลข');
         return event as unknown as AdminEvent;
       });
     },

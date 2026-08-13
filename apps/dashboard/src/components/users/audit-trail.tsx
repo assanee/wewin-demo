@@ -94,7 +94,7 @@ export function AuditTrail() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <History className="size-4" />
-          สันประวัติการจัดการ
+          บันทึกการจัดการ
         </CardTitle>
         <CardDescription>
           ใครทำอะไรกับบัญชีและสิทธิ์ — บันทึกพร้อมการเปลี่ยนแปลงในทรานแซกชันเดียวกัน แก้และลบไม่ได้
@@ -107,7 +107,7 @@ export function AuditTrail() {
         {state.status === 'failed' && (
           <Alert variant="destructive">
             <AlertTriangle />
-            <AlertTitle>โหลดสันประวัติไม่สำเร็จ</AlertTitle>
+            <AlertTitle>โหลดบันทึกการจัดการไม่สำเร็จ</AlertTitle>
             <AlertDescription>{state.problem}</AlertDescription>
           </Alert>
         )}

@@ -23,7 +23,7 @@ import {
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * This card replaces two that a staff member always read together and the page presented apart:
- * `เปลี่ยนสถานะ`, a box of buttons, and `สันประวัติ`, a list of rows. They are the same table.
+ * `เปลี่ยนสถานะ`, a box of buttons, and `ลำดับเหตุการณ์`, a list of rows. They are the same table.
  * `availableTransitions` and the events both come from `order_status_transitions` — the history
  * is the rows that exist and the buttons are the rows that could — so the buttons are the
  * terminus of the rail rather than a separate box, and the old separation hid that they were one
@@ -136,7 +136,7 @@ export function OrderTimeline({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">สันประวัติและการเปลี่ยนสถานะ</CardTitle>
+        <CardTitle className="text-base">ลำดับเหตุการณ์และการเปลี่ยนสถานะ</CardTitle>
         <CardDescription>
           {/*
            * Both halves of the card in one sentence, because the point of merging them is that

@@ -89,7 +89,7 @@ describeWithPg('the administrative spine', () => {
 
       const response = await call('POST', `/admin/users/${subject.userId}/suspension`, {
         token: admin.token,
-        body: { reasonTh: 'ทดสอบสันประวัติการจัดการ' },
+        body: { reasonTh: 'ทดสอบบันทึกการจัดการ' },
       });
       expect(response.status, JSON.stringify(response.body)).toBe(204);
 

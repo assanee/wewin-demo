@@ -288,7 +288,7 @@ export const getOrder = (orderId: string): Promise<OrderDetail> =>
 
 export const listEvents = (orderId: string): Promise<readonly OrderEvent[]> =>
   apiJson(`/orders/${orderId}/events`, (body) =>
-    asArray(asRecord(body, 'สันประวัติ')['events'] ?? [], 'events').map(decodeEvent),
+    asArray(asRecord(body, 'ลำดับเหตุการณ์')['events'] ?? [], 'events').map(decodeEvent),
   );
 
 /**

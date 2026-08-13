@@ -192,7 +192,7 @@ const reason: TransitionField = {
   kind: 'text',
   labelTh: 'เหตุผล',
   required: true,
-  helpTh: 'บันทึกลงสันประวัติของออเดอร์ และลูกค้าอ่านได้',
+  helpTh: 'บันทึกลงลำดับเหตุการณ์ของออเดอร์ และลูกค้าอ่านได้',
 };
 
 const note: TransitionField = {

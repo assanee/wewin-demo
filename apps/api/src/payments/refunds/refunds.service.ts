@@ -168,7 +168,7 @@ export class RefundsService {
       const cancellation = await this.repository.cancellationOnSpine(tx, order.id);
       if (!cancellation) {
         throw AppError.conflict(
-          'ออร์เดอร์นี้ถูกยกเลิกโดยไม่มีเหตุการณ์การยกเลิกบนสันหลัง — คิดยอดริบไม่ได้',
+          'ออร์เดอร์นี้ถูกยกเลิกโดยไม่มีเหตุการณ์การยกเลิกบันทึกไว้ — คิดยอดริบไม่ได้',
           { reason: 'no_cancellation_event' },
         );
       }
