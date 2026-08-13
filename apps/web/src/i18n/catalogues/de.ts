@@ -422,6 +422,21 @@ export const de: PartialUiCatalogue = {
   'account.noQuotations': 'Noch keine Angebote',
   'account.tabs.label': 'Kontobereiche',
 
+  'account.profile.section': 'Ihre Daten',
+  'account.profile.name': 'Name',
+  'account.profile.nameUnset': 'Kein Name hinterlegt',
+  'account.profile.email': 'E-Mail',
+  'account.profile.noEmail': 'Keine bestätigte E-Mail-Adresse',
+  'account.profile.noPhone': 'Keine Telefonnummer',
+  'account.profile.verified': 'Bestätigt',
+  'account.profile.verifiedByStaff': 'Von unserem Team bestätigt',
+  'account.profile.unverified': 'Nicht bestätigt',
+  'account.profile.unverifiedNote':
+    'Unser Team bestätigt eine Nummer im Telefongespräch mit Ihnen — Sie müssen nichts tun.',
+  'account.profile.readOnly':
+    'Diese Seite zeigt, was bei uns gespeichert ist. Für Änderungen wenden Sie sich bitte an das Vertriebsteam.',
+  'account.profile.languageElsewhere': 'Ihre Sprache wird auf der Einstellungsseite festgelegt.',
+
   'submit.heading': 'Angebot anfordern',
   'submit.intro':
     'Nennen Sie uns einen Namen und einen Weg, Sie zu erreichen — wir erstellen das Angebot sofort. Preise und Angaben werden genau so festgeschrieben, wie sie in diesem Warenkorb stehen.',

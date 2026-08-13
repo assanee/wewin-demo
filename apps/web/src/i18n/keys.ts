@@ -357,14 +357,89 @@ export interface UiParamsByKey {
   'account.noQuotations': Plain;
   /**
    * The accessible name of the account page's tablist — announced before the tabs themselves,
-   * so a screen reader says "Account sections, tab list, My quotations, selected, 1 of 2".
+   * so a screen reader says "Account sections, tab list, My quotations, selected, 1 of 3".
    *
    * ⚠️ A key of its own rather than `aria-labelledby` pointing at the `h1`. "บัญชีของฉัน" names
    * the *page*; a tablist named after the page tells the listener nothing they were not just
    * told. The tab labels themselves reuse `account.myQuotations` and `account.password.section`
-   * — they were already written as the names of these sections.
+   * where a section title already existed — see `accountTabs.ts`.
+   *
+   * ⚠️ The "1 of 3" above was "1 of 2" and is a *comment*, so nothing would have failed when the
+   * profile tab landed. It is corrected here because a count in prose is the exact shape of the
+   * bug this catalogue has shipped before — a string that said "all four" over a three-item
+   * list. No **string** in this family counts anything, deliberately.
    */
   'account.tabs.label': Plain;
+
+  /* ── ข้อมูลผู้ใช้งาน: the customer's own profile, read-only ─────────────────────── */
+
+  /**
+   * The tab's label and the section's name — "ข้อมูลผู้ใช้งาน", the owner's own wording.
+   *
+   * A new key rather than a reuse, unlike the other two tabs. There was no existing section
+   * title for this because there was no section, and the near-misses are all wrong: `account.title`
+   * names the whole page and `account.username` is a form field asking for a way to sign in.
+   */
+  'account.profile.section': Plain;
+  /** The label beside the display name. `submit.name` is a form's prompt; this is a row heading. */
+  'account.profile.name': Plain;
+  /**
+   * Shown in place of the name when `displayName` is null — which, on this storefront, is
+   * **every account**: registration takes a telephone number and a password and never asks for
+   * a name. So this is the normal state and is worded as one, not as a defect.
+   */
+  'account.profile.nameUnset': Plain;
+  /** Heading for the email row. */
+  'account.profile.email': Plain;
+  /**
+   * Shown when the account has no *verified* address — again the normal state here.
+   *
+   * ⚠️ The wording has to carry "ที่ยืนยันแล้ว", because `GET /me/account` returns verified
+   * addresses only. A bare "ยังไม่มีอีเมล" would be false for somebody holding an unverified
+   * claim, and this is the screen where that person would read it.
+   */
+  'account.profile.noEmail': Plain;
+  /** Shown when the account has no telephone row at all. */
+  'account.profile.noPhone': Plain;
+  /**
+   * Beside a number an OTP proved. **Unreachable today** — this system has no OTP — and present
+   * so that the day one lands the screen does not credit a member of staff for it.
+   */
+  'account.profile.verified': Plain;
+  /**
+   * Beside a number a member of staff vouched for over the telephone, which is the only way a
+   * number becomes verified here. Says *who kind of* did it, per the schema's own request that
+   * a reader be able to tell a staff assertion from proven possession.
+   */
+  'account.profile.verifiedByStaff': Plain;
+  /** Beside an unproven claim — the state almost every self-registered number is in. */
+  'account.profile.unverified': Plain;
+  /**
+   * ⭐ Why an unverified number stays unverified, and it must not imply the customer can act.
+   *
+   * There is no self-service verification on this storefront: no SMS budget, no OTP route. A
+   * note saying "ยืนยันเบอร์ของคุณ" beside a button that does not exist would be worse than
+   * silence. So this says a member of staff does it, and does not ask the reader for anything.
+   */
+  'account.profile.unverifiedNote': Plain;
+  /**
+   * ⭐ That this tab only *shows*, and where a correction actually comes from.
+   *
+   * The API has no route that lets a customer rewrite their own name, address or number, so the
+   * tab is read-only — and a read-only screen that does not say so reads as a form whose save
+   * button is missing. Points at the sales team, which is the real path today.
+   */
+  'account.profile.readOnly': Plain;
+  /**
+   * ⭐ That the language preference is on the settings page, not here.
+   *
+   * `/[locale]/settings` already owns it — `SettingsScreen` reads and writes
+   * `GET/PUT /me/preferences` and applies the choice through the same cookie the header's
+   * picker uses. A second language control on this tab would be a second writer to one stored
+   * value, and the two would disagree the moment one of them was changed. So this tab names
+   * where it lives instead of duplicating it.
+   */
+  'account.profile.languageElsewhere': Plain;
 
   'submit.heading': Plain;
   'submit.intro': Plain;

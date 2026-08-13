@@ -353,6 +353,19 @@ export const zh: PartialUiCatalogue = {
   'account.noQuotations': '还没有报价单',
   'account.tabs.label': '账户分区',
 
+  'account.profile.section': '用户资料',
+  'account.profile.name': '姓名',
+  'account.profile.nameUnset': '未填写姓名',
+  'account.profile.email': '电子邮件',
+  'account.profile.noEmail': '尚无已验证的电子邮件地址',
+  'account.profile.noPhone': '尚无电话号码',
+  'account.profile.verified': '已验证',
+  'account.profile.verifiedByStaff': '已由我们的客服确认',
+  'account.profile.unverified': '未验证',
+  'account.profile.unverifiedNote': '我们的客服会在与您通话时确认号码 — 您无需操作。',
+  'account.profile.readOnly': '此页面仅显示我们记录的信息。如需修改，请联系销售团队。',
+  'account.profile.languageElsewhere': '语言在设置页面中设定。',
+
   'submit.heading': '索取报价单',
   'submit.intro':
     '留下称呼和一种联系方式，我们会立即出具报价单——价格与各项内容将完全按照此清单当前的状态固定下来。',

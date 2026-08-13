@@ -384,6 +384,21 @@ export const vi: PartialUiCatalogue = {
   'account.noQuotations': 'Chưa có báo giá nào',
   'account.tabs.label': 'Các mục tài khoản',
 
+  'account.profile.section': 'Thông tin người dùng',
+  'account.profile.name': 'Tên',
+  'account.profile.nameUnset': 'Chưa có tên',
+  'account.profile.email': 'Email',
+  'account.profile.noEmail': 'Chưa có địa chỉ email đã xác nhận',
+  'account.profile.noPhone': 'Chưa có số điện thoại',
+  'account.profile.verified': 'Đã xác nhận',
+  'account.profile.verifiedByStaff': 'Đã được nhân viên xác nhận',
+  'account.profile.unverified': 'Chưa xác nhận',
+  'account.profile.unverifiedNote':
+    'Nhân viên của chúng tôi sẽ xác nhận số khi trao đổi với bạn qua điện thoại — bạn không cần làm gì thêm.',
+  'account.profile.readOnly':
+    'Trang này chỉ hiển thị thông tin chúng tôi đang lưu. Để thay đổi, vui lòng liên hệ bộ phận bán hàng.',
+  'account.profile.languageElsewhere': 'Ngôn ngữ được đặt ở trang cài đặt.',
+
   'submit.heading': 'Yêu cầu báo giá',
   'submit.intro':
     'Cho chúng tôi biết tên và một cách liên hệ, chúng tôi sẽ phát hành báo giá ngay — giá và các chi tiết được chốt đúng như đang hiển thị trong danh sách này.',

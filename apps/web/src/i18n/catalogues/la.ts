@@ -375,6 +375,21 @@ export const la: PartialUiCatalogue = {
   'account.noQuotations': 'ຍັງບໍ່ມີໃບສະເໜີລາຄາ',
   'account.tabs.label': 'ພາກສ່ວນຂອງບັນຊີ',
 
+  'account.profile.section': 'ຂໍ້ມູນຜູ້ໃຊ້',
+  'account.profile.name': 'ຊື່',
+  'account.profile.nameUnset': 'ຍັງບໍ່ໄດ້ລະບຸຊື່',
+  'account.profile.email': 'ອີເມວ',
+  'account.profile.noEmail': 'ຍັງບໍ່ມີອີເມວທີ່ຢືນຢັນແລ້ວ',
+  'account.profile.noPhone': 'ຍັງບໍ່ມີເບີໂທ',
+  'account.profile.verified': 'ຢືນຢັນແລ້ວ',
+  'account.profile.verifiedByStaff': 'ພະນັກງານຢືນຢັນແລ້ວ',
+  'account.profile.unverified': 'ຍັງບໍ່ໄດ້ຢືນຢັນ',
+  'account.profile.unverifiedNote':
+    'ພະນັກງານຂອງພວກເຮົາຈະຢືນຢັນເບີໃຫ້ເມື່ອໄດ້ລົມກັນທາງໂທລະສັບ — ທ່ານບໍ່ຕ້ອງເຮັດຫຍັງເພີ່ມ.',
+  'account.profile.readOnly':
+    'ໜ້ານີ້ສະແດງພຽງຂໍ້ມູນທີ່ພວກເຮົາມີຢູ່. ຫາກຕ້ອງການແກ້ໄຂ ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
+  'account.profile.languageElsewhere': 'ຕັ້ງຄ່າພາສາໄດ້ທີ່ໜ້າຕັ້ງຄ່າ.',
+
   'submit.heading': 'ຂໍໃບສະເໜີລາຄາ',
   'submit.intro':
     'ບອກຊື່ ແລະ ຊ່ອງທາງຕິດຕໍ່ໜຶ່ງຢ່າງ ພວກເຮົາຈະອອກໃບສະເໜີລາຄາທັນທີ — ລາຄາ ແລະ ລາຍລະອຽດຈະຖືກຕຶງໄວ້ຕາມທີ່ປາກົດໃນລາຍການນີ້ທຸກປະການ.',

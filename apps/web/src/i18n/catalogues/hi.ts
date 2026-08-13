@@ -402,6 +402,21 @@ export const hi: PartialUiCatalogue = {
   'account.noQuotations': 'अभी कोई कोटेशन नहीं',
   'account.tabs.label': 'खाता अनुभाग',
 
+  'account.profile.section': 'आपकी जानकारी',
+  'account.profile.name': 'नाम',
+  'account.profile.nameUnset': 'कोई नाम दर्ज नहीं है',
+  'account.profile.email': 'ईमेल',
+  'account.profile.noEmail': 'कोई पुष्ट ईमेल पता नहीं है',
+  'account.profile.noPhone': 'कोई टेलीफ़ोन नंबर नहीं है',
+  'account.profile.verified': 'पुष्ट',
+  'account.profile.verifiedByStaff': 'हमारे स्टाफ़ द्वारा पुष्ट',
+  'account.profile.unverified': 'पुष्ट नहीं',
+  'account.profile.unverifiedNote':
+    'हमारा स्टाफ़ फ़ोन पर आपसे बात करते समय नंबर की पुष्टि कर देता है — आपको कुछ नहीं करना है।',
+  'account.profile.readOnly':
+    'यह पृष्ठ केवल हमारे रिकॉर्ड की जानकारी दिखाता है। इसमें बदलाव के लिए कृपया सेल्स टीम से संपर्क करें।',
+  'account.profile.languageElsewhere': 'आपकी भाषा सेटिंग्स पृष्ठ पर तय होती है।',
+
   'submit.heading': 'कोटेशन मँगाएँ',
   'submit.intro':
     'हमें एक नाम और संपर्क का एक तरीक़ा दीजिए, हम कोटेशन तुरंत जारी कर देंगे — मूल्य और विवरण ठीक वैसे ही स्थिर कर दिए जाते हैं जैसे इस सूची में दिख रहे हैं।',
