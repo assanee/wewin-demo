@@ -62,70 +62,31 @@ import { statusLabel, type OrderStatus } from './order-language';
  */
 
 /* ------------------------------------------------------------------ *
- * The gap
+ * The gap — moved out, and re-exported so nothing here had to change
  * ------------------------------------------------------------------ */
 
 /**
- * ⚠️ Below this, no label at all — and the number is a judgement, so it is written down.
+ * ⚠️ **`gapLabelTh` and `GAP_FLOOR_MS` now live in `@/components/history/elapsed`,** with the whole
+ * of their reasoning, and are re-exported from here.
  *
- * **Two minutes.** Under it, the two events were one person's consecutive clicks rather than a
- * wait, and "32 วินาที" on the rail is noise in the one column that exists to make waits
- * visible. The displayed timestamps are minute-precision (`timeStyle: 'short'`), so a gap this
- * small is already indistinguishable there — printing it would be the rail claiming a precision
- * the rest of the row does not have.
+ * They were written for this file and they are not about orders. The four settings-history dialogs
+ * — tax country, bank account, company profile, authority ceiling — need the identical label for
+ * the identical reason: "this bank account has not changed in four months" and "somebody changed
+ * this destination three times in ten minutes" are exactly the pair of facts a column of
+ * minute-precision timestamps hides, which is the observation this function was built on.
  *
- * It is a floor on the *label*, never on the row: every event still gets its marker, its
- * timestamp and its `seq`. Nothing is hidden by this, only left unannotated.
+ * ⚠️ It is in a neutral `components/history/` module rather than imported from here, for the reason
+ * `authority-limits.ts` writes down about `ChangedFieldView`: a shared thing parked inside one
+ * feature's folder makes that feature the de-facto owner of something several depend on, and the
+ * first change any one of them needs becomes a change to all of them. An `organisation` component
+ * importing an order's timeline module would make the order page that owner.
+ *
+ * The re-export is deliberate and not laziness: `order-spine.tsx` and `order-timeline.test.ts` both
+ * name these through this module, and a refactor for somebody else's benefit should not move the
+ * order page's own imports around. `elapsed.ts` also carries a note that the *ordering* is never
+ * derived from these timestamps — `seq` here, the API's `ORDER BY` there.
  */
-export const GAP_FLOOR_MS = 120_000;
-
-const MINUTE_MS = 60_000;
-
-/**
- * How long the order sat between two events, in Thai — or `null` when saying so would mislead.
- *
- * ⚠️ **Label only. There is deliberately no proportional-height counterpart to this function**,
- * and no caller may derive one from it. A production step is routinely three weeks and an
- * installation slot two months out; a rail whose segments scaled with elapsed time would push
- * the transition buttons — the reason a staff member opened the screen — kilometres below the
- * fold, and a log scale that fixed the geometry would be a chart nobody can read a duration off.
- *
- * ⚠️ **Truncated, never rounded.** 59 minutes 59 seconds is `59 นาที` and not `1 ชม.`: the two
- * timestamps either side of the label are on screen, and a label that rounds *up* past an hour
- * boundary the visible clock times contradict is a label the reader learns to distrust.
- *
- * ⚠️ **`null` when `later` precedes `earlier`.** `seq` is the order of the audit trail, not
- * `created_at`, so a clock that went backwards between two rows is possible and is not a
- * negative duration — it is an absence of one. Same for an unparseable timestamp: this
- * returns nothing rather than `NaN นาที`.
- *
- * Units stop at วัน. No สัปดาห์, no เดือน — lead times in this business are quoted in days
- * ("ผลิต 21 วัน" on the quotation), so `21 วัน` is the figure a reader compares against a
- * contract, and `3 สัปดาห์` would make them convert it back.
- */
-export function gapLabelTh(earlierIso: string, laterIso: string): string | null {
-  const from = Date.parse(earlierIso);
-  const to = Date.parse(laterIso);
-  if (Number.isNaN(from) || Number.isNaN(to)) return null;
-
-  const elapsed = to - from;
-  if (elapsed < GAP_FLOOR_MS) return null;
-
-  const minutes = Math.floor(elapsed / MINUTE_MS);
-  if (minutes < 60) return `${minutes} นาที`;
-
-  const hours = Math.floor(minutes / 60);
-  const minutesOver = minutes % 60;
-  if (hours < 24) {
-    return minutesOver === 0 ? `${hours} ชม.` : `${hours} ชม. ${minutesOver} นาที`;
-  }
-
-  const days = Math.floor(hours / 24);
-  const hoursOver = hours % 24;
-  if (days < 7) return hoursOver === 0 ? `${days} วัน` : `${days} วัน ${hoursOver} ชม.`;
-
-  return `${days} วัน`;
-}
+export { GAP_FLOOR_MS, gapLabelTh } from '@/components/history/elapsed';
 
 /* ------------------------------------------------------------------ *
  * The markers

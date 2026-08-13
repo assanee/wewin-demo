@@ -1,22 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useCallback } from 'react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
-import { failureMessage } from '@/lib/api/errors';
+  SettingsHistoryDialog,
+  type HistoryEntryView,
+} from '@/components/history/settings-history-dialog';
 
 import {
   listAuthorityLimitChanges,
   type AuthorityLimitChangeView,
+  type AuthorityLimitSnapshot,
   type AuthorityLimitView,
 } from './authority-limits-api';
 import { DIMENSION_LABEL_TH, changeHeadlineTh, changedFields, isGrant } from './authority-limits';
@@ -27,40 +21,36 @@ import { DIMENSION_LABEL_TH, changeHeadlineTh, changedFields, isGrant } from './
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * The attack this answers is the one `bank_account_changes` answers in its own shape: widen an
- * authority for one deal and narrow it back afterwards. Nothing else in the system would show
- * it. `approvals.decided_ceiling_thb_minor` pins what the ceiling *was* at the moment somebody
- * approved, which is a different and narrower fact — it says the decision was within authority,
- * and says nothing about the authority having been granted an hour earlier for that decision.
+ * authority for one deal and narrow it back afterwards. Nothing else in the system would show it.
+ * `approvals.decided_ceiling_thb_minor` pins what the ceiling *was* at the moment somebody
+ * approved, which is a different and narrower fact — it says the decision was within authority, and
+ * says nothing about the authority having been granted an hour earlier for that decision.
  *
- * So this renders a labelled before → after per entry rather than a `<pre>` of JSON, and the
- * headline names the verb (ให้อำนาจครั้งแรก / ขยายเพดาน / ยกเลิกอำนาจ / คืนอำนาจ) because a
- * column of "แก้ไข" is the least useful thing a reader scanning for a widening could be shown.
+ * So `changedFields` renders a labelled before → after per entry rather than a `<pre>` of JSON, and
+ * `changeHeadlineTh` names the verb (ให้อำนาจครั้งแรก / ขยายเพดาน / ลดเพดาน / ยกเลิกอำนาจ /
+ * คืนอำนาจ / แก้ไขหมายเหตุ) because a column of "แก้ไข" is the least useful thing a reader scanning
+ * for a widening could be shown. Both readers are untouched; only the shell around them moved into
+ * `SettingsHistoryDialog`. It is also the reason the shared component takes a `headlineTh` **string**
+ * rather than deriving one from `isOrigin`: three of the four logs have a two-way headline and this
+ * one has six, so the verb is the caller's to name.
  *
- * ⚠️ **The actor is a bare user id, not a name.** `GET …/changes` answers with
- * `changedByUserId` straight off the row; there is no join to `users` on this endpoint. The
- * truncation (`slice(0, 8)`) is the honest rendering of what the endpoint knows — resolving it
- * to a name is a real feature with its own review, not a side effect of this dialog. Identical
- * position to `bank-account-history.tsx`, which says the same thing about the same gap.
+ * ⚠️ **The actor is a bare user id, not a name.** `GET …/changes` answers with `changedByUserId`
+ * straight off the row; there is no join to `users` on this endpoint. The reading truncates it and
+ * the record layer prints it in full — resolving it to a name is a real feature with its own review,
+ * not a side effect of this dialog. Identical position to `bank-account-history.tsx`.
  *
- * ⚠️ **`changedByUserId` is never null here**, unlike the three settings-history tables. Their
- * actor column is nullable and erasure scrubs it; `authority_limit_changes.changed_by_user_id`
- * is NOT NULL and declared `keep` — a history of who may concede money whose actor can be
- * nulled is a weaker record than the ceiling row it describes. So there is no `ระบบ` branch,
- * because there is no state it could describe.
+ * ⚠️ **`changedByUserId` is never null here**, unlike the three settings-history tables. Their actor
+ * column is nullable and erasure scrubs it; `authority_limit_changes.changed_by_user_id` is NOT NULL
+ * and declared `keep` — a history of who may concede money whose actor can be nulled is a weaker
+ * record than the ceiling row it describes.
+ *
+ *   ⚠️ **What sharing cost here, stated rather than hidden:** `HistoryEntryView.changedByUserId` is
+ *   `string | null`, so the shared component carries a `ระบบ` branch this dialog's data can never
+ *   reach. That widening is accepted because the guarantee lives at the database and in
+ *   `AuthorityLimitChangeView`'s own `string`, not in what a renderer branches on — a screen that
+ *   could not print `ระบบ` was never what made the column NOT NULL. Nothing is lost from the record:
+ *   the id is printed in full either way.
  */
-
-const at = (iso: string): string =>
-  new Date(iso).toLocaleString('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-type State =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed'; readonly problem: string }
-  | { readonly status: 'ready'; readonly changes: readonly AuthorityLimitChangeView[] };
-
 export function AuthorityLimitHistoryDialog({
   limit,
   onClose,
@@ -68,102 +58,53 @@ export function AuthorityLimitHistoryDialog({
   readonly limit: AuthorityLimitView;
   readonly onClose: () => void;
 }) {
-  const [state, setState] = useState<State>({ status: 'loading' });
-
-  useEffect(() => {
-    let live = true;
-
-    void (async () => {
-      try {
-        const changes = await listAuthorityLimitChanges(limit.groupId, limit.dimension);
-        if (live) setState({ status: 'ready', changes });
-      } catch (cause) {
-        if (live) setState({ status: 'failed', problem: failureMessage(cause) });
-      }
-    })();
-
-    return () => {
-      live = false;
-    };
-  }, [limit.groupId, limit.dimension]);
+  const load = useCallback(
+    () => listAuthorityLimitChanges(limit.groupId, limit.dimension),
+    [limit.groupId, limit.dimension],
+  );
 
   return (
-    <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>ประวัติเพดานอำนาจ — {limit.groupNameTh}</DialogTitle>
-          <DialogDescription>
-            {DIMENSION_LABEL_TH[limit.dimension]} · {limit.groupCode} —
-            บันทึกทุกครั้งที่มีการเปลี่ยนแปลง พร้อมผู้แก้และเวลา แก้ไขหรือลบภายหลังไม่ได้
-          </DialogDescription>
-        </DialogHeader>
-
-        {state.status === 'loading' && (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        )}
-
-        {state.status === 'failed' && (
-          <Alert variant="destructive">
-            <AlertTriangle className="size-4" />
-            <AlertTitle>โหลดประวัติไม่สำเร็จ</AlertTitle>
-            <AlertDescription>{state.problem}</AlertDescription>
-          </Alert>
-        )}
-
-        {state.status === 'ready' && state.changes.length === 0 && (
-          <p className="text-muted-foreground text-sm">ยังไม่มีประวัติของเพดานนี้</p>
-        )}
-
-        {state.status === 'ready' && state.changes.length > 0 && (
-          <ol className="flex flex-col gap-3">
-            {state.changes.map((change) => {
-              const grant = isGrant(change);
-              return (
-                <li key={change.id} className="border-border/60 rounded-lg border p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium">{changeHeadlineTh(change)}</span>
-                    <span className="text-muted-foreground text-xs">{at(change.changedAt)}</span>
-                  </div>
-
-                  <p className="text-muted-foreground mt-0.5 text-xs">
-                    โดยผู้ใช้ {change.changedByUserId.slice(0, 8)}
-                  </p>
-
-                  <dl className="mt-2 flex flex-col gap-1">
-                    {changedFields(change).map((field) => (
-                      <div key={field.key} className="flex flex-wrap items-baseline gap-2">
-                        <dt className="text-muted-foreground w-16 shrink-0">{field.labelTh}</dt>
-                        <dd className="flex flex-wrap items-baseline gap-1.5 font-mono text-xs">
-                          {!grant && (
-                            <>
-                              {/*
-                               * "จาก"/"เป็น" are read text, not decoration: a strikethrough
-                               * announces nothing to a screen reader and an arrow announces the
-                               * wrong thing, so a listener would hear two values with nothing
-                               * saying which was which. Same fix, same reasoning, as
-                               * `bank-account-history.tsx`.
-                               */}
-                              <span className="text-muted-foreground">
-                                จาก <span className="line-through">{field.beforeText}</span>
-                              </span>
-                              <span aria-hidden>→</span>
-                              <span className="text-muted-foreground">เป็น</span>
-                            </>
-                          )}
-                          <span>{field.afterText}</span>
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </DialogContent>
-    </Dialog>
+    <SettingsHistoryDialog
+      headingTh={`ประวัติเพดานอำนาจ — ${limit.groupNameTh}`}
+      subjectTh={`${DIMENSION_LABEL_TH[limit.dimension]} · ${limit.groupCode}`}
+      emptyTh="ยังไม่มีประวัติของเพดานนี้"
+      load={load}
+      toEntry={toEntry}
+      onClose={onClose}
+    />
   );
 }
+
+/**
+ * ⚠️⚠️⭐ **THE ONE PLACE IN THIS FAMILY WHERE THE RECORD LAYER MEETS A `bigint`.**
+ *
+ * The other three logs hand the record layer `Record<string, unknown>` decoded straight off jsonb,
+ * so every leaf is a JSON primitive. This one does not: `AuthorityLimitSnapshot` is a *typed*
+ * snapshot and `maxConcessionThbMinor` is a **`bigint`** — widened by `minorOf` on purpose, because
+ * a ceiling is compared against a concession and both can exceed 2^53 in satang.
+ *
+ * `JSON.stringify` **throws a `TypeError` on a `bigint`**, it does not fall back. So a record layer
+ * that reached for it would blank this dialog and only this dialog — the one of the four whose
+ * subject is who may give away money — while passing every test and every screenshot of the other
+ * three. `recordValueText` branches on `bigint` first for exactly that reason; see its header.
+ *
+ * ⚠️ **Spread, never three hand-listed keys.** `{ ...snapshot }` carries whatever
+ * `AuthorityService.snapshot` records, so a fourth field added server-side appears in the record
+ * layer by itself. A hand-written `{ maxConcessionThbMinor, noteTh, isRevoked }` would silently drop
+ * it — on an audit surface whose whole value is that it is complete, which is the same failure
+ * `recordLines`' union-of-keys rule exists to prevent one level down.
+ */
+const asSnapshot = (snapshot: AuthorityLimitSnapshot): Readonly<Record<string, unknown>> => ({
+  ...snapshot,
+});
+
+const toEntry = (change: AuthorityLimitChangeView): HistoryEntryView => ({
+  id: change.id,
+  changedAt: change.changedAt,
+  changedByUserId: change.changedByUserId,
+  headlineTh: changeHeadlineTh(change),
+  isOrigin: isGrant(change),
+  fields: changedFields(change),
+  before: change.before === null ? null : asSnapshot(change.before),
+  after: asSnapshot(change.after),
+});
