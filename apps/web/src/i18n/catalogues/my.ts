@@ -384,6 +384,7 @@ export const my: PartialUiCatalogue = {
   'account.problem.unconfigured': 'ယခုအသုံးမပြုနိုင်ပါ။ အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
   'account.myQuotations': 'ကျွန်ုပ်၏ စျေးနှုန်းစာရွက်များ',
   'account.noQuotations': 'စျေးနှုန်းစာရွက် မရှိသေးပါ',
+  'account.tabs.label': 'အကောင့် အပိုင်းများ',
 
   'submit.heading': 'စျေးနှုန်းစာရွက် တောင်းခံရန်',
   'submit.intro':

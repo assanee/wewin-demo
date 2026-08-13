@@ -14,7 +14,6 @@ import { StickyBar } from '../common/StickyBar';
 import { QuoteLineRow } from './QuoteLineRow';
 import { QuoteLineCard } from './QuoteLineCard';
 import { AccountGate } from '../account/AccountGate';
-import { MyQuotations } from '../account/MyQuotations';
 import { RequestQuotationForm } from './RequestQuotationForm';
 import { SubmittedNotice } from './SubmittedNotice';
 
@@ -70,13 +69,6 @@ const TH_HEAD_CLASS = 'py-2 pe-3 text-caption font-normal tracking-[0.08em] text
  */
 export function QuoteScreen() {
   /*
-   * ⚠️ Bumped when a quotation is created, so the list below it catches up.
-   *
-   * Without this the customer pressed the button, was told "WW-1008", and read
-   * "ยังไม่มีใบเสนอราคา" directly underneath — the data was right and only the list was stale.
-   */
-  const [quotationsKey, setQuotationsKey] = useState(0);
-  /*
    * ⚠️ Kept in memory only. On the next visit the cart genuinely is empty and the quotation
    * lives in the account — persisting this would show a stale "your quotation is ready" to
    * somebody who came back a week later to start a new one.
@@ -122,19 +114,19 @@ export function QuoteScreen() {
     return (
       <main className="container-page py-16 md:py-24">
         <div className="mx-auto max-w-130">
-          <AccountGate>
-            {(session) => (
-              <>
-                <SubmittedNotice orderId={justSubmitted.orderId} orderNo={justSubmitted.orderNo} />
-                <section className="mt-4 border border-line bg-panel p-4">
-                  <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
-                  <div className="mt-3">
-                    <MyQuotations session={session} reloadKey={quotationsKey} />
-                  </div>
-                </section>
-              </>
-            )}
-          </AccountGate>
+          {/*
+            ⭐ `SubmittedNotice` alone, and it carries the route out of here: the number, the
+            note that the document is pinned, and `submit.viewQuotation` → `/orders?order=`,
+            which is the owned path and lands on the quotation document itself — with the
+            payment button on it. That link is why removing the quotation list from this screen
+            does not strand the customer who has just committed to a total.
+
+            ⚠️ No `AccountGate` around it any more. The gate was here to hand a `Session` to the
+            list; nothing on this branch needs one, and while it was here a re-check of the
+            session would have replaced the quotation number with "กำลังตรวจสอบ" on the one
+            screen the customer must not lose it from. The header keeps the account link.
+          */}
+          <SubmittedNotice orderId={justSubmitted.orderId} orderNo={justSubmitted.orderNo} />
         </div>
       </main>
     );
@@ -249,32 +241,19 @@ export function QuoteScreen() {
           </section>
           <AccountGate>
             {(session) => (
-              <>
-                <RequestQuotationForm
-                  lines={lines}
-                  session={session}
-                  onSubmitted={(order) => {
-                    setJustSubmitted(order);
-                    setQuotationsKey((key) => key + 1);
-                    /*
-                     * ⭐ The cart is now an order. Leaving it behind kept "ตะกร้า 1" in the
-                     * header and left the button live — a second press submitted a second
-                     * identical order, and `orders_block_delete()` refuses to remove one.
-                     */
-                    clear();
-                  }}
-                />
-                {/*
-                  ⭐ The reason for having asked. A customer who signs in and sees nothing has
-                  been made to do work for a benefit they cannot observe.
-                */}
-                <section className="border border-line bg-panel p-4">
-                  <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
-                  <div className="mt-3">
-                    <MyQuotations session={session} reloadKey={quotationsKey} />
-                  </div>
-                </section>
-              </>
+              <RequestQuotationForm
+                lines={lines}
+                session={session}
+                onSubmitted={(order) => {
+                  setJustSubmitted(order);
+                  /*
+                   * ⭐ The cart is now an order. Leaving it behind kept "ตะกร้า 1" in the
+                   * header and left the button live — a second press submitted a second
+                   * identical order, and `orders_block_delete()` refuses to remove one.
+                   */
+                  clear();
+                }}
+              />
             )}
           </AccountGate>
         </div>
@@ -293,14 +272,12 @@ export function QuoteScreen() {
           */}
           <div className="mt-4">
             <AccountGate>
-            {(session) => (
-              <>
+              {(session) => (
                 <RequestQuotationForm
                   lines={lines}
                   session={session}
                   onSubmitted={(order) => {
                     setJustSubmitted(order);
-                    setQuotationsKey((key) => key + 1);
                     /*
                      * ⭐ The cart is now an order. Leaving it behind kept "ตะกร้า 1" in the
                      * header and left the button live — a second press submitted a second
@@ -309,19 +286,8 @@ export function QuoteScreen() {
                     clear();
                   }}
                 />
-                {/*
-                  ⭐ The reason for having asked. A customer who signs in and sees nothing has
-                  been made to do work for a benefit they cannot observe.
-                */}
-                <section className="border border-line bg-panel p-4">
-                  <h2 className="text-lead text-chalk">{t('account.myQuotations')}</h2>
-                  <div className="mt-3">
-                    <MyQuotations session={session} reloadKey={quotationsKey} />
-                  </div>
-                </section>
-              </>
-            )}
-          </AccountGate>
+              )}
+            </AccountGate>
           </div>
 
           <StickyBar>

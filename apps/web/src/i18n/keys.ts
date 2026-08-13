@@ -355,6 +355,16 @@ export interface UiParamsByKey {
   'account.problem.unconfigured': Plain;
   'account.myQuotations': Plain;
   'account.noQuotations': Plain;
+  /**
+   * The accessible name of the account page's tablist — announced before the tabs themselves,
+   * so a screen reader says "Account sections, tab list, My quotations, selected, 1 of 2".
+   *
+   * ⚠️ A key of its own rather than `aria-labelledby` pointing at the `h1`. "บัญชีของฉัน" names
+   * the *page*; a tablist named after the page tells the listener nothing they were not just
+   * told. The tab labels themselves reuse `account.myQuotations` and `account.password.section`
+   * — they were already written as the names of these sections.
+   */
+  'account.tabs.label': Plain;
 
   'submit.heading': Plain;
   'submit.intro': Plain;

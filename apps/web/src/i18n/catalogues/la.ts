@@ -373,6 +373,7 @@ export const la: PartialUiCatalogue = {
   'account.problem.unconfigured': 'ຍັງໃຊ້ບໍ່ໄດ້ຕອນນີ້. ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
   'account.myQuotations': 'ໃບສະເໜີລາຄາຂອງຂ້ອຍ',
   'account.noQuotations': 'ຍັງບໍ່ມີໃບສະເໜີລາຄາ',
+  'account.tabs.label': 'ພາກສ່ວນຂອງບັນຊີ',
 
   'submit.heading': 'ຂໍໃບສະເໜີລາຄາ',
   'submit.intro':
