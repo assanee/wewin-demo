@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/page-header';
 import { OverviewScreen } from '@/components/overview/overview-screen';
 
 /**
@@ -16,14 +17,12 @@ import { OverviewScreen } from '@/components/overview/overview-screen';
  */
 export default function OverviewPage() {
   return (
-    <>
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">ภาพรวม</h1>
-        <p className="text-muted-foreground text-sm">
-          งานที่รอดำเนินการและสถานะปัจจุบันของ WEWIN — แสดงเฉพาะส่วนที่บัญชีนี้มีสิทธิ์เข้าถึง
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title="ภาพรวม"
+        description="งานที่รอดำเนินการและสถานะปัจจุบันของ WEWIN — แสดงเฉพาะส่วนที่บัญชีนี้มีสิทธิ์เข้าถึง"
+      />
       <OverviewScreen />
-    </>
+    </div>
   );
 }
