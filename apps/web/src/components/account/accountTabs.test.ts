@@ -208,6 +208,20 @@ describe('AccountScreen is wired to this module', () => {
     expect(panel).toContain('aria-labelledby={tabId(candidate)}');
   });
 
+  it('lets a keyboard reach the panel even when it holds no focusable content', () => {
+    /*
+     * `tabIndex={0}` on the panel. The quotations panel is a list of links when there are orders
+     * and the bare sentence "ยังไม่มีใบเสนอราคา" when there are none, so without this a new
+     * customer tabbing through the page skips from the tablist to the products link and never
+     * hears why the account looked empty.
+     *
+     * ⚠️ Asserted on `panel` and not on `code`: the tabs carry their own roving
+     * `tabIndex={isSelected ? 0 : -1}`, which satisfied a whole-file scan and let this be
+     * deleted from the panel unnoticed.
+     */
+    expect(panel).toContain('tabIndex={0}');
+  });
+
   it('moves between tabs with the arrow keys', () => {
     expect(code).toContain('ArrowRight');
     expect(code).toContain('ArrowLeft');
