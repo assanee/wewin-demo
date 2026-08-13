@@ -177,6 +177,27 @@ const MARKER_CELL = 'relative flex h-6 items-center justify-center';
 const FOCUSABLE =
   'focus-visible:outline-ring rounded focus-visible:outline-2 focus-visible:outline-offset-2';
 
+/*
+ * ⚠️ The record layer's key column, **one constant for two `<dl>`s that must agree**, and it was a
+ * measured collision before it was a constant.
+ *
+ * The two lists inside the disclosure — the row's own metadata, then the snapshot pair — sit in one
+ * bordered box and read as one table, so their key columns have to line up. They were two separate
+ * `grid-cols-[7rem_…]` literals copied from `order-spine.tsx`, which is exactly the shape of thing
+ * that drifts. It was also **too narrow**: measured in the browser, `changed_by_user_id` needs 130px
+ * of `font-mono` `text-xs` and `7rem` is 112, so the label overflowed its own column and printed
+ * *on top of* the uuid beside it — two monospace strings with no gap, which reads as one corrupt
+ * value rather than as a layout fault. `order-spine.tsx` never hit it because its longest record key
+ * is `event_type`.
+ *
+ * `9rem` is 144px: it clears the 130 with room, and it is the widest of these four dialogs' keys by
+ * some margin. ⚠️ The `wrap-break-word` on every `<dt>` below is the guard rather than the fix —
+ * `maxConcessionThbMinor` on the authority log is longer still (21 characters) and is *expected* to
+ * wrap. A snapshot key from a newer API can be any length, so no width is a promise; what matters is
+ * that a long one wraps inside its column instead of overprinting the value.
+ */
+const RECORD_KEY_COLUMN = 'grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1 font-mono text-xs';
+
 const at = (iso: string): string =>
   new Date(iso).toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok',
@@ -435,7 +456,7 @@ function Entry({ entry }: { readonly entry: HistoryEntryView }) {
  *
  * The reading above truncates the actor to eight characters, rounds `changed_at` to the minute, and
  * filters out every field that did not move. All three are right for reading and wrong for quoting,
- * which is the whole reason this layer exists — see `settings-record.ts`'s header for the line, and
+ * which is the whole reason this layer exists — see `settings-history.ts`'s header for the line, and
  * `order-timeline.ts` for where it is stated at length. `recordLines` guarantees the completeness
  * half: every key in either snapshot appears, in one sorted order shared by both columns.
  */
@@ -457,17 +478,17 @@ function Record({ entry }: { readonly entry: HistoryEntryView }) {
       <div className="border-border/60 mt-2 rounded border border-dashed p-2">
         <p className="text-muted-foreground mb-1.5 text-xs">ข้อมูลที่บันทึกไว้</p>
 
-        <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 font-mono text-xs">
-          <dt className="text-muted-foreground">id</dt>
+        <dl className={RECORD_KEY_COLUMN}>
+          <dt className="text-muted-foreground min-w-0 wrap-break-word">id</dt>
           <dd className="break-all">{entry.id}</dd>
 
-          <dt className="text-muted-foreground">changed_at</dt>
+          <dt className="text-muted-foreground min-w-0 wrap-break-word">changed_at</dt>
           <dd className="break-all">{entry.changedAt}</dd>
 
           {/* The full uuid. `null` is a real answer on three of the four tables: the actor column
             * is nullable and `erase_user()` scrubs it, so a dash here is an erased staff member
             * rather than a missing field. */}
-          <dt className="text-muted-foreground">changed_by_user_id</dt>
+          <dt className="text-muted-foreground min-w-0 wrap-break-word">changed_by_user_id</dt>
           <dd className="break-all">{entry.changedByUserId ?? '—'}</dd>
         </dl>
 
@@ -476,7 +497,7 @@ function Record({ entry }: { readonly entry: HistoryEntryView }) {
          * so the columns can be compared line by line. `grid-cols-subgrid` keeps the key column
          * aligned with the three rows above without repeating the width.
          */}
-        <dl className="mt-2 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 font-mono text-xs">
+        <dl className={`mt-2 ${RECORD_KEY_COLUMN}`}>
           {lines.map((line) => (
             <div key={line.key} className="col-span-2 grid grid-cols-subgrid items-baseline">
               <dt className="text-muted-foreground min-w-0 wrap-break-word">{line.key}</dt>
