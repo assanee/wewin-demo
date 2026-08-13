@@ -5,8 +5,9 @@
   "//type": "Deliberately absent, which makes this package CommonJS. Nest's DI reads `design:paramtypes`, which only `emitDecoratorMetadata` produces and only the TypeScript compiler emits — so this app cannot be ESM-by-type-stripping. It consumes ESM-only @wewin/core through Node's require(ESM); see tsconfig.json for the full reasoning.",
   "//test": "`test` compiles first because tests/esm-bridge.test.ts inspects and executes the emitted CommonJS — the require(ESM) arrangement cannot be proven from inside Vitest, which resolves everything as ESM.",
   "//scripts": "No @nestjs/cli. The CLI carries its own `typescript` dependency, so `nest build` would compile with a different compiler than `pnpm typecheck` — and this repo's rule is that what CI type-checks is what production runs (plan section 1). Plain `tsc`, one compiler, same as packages/core.",
+  "//engines": "22.12 was the real floor — the version where `require(ESM)` works unflagged, which is how this CommonJS app consumes ESM-only @wewin/core (see `//type` above). 24 is the floor now, matching the root and `@types/node`. The 22.12 reason still binds: whatever this becomes, it can never go below it.",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24"
   },
   "main": "dist/main.js",
   "scripts": {
