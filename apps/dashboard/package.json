@@ -1,6 +1,6 @@
 {
   "name": "@wewin/dashboard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "//port": "3001, because apps/api owns 3000 and the two run side by side all day. It is written into the scripts rather than left to Next's default so that `pnpm dev` at the root never has to be told twice.",

@@ -1,6 +1,6 @@
 {
   "name": "@wewin/api",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "//type": "Deliberately absent, which makes this package CommonJS. Nest's DI reads `design:paramtypes`, which only `emitDecoratorMetadata` produces and only the TypeScript compiler emits — so this app cannot be ESM-by-type-stripping. It consumes ESM-only @wewin/core through Node's require(ESM); see tsconfig.json for the full reasoning.",
   "//test": "`test` compiles first because tests/esm-bridge.test.ts inspects and executes the emitted CommonJS — the require(ESM) arrangement cannot be proven from inside Vitest, which resolves everything as ESM.",

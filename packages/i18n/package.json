@@ -1,6 +1,6 @@
 {
   "name": "@wewin/i18n",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "//": "The root export is types only, for the same reason core's and contract's are: a component that only needs the `Locale` union must not drag eight catalogues and an Intl cache into its bundle. Every runtime value comes from a subpath.",

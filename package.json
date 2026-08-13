@@ -1,7 +1,7 @@
 {
   "name": "wewin",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "packageManager": "pnpm@10.0.0",
   "//engines": "24 because that is what we run and what `@types/node` describes. Those two must not drift: types ahead of the runtime let `tsc` accept an API the runtime does not have, and a green typecheck is then a statement about a Node nobody is running. Raise this and `@types/node` together, never one alone. The floor cannot go below 22.12 whatever else changes — see apps/api, which needs `require(ESM)`.",

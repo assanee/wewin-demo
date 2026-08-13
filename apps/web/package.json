@@ -1,6 +1,6 @@
 {
   "name": "@wewin/web",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "//name": "This directory was `apps/web-next` for the length of the 6b port, so that both storefronts could run side by side and 'does the Next.js page render what the Vite page rendered' could be answered by opening two URLs. The port is finished: the Vite app is deleted, this one took its name, its directory and its place in vercel.json. There is one storefront again. The 114 tests apps/web carried were the four i18n suites (numerals 54 · content 14 · messages 21 · catalogue 25) and every one of them was a byte-identical copy of a file that is still here and still runs — verified with `diff` in the commit that removed them, which is why the workspace total moves by -114 without a single assertion being retired.",
