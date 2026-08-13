@@ -135,7 +135,11 @@ export function OrderList() {
                 <TableHead className="h-8 type-caption">สถานะ</TableHead>
                 <TableHead className="h-8 type-caption">เริ่มผลิตแล้ว</TableHead>
                 <TableHead className="h-8 type-caption text-right">ยอดรวม</TableHead>
-                <TableHead className="h-8 type-caption">อัปเดตล่าสุด</TableHead>
+                {/* `w-full` on the last column: with `table-layout: auto` the slack would otherwise be
+                    shared out between the first three, pushing related facts about one order apart
+                    across a 1440px screen. Giving it all to the least important column keeps the
+                    number, the status and the freeze flag adjacent, which is what a scan needs. */}
+                <TableHead className="h-8 type-caption w-full">อัปเดตล่าสุด</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

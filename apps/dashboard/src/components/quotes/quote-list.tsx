@@ -152,7 +152,8 @@ export function QuoteListScreen() {
               <TableHead className="type-caption h-8">เลขที่</TableHead>
               <TableHead className="type-caption h-8">สถานะ</TableHead>
               <TableHead className="type-caption h-8 text-end">ยอดรวม</TableHead>
-              <TableHead className="type-caption h-8">แก้ล่าสุด</TableHead>
+              {/* Slack goes to the last column — see the note in `order-list.tsx`. */}
+              <TableHead className="type-caption h-8 w-full">แก้ล่าสุด</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
