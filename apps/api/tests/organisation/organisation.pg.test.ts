@@ -241,6 +241,67 @@ describeWithPg('the organisation module against Postgres', () => {
     });
 
     /**
+     * ⭐ **Oldest first, over more than one row** — the assertion that was missing, and whose
+     * absence let this route disagree with its three siblings unnoticed.
+     *
+     * `OrganisationRepository.changes` was `desc()`. The test above is the only one that read this
+     * route and it writes a single row, where ascending and descending are indistinguishable — so
+     * nothing failed. Meanwhile `OrganisationController.profileChanges` already stated the rule in
+     * a comment ("so a reader comparing two settings histories is not comparing two orderings"),
+     * the profile's own assertion says "Oldest first, like both siblings", and
+     * `AuthorityService.limitChanges` says "a chain reads forwards".
+     *
+     * ⚠️ Do NOT reverse this expectation. Two things read forwards off it: the contiguity
+     * `bank_account_changes` exists to prove — entry N's `before` equals entry N−1's `after` — and
+     * the dashboard's shared settings-history spine, whose elapsed-time label is derived from each
+     * list-adjacent pair and correctly yields *nothing* when the later entry comes first. Under
+     * `desc()` that was every pair, so this history alone showed no elapsed time at all.
+     */
+    it('⭐ answers oldest first, so the chain reads forwards', async () => {
+      const created = await asWriter('POST', '/admin/organisation/bank-accounts', createRequest());
+      expect(created.status).toBe(201);
+      const id = String(created.body?.['id']);
+
+      /* Three writes, so the ordering is unambiguous and a stray `.reverse()` cannot pass. */
+      for (const accountName of ['ชื่อที่สอง', 'ชื่อที่สาม', 'ชื่อที่สี่']) {
+        const patched = await asWriter(
+          'PATCH',
+          `/admin/organisation/bank-accounts/${id}`,
+          createRequest({ accountName }),
+        );
+        expect(patched.status).toBe(200);
+      }
+
+      const seen = await asReader('GET', `/admin/organisation/bank-accounts/${id}/changes`);
+      expect(seen.status).toBe(200);
+      const changes = seen.body?.['changes'] as readonly Record<string, unknown>[];
+      expect(changes).toHaveLength(4);
+
+      /* The create is first and it is the only row with a null `before`. */
+      expect(changes[0]?.['before']).toBeNull();
+      for (const entry of changes.slice(1)) expect(entry['before']).not.toBeNull();
+
+      const names = changes.map(
+        (entry) => (entry['after'] as { accountName?: string }).accountName,
+      );
+      expect(names).toEqual([
+        'บริษัท ทดสอบ (probe) จำกัด',
+        'ชื่อที่สอง',
+        'ชื่อที่สาม',
+        'ชื่อที่สี่',
+      ]);
+
+      /* `changed_at` non-decreasing, and the chain contiguous: N's before is N−1's after. */
+      const stamps = changes.map((entry) => Date.parse(String(entry['changedAt'])));
+      for (let i = 1; i < stamps.length; i += 1) {
+        expect(stamps[i] ?? 0, `entry ${i} must not precede entry ${i - 1}`).toBeGreaterThanOrEqual(
+          stamps[i - 1] ?? 0,
+        );
+        expect(changes[i]?.['before']).toStrictEqual(changes[i - 1]?.['after']);
+      }
+    });
+
+    /**
      * `lockAccount`'s `FOR UPDATE`, proved rather than assumed — the same test
      * `scoped-order.pg.test.ts`'s `describe('lock', …)` runs for `ScopedOrderRepository.lock`,
      * copied onto this repository's own lock method.

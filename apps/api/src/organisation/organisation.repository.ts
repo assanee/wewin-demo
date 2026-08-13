@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
-import { asc, desc, eq } from '@wewin/db/sql';
+import { asc, eq } from '@wewin/db/sql';
 import {
   bankAccountChanges,
   bankAccounts,
@@ -86,12 +86,41 @@ export class OrganisationRepository {
     return tx.select().from(bankAccounts).where(eq(bankAccounts.id, id)).limit(1).for('update');
   }
 
+  /**
+   * ⭐ **Oldest first**, like all three siblings — `TaxCountryRepository.changes`,
+   * `profileChanges` and `AuthorityRepository.limitChanges` — because a chain reads forwards.
+   *
+   * ⚠️ **This was `desc()` and that was a bug, not a decision.** Three things in this repository
+   * already said so before the fix:
+   *
+   *   `OrganisationController.profileChanges`' own comment — "so a reader comparing two settings
+   *   histories is not comparing two orderings" — which is the rule this query broke.
+   *
+   *   `organisation.pg.test.ts`'s profile assertion, "Oldest first, **like both siblings**".
+   *
+   *   `TaxCountryService.changes` and `AuthorityService.limitChanges`, both of which document
+   *   ascending explicitly, the latter adding "and a chain reads forwards".
+   *
+   * It survived because this is the one of the four `…/changes` routes the controller serves
+   * straight off the repository instead of through a service method, so it never acquired the
+   * one-line "Oldest first" doc the other three carry — and because the only test touching it
+   * writes a single row, where the two orderings are indistinguishable.
+   *
+   * ⚠️ It was not cosmetic. `bank_account_changes` exists to prove entry N's `before` equals
+   * entry N−1's `after`, which is a statement about a *forwards* chain; and on the dashboard the
+   * shared settings-history spine derives its elapsed-time label from each list-adjacent pair,
+   * where `gapLabelTh` correctly returns `null` rather than a negative duration when the later
+   * entry precedes the earlier one. Descending, that is every pair — so the bank-account history,
+   * alone of the four, silently showed no elapsed time at all. Failing safe made it invisible.
+   *
+   * Nothing pinned `desc`: see the ascending assertion added beside the existing one-row test.
+   */
   changes(accountId: string, tx?: Tx) {
     return this.executor(tx)
       .select()
       .from(bankAccountChanges)
       .where(eq(bankAccountChanges.bankAccountId, accountId))
-      .orderBy(desc(bankAccountChanges.changedAt));
+      .orderBy(asc(bankAccountChanges.changedAt));
   }
 
   /**
