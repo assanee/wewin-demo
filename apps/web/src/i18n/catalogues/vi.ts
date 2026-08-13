@@ -382,6 +382,7 @@ export const vi: PartialUiCatalogue = {
     'Hiện chưa dùng được. Xin liên hệ bộ phận kinh doanh.',
   'account.myQuotations': 'Báo giá của tôi',
   'account.noQuotations': 'Chưa có báo giá nào',
+  'account.tabs.label': 'Các mục tài khoản',
 
   'submit.heading': 'Yêu cầu báo giá',
   'submit.intro':

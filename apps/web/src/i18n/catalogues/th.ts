@@ -359,6 +359,7 @@ export const th: UiCatalogue = {
   'account.problem.unconfigured': 'ระบบยังไม่พร้อม โปรดติดต่อทีมขาย',
   'account.myQuotations': 'ใบเสนอราคาของฉัน',
   'account.noQuotations': 'ยังไม่มีใบเสนอราคา',
+  'account.tabs.label': 'ส่วนต่าง ๆ ของบัญชี',
 
   'submit.heading': 'ขอใบเสนอราคา',
   'submit.intro':

@@ -400,6 +400,7 @@ export const hi: PartialUiCatalogue = {
     'अभी उपलब्ध नहीं। कृपया बिक्री टीम से संपर्क कीजिए।',
   'account.myQuotations': 'मेरे कोटेशन',
   'account.noQuotations': 'अभी कोई कोटेशन नहीं',
+  'account.tabs.label': 'खाता अनुभाग',
 
   'submit.heading': 'कोटेशन मँगाएँ',
   'submit.intro':

@@ -385,6 +385,7 @@ export const en: PartialUiCatalogue = {
   'account.problem.unconfigured': 'Not available right now. Please contact the sales team.',
   'account.myQuotations': 'My quotations',
   'account.noQuotations': 'No quotations yet',
+  'account.tabs.label': 'Account sections',
 
   'submit.heading': 'Request a quotation',
   'submit.intro':

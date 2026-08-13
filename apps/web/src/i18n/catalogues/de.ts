@@ -420,6 +420,7 @@ export const de: PartialUiCatalogue = {
     'Derzeit nicht verfügbar. Bitte wenden Sie sich an den Vertrieb.',
   'account.myQuotations': 'Meine Angebote',
   'account.noQuotations': 'Noch keine Angebote',
+  'account.tabs.label': 'Kontobereiche',
 
   'submit.heading': 'Angebot anfordern',
   'submit.intro':

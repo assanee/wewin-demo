@@ -351,6 +351,7 @@ export const zh: PartialUiCatalogue = {
   'account.problem.unconfigured': '暂时无法使用，请联系销售团队。',
   'account.myQuotations': '我的报价单',
   'account.noQuotations': '还没有报价单',
+  'account.tabs.label': '账户分区',
 
   'submit.heading': '索取报价单',
   'submit.intro':
