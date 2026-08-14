@@ -194,6 +194,33 @@ export interface ReminderOutcome {
   readonly delivered: boolean;
 }
 
+/**
+ * ⛔ **`balance_settled` is deliberately absent, and this is the note saying so.**
+ *
+ * It is a real `suppressed_reason` — the newest one — but it cannot reach this map, because this
+ * map only ever sees the **ask-time** answer and that reason is only ever written at **drain
+ * time**. Two different writers, and they are not interchangeable:
+ *
+ *   `no_contact_channel` / `channel_disabled` / `recipient_erased` are written by
+ *   `order_events_fan_out_notifications()`, inside the transaction that appended the event — so
+ *   they are already on the row when `POST /orders/:orderId/balance-reminders` answers, and
+ *   `reminderOutcome` is handed them as `suppressedReason` on that response.
+ *
+ *   `balance_settled` is written by the notification worker, minutes later, from
+ *   `sendSuppression()` reading the balance **at claim time** (`templates/templates.ts`). At the
+ *   moment this response is built the row is `pending` and `suppressedReason` is null. The API
+ *   also refuses the ask outright when nothing is owed, and `reminderAvailability` above hides
+ *   the button in that case, so the state cannot be reached from this direction at all.
+ *
+ * ⚠️ Adding a sentence for it anyway is the tempting move and it is the wrong one: it would put a
+ * claim about a state this response cannot carry into the one place a member of staff reads
+ * immediately after pressing the button, and nothing in this repository could ever exercise it.
+ * Where that reason *is* readable is `/outbox`, which now has a section of its own for it —
+ * `components/outbox/outbox-suppression.ts`.
+ *
+ * ⚠️ And if the two writers are ever merged, nothing breaks quietly: `reminderOutcome` falls back
+ * to naming the raw code rather than swallowing it, which is the posture the header describes.
+ */
 const SUPPRESSED_TH: Readonly<Record<string, string>> = {
   no_contact_channel: 'ออเดอร์นี้ไม่มีอีเมลผู้ติดต่อ จึงยังไม่มีช่องทางส่ง — ติดต่อลูกค้าทางโทรศัพท์แทน',
   recipient_erased: 'บัญชีของลูกค้ารายนี้ถูกลบข้อมูลตามคำขอแล้ว จึงไม่มีปลายทางให้ส่ง',

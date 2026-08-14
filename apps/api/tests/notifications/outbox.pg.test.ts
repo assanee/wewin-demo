@@ -384,6 +384,43 @@ describeWithPg('the outbox against Postgres', () => {
       expect(adapter.sent.filter((message) => message.orderId === orderId)).toHaveLength(0);
       expect(await attemptCountFor(orderId)).toBe(0);
     });
+
+    it('⭐ says whether it actually closed the row, so the worker cannot log a suppression that never happened', async () => {
+      /*
+       * `suppress()` updates `where … and status = 'sending'`, so it can only close a row *this*
+       * worker holds the claim on — a row another process took back under the lease is left alone.
+       * The boolean is how the caller learns which happened, and the worker was discarding it and
+       * logging "was not sent: <reason>" either way.
+       *
+       * That log line matters more than a log line usually does: this branch deliberately writes
+       * no `notification_attempts` row (nothing was attempted), so the line is the *only* trace it
+       * leaves anywhere. A false one is the entire record of the event being wrong.
+       */
+      const orderId = await createDraft();
+      await appendEvent(orderId, 'change_resolved');
+
+      const queued = (await notificationsFor(orderId))[0];
+      if (queued === undefined) throw new Error('the fan-out queued nothing to claim');
+      expect(queued.status).toBe('pending');
+      const notificationId = queued.id;
+
+      /* Claim it the way the worker's own claim statement would. */
+      await db.execute(sql`update notifications set status = 'sending' where id = ${notificationId}`);
+
+      /*
+       * MUTATION: drop `and status = 'sending'` from `suppress()` in
+       * `notifications.repository.ts` → the second call updates a `suppressed` row and answers
+       * `true`, and the second assertion goes red.
+       */
+      expect(await repository.suppress(notificationId, 'balance_settled')).toBe(true);
+      expect(await repository.suppress(notificationId, 'balance_settled')).toBe(false);
+
+      /* And the first call is the one that did the work — the row is closed exactly once. */
+      const after = (await notificationsFor(orderId))[0];
+      expect(after?.status).toBe('suppressed');
+      expect(after?.suppressed_reason).toBe('balance_settled');
+      expect(after?.recipient_key).toBeNull();
+    });
   });
 
   describe('⭐ the message about a quotation contains the quotation', () => {

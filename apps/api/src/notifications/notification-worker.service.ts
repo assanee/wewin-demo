@@ -208,9 +208,23 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
      */
     const suppression = sendSuppression(notification.templateKey, context);
     if (suppression !== undefined) {
-      await this.repository.suppress(notification.id, suppression);
+      /*
+       * ⚠️ `suppress()` answers whether it actually closed the row, and that answer was being
+       * thrown away. It updates `where … and status = 'sending'`, so a row another process took
+       * back under the lease is left alone — and this worker then logged "was not sent: <reason>"
+       * about a message it had not touched and may be watching somebody else deliver. A log line
+       * is the only trace this branch leaves anywhere (no attempt row, by design), so a false one
+       * is the whole record being wrong.
+       *
+       * Returning either way is right in both cases: if we still held the claim the row is now
+       * closed, and if we did not we have no business rendering or sending it.
+       */
+      const closed = await this.repository.suppress(notification.id, suppression);
       this.logger.debug(
-        `Notification ${notification.id} (${notification.templateKey}) was not sent: ${suppression}`,
+        closed
+          ? `Notification ${notification.id} (${notification.templateKey}) was not sent: ${suppression}`
+          : `Notification ${notification.id} (${notification.templateKey}) was left alone: ` +
+              `it would have been suppressed (${suppression}), but the claim had already been taken back under the lease`,
       );
       return;
     }

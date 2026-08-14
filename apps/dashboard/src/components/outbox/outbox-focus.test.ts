@@ -30,7 +30,7 @@ describe('outboxFocus', () => {
     expect(focus.detailTh).toBeNull();
   });
 
-  it('still names unaddressable messages while everything else is calm', () => {
+  it('still names messages that were never sent while everything else is calm', () => {
     /*
      * The case the appended clause exists for. `suppressed` is undelivered mail that no button on
      * this screen can fix, so a headline about retryable failures reads as "all clear" beside it —
@@ -42,8 +42,26 @@ describe('outboxFocus', () => {
     expect(focus.stalled).toBe(0);
     expect(focus.headlineTh).toBe('ไม่มีข้อความที่ค้างส่งไม่ถึงลูกค้า');
     expect(focus.detailTh).toBe(
-      'อีก 2 ฉบับไม่มีที่อยู่ให้ส่งมาตั้งแต่แรก ส่งซ้ำไม่ได้ — ต้องไปหาเบอร์หรืออีเมลของลูกค้ามาก่อน',
+      'อีก 2 ฉบับระบบไม่ได้ส่ง และส่งซ้ำไม่ได้ — เหตุผลของแต่ละฉบับอยู่ในตารางด้านล่าง',
     );
+  });
+
+  it('⭐ does not tell the reader why, because it counts rows with two different whys', () => {
+    /*
+     * `summary.suppressed` is one total over `no_contact_channel` (nobody to write to) and
+     * `balance_settled` (the customer paid before the worker got there). The clause used to read
+     * *"ไม่มีที่อยู่ให้ส่งมาตั้งแต่แรก … ต้องไปหาเบอร์หรืออีเมลของลูกค้ามาก่อน"* over both, which sent
+     * staff hunting for the contact details of a customer who had already settled up.
+     *
+     * ⛔ And it cannot be fixed by splitting the sentence: this function is given counts, and the
+     * API sends no per-reason breakdown of that total. So the clause must name no cause at all.
+     * `outbox-suppression.ts` splits the *rows*, which is the only split this screen can prove.
+     */
+    const detail = outboxFocus(counts({ suppressed: 2 })).detailTh ?? '';
+
+    expect(detail).not.toContain('ที่อยู่');
+    expect(detail).not.toContain('เบอร์');
+    expect(detail).not.toContain('อีเมล');
   });
 
   it('counts dead messages as known non-delivery', () => {
@@ -94,7 +112,7 @@ describe('outboxFocus', () => {
     expect(focus.headlineTh).toBe('2 ข้อความที่ลูกค้าไม่ได้รับ และระบบเลิกส่งไปแล้ว');
     expect(focus.detailTh).toBe(
       'ลองส่งครบทุกครั้งที่ตั้งไว้แล้วและไม่ถึง กดส่งซ้ำได้ที่รายการด้านล่าง · ' +
-        'อีก 3 ฉบับไม่มีที่อยู่ให้ส่งมาตั้งแต่แรก ส่งซ้ำไม่ได้ — ต้องไปหาเบอร์หรืออีเมลของลูกค้ามาก่อน',
+        'อีก 3 ฉบับระบบไม่ได้ส่ง และส่งซ้ำไม่ได้ — เหตุผลของแต่ละฉบับอยู่ในตารางด้านล่าง',
     );
   });
 });
