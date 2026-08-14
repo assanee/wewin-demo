@@ -1286,8 +1286,21 @@ export const notifications = pgTable(
      * so this widening needs no DDL. That is stated rather than assumed — it is the reason
      * this change is one line and not a migration of an enum type.
      */
+    /*
+     * ⚠️ `balance_settled` is the fourth, and the first that is not about reachability. The
+     * other three all mean *we could not write to them*; this one means *there was no longer
+     * anything to say* — a customer who paid their balance between the reminder being asked for
+     * and the worker draining the queue. The outbox groups them apart for that reason, and the
+     * screen used to file this one under "go and find their address", which is an errand for a
+     * customer who has already paid.
+     *
+     * It was added to the writer and to the screen and NOT to this list, and it compiled anyway:
+     * `suppress()` takes `reason: string` and writes raw SQL, and the column has no CHECK. So
+     * the narrowing sat here presenting three reasons as the set while a fourth was already in
+     * the table — a type that is wrong in the one direction a type cannot warn about.
+     */
     suppressedReason: text('suppressed_reason', {
-      enum: ['no_contact_channel', 'channel_disabled', 'recipient_erased'],
+      enum: ['no_contact_channel', 'channel_disabled', 'recipient_erased', 'balance_settled'],
     }),
 
     /** The folding bucket, copied from the rule that produced this row. Null means never fold. */
