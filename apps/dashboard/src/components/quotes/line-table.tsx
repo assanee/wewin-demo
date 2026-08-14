@@ -374,8 +374,17 @@ function LineRow({
             ลบ
           </Button>
 
+          {/*
+           * `whitespace-normal` undoes the `whitespace-nowrap` that `TableCell` sets on
+           * every cell. That default is right for the rest of this table — a price and a
+           * quantity should never be broken across two lines — and wrong for the only
+           * cell holding a sentence. Left inherited, these 88 characters render as one
+           * 510px line inside a column declared `w-44`, which raises the table's
+           * min-content width to 1398 and pushes the page sideways; see the note on
+           * `SidebarInset` for why nothing upstream absorbed that.
+           */}
           {view.locked ? (
-            <span className="inline-flex items-start gap-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-start gap-1 text-xs whitespace-normal text-muted-foreground">
               <Lock className="mt-0.5 size-3 shrink-0" />
               {LOCK_REASON_TH}
             </span>
