@@ -75,8 +75,14 @@ import { sql, type SQL } from '@wewin/db/sql';
  * (`src/payments/slips/attachable.ts`) now answer identically for all nine statuses;
  * `tests/payments/slips/attachable.test.ts` enumerates them and asserts it. The two lists stay
  * separate because they are pinned to different things — that one is a mirror of a Postgres
- * trigger and this one is a definition with no database counterpart — and that file's header
- * carries the argument. What was collapsed instead is the pair of booleans the customer's
+ * trigger and this one, since 0049, is mirrored by `order_status_is_live()` and pinned by a
+ * drift test over all nine statuses in `tests/orders/contract-drift.pg.test.ts` — and that
+ * file's header carries the argument.
+ *
+ * ⚠️ This paragraph said "a definition with no database counterpart" until 0049 gave it one, and
+ * was left standing twenty lines under a header that had already been corrected. One file
+ * asserting both halves of a contradiction is worse than either half alone: whichever a reader
+ * finds first, they stop looking. What was collapsed instead is the pair of booleans the customer's
  * payment screen was reading; `PaymentInstructionsWire` now carries `orderIsLive` alone.
  */
 export const NON_LIVE_ORDER_STATUSES = [

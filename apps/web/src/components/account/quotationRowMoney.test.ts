@@ -232,3 +232,60 @@ describe('⭐ ⓸ a row whose balance was written off', () => {
     expect(money.noteKey).toBe('payment.settled');
   });
 });
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ AN ABSENT WRITE-OFF FIGURE MUST NOT BECOME "ชำระครบแล้ว".
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * This row read `(writtenOffMinor ?? 0n) > 0n`, and the comment defending it claimed the field
+ * is null only where the total and the outstanding are null too — so the cart branch above would
+ * already have returned. That was false, and running it proved so: a stated outstanding of ฿0.00
+ * beside an absent write-off fell through to the settled branch and told a customer who had paid
+ * nothing that their order was ชำระครบแล้ว.
+ *
+ * Reachable exactly when the storefront bundle is newer than the API, which is every deploy
+ * between the two. `describePaymentPanel` and the staff order screens both refuse to guess here;
+ * this row is the third reader of the same field and the one the customer reaches first.
+ */
+describe('⭐ a write-off figure the API did not send', () => {
+  it('says nothing about the money rather than claiming it was paid', () => {
+    const money = describeRowMoney({
+      totalMinor: TOTAL,
+      outstandingMinor: 0n,
+      nextDueMinor: 0n,
+      /* The API is a version behind: the fold exists, this bundle just cannot see it. */
+      writtenOffMinor: null,
+    });
+
+    expect(money.noteKey).toBeNull();
+    expect(money.noteKey).not.toBe('payment.settled');
+    expect(money.noteKey).not.toBe('payment.writtenOff');
+    /* The row still renders and still carries the total — it just makes no claim. */
+    expect(money.figures.length).toBeGreaterThan(0);
+    expect(money.owes).toBe(false);
+  });
+
+  it('still says paid when the figure is stated and is zero', () => {
+    /* ⓵ The control. `0n` is an answer; `null` is the absence of one, and they must not merge. */
+    const money = describeRowMoney({
+      totalMinor: TOTAL,
+      outstandingMinor: 0n,
+      nextDueMinor: 0n,
+      writtenOffMinor: 0n,
+    });
+
+    expect(money.noteKey).toBe('payment.settled');
+  });
+
+  it('still says forgiven when the figure is stated and positive', () => {
+    const money = describeRowMoney({
+      totalMinor: TOTAL,
+      outstandingMinor: 0n,
+      nextDueMinor: 0n,
+      writtenOffMinor: TOTAL,
+    });
+
+    expect(money.noteKey).toBe('payment.writtenOff');
+  });
+});

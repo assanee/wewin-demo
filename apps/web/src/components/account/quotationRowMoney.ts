@@ -131,17 +131,47 @@ export function describeRowMoney(row: RowFigures): RowMoney {
    * settlement at half leaves a real balance the customer is about to pay, and a branch on the
    * write-off alone would take the "ชำระเงิน" link off their row.
    *
-   * `writtenOffMinor` is `null` only where the other two are, so the branch above has already
-   * returned by here; the `?? 0n` is the honest reading of a fold that could not be consulted and
-   * it is the fail-closed direction — an unread write-off says nothing rather than saying forgiven.
+   * ⚠️ **A `null` write-off is not "nothing forgiven", and this comment used to say it was.** It
+   * claimed `writtenOffMinor` is null only where the other two figures are, so the cart branch
+   * above had already returned — which is false, and was falsified by running it: an order with a
+   * stated outstanding of ฿0.00 and an absent write-off reached the *settled* branch below and
+   * told a customer who never paid a baht that their order was ชำระครบแล้ว. That is the exact
+   * sentence 0048 exists to stop saying, on the first screen the customer sees.
+   *
+   * `?? 0n` was called the fail-closed direction. For this field it is the opposite: silence is
+   * fail-closed, and "paid in full" is the loudest possible claim to make on missing data. So the
+   * two are separated — forgiven when the figure says so, and *nothing about the money* when the
+   * figure is absent, which is the same call `describePaymentPanel` and the staff order screens
+   * make for the same reason.
+   *
+   * ⚠️ **The explicit `!== null` on THIS branch changes no behaviour and is here to read beside
+   * the one below that does.** `?? 0n` and a null check agree here — null becomes `0n` and
+   * `0n > 0n` is false either way — and mutation-testing said so: reverting this line alone moved
+   * no test. The defect was one branch down, where the same `?? 0n` reasoning let a *stated* zero
+   * and an *absent* figure reach the same sentence. Saying which of two neighbouring lines carries
+   * the weight is worth a paragraph; discovering it from a passing suite is not possible.
    */
-  if (outstandingMinor <= 0n && (writtenOffMinor ?? 0n) > 0n) {
+  if (outstandingMinor <= 0n && writtenOffMinor !== null && writtenOffMinor > 0n) {
     return { figures: unlabelledTotal(totalMinor), noteKey: 'payment.writtenOff', owes: false };
   }
 
-  /* Nothing owed. `<=`, because an overpayment is a modelled state and not an error. */
-  if (outstandingMinor <= 0n) {
+  /*
+   * ⚠️ Nothing owed **and the write-off figure was stated**. `<=`, because an overpayment is a
+   * modelled state and not an error — but `writtenOffMinor === null` deliberately does not reach
+   * here: an API a version behind cannot tell us whether this balance was paid or forgiven, and
+   * the row must not pick one.
+   */
+  if (outstandingMinor <= 0n && writtenOffMinor !== null) {
     return { figures: unlabelledTotal(totalMinor), noteKey: 'payment.settled', owes: false };
+  }
+
+  /*
+   * Nothing owed, and no write-off figure to tell us why. The total, unlabelled, and no sentence
+   * about payment at all — the row still renders and still links to the order; what it does not do
+   * is assert something about the customer's money that this bundle cannot know.
+   */
+  if (outstandingMinor <= 0n) {
+    return { figures: unlabelledTotal(totalMinor), noteKey: null, owes: false };
   }
 
   /*

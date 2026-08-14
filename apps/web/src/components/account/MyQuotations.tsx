@@ -85,9 +85,13 @@ function decode(body: unknown): readonly QuotationRow[] | null {
         nextDueMinor: satang(raw['nextDueThbMinor']),
         /*
          * ⭐ ⓸ How much of this balance the company forgave — 0048's third fold. `null` on an API
-         * a version behind, which `describeRowMoney` reads as *nothing forgiven*: the fail-closed
-         * direction, because the alternative is a row that claims a debt was written off when the
-         * bundle simply could not tell.
+         * a version behind.
+         *
+         * ⚠️ The comment here used to call that "nothing forgiven … the fail-closed direction".
+         * It was neither. `describeRowMoney` now keeps `null` apart from `0n` and says nothing
+         * about the money in that case, because reading absence as zero made this row tell a
+         * customer who never paid that their order was ชำระครบแล้ว — the one sentence the
+         * write-off round exists to stop saying, on the screen they reach first.
          */
         writtenOffMinor: satang(raw['writtenOffThbMinor']),
       },
