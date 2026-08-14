@@ -118,6 +118,18 @@ export function encodeOrderSummary(row: ScopedOrder): OrderSummaryWire {
     grandTotalThbMinor: row.grandTotalThbMinor === null ? null : encodeThb(row.grandTotalThbMinor),
     outstandingThbMinor: owesLive ? encodeThb(row.outstandingThbMinor) : null,
     nextDueThbMinor: owesLive ? encodeThb(row.nextDueThbMinor) : null,
+    /*
+     * ⭐ Nulled on the same fact as the two above, and that is a decision rather than symmetry.
+     *
+     * A forgiven balance is history and it really did happen on a cancelled order too, so there
+     * was an argument for always stating it. It loses: this field exists to tell a ฿0.00
+     * outstanding apart from a ฿0.00 outstanding, and where the wire states **no** outstanding
+     * there is nothing to tell apart — a client that read a write-off figure beside a dash would
+     * be reading a debt reduction with no debt on the screen. `owesLive` therefore governs all
+     * three, one question asked once, and *"how much did we write off?"* is answered by the
+     * approval inbox's decided list (`approvals_write_off_idx`), which is where an auditor asks it.
+     */
+    writtenOffThbMinor: owesLive ? encodeThb(row.writtenOffThbMinor) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }

@@ -4,9 +4,11 @@ import { APPROVAL_DIMENSIONS, type ApprovalDimension } from '@wewin/db/schema';
 
 import { AppError } from '../../common/errors/app-error';
 import { DEFAULT_VAT_RULE } from '../../orders/defaults';
+/* The one definition of a live obligation, as the pure function it is — see `write-off.service.ts`. */
+import { isLiveOrder } from '../../orders/live-order';
 import { GATE_COVERAGE_BP_DEFAULT } from '../../payments/schedule';
-import type { Scope } from '../../rbac';
-import { approvalRights, type ApprovalRights } from './approval-rights';
+import { scopeHolds, type Scope } from '../../rbac';
+import { approvalRights, WRITE_OFF_PERMISSION, type ApprovalRights } from './approval-rights';
 import { DEPOSIT_POLICY, type DepositPolicyPort } from './deposit-policy.port';
 import {
   ConcessionIntegrityError,
@@ -400,9 +402,20 @@ export class AuthorityService {
       return { measurement, outcome: { kind: 'within_authority', ceilingThbMinor: ceiling } };
     }
 
+    /*
+     * ⚠️ `kind === 'quote_concession'`, and it is the term that keeps a forgiven debt from
+     * licensing a discount.
+     *
+     * A write-off is `dimension: 'cashflow'` — it forgives cash, so it draws on the cashflow
+     * ceiling — and without this term an approved ฿20,000 write-off on an order would *cover* a
+     * ฿20,000 `gate_below_floor` concession on the same order's quote: a schedule with no deposit
+     * at all would pass the submit gate on the authority of a decision about an unrelated debt.
+     * Nobody would have approved that; the two mechanisms simply share a column.
+     */
     const covering = decisions.find(
       (row) =>
         row.dimension === measurement.dimension &&
+        row.kind === 'quote_concession' &&
         row.status === 'approved' &&
         row.quoteRevision === quoteRevision &&
         row.concessionThbMinor >= conceded,
@@ -419,8 +432,17 @@ export class AuthorityService {
       };
     }
 
+    /*
+     * Same term, for the same reason facing the other way: a pending write-off is not the quote's
+     * approval arriving. Reporting its id as `pendingApprovalId` would point the quote editor's
+     * *"your request is being considered"* banner at a decision about a debt, and pressing through
+     * to it would show the salesperson a screen about money they were not asking about.
+     */
     const pending = decisions.find(
-      (row) => row.dimension === measurement.dimension && row.status === 'pending',
+      (row) =>
+        row.dimension === measurement.dimension &&
+        row.kind === 'quote_concession' &&
+        row.status === 'pending',
     );
 
     return {
@@ -516,6 +538,22 @@ export class AuthorityService {
       const revision = await this.repository.quoteRevision(order.id, tx);
 
       const existing = await this.repository.approvalsForOrder(order.id, tx);
+      /*
+       * ⚠️ NOT filtered by `kind`, unlike `judge` above, and the asymmetry is deliberate.
+       *
+       * `approvals_one_open_per_order_dimension` is `(order_id, dimension) WHERE status =
+       * 'pending'` — it does not know about `kind` — so a pending **write-off** really does
+       * occupy the cashflow slot on this order and the insert below really would raise 23505.
+       * Filtering it out here to "be precise about mechanisms" would turn a Thai sentence into a
+       * 500 from a unique index.
+       *
+       * The two cases are told apart in the *message*, because they are different news: one is
+       * "your own dimension already has a question waiting", the other is "somebody is asking to
+       * write this order's balance off, and until that is answered nothing else about this order's
+       * cashflow can be". Widening the index to include `kind` was considered and rejected: an
+       * order with a pending write-off and a pending below-floor schedule is two people asking
+       * about the same money, and one answer at a time is the fail-closed order to take them in.
+       */
       const open = existing.find(
         (row) => row.status === 'pending' && row.dimension === input.dimension,
       );
@@ -526,10 +564,16 @@ export class AuthorityService {
          * revision is not in the way: the quote was edited, the approval stopped covering, and
          * asking again is the correct next step rather than a duplicate.
          */
-        throw AppError.conflict('ใบเสนอราคานี้มีคำขออนุมัติในมิตินี้ที่ยังรอการตัดสินอยู่แล้ว', {
-          approvalId: open.id,
-          status: open.status,
-        });
+        throw AppError.conflict(
+          open.kind === 'write_off'
+            ? 'ออเดอร์นี้มีคำขออนุมัติตัดยอดค้างทิ้งที่ยังรอการตัดสินอยู่ ต้องตัดสินคำขอนั้นก่อน'
+            : 'ใบเสนอราคานี้มีคำขออนุมัติในมิตินี้ที่ยังรอการตัดสินอยู่แล้ว',
+          {
+            approvalId: open.id,
+            status: open.status,
+            kind: open.kind,
+          },
+        );
       }
 
       return this.repository.insertApproval(tx, {
@@ -538,6 +582,13 @@ export class AuthorityService {
         orderDocumentId: order.documentId,
         quoteRevision: revision,
         dimension: input.dimension,
+        /*
+         * ⭐ Stated, not defaulted. This route measures a concession from `quote_lines` and
+         * `quote_overrides` and is the only thing that may write that kind of row; the write-off
+         * path is `WriteOffService`, on its own route, with its own guard. Writing the literal
+         * here means a reader of either method can see which one they are in.
+         */
+        kind: 'quote_concession',
         concessionThbMinor: dimension.concessionThbMinor,
         reasonTh: input.reasonTh,
         requestedByUserId,
@@ -565,6 +616,42 @@ export class AuthorityService {
    * A **rejection** requires no ceiling. Saying no is not an exercise of authority, and a
    * request that can only be answered by somebody senior enough to say yes is a request that
    * sits in the queue for ever.
+   *
+   * ── ⭐ AND TWO MORE, FOR A WRITE-OFF ONLY ────────────────────────────────────────
+   *
+   *   `payments.write_off`               forgiving cash the company is owed is a different power
+   *                                      from approving a discount at quote time. Checked here
+   *                                      and not by the decorator because which extra code a
+   *                                      decision needs is a fact about the row, and the guard
+   *                                      runs before the row is read. It blocks a **refusal**
+   *                                      too — see `approval-rights.ts`.
+   *   the balance still covers it        ⚠️ and this is the one that is easy to leave out.
+   *
+   * ── ⚠️ THE BALANCE MOVES BETWEEN THE ASK AND THE ANSWER ──────────────────────────
+   *
+   * `approvals_write_off_within_balance` refuses a request larger than the debt, so every pending
+   * write-off was valid **when it was raised**. It does not stay valid: a customer may transfer
+   * part of what they owe while the request sits in the inbox, and a ฿20,000 write-off asked
+   * against a ฿20,000 debt is an over-write-off by the time ฿8,000 arrives.
+   *
+   * Two answers were available and this one refuses:
+   *
+   *   ✗ **approve only what is left.** Rejected. `approvals.concession_thb_minor` is frozen while
+   *     pending by `approvals_guard_write()` for the reason that guard exists — *what is being
+   *     approved cannot change while it is being approved* — so this would mean either defeating
+   *     that guard or writing a decision whose recorded figure is not the figure anybody agreed
+   *     to. `approvals_ceiling_covers_concession` would then be checked against a number nobody
+   *     requested, and the audit row would read as though the approver had chosen ฿12,000.
+   *
+   *   ✓ **refuse the approval, and say why.** The money that arrived is *new information about
+   *     the customer* — they are paying after all, and the remainder may now be worth chasing, or
+   *     the settlement they agreed to has been part-performed. That is a decision for a person,
+   *     not an arithmetic adjustment. The approver may still **reject**, which is the correct
+   *     next step: the requester reads the note and raises a smaller request against the balance
+   *     as it now stands.
+   *
+   * Neither answer may silently create a negative outstanding, and the database says so
+   * independently: the AFTER trigger re-folds the balance and rolls the statement back.
    */
   async decide(
     scope: Scope,
@@ -576,6 +663,20 @@ export class AuthorityService {
     await this.repository.transaction(async (tx) => {
       const row = await this.repository.lockApproval(tx, approvalId);
       if (row === undefined) throw AppError.notFound('ไม่พบคำขออนุมัตินี้');
+
+      /*
+       * ⭐ The second permission, before the status check, so that the order of refusals here is
+       * the order `approvalRights` reports — a caller who both lacks the code and is looking at a
+       * decided row must be told the same first thing by both.
+       */
+      if (row.kind === 'write_off' && !scopeHolds(scope, WRITE_OFF_PERMISSION)) {
+        throw new AppError(
+          'FORBIDDEN',
+          403,
+          'การตัดยอดค้างทิ้งต้องมีสิทธิ์เฉพาะ บทบาทของคุณยังไม่ได้รับสิทธิ์นี้',
+          { kind: row.kind },
+        );
+      }
 
       if (row.status !== 'pending') {
         throw AppError.conflict('คำขออนุมัตินี้ถูกตัดสินไปแล้ว', {
@@ -611,6 +712,62 @@ export class AuthorityService {
               ceilingThbMinor: ceiling.toString(),
             },
           );
+        }
+
+        /*
+         * ⭐ AND — for a write-off — the balance as it stands right now, inside this transaction,
+         * under the lock. See the header for why this refuses rather than reducing the figure.
+         *
+         * ⛔ `order_outstanding_thb_minor()`, read through the repository. Not `grandTotal` minus
+         * a sum assembled here: the fold's third term is this table's own approved write-offs, so
+         * a second implementation would have to re-derive a sum over rows this transaction is in
+         * the middle of writing.
+         */
+        if (row.kind === 'write_off') {
+          /*
+           * ⭐ AND THE ORDER IS STILL SOMEBODY'S LIVE OBLIGATION — the balance is not the only
+           * thing that moves while a request sits in the inbox. The order can be **cancelled**,
+           * and then its remainder stops being a debt: the cancellation disposes of it through
+           * `forfeit_policy_rules` and the refund module, and a superseded order's remainder was
+           * carried to the order that replaced it. Approving here would spend this role's cashflow
+           * ceiling on a debt somebody else already dealt with, and record the forgiven figure on
+           * an order whose wire states no money at all.
+           *
+           * `WriteOffService.request` refuses the same thing at the ask, and
+           * `approvals_write_off_order_is_live` (0049) refuses it at the row — this check exists so
+           * that an approver pressing the button reads a Thai sentence instead of the trigger's
+           * `check_violation`.
+           *
+           * ⛔ `isLiveOrder`, the one list (`src/orders/live-order.ts`). Not a status comparison
+           * written here.
+           *
+           * ⚠️ Read without a lock, deliberately: the row that decides the outcome is the trigger's
+           * read at write time, and taking `for update` on `orders` here would add a second lock
+           * order (approval → order) against `WriteOffService.request`'s (order → approval).
+           *
+           * ⚠️ Only the **approval** is refused. Rejecting a write-off on a cancelled order stays
+           * available — this whole branch is inside `if (input.decision === 'approved')` — because
+           * a pending request holds the order's one cashflow slot until somebody answers it.
+           */
+          const order = await this.repository.readOrder(row.orderId, tx);
+          if (order === undefined) throw AppError.notFound('ไม่พบออเดอร์นี้');
+          if (!isLiveOrder(order.status)) {
+            throw AppError.conflict(
+              'ออเดอร์นี้ถูกยกเลิกหรือถูกแทนที่แล้ว ยอดคงค้างจึงไม่ใช่หนี้ที่ต้องตัดทิ้ง — ให้ไม่อนุมัติคำขอนี้',
+              { status: order.status },
+            );
+          }
+
+          const balance = await this.repository.outstandingThbMinor(row.orderId, tx);
+          if (row.concessionThbMinor > balance) {
+            throw AppError.conflict(
+              'ยอดคงค้างของออเดอร์นี้ลดลงหลังจากมีการยื่นคำขอ จึงตัดยอดตามจำนวนที่ขอไม่ได้ — ให้ไม่อนุมัติคำขอนี้แล้วยื่นใหม่ตามยอดคงค้างปัจจุบัน',
+              {
+                concessionThbMinor: row.concessionThbMinor.toString(),
+                outstandingThbMinor: balance.toString(),
+              },
+            );
+          }
         }
 
         /*
@@ -697,6 +854,21 @@ export class AuthorityService {
     const isTruncated = pending.length > APPROVAL_QUEUE_SCAN_MAX;
     const scanned = isTruncated ? pending.slice(0, APPROVAL_QUEUE_SCAN_MAX) : pending;
 
+    /*
+     * ⭐ The balances the write-off rows are bounded by — one statement, and only when there is a
+     * write-off in the scan.
+     *
+     * ⚠️ Read here rather than per row for the same reason the ceilings are: two rows about one
+     * order must be judged against one number, and a per-row read would put a window between them
+     * in which a slip could be accepted and half the queue judged against the old balance. An
+     * ordinary queue of quote concessions issues no extra statement at all — see
+     * `outstandingByOrder`.
+     */
+    const writeOffOrderIds = [
+      ...new Set(scanned.filter((row) => row.kind === 'write_off').map((row) => row.orderId)),
+    ];
+    const balances = await this.repository.outstandingByOrder(writeOffOrderIds);
+
     const approvals: ApprovalRow[] = [];
     let beyondYourAuthority = 0;
     let yourOwnRequests = 0;
@@ -704,9 +876,11 @@ export class AuthorityService {
     for (const row of scanned) {
       const rights = approvalRights(scope, {
         status: row.status,
+        kind: row.kind,
         requestedByUserId: row.requestedByUserId,
         concessionThbMinor: row.concessionThbMinor,
         ceilingThbMinor: ceilings[row.dimension],
+        outstandingThbMinor: row.kind === 'write_off' ? balances.get(row.orderId) : undefined,
       });
 
       if (rights.mayApprove) {
@@ -723,6 +897,17 @@ export class AuthorityService {
        * ⚠️ `own_request` and not `requestedByUserId === userId`: the reason comes from the same
        * function the filter does, so a change to the rule cannot leave the tally describing the
        * old one.
+       */
+      /*
+       * ⚠️ `not_a_write_off_approver` and `above_balance` land in `beyondYourAuthority`, which is
+       * the right bucket for both — one is authority this caller has not been granted, the other
+       * is a request nobody can approve any longer — but note what that means: a **stale
+       * write-off is withheld from this queue and can still be rejected**, because `mayRefuse`
+       * stays true. That is the queue's existing shape rather than a new hole (`no_ceiling` and
+       * `above_ceiling` rows have always been withheld while remaining refusable), and it matters
+       * more here because a pending write-off occupies the order's cashflow slot until somebody
+       * answers it. The route to it is the order itself: the write-off panel on the order detail
+       * reads `GET /quotes/approvals?orderId=`, shows the stale request and links to the decision.
        */
       if (rights.because === 'own_request') yourOwnRequests += 1;
       else beyondYourAuthority += 1;
@@ -757,6 +942,15 @@ export class AuthorityService {
     readonly rights: ApprovalRights;
     /** The caller's ceiling in this request's dimension. `undefined` is no live row at all. */
     readonly ceilingThbMinor: bigint | undefined;
+    /**
+     * ⭐ What the order owes **now** — read for a `write_off` request and `undefined` otherwise.
+     *
+     * The write-off equivalent of `hasMovedSinceRequest`, and the sharper one: a quote concession
+     * that has moved still grants *something*, whereas a write-off whose balance has fallen below
+     * the figure asked for cannot be approved at all. The inbox has to say that before the button
+     * is pressed rather than after — see `decide`, which refuses.
+     */
+    readonly outstandingThbMinor: bigint | undefined;
   }> {
     const row = await this.repository.approvalById(approvalId);
     if (row === undefined) throw AppError.notFound('ไม่พบคำขออนุมัตินี้');
@@ -764,17 +958,24 @@ export class AuthorityService {
     const live = await this.measure(row.orderId);
     const quoteRevisionNow = await this.repository.quoteRevision(row.orderId);
     const ceilingThbMinor = await this.ceilingFor(scope, row.dimension);
+    const outstandingThbMinor =
+      row.kind === 'write_off'
+        ? await this.repository.outstandingThbMinor(row.orderId)
+        : undefined;
 
     return {
       row,
       live,
       quoteRevisionNow,
       ceilingThbMinor,
+      outstandingThbMinor,
       rights: approvalRights(scope, {
         status: row.status,
+        kind: row.kind,
         requestedByUserId: row.requestedByUserId,
         concessionThbMinor: row.concessionThbMinor,
         ceilingThbMinor,
+        outstandingThbMinor,
       }),
     };
   }

@@ -63,6 +63,7 @@ export {
   approvalQuerySchema,
   decideApprovalSchema,
   requestApprovalSchema,
+  requestWriteOffSchema,
   setAuthorityLimitSchema,
   type ApprovalDetailWire,
   type ApprovalListWire,

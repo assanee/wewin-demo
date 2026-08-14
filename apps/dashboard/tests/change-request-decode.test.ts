@@ -58,6 +58,8 @@ const WIRE: OrderWire = {
    */
   outstandingThbMinor: encodeThb(1290240n),
   nextDueThbMinor: encodeThb(1290240n),
+  /* ⭐ 0048's third fold. ฿0.00 is the real answer here: nothing on this order was forgiven. */
+  writtenOffThbMinor: encodeThb(0n),
   updatedAt: '2026-08-09T09:09:09.000Z',
   createdAt: '2026-08-08T02:00:00.000Z',
   contact: {
@@ -179,6 +181,66 @@ describe('what an order still owes', () => {
 
     expect(detail.outstandingThbMinor).toBe(1843200n);
     expect(detail.nextDueThbMinor).toBe(552960n);
+  });
+
+  it('⭐ REFUSES to decode an order that states no write-off figure at all', () => {
+    /*
+     * ⚠️ THE ONE FIELD THIS DECODER IS STRICT ABOUT, AND WHY.
+     *
+     * Reachable on one deployment shape: an API a version behind a dashboard that already knows
+     * about 0048. Every other money field degrades to a *quieter* screen when it is absent — a dash,
+     * or a next-due overstated up to the whole debt. This one degrades to a **claim**: read as
+     * ฿0.00 forgiven, a written-off order goes down `readOutstanding`'s settled branch and the queue
+     * prints "ชำระครบแล้ว" beside a customer who never paid.
+     *
+     * So absence is a `TypeError`, which `OrderDetail.reload()` turns into "เปิดออเดอร์นี้ไม่ได้" and
+     * a retry — loud, and recoverable. `apps/web/src/lib/payment/api.ts` makes the same choice on
+     * the same field; this is the staff half of it.
+     *
+     * ⚠️ The key is deleted rather than set to `undefined`, because that is what a JSON body from an
+     * older API actually looks like, and `delete` on a `Record` copy is the only way to produce it
+     * from a fixture the contract's own type has vetted.
+     */
+    const behind: Record<string, unknown> = { ...(WIRE as unknown as Record<string, unknown>) };
+    delete behind['writtenOffThbMinor'];
+
+    expect(() => decodeDetail(behind)).toThrow(TypeError);
+    expect(() => decodeDetail(behind)).toThrow(/writtenOffThbMinor/u);
+  });
+
+  it('⭐ accepts the explicit null the contract does send, and it is not a zero', () => {
+    /*
+     * The other side of the same rule, and the reason this is not `asSatang`: `OrderSummaryWire`
+     * nulls **every** money figure on a cart and on a cancelled order, so a stated `null` is a legal
+     * body and a decoder that threw on it would break the screen for every cancelled order — the
+     * `openedAt`/`createdAt` scar on this file, repeated.
+     *
+     * `toBeNull` and not `toBe(0n)`: null is "not stated" and 0n is "nothing was forgiven", and
+     * `order-outstanding.ts` answers the two differently on purpose.
+     */
+    const cancelled: OrderWire = {
+      ...WIRE,
+      status: 'cancelled',
+      grandTotalThbMinor: encodeThb(1843200n),
+      outstandingThbMinor: null,
+      nextDueThbMinor: null,
+      writtenOffThbMinor: null,
+      openChangeRequest: null,
+    };
+
+    expect(decodeDetail(cancelled).writtenOffThbMinor).toBeNull();
+  });
+
+  it('carries a real write-off figure through under the name the wire uses', () => {
+    /* The field-name class of bug, on the field this round added. */
+    const forgiven: OrderWire = {
+      ...WIRE,
+      outstandingThbMinor: encodeThb(0n),
+      nextDueThbMinor: encodeThb(0n),
+      writtenOffThbMinor: encodeThb(1290240n),
+    };
+
+    expect(decodeDetail(forgiven).writtenOffThbMinor).toBe(1290240n);
   });
 
   it('keeps a cart null on all three money fields rather than zero', () => {

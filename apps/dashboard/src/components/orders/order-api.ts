@@ -63,6 +63,20 @@ export interface OrderSummary {
    * than null when an order is settled in full** — null is reserved for "no contract yet".
    */
   readonly nextDueThbMinor: bigint | null;
+  /**
+   * ⭐ How much of this balance the company has **forgiven** — `order_written_off_thb_minor()`
+   * (0048), the sum of approved ขออนุมัติตัดยอดค้างทิ้ง on this order.
+   *
+   * ⛔ `outstandingThbMinor` is already net of this; Postgres subtracts it. Nothing here does.
+   *
+   * It travels beside the outstanding because it is the only thing that tells the two ฿0.00s apart:
+   * the customer paid, or the company gave up. `order-outstanding.ts` reads it to keep
+   * `ชำระครบแล้ว` off a written-off row, and the money card names the figure.
+   *
+   * ⚠️ Null on exactly the same fact as the two fields above — no contract, or a cancelled order
+   * that states no money at all. ฿0.00 is the real answer *nothing was forgiven*.
+   */
+  readonly writtenOffThbMinor: bigint | null;
   readonly updatedAt: string;
 }
 
@@ -187,6 +201,42 @@ const asSatang = (value: unknown, what: string): bigint => {
 const asSatangOrNull = (value: unknown, what: string): bigint | null =>
   value === null || value === undefined ? null : asSatang(value, what);
 
+/**
+ * ⭐ A money field the wire must **state**, as a figure or as an explicit `null`.
+ *
+ * The same three-line function as `asSatangOrNull` with one difference: an *absent* key is a
+ * `TypeError` rather than a null. `null` still decodes as null, because the contract really does
+ * send one (`OrderSummaryWire` nulls every money figure on a cart and on a cancelled order).
+ *
+ * ── ⚠️ Why one field is held to this and the other three are not ─────────────────
+ *
+ * This file's bargain is leniency about *which* fields an older API sends. That bargain is only
+ * payable while an absent field degrades to a **quieter** screen: a missing `grandTotalThbMinor`
+ * or `outstandingThbMinor` becomes `noFigure`, which renders as a dash, and a missing
+ * `nextDueThbMinor` degrades to the whole outstanding, which can only overstate what is due.
+ * None of them makes the screen *assert* something false.
+ *
+ * `writtenOffThbMinor` does. Read as "nothing was forgiven", an absent figure sends a
+ * written-off order down `readOutstanding`'s settled branch and prints **ชำระครบแล้ว** at the one
+ * reader who knows the customer never paid — the exact sentence 0048 exists to stop saying. So
+ * for this field, and only this field, silence is not a smaller answer; it is the wrong answer.
+ * Failing the decode is loud and recoverable ("เปิดออเดอร์นี้ไม่ได้" plus a retry); the sentence
+ * is neither.
+ *
+ * ⚠️ `apps/web/src/lib/payment/api.ts` made the same call on the same field for the same reason
+ * (`satang(body['writtenOffThbMinor'])` with a hard `return null` beside it) — the two halves of
+ * this round now agree. The shapes differ only where the contracts differ:
+ * `PaymentInstructionsWire.writtenOffThbMinor` is non-nullable, so over there *any* absence of a
+ * figure fails; here the contract permits an explicit null, so absence of the **key** is what
+ * fails. Same rule, stated against two different wires.
+ */
+const asStatedSatangOrNull = (value: unknown, what: string): bigint | null => {
+  if (value === undefined) {
+    throw new TypeError(`${what}: expected THB.satang or null, and the field was absent`);
+  }
+  return asSatangOrNull(value, what);
+};
+
 const decodeSummary = (raw: unknown): OrderSummary => {
   const order = asRecord(raw, 'ออเดอร์');
 
@@ -207,6 +257,15 @@ const decodeSummary = (raw: unknown): OrderSummary => {
      */
     outstandingThbMinor: asSatangOrNull(order['outstandingThbMinor'], 'order.outstandingThbMinor'),
     nextDueThbMinor: asSatangOrNull(order['nextDueThbMinor'], 'order.nextDueThbMinor'),
+    /*
+     * ⭐ `asStatedSatangOrNull` and NOT the lenient reader the three fields above use — see that
+     * function for the whole argument. An API a version behind sends no such key, and reading the
+     * silence as ฿0.00 forgiven is how "ชำระครบแล้ว" gets printed on a written-off order.
+     */
+    writtenOffThbMinor: asStatedSatangOrNull(
+      order['writtenOffThbMinor'],
+      'order.writtenOffThbMinor',
+    ),
     updatedAt: asText(order['updatedAt'], 'order.updatedAt'),
   };
 };
@@ -373,6 +432,36 @@ export const resolveChangeRequest = async (
       body: JSON.stringify({ resolution, ...(trimmed === '' ? {} : { noteTh: trimmed }) }),
     },
   );
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+};
+
+/**
+ * ⭐ ขออนุมัติตัดยอดค้างทิ้ง — ask for part or all of this order's balance to be forgiven.
+ *
+ * `POST /orders/:orderId/write-offs`, behind `orders.write` + `payments.read`. The route is under
+ * `/orders` and not under `/quotes/approvals` because a collection-time write-off is not a
+ * concession on a quotation — the quote was right and the customer agreed to it. See
+ * `apps/api/src/quotes/authority/write-offs.controller.ts`.
+ *
+ * ⚠️ **Nothing is forgiven by this call.** It records a request; the balance moves when somebody
+ * holding `quotes.approve` + `payments.write_off` approves it in the approval inbox. The dialog says
+ * so above its own fields, for the reason `record-payment-dialog.tsx` gives about its own button: a
+ * control beside a debt that does not change the debt is a control somebody presses twice.
+ *
+ * ⚠️ The response is an `approvals` row and is deliberately not decoded into a type here. The screen
+ * needs nothing from it but the fact that it was created — the request then appears through
+ * `GET /quotes/approvals?orderId=`, which is the one reader of that shape.
+ */
+export const requestWriteOff = async (
+  orderId: string,
+  body: { readonly amountThbMinor: string; readonly reasonTh: string },
+): Promise<void> => {
+  const response = await apiFetch(`/orders/${orderId}/write-offs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
   if (!response.ok) throw await apiErrorFromResponse(response);
 };

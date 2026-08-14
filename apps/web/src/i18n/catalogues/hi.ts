@@ -581,6 +581,7 @@ export const hi: PartialUiCatalogue = {
   'payment.dueNow': 'अभी देय राशि',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'यह ऑर्डर पूरी तरह भुगतान हो चुका है',
+  'payment.writtenOff': 'इस ऑर्डर की शेष राशि बट्टे खाते में डाल दी गई है — अब कुछ भी देय नहीं है',
   'payment.closed':
     'यह ऑर्डर अब भुगतान स्वीकार नहीं करता। राशि के बारे में कोई सवाल हो तो कृपया सेल्स टीम से संपर्क कीजिए।',
   'payment.account.legend': 'इनमें से किसी भी खाते में ट्रांसफर करें',

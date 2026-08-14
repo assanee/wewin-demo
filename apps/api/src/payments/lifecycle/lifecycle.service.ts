@@ -121,11 +121,21 @@ export class PaymentLifecycleService {
   async customerFigures(orderId: string): Promise<{
     readonly outstandingThbMinor: bigint;
     readonly nextDueThbMinor: bigint;
+    /**
+     * ⭐ How much of this balance was forgiven rather than paid — 0048's third fold.
+     *
+     * On the *customer's* figures because the customer's screen is the one that would otherwise
+     * lie: `outstanding <= 0` used to be enough to print *"ออเดอร์นี้ชำระครบแล้ว"*, and after a
+     * write-off that sentence is false in the one direction that matters. See
+     * `apps/web/src/components/payment/paymentPanel.ts`.
+     */
+    readonly writtenOffThbMinor: bigint;
   }> {
     const money = await this.ledgerRepository.money(orderId);
     return {
       outstandingThbMinor: money.outstandingThbMinor,
       nextDueThbMinor: money.nextDueThbMinor,
+      writtenOffThbMinor: money.writtenOffThbMinor,
     };
   }
 

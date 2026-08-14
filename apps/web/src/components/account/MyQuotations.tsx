@@ -43,6 +43,8 @@ interface QuotationRow {
   readonly totalMinor: bigint | null;
   readonly outstandingMinor: bigint | null;
   readonly nextDueMinor: bigint | null;
+  /** ⭐ 0048's third fold — how much of this balance was forgiven. See `RowFigures`. */
+  readonly writtenOffMinor: bigint | null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -81,6 +83,17 @@ function decode(body: unknown): readonly QuotationRow[] | null {
          */
         outstandingMinor: satang(raw['outstandingThbMinor']),
         nextDueMinor: satang(raw['nextDueThbMinor']),
+        /*
+         * ⭐ ⓸ How much of this balance the company forgave — 0048's third fold. `null` on an API
+         * a version behind.
+         *
+         * ⚠️ The comment here used to call that "nothing forgiven … the fail-closed direction".
+         * It was neither. `describeRowMoney` now keeps `null` apart from `0n` and says nothing
+         * about the money in that case, because reading absence as zero made this row tell a
+         * customer who never paid that their order was ชำระครบแล้ว — the one sentence the
+         * write-off round exists to stop saying, on the screen they reach first.
+         */
+        writtenOffMinor: satang(raw['writtenOffThbMinor']),
       },
     ];
   });

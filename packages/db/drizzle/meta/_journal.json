@@ -337,6 +337,20 @@
       "when": 1786400000018,
       "tag": "0047_slip_without_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786400000019,
+      "tag": "0048_write_off_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786400000020,
+      "tag": "0049_write_off_live_order",
+      "breakpoints": true
     }
   ]
 }

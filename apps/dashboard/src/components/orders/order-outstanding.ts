@@ -35,6 +35,23 @@ import { formatBaht } from '@wewin/core/format';
  *   `uncontracted`: a cancelled order was very much contracted, and a branch named for drafts
  *   is a branch somebody will one day "fix" by printing the total.
  *
+ *     ⓷ ⭐ and a **third**, which is this state being used as a refusal rather than as news: a
+ *        balance of ฿0.00 with **no write-off figure stated beside it**. Nothing is owed and this
+ *        screen cannot tell whether that is because the money arrived or because the company
+ *        forgave it, so it claims neither. See `readOutstanding`.
+ *
+ *   **writtenOff** — ⭐ nothing owed, and the reason is that the company **forgave** it: an
+ *   approved ขออนุมัติตัดยอดค้างทิ้ง (`order_written_off_thb_minor()`, 0048) drove the outstanding
+ *   to ฿0.00. `SETTLED_TH` — *"ชำระครบแล้ว"* — is a false sentence about such an order and it is
+ *   the sentence this branch exists to stop: staff reading a queue must be able to tell a customer
+ *   who paid from one whose debt was given up on, because the two are different facts about the
+ *   *company* as well as about the customer. It reads as quietly as `settled` does, because a debt
+ *   that is gone is not money to chase either way — what changes is the word.
+ *
+ *   ⚠️ It needs **both** terms: a *partial* write-off (the settlement-at-half case) leaves a real
+ *   balance and must keep reading as `owing`, weight and all. Branching on the write-off alone
+ *   would style a live debt as quiet news.
+ *
  *   **settled** — a real contract, paid off. Good news, and good news is quiet. Rendering it
  *   as `฿0` in the same weight as a real debt is what makes a forty-row list unscannable: the
  *   eye is looking for money, and forty zeroes at the money's weight are forty false hits.
@@ -63,6 +80,17 @@ import { formatBaht } from '@wewin/core/format';
 export interface OwedFigures {
   readonly outstandingThbMinor: bigint | null;
   readonly nextDueThbMinor: bigint | null;
+  /**
+   * ⭐ `order_written_off_thb_minor()` — how much of this balance was forgiven rather than paid.
+   *
+   * ⛔ `outstandingThbMinor` is already net of it. Nothing here subtracts anything.
+   *
+   * ⚠️ `null` means **the figure was not stated**, and it is not a zero. On the API's own wire it
+   * arrives null on exactly the fact that nulls the balance beside it (no contract, or a cancelled
+   * order), so the two travel together; a null here with a *stated* balance is a shape the wire
+   * cannot produce, and `readOutstanding` answers it with a dash rather than with "ชำระครบแล้ว".
+   */
+  readonly writtenOffThbMinor: bigint | null;
 }
 
 export type OutstandingReading =
@@ -70,6 +98,11 @@ export type OutstandingReading =
   | { readonly kind: 'noFigure' }
   /** A real, live contract with nothing left on it. */
   | { readonly kind: 'settled' }
+  /**
+   * ⭐ Nothing left on it **because the company forgave what was left**. Carries the figure, so a
+   * screen can name what was given up rather than only that something was.
+   */
+  | { readonly kind: 'writtenOff'; readonly writtenOffThbMinor: bigint }
   | {
       readonly kind: 'owing';
       readonly outstandingThbMinor: bigint;
@@ -81,11 +114,25 @@ export type OutstandingReading =
 /** Taken from `apps/web`'s `payment.settled`, so staff and customer say it the same way. */
 export const SETTLED_TH = 'ชำระครบแล้ว';
 
+/**
+ * ⭐ What a written-off balance reads as in a money cell.
+ *
+ * ⚠️ Built from words this app already has — `ยอดคงค้าง` is the phrase the API, the filter heading
+ * and the approval inbox all use for a balance, and `ตัดยอด` is the owner's own verb from
+ * *"ขออนุมัติตัดยอดค้างทิ้ง"*. No new vocabulary for money, which is `apps/dashboard/README.md`'s
+ * rule and the reason `SETTLED_TH` above was borrowed from `apps/web` rather than written twice.
+ *
+ * ⚠️ And it is deliberately **not** a form of `ชำระ` — *paid*. That is `SETTLED_TH`'s word and
+ * using it here is the falsehood this constant exists to replace.
+ */
+export const WRITTEN_OFF_TH = 'ตัดยอดค้างทิ้งแล้ว';
+
 /** The dash `order-list.tsx` already renders wherever a money cell has no figure to state. */
 export const NO_FIGURE_TH = '—';
 
 export function readOutstanding(order: OwedFigures): OutstandingReading {
   const outstanding = order.outstandingThbMinor;
+  const writtenOff = order.writtenOffThbMinor;
 
   /* Both reasons the API withholds a figure, and the same dash for each — see the header. */
   if (outstanding === null) return { kind: 'noFigure' };
@@ -96,7 +143,30 @@ export function readOutstanding(order: OwedFigures): OutstandingReading {
    * true sentence about the order is still that nothing is owed on it, and "-฿500 ค้างชำระ" is
    * not a sentence anybody should be shown on a queue.
    */
-  if (outstanding <= 0n) return { kind: 'settled' };
+  /*
+   * ⭐ Nothing is owed. Which of the three sentences that is depends entirely on the write-off
+   * figure, so this is the one place the two ฿0.00s are told apart — and the order of the three
+   * arms is the order of how much the screen is entitled to claim.
+   *
+   * ⚠️ A **missing** write-off figure beside a stated balance says *nothing*, not "paid".
+   *
+   * It used to read `writtenOffThbMinor ?? 0n`, called that the fail-closed direction, and it was
+   * not: ฿0.00 forgiven is a positive claim — *the customer paid this off* — assembled out of a
+   * field the API never sent, and it is exactly the sentence 0048 exists to stop printing. The
+   * dash is the fail-closed answer here, the same one a cancelled order gets: this screen does not
+   * know, and "—" is how it says so. `order-api.ts` now refuses the decode outright when the key
+   * is absent (`asStatedSatangOrNull`), so on a matched API this arm is unreachable; it is kept
+   * because `OwedFigures` is a structural type that anything on this screen may satisfy, and the
+   * cost of being wrong here is a lie about somebody's money.
+   *
+   * ⚠️ And both terms are still required on the arm below — a *partial* write-off leaves a real
+   * balance and falls through to `owing`, with the weight a live debt earns.
+   */
+  if (outstanding <= 0n) {
+    if (writtenOff === null) return { kind: 'noFigure' };
+    if (writtenOff > 0n) return { kind: 'writtenOff', writtenOffThbMinor: writtenOff };
+    return { kind: 'settled' };
+  }
 
   /*
    * ⚠️ A missing next-due on an order that owes money is half a contract — the API sends both
@@ -133,6 +203,14 @@ export function outstandingDisplay(reading: OutstandingReading): OutstandingDisp
       return { textTh: NO_FIGURE_TH, emphasis: 'quiet' };
     case 'settled':
       return { textTh: SETTLED_TH, emphasis: 'quiet' };
+    /*
+     * ⭐ Quiet, like `settled` — there is no money to chase — but a different word. The figure is
+     * left to the caller: the *list* has one narrow cell and the sentence is what fits, while the
+     * order's money card has room to name what was given up and reads `reading.writtenOffThbMinor`
+     * for its own row.
+     */
+    case 'writtenOff':
+      return { textTh: WRITTEN_OFF_TH, emphasis: 'quiet' };
     default:
       return { textTh: formatBaht(reading.outstandingThbMinor), emphasis: 'debt' };
   }

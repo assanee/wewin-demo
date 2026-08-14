@@ -38,12 +38,24 @@ import { sql, type SQL } from '@wewin/db/sql';
  * poor one to publish. The overview keeps its own fragment, and its alias, and gets the
  * membership from here.
  *
- * ⚠️ NOT a mirror of a database function. Unlike `POST_FREEZE_STATUSES` (which mirrors
- * `order_status_is_post_freeze()`) there is no `order_status_is_live()` in Postgres to drift
- * from — this list *is* the definition, in one file, and that is why it may be held in
- * TypeScript at all under the "money is computed in Postgres" rule. Nothing here computes,
- * adjusts or compares an amount; it decides only whether the amount Postgres already computed
- * describes a live obligation.
+ * ── ⚠️ It IS a mirror now, and it did not used to be ─────────────────────────
+ *
+ * This header said *"NOT a mirror of a database function … there is no `order_status_is_live()`
+ * in Postgres to drift from"*, and that was true until `0049_write_off_live_order.sql`. A
+ * write-off may not be recorded against a cancelled or superseded order, and that guard belongs
+ * in the database as well as in the service — the same argument 0048 makes about the balance,
+ * that the service is not the only writer — so the notion had to exist in SQL. The alternative
+ * was a fifth, unnamed copy of the list inlined in a trigger body.
+ *
+ * So the arrangement is now exactly `POST_FREEZE_STATUSES`'s: **one list here, one function
+ * there, and a test that fails when they disagree** —
+ * `tests/orders/contract-drift.pg.test.ts` asks Postgres about all nine statuses and compares
+ * every answer against `isLiveOrder`. Which of the two is "the definition" is a question this
+ * file no longer needs to answer, because a mirror with a drift test cannot silently be wrong.
+ *
+ * ⛔ Still not money, either here or there. Nothing computes, adjusts or compares an amount; it
+ * decides only whether the amount Postgres already computed describes a live obligation, which
+ * is why it may be held in TypeScript at all under the "money is computed in Postgres" rule.
  */
 
 /**
@@ -63,8 +75,14 @@ import { sql, type SQL } from '@wewin/db/sql';
  * (`src/payments/slips/attachable.ts`) now answer identically for all nine statuses;
  * `tests/payments/slips/attachable.test.ts` enumerates them and asserts it. The two lists stay
  * separate because they are pinned to different things — that one is a mirror of a Postgres
- * trigger and this one is a definition with no database counterpart — and that file's header
- * carries the argument. What was collapsed instead is the pair of booleans the customer's
+ * trigger and this one, since 0049, is mirrored by `order_status_is_live()` and pinned by a
+ * drift test over all nine statuses in `tests/orders/contract-drift.pg.test.ts` — and that
+ * file's header carries the argument.
+ *
+ * ⚠️ This paragraph said "a definition with no database counterpart" until 0049 gave it one, and
+ * was left standing twenty lines under a header that had already been corrected. One file
+ * asserting both halves of a contradiction is worse than either half alone: whichever a reader
+ * finds first, they stop looking. What was collapsed instead is the pair of booleans the customer's
  * payment screen was reading; `PaymentInstructionsWire` now carries `orderIsLive` alone.
  */
 export const NON_LIVE_ORDER_STATUSES = [

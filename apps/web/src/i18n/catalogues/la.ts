@@ -549,6 +549,7 @@ export const la: PartialUiCatalogue = {
   'payment.dueNow': 'ຍອດທີ່ຕ້ອງຈ່າຍຕອນນີ້',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'ອໍເດີນີ້ຊຳລະຄົບແລ້ວ',
+  'payment.writtenOff': 'ຍອດຄົງເຫຼືອຂອງອໍເດີນີ້ໄດ້ຮັບການອະນຸມັດໃຫ້ຕັດບັນຊີແລ້ວ — ບໍ່ມີສິ່ງທີ່ຕ້ອງຊຳລະເພີ່ມ',
   'payment.closed':
     'ອໍເດີນີ້ປິດຮັບການແຈ້ງຊຳລະເງິນແລ້ວ. ຫາກມີຂໍ້ສົງໄສກ່ຽວກັບຍອດເງິນ ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
   'payment.account.legend': 'ໂອນເຂົ້າບັນຊີໃດບັນຊີໜຶ່ງ',

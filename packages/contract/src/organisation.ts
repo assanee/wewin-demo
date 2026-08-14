@@ -153,6 +153,36 @@ export interface PaymentInstructionsWire {
    */
   readonly nextDueThbMinor: MoneyWire<'THB'>;
   /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * ⭐ HOW MUCH OF THIS BALANCE THE COMPANY FORGAVE — and the reason this field exists is that
+   * without it this screen tells a customer they paid in full when they did not.
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   * `order_written_off_thb_minor()` (0048): the sum of every approved ตัดยอดค้างทิ้ง on this
+   * order. Since 0048 `outstandingThbMinor` above is `grand_total − settled − written_off`, so a
+   * write-off that covers the remainder drives it to ฿0.00 — and `describePaymentPanel` printed
+   * `payment.settled`, *"ออเดอร์นี้ชำระครบแล้ว"*, on the strength of `outstanding <= 0`.
+   *
+   * That sentence would be a **falsehood told to the person it is about**. They did not pay; the
+   * company wrote the rest off — after a refusal to pay, or a settlement at half, or a decision
+   * that the remainder was not worth chasing. It is the same class of defect as the cancelled
+   * order that was billed ฿10,354.18 (see `orderIsLive` below), and it is worse in one respect: a
+   * customer who believes they are square is a customer who will dispute the company's own
+   * ledger, in writing, months later — and the company's own screen will be the evidence.
+   *
+   * So the fact is sent and the screen says something else. `payment.writtenOff` states that the
+   * remainder was written off, names the figure, and offers no form. ⚠️ It is deliberately not
+   * worded as *paid*, *settled*, or *complete* in any of the eight catalogues.
+   *
+   * ⛔ Do not subtract it from `outstandingThbMinor` — that figure is already net of it, and
+   * `outstanding + writtenOff` is what is left of `grandTotal − settled`.
+   *
+   * ⚠️ ฿0.00 on almost every order, and ฿0.00 is the real answer *nothing was forgiven* rather
+   * than an absence. Unlike `OrderSummaryWire`'s field it is never null: this route states its
+   * money figures on a cancelled order too (see `orderIsLive`), so all four travel together.
+   */
+  readonly writtenOffThbMinor: MoneyWire<'THB'>;
+  /**
    * ⭐ Whether this order is still a live commitment, and therefore whether the screen may say
    * anything at all about the money — `false` only for cancelled and superseded.
    *

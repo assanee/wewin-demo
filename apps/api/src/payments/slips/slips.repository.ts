@@ -163,6 +163,18 @@ export interface OrderMoneyRow {
   readonly heldThbMinor: bigint;
   readonly settledThbMinor: bigint;
   readonly outstandingThbMinor: bigint;
+  /**
+   * ⭐ `order_written_off_thb_minor()` (0048) — how much of this balance the company forgave.
+   *
+   * ⛔ `outstandingThbMinor` above is already net of it. Nothing here subtracts anything.
+   *
+   * It travels beside the outstanding because since 0048 that figure has two ways of being ฿0.00
+   * and the reviewer's screen could not tell them apart: the customer paid, or the company gave
+   * up. **Nothing in this module branches on it** — no guard, no gate, no allocation — so this is
+   * consistency with the two wires that already carry it (`OrderSummaryWire`,
+   * `PaymentInstructionsWire`), not a bug being closed.
+   */
+  readonly writtenOffThbMinor: bigint;
   readonly settledThroughSeq: number | null;
   readonly queueBucket: string;
 }
@@ -408,7 +420,7 @@ export class SlipsRepository {
   }
 
   /**
-   * The six numbers, from the six functions that define them.
+   * The seven numbers, from the seven functions that define them.
    *
    * `bigint` columns arrive from `pg` as strings, which is the driver being right: an int8
    * does not fit a JavaScript number and a driver that quietly produced one would lose a
@@ -422,6 +434,12 @@ export class SlipsRepository {
         held: sql<string>`order_held_thb_minor(${orders.id})`,
         settled: sql<string>`order_settled_thb_minor(${orders.id})`,
         outstanding: sql<string>`order_outstanding_thb_minor(${orders.id})`,
+        /*
+         * ⭐ Read on the same select as the outstanding, so the two cannot describe different
+         * moments. A second statement here would let a write-off land between them and put a
+         * balance on the screen that the figure beside it does not explain.
+         */
+        writtenOff: sql<string>`order_written_off_thb_minor(${orders.id})`,
         settledThrough: sql<number | null>`order_settled_through(${orders.id})`,
         queueBucket: sql<string>`order_payment_queue_bucket(${orders.id})`,
       })
@@ -436,6 +454,7 @@ export class SlipsRepository {
       heldThbMinor: BigInt(row.held),
       settledThbMinor: BigInt(row.settled),
       outstandingThbMinor: BigInt(row.outstanding),
+      writtenOffThbMinor: BigInt(row.writtenOff),
       settledThroughSeq: row.settledThrough === null ? null : Number(row.settledThrough),
       queueBucket: row.queueBucket,
     };

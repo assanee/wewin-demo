@@ -156,6 +156,7 @@ export function encodeMoney(row: OrderMoneyRow): SlipOrderMoneyWire {
     heldThbMinor: encodeThb(row.heldThbMinor),
     settledThbMinor: encodeThb(row.settledThbMinor),
     outstandingThbMinor: encodeThb(row.outstandingThbMinor),
+    writtenOffThbMinor: encodeThb(row.writtenOffThbMinor),
     settledThroughSeq: row.settledThroughSeq,
     queueBucket: row.queueBucket,
   };

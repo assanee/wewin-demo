@@ -87,6 +87,17 @@ export function decisionBody(decision: Decision, answers: DecisionAnswers): Reco
  * distinction `authority_limits` exists to make: no live row is no authority at all — somebody
  * has to grant this role a ceiling, or withdraw the withdrawal — while a row that is too small is
  * a number the owner can raise. Collapsing them would send the approver to the wrong person.
+ *
+ * ⭐ The two write-off reasons follow the same rule and each sends the reader somewhere different:
+ *
+ *   `not_a_write_off_approver`  a permission the *owner* grants by hand (`payments.write_off`, held
+ *                               by nobody at boot). ⚠️ Unlike every ceiling sentence, this one
+ *                               blocks refusing as well — so the wording must not suggest waiting
+ *                               for a bigger number.
+ *   `above_balance`             nothing anybody can grant. The customer has paid part of the debt
+ *                               since the request was raised, so the figure asked for no longer
+ *                               exists and the only honest answer is ไม่อนุมัติ plus a note telling
+ *                               the requester to ask again for what is left.
  */
 export const REASON_TH: Readonly<Record<ApprovalRightReasonWire, string>> = {
   may_decide: 'คุณตัดสินคำขอนี้ได้',
@@ -95,6 +106,9 @@ export const REASON_TH: Readonly<Record<ApprovalRightReasonWire, string>> = {
   own_request: 'คุณเป็นผู้ยื่นคำขอนี้เอง ต้องให้คนอื่นตัดสิน',
   no_ceiling: 'บทบาทของคุณยังไม่ได้รับกำหนดเพดานอำนาจอนุมัติในมิตินี้',
   above_ceiling: 'ยอดที่ขอลดเกินเพดานอำนาจอนุมัติของคุณ',
+  not_a_write_off_approver: 'บัญชีของคุณไม่มีสิทธิ์ตัดยอดค้างทิ้ง ต้องให้ผู้ที่ได้รับสิทธิ์นี้ตัดสิน',
+  above_balance:
+    'ยอดคงค้างของออเดอร์นี้ลดลงหลังจากยื่นคำขอ จึงอนุมัติตามจำนวนที่ขอไม่ได้ — ให้ไม่อนุมัติแล้วแจ้งผู้ขอยื่นใหม่ตามยอดคงค้างปัจจุบัน',
 };
 
 /**

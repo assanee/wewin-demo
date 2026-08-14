@@ -469,5 +469,50 @@ describe('what is still a Thai string, as a number', () => {
  * that would send them to an administrator instead of to the text box. The route behind both is
  * `POST /payments/slips/:slipId/acceptance`, gated on `payments.verify` — staff-only, Thai, and
  * the same argument the rest of this file's slip literals already rest on.
+ *
+ * ── 224 → 230: ขออนุมัติตัดยอดค้างทิ้ง ────────────────────────────────────────────
+ *
+ * Six, and they split three ways rather than being six of a kind:
+ *
+ *   `quotes/authority/write-off.service.ts` **5** — the whole of the request path's refusals:
+ *   an order that does not exist, one with no contract yet (*"ยังไม่มีสัญญา จึงยังไม่มียอดคงค้างให้
+ *   ตัดทิ้ง"*), one with nothing outstanding, an amount larger than the balance, and a cashflow
+ *   question already waiting for an answer. Every one is read on `/orders/:id` in the dashboard,
+ *   behind `orders.write` + `payments.read`.
+ *
+ *   `quotes/authority/authority.service.ts` **+1 net of a reword** — `decide` gained the 403 for
+ *   a caller without `payments.write_off` and the 409 for a balance that fell after the request
+ *   was raised, and `request`'s single "there is already a question waiting" literal became a
+ *   ternary over two sentences (a write-off blocking a quote concession is different news from a
+ *   duplicate of your own). The ternary is *inside* one `AppError.conflict` call, so the regex
+ *   counts it once — which is why the arithmetic here is +2 and not +3.
+ *
+ * ⚠️ Same argument as the ceiling-screen block above, and narrower still. Every reader is Thai
+ * staff: the request route is behind `orders.write` + `payments.read`, the decision route behind
+ * `quotes.approve` + `payments.write_off`, and the second of those is granted to nobody at boot.
+ * **No customer, in any locale, can reach a route that writes or decides a write-off** — the one
+ * sentence a customer *does* read about a write-off is `payment.writtenOff`, and that one is a
+ * proper `apps/web` catalogue key in all eight languages precisely because its reader is not staff.
+ *
+ * ── 230 → 233: a debt nobody owes cannot be forgiven ──────────────────────────────
+ *
+ * Three, and they are the same rule stated to three different readers at two moments:
+ *
+ *   `quotes/authority/write-off.service.ts` **+1** — the ask, refused on an order that has been
+ *   cancelled or superseded (*"ยอดคงค้างจึงไม่ใช่หนี้ที่ต้องตัดทิ้ง"*). The fold answers about an
+ *   order in any status, so without it a cancelled order's whole unpaid total is a forgivable
+ *   figure; the cancellation has already disposed of it through the forfeit rules.
+ *
+ *   `quotes/authority/authority.service.ts` **+2** — the yes, for the same reason plus the read
+ *   that finds it out: the order can be cancelled *while the request sits in the inbox*, so
+ *   `decide` refuses the approval with a sentence naming the cancellation and directing the
+ *   approver to reject instead, and it answers `ไม่พบออเดอร์นี้` if the order has gone entirely.
+ *   Rejecting stays available — a pending request holds the order's one cashflow slot.
+ *
+ * ⚠️ Both are also enforced by `approvals_write_off_order_is_live` (0049), whose message is a
+ * `RAISE EXCEPTION` in English and is not a customer-facing sentence at all: it is what a `db:seed`
+ * or a psql session gets, and it never reaches a client. Same readers as the block above — Thai
+ * staff behind `orders.write` + `payments.read` and `quotes.approve` + `payments.write_off` — and
+ * no customer, in any locale, can reach either route.
  */
-const RAW_LITERAL_CALL_SITES = 224;
+const RAW_LITERAL_CALL_SITES = 233;

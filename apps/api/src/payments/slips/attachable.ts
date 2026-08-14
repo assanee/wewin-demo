@@ -35,9 +35,10 @@ import type { OrderStatus } from '@wewin/db/schema';
  * ⚠️ **They agree; they are still two lists, and merging them would be the wrong repair.**
  * This one is a *mirror* — it exists to say what a Postgres trigger says, and
  * `attachable-drift.pg.test.ts` reads the trigger out of the live catalogue to hold it there.
- * `NON_LIVE_ORDER_STATUSES` mirrors nothing; it *is* the definition of a live obligation, in
- * TypeScript, with no database counterpart to drift from (its own header explains why that is
- * allowed under the "money is computed in Postgres" rule). Pointing the upload guard at the
+ * `NON_LIVE_ORDER_STATUSES` is mirrored too, since 0049 gave it `order_status_is_live()` and a
+ * drift test of its own — this sentence claimed it "mirrors nothing … with no database
+ * counterpart to drift from" for exactly as long as that was true, and pointed at a header that
+ * by then said the reverse. Pointing the upload guard at the
  * live-order list would leave the trigger with no mirror at all, and the next widening of
  * either question would move a list that two unrelated readers share. The duplication worth
  * removing was the one on the **wire**, where a client was handed two booleans for one

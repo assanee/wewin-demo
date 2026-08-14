@@ -134,6 +134,20 @@ export interface ScopedOrder {
   readonly outstandingThbMinor: bigint;
   readonly nextDueThbMinor: bigint;
 
+  /**
+   * ⭐ How much of this order's balance has been **forgiven** — `order_written_off_thb_minor()`
+   * (0048), the third term inside the fold above.
+   *
+   * On the same row and not a query beside it, for the same reason the other two are: one
+   * statement, fifty rows. And on this row rather than only where a write-off is displayed,
+   * because it is what tells a ฿0.00 outstanding apart from a ฿0.00 outstanding — the customer
+   * paid, or the company gave up. Every screen that reads `outstandingThbMinor` needs the
+   * distinction, which is why it travels with it.
+   *
+   * ⛔ `outstandingThbMinor` is already net of this. Postgres subtracts it; nothing here does.
+   */
+  readonly writtenOffThbMinor: bigint;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 
@@ -249,6 +263,13 @@ export const ORDER_COLUMNS = {
    */
   outstandingThbMinor: sql`${OUTSTANDING_FOLD}::text`.mapWith(BigInt),
   nextDueThbMinor: sql`coalesce(order_next_due_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
+  /*
+   * ⭐ Its own call for the same reason `nextDueThbMinor` keeps one: nothing filters or sorts on
+   * it. `coalesce` is belt-and-braces — `order_written_off_thb_minor()` is a `sum()` with a
+   * `coalesce(…, 0)` inside it and cannot return NULL even for an order id naming no row — kept so
+   * that all three folds on this row read identically and none of them can reach `encodeThb` null.
+   */
+  writtenOffThbMinor: sql`coalesce(order_written_off_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
   createdAt: orders.createdAt,
   updatedAt: orders.updatedAt,
 } as const;

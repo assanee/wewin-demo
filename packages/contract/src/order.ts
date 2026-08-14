@@ -614,6 +614,36 @@ export interface OrderSummaryWire {
    * has both, and a client that has neither must ask for no money at all.
    */
   readonly nextDueThbMinor: MoneyWire<'THB'> | null;
+  /**
+   * ⭐ HOW MUCH OF THIS ORDER'S BALANCE THE COMPANY HAS **FORGIVEN** —
+   * `order_written_off_thb_minor()` (`packages/db/drizzle/0048_write_off_approval.sql`), the sum
+   * of every approved ตัดยอดค้างทิ้ง on this order.
+   *
+   * ── Why it is on the wire at all, and not merely inside the fold ─────────────
+   *
+   * Because since 0048 `outstandingThbMinor` is `grand_total − settled − written_off`, and a
+   * balance that fell for the third reason is **not the same news** as one that fell for the
+   * second. ฿0.00 outstanding with ฿0.00 here means the customer paid; ฿0.00 outstanding with
+   * ฿20,000 here means the company gave up ฿20,000. Without this field a screen has one number
+   * for two facts and no way to tell them apart — so the customer's payment page would print
+   * *"ออเดอร์นี้ชำระครบแล้ว"* at somebody who did not pay, and the owner asking *"how much did we
+   * write off this year?"* would have nothing to add up.
+   *
+   * ⛔ It is not the reader's job to subtract it. `outstandingThbMinor` is **already net of
+   * this**: the two are read from two Postgres folds on one select, and
+   * `outstanding + written_off` is `grand_total − settled` rather than a bigger debt. A screen
+   * that took this off the outstanding again would double-count the forgiveness.
+   *
+   * ⚠️ ฿0.00 on the overwhelming majority of orders, and ฿0.00 is a real answer — *nothing has
+   * been forgiven* — not an absence. Nulled only on the same fact as the two fields above: a cart
+   * has no contract, and a cancelled or superseded order states no money figures at all
+   * (`encodeOrderSummary` asks that question once for all four).
+   *
+   * ⚠️ It is **not** money that arrived. `order_settled_thb_minor()` deliberately still means
+   * *cash the company received*, and 0048 does not touch it; a client that added this to a
+   * "received" figure would be reporting revenue the company chose not to collect.
+   */
+  readonly writtenOffThbMinor: MoneyWire<'THB'> | null;
   readonly updatedAt: string;
 }
 
@@ -1011,6 +1041,7 @@ export const orderSummaryWireSchema: z.ZodType<OrderSummaryWire> = z.object({
   /* Nullable on the same fact as the total above, never independently — see `OrderSummaryWire`. */
   outstandingThbMinor: thb.nullable(),
   nextDueThbMinor: thb.nullable(),
+  writtenOffThbMinor: thb.nullable(),
   updatedAt: z.iso.datetime(),
 });
 

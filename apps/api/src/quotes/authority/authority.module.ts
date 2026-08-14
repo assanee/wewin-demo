@@ -5,6 +5,8 @@ import { ApprovalsController } from './approvals.controller';
 import { AuthorityController } from './authority.controller';
 import { AuthorityRepository } from './authority.repository';
 import { AuthorityService } from './authority.service';
+import { WriteOffService } from './write-off.service';
+import { WriteOffsController } from './write-offs.controller';
 
 /**
  * Who may reduce what the customer pays — phase 5c.
@@ -48,10 +50,27 @@ import { AuthorityService } from './authority.service';
  * transaction. `AuthorityRepository` is not: a second thing writing `approvals` would be a
  * second opinion about who decided what.
  */
+/**
+ * ── ⭐ AND THE WRITE-OFF, WHOSE ROUTE IS UNDER `orders/` AND WHOSE CODE IS HERE ───
+ *
+ * `WriteOffsController` is mounted at `orders/:orderId/write-offs` — a write-off is an act on an
+ * order, not a concession on a quotation, and that is where the dashboard asks from. Its code lives
+ * in this directory anyway, for the reason `index.ts` gives about `AuthorityRepository`: there is
+ * exactly one place that knows how an `approvals` row is made, and it is not exported. A
+ * `src/payments/write-offs/` module would need it exported or would write the row itself, which is
+ * a second opinion about who decided what.
+ *
+ * ⚠️ This does **not** bend the no-`OrdersModule` rule above. Nothing here is imported from the
+ * orders domain: `WriteOffService` reads `orders` and `approvals` through this module's own
+ * repository, exactly as `AuthorityService` already does, and it advances no status.
+ *
+ * `WriteOffService` is a provider and not an export. Nothing outside this module may create a
+ * write-off, for the same reason nothing outside it may create any other approval.
+ */
 @Module({
   imports: [OrganisationModule],
-  controllers: [ApprovalsController, AuthorityController],
-  providers: [AuthorityService, AuthorityRepository],
+  controllers: [ApprovalsController, AuthorityController, WriteOffsController],
+  providers: [AuthorityService, AuthorityRepository, WriteOffService],
   exports: [AuthorityService],
 })
 export class AuthorityModule {}

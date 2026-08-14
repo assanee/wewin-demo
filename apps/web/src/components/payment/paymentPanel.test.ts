@@ -39,6 +39,13 @@ const panel = (over: Partial<PanelInput>): ReturnType<typeof describePaymentPane
     orderIsLive: true,
     outstandingMinor: 1_035_418n,
     nextDueMinor: 1_035_418n,
+    /*
+     * ⚠️ Nothing forgiven, unless a case says otherwise — which is the state of every order in
+     * this system except the handful somebody has written off. Keeping it in the shared fixture
+     * rather than defaulting it inside `describePaymentPanel` is deliberate: a default there would
+     * be the branch quietly switching itself off on a caller that forgot the field.
+     */
+    writtenOffMinor: 0n,
     accountCount: 2,
     ...over,
   });
@@ -185,5 +192,95 @@ describe('an order that can still be paid', () => {
     expect(nowhere.noteKey).toBe('payment.account.none');
     expect(nowhere.showsForm).toBe(false);
     expect(nowhere.figures.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ ⓸ AND THE ORDER WHOSE BALANCE WAS FORGIVEN — WHICH IS NOT "PAID IN FULL".
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `0048_write_off_approval.sql` subtracts an approved ขออนุมัติตัดยอดค้างทิ้ง from
+ * `order_outstanding_thb_minor()`. That is the feature — the debt is meant to disappear from the
+ * order list, the ค้างชำระ filter and the overview's money card — and it means a forgiven order
+ * reaches `outstandingMinor <= 0n` and, before this branch existed, printed *"ออเดอร์นี้ชำระครบ
+ * แล้ว"* at the person whose money the company gave up on.
+ *
+ * These are the assertions that stop that sentence coming back.
+ */
+describe('⭐ ⓸ an order whose remaining balance was written off', () => {
+  it('⭐ does NOT say "paid in full" — it says the balance was written off', () => {
+    /*
+     * THE WHOLE POINT OF THE ROUND, ASSERTED. ฿10,354.18 owed, all of it forgiven, so the fold
+     * answers ฿0.00 and the settled test below it is satisfied. Deleting the write-off branch from
+     * `describePaymentPanel` makes this read `payment.settled` — a falsehood told to the one reader
+     * who knows better — and this expectation is what fails.
+     */
+    const forgiven = panel({
+      outstandingMinor: 0n,
+      nextDueMinor: 0n,
+      writtenOffMinor: 1_035_418n,
+    });
+
+    expect(forgiven.noteKey).toBe('payment.writtenOff');
+    expect(forgiven.noteKey).not.toBe('payment.settled');
+  });
+
+  it('states no owed figure and offers no form', () => {
+    /*
+     * ⚠️ Figures *empty*, not ฿0.00 — the same call the cancelled case makes at the top of this
+     * file. A "ยอดคงค้างทั้งหมด" label is a demand whatever number sits beside it, and there is
+     * nothing here for the customer to act on.
+     */
+    const forgiven = panel({ outstandingMinor: 0n, nextDueMinor: 0n, writtenOffMinor: 1_035_418n });
+
+    expect(forgiven.figures).toStrictEqual([]);
+    expect(forgiven.showsForm).toBe(false);
+  });
+
+  it('⚠️ keeps the figures and the FORM when only part of the balance was written off', () => {
+    /*
+     * THE SETTLEMENT CASE, AND IT IS THE COMMON ONE. ฿14,400.00 was owed, ฿7,200.00 forgiven as a
+     * negotiated settlement, ฿7,200.00 still to pay. Branching on `writtenOffMinor > 0n` alone
+     * would take the payment form away from a customer who is about to use it — so both terms are
+     * required, and this is the assertion that holds the second one.
+     */
+    const halfSettled = panel({
+      outstandingMinor: 720_000n,
+      nextDueMinor: 720_000n,
+      writtenOffMinor: 720_000n,
+    });
+
+    expect(halfSettled.noteKey).toBeNull();
+    expect(halfSettled.showsForm).toBe(true);
+    expect(halfSettled.figures.map((figure) => figure.amountMinor)).toContain(720_000n);
+  });
+
+  it('⚠️ a cancelled order that was written off still reads as closed, not as written off', () => {
+    /*
+     * The order of the branches, and it is a decision rather than an accident: `orderIsLive` is
+     * tested first, so an order that was forgiven and *then* cancelled says `payment.closed`. Money
+     * held on a cancelled order is a refund question — the company may owe the customer — and a
+     * sentence about a debt being cancelled is not the news on that screen.
+     */
+    const dead = panel({
+      orderIsLive: false,
+      outstandingMinor: 0n,
+      nextDueMinor: 0n,
+      writtenOffMinor: 1_035_418n,
+    });
+
+    expect(dead.noteKey).toBe('payment.closed');
+  });
+
+  it('⚠️ an ordinary paid-off order is untouched — the sentence is still "paid in full"', () => {
+    /*
+     * The other direction, and the regression that would be worse than the bug: a branch that read
+     * *any* zero balance as forgiven would tell every customer who actually paid that the company
+     * had written their order off.
+     */
+    const paid = panel({ outstandingMinor: 0n, nextDueMinor: 0n, writtenOffMinor: 0n });
+
+    expect(paid.noteKey).toBe('payment.settled');
   });
 });

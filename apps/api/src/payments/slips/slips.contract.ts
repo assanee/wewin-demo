@@ -397,7 +397,7 @@ export interface SlipListWire {
   readonly slips: readonly SlipWire[];
 }
 
-/** The four numbers a payments screen shows, each one named so it cannot be mistaken for another. */
+/** The five numbers a payments screen shows, each one named so it cannot be mistaken for another. */
 export interface SlipOrderMoneyWire {
   /** `paidMinor` — cash received, the fold of `bank_thb`. Plan 7.8's lime-green number. */
   readonly paidThbMinor: MoneyWire<'THB'>;
@@ -413,6 +413,29 @@ export interface SlipOrderMoneyWire {
   readonly settledThbMinor: MoneyWire<'THB'>;
   /** Derived, never a status. Plan 7.5(ข) forbids an `awaiting_balance` for exactly this. */
   readonly outstandingThbMinor: MoneyWire<'THB'>;
+  /**
+   * ⭐ How much of that balance was **forgiven** rather than paid — `order_written_off_thb_minor()`,
+   * the sum of approved ขออนุมัติตัดยอดค้างทิ้ง on this order (0048).
+   *
+   * ⛔ `outstandingThbMinor` above is already net of it — Postgres subtracts it. A screen that
+   * subtracted it again would show a debt that does not exist.
+   *
+   * ⚠️ Since 0048 the figure above has **two** ways of reading ฿0.00, and a reviewer looking at a
+   * slip against a settled order could not tell which: the customer paid, or the company gave up
+   * chasing them. That is the same argument that put this field on `OrderSummaryWire` and
+   * `PaymentInstructionsWire`, and this is the third reader of the fold to get it.
+   *
+   * ⚠️ **Nothing in the slip module branches on this value.** Acceptance is gated by
+   * `order_gate_is_open()` and allocated per instalment; neither consults a write-off. It is here
+   * so the screen can say the true sentence — consistency across the three wires that state a
+   * balance, not a defect being closed. `0n` on almost every order, and `0n` is a real answer:
+   * *nothing was forgiven*.
+   *
+   * ⚠️ It is **not** money that arrived. `settledThbMinor` above deliberately still means cash the
+   * instalments were credited with, and 0048 does not touch it; adding the two together would
+   * report revenue the company chose never to collect.
+   */
+  readonly writtenOffThbMinor: MoneyWire<'THB'>;
   /**
    * `MAX(seq)` over the settled prefix — **never a count**, and null when there is no schedule.
    *

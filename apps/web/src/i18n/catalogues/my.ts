@@ -566,6 +566,7 @@ export const my: PartialUiCatalogue = {
   'payment.dueNow': 'ယခုပေးရမည့်ပမာဏ',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'ဤအော်ဒါအတွက် ငွေပေးချေမှု ပြီးပါပြီ',
+  'payment.writtenOff': 'ဤအော်ဒါ၏ ကျန်ရှိသည့်ပမာဏကို လျှော်ပစ်ခြင်း အတည်ပြုပြီးပါပြီ — ထပ်မံပေးချေရန် မလိုအပ်ပါ',
   'payment.closed':
     'ဤအော်ဒါအတွက် ငွေပေးချေမှု အသိပေးခြင်းကို ပိတ်လိုက်ပါပြီ။ ပမာဏနှင့်ပတ်သက်၍ မေးစရာရှိပါက အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
   'payment.account.legend': 'အောက်ပါဘဏ်အကောင့်များထဲမှ တစ်ခုသို့ လွှဲပါ',
