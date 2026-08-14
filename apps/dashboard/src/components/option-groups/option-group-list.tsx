@@ -7,7 +7,6 @@ import type { AdminOptionGroupWire } from '@wewin/contract/admin';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSession } from '@/lib/auth/session';
@@ -15,7 +14,8 @@ import { useSession } from '@/lib/auth/session';
 import { failureMessage, listOptionGroups } from '@/components/products/catalog-api';
 import { groupMatches } from './delta-field';
 import { CreateGroupDialog } from './create-group-dialog';
-import { OptionGroupCard } from './option-group-card';
+import { optionGroupFocus } from './option-group-focus';
+import { OptionGroupSection } from './option-group-section';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -112,18 +112,45 @@ export function OptionGroupList() {
     [state, needle],
   );
 
-  const counts = useMemo(() => {
-    if (state.status !== 'ready') return null;
-    const values = state.groups.flatMap((group) => group.values);
-    return {
-      groups: state.groups.length,
-      values: values.length,
-      unavailable: values.filter((value) => !value.available).length,
-    };
-  }, [state]);
+  /*
+   * ⚠️ Derived from **every** group, not from `visible`. The headline is a statement about the
+   * catalogue; filtering it by the search box would mean typing a product name silently changed
+   * how many values the company has switched off, which is the one number on this screen that
+   * must not move for a reason the reader did not intend.
+   */
+  const focus = useMemo(
+    () => (state.status === 'ready' ? optionGroupFocus(state.groups) : null),
+    [state],
+  );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      {/*
+       * ⭐ THE PRIMARY THING — and it replaced a colour.
+       *
+       * This count used to sit at `text-sm` inside a muted paragraph, tinted
+       * `text-amber-700 dark:text-amber-500` to make it stand out. Two things were wrong with
+       * that, and the second is the real one: the house does not use colour for emphasis
+       * (`globals.css` caps the accent at two places per screen and keeps `--primary` neutral on
+       * purpose), and a tint on a `text-sm` line is emphasis you can only see *once you are
+       * already reading the sentence* — on the one number the code's own comment said nobody
+       * goes looking for. It was colour standing in for a focal point rather than a focal point.
+       *
+       * ⚠️ **Above the search box, not below it.** The filter is how you get to an answer; this
+       * is the answer, and it is true of the whole catalogue regardless of what is typed in the
+       * box. `order-list.tsx` makes the same argument for keeping its filter row quieter than the
+       * table it filters.
+       *
+       * See `option-group-focus.ts` for why this is the number that earns the top of the screen:
+       * `available` is the only field in this area that reaches a customer without a publish.
+       */}
+      {focus !== null && (
+        <div className="flex flex-col gap-1">
+          <p className="type-focal text-balance">{focus.headlineTh}</p>
+          <p className="text-muted-foreground type-body max-w-3xl">{focus.detailTh}</p>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <InputGroup className="max-w-sm flex-1">
           <InputGroupAddon>
@@ -145,43 +172,6 @@ export function OptionGroupList() {
         )}
       </div>
 
-      {counts !== null && (
-        <p className="text-muted-foreground text-sm">
-          {counts.groups} กลุ่ม · {counts.values} ตัวเลือก
-          {counts.unavailable > 0 && (
-            /*
-             * Surfaced at the top because it is the number nobody goes looking for. A value
-             * that is out of stock is invisible to every customer on every published version,
-             * and the most likely way that becomes permanent is somebody switching it off for
-             * an afternoon and the afternoon ending.
-             */
-            <>
-              {' · '}
-              {/*
-               * ⚠️ Two shades, because one amber cannot sit on both a white page and a black
-               * one. `text-amber-500` alone measured **2.13:1 on the light background** — a
-               * warning nobody can read is worse than no warning, and this is the count the
-               * comment above says nobody goes looking for. It passed in dark (9.27:1), which
-               * is why it survived: it was never rendered on a light page.
-               *
-               * It also never rendered *at all* on the seed data — `counts.unavailable` is 0
-               * until somebody switches a value off — so this was latent rather than visible,
-               * and would have appeared for the first time in front of whoever did that.
-               *
-               * ⚠️ Both spellings must stay literal in this file. Tailwind emits only the
-               * classes it finds in source, so `text-amber-700` exists as CSS *because it is
-               * written here*; building the name up at runtime would produce no rule and the
-               * text would silently fall back to `--foreground`, which is precisely the trap
-               * globals.css describes and the reason this is not a computed class.
-               */}
-              <span className="text-amber-700 dark:text-amber-500">
-                {counts.unavailable} รายการปิดการขายอยู่
-              </span>
-            </>
-          )}
-        </p>
-      )}
-
       {state.status === 'loading' && (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-28 w-full" />
@@ -197,23 +187,40 @@ export function OptionGroupList() {
         </Alert>
       )}
 
+      {/*
+       * The dashed-bordered `Empty` that used to be here is gone with the Cards. An empty state
+       * has nothing to be separated *from* — the sentence is the whole content, and a dashed
+       * rectangle around it is one more edge on the screen this pass exists to take edges off.
+       */}
       {state.status === 'ready' && visible.length === 0 && (
-        <Empty className="border-border/60 rounded-lg border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle>{needle === '' ? 'ยังไม่มีชุดตัวเลือก' : 'ไม่พบที่ค้นหา'}</EmptyTitle>
-            <EmptyDescription>
-              {needle === ''
-                ? 'สร้างกลุ่มแรกเพื่อให้สินค้าหยิบไปใช้'
-                : `ไม่มีกลุ่มหรือตัวเลือกที่ตรงกับ "${needle}"`}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <div className="flex flex-col gap-1 py-10 text-center">
+          <p className="type-body font-medium">
+            {needle === '' ? 'ยังไม่มีชุดตัวเลือก' : 'ไม่พบที่ค้นหา'}
+          </p>
+          <p className="text-muted-foreground type-body">
+            {needle === ''
+              ? 'สร้างกลุ่มแรกเพื่อให้สินค้าหยิบไปใช้'
+              : `ไม่มีกลุ่มหรือตัวเลือกที่ตรงกับ “${needle}”`}
+          </p>
+        </div>
       )}
 
-      {state.status === 'ready' &&
-        visible.map((group) => (
-          <OptionGroupCard key={group.code} group={group} editable={editable} onChanged={reload} />
-        ))}
+      {/*
+       * ⭐ ~10 peer `<Card>`s became one divided list.
+       *
+       * This file held **one** `<Card>` literal and rendered about ten of them — one per group,
+       * each identical, each ringed, each wrapping its own `<Table>`. That is the owner's
+       * original complaint in its purest form: once every region is a Card, nothing is primary,
+       * and ten of them in a column is ten statements that these things might be confused with
+       * one another. A hairline between rows says the same thing with one edge instead of forty.
+       */}
+      {state.status === 'ready' && visible.length > 0 && (
+        <div className="divide-border/60 flex flex-col divide-y">
+          {visible.map((group) => (
+            <OptionGroupSection key={group.code} group={group} editable={editable} onChanged={reload} />
+          ))}
+        </div>
+      )}
 
       {creating && (
         <CreateGroupDialog
@@ -228,7 +235,7 @@ export function OptionGroupList() {
   );
 }
 
-/** The two badges that describe what a group *is*, used by the card and the create dialog. */
+/** The two badges that describe what a group *is*, used by the group section and the create dialog. */
 export function GroupKindBadges({ group }: { readonly group: AdminOptionGroupWire }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">

@@ -9,7 +9,6 @@ import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -37,10 +36,10 @@ import {
   ceilingTh,
   decisionBody,
   decisionNeeds,
-  pendingTotal,
   REASON_TH,
   type Decision,
 } from './approval-decision';
+import { approvalFocus } from './approval-focus';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -55,10 +54,19 @@ import {
  *
  * ── What is on the page, and why each part is ────────────────────────────────────
  *
- *   **Your authority, first.** Two ceilings, named, at the top — because every judgement below is
- *   made against them and an approver who does not know their own limit cannot tell a request
- *   that is theirs to take from one that is not. When there is no live row it says so: plan 13's
- *   fail-closed is a state to read, not an empty table to misinterpret.
+ *   **⭐ How many decisions are yours, first.** `approvalFocus` at `type-focal`, on the page
+ *   ground with no border. That is the reason somebody opened this screen; everything else here
+ *   qualifies it.
+ *
+ *   **Your authority, under it, quietly.** Two ceilings, named, at `type-caption` — because every
+ *   judgement below is made against them and an approver who does not know their own limit cannot
+ *   tell a request that is theirs to take from one that is not. When there is no live row it says
+ *   so: plan 13's fail-closed is a state to read, not an empty table to misinterpret.
+ *
+ *   ⚠️ They used to be the *loudest* text on the page: a `<Card>` holding both at `text-lg
+ *   font-semibold`, above an `h2` at `text-base`. A ceiling is a precondition for reading the
+ *   queue and never the point of it, and a figure larger than the page's primary statement *is*
+ *   the page's primary statement whatever the layout intended.
  *
  *   **What you are not being shown.** The queue lists only what this person may decide. The
  *   requests it withholds are *counted* — above your authority, and your own — so that
@@ -213,44 +221,61 @@ export function ApprovalInbox() {
   }
 
   const { queue } = state;
-  const total = pendingTotal(queue);
-  const withheld = queue.withheld.beyondYourAuthority + queue.withheld.yourOwnRequests;
+  const focus = approvalFocus(queue);
   const noAuthorityAtAll =
     (!queue.ceilings.margin.known || queue.ceilings.margin.thbMinor === null) &&
     (!queue.ceilings.cashflow.known || queue.ceilings.cashflow.thbMinor === null);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {tabs}
 
       {/*
-       * Your own authority, before the list. Rendered from `ceilings`, which the server reads
-       * unconditionally — so "ยังไม่มีเพดานอำนาจ" here is the server saying this role holds no live
-       * row, and not this screen guessing from an absent field.
+       * ⭐ THE PRIMARY THING: how much of this queue is waiting on you. On the page ground, no
+       * border, type doing the work.
+       *
+       * What used to be here was a `<Card>` holding the two ceiling figures at `text-lg
+       * font-semibold` — the loudest text on the screen — with the queue's own heading below it
+       * at `text-base`. The screen's biggest number was a limit nobody acts on, and the count of
+       * decisions somebody has to make today was in a heading two steps smaller.
+       *
+       * The `รอคุณตัดสิน (n)` heading that used to sit above the table is **gone rather than
+       * demoted**: `focus.headlineTh` is already that sentence, in the same words, and printing
+       * it twice a few centimetres apart is the duplication this pass exists to remove.
        */}
-      <Card>
-        <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="text-muted-foreground size-4" />
-            <span className="text-sm font-medium">เพดานอำนาจอนุมัติของคุณ</span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-lg leading-none font-semibold tabular-nums">
-              {ceilingTh(queue.ceilings.margin, baht)}
-            </span>
-            <span className="text-muted-foreground text-xs">{DIMENSION_TH.margin}</span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-lg leading-none font-semibold tabular-nums">
-              {ceilingTh(queue.ceilings.cashflow, baht)}
-            </span>
-            <span className="text-muted-foreground text-xs">{DIMENSION_TH.cashflow}</span>
-          </div>
-          <span className="text-muted-foreground ml-auto text-xs">
-            ต่อหนึ่งใบเสนอราคา · กำหนดที่หน้า เพดานอำนาจอนุมัติ
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="type-focal text-balance">{focus.headlineTh}</p>
+          {focus.detailTh === null ? null : (
+            <p className="text-muted-foreground type-body">{focus.detailTh}</p>
+          )}
+        </div>
+
+        {/*
+         * Your own authority, demoted to what it is: a **precondition** for reading the queue,
+         * not the reason anybody opened the screen. Still stated before the list, because a
+         * judgement below is made against it and an approver who does not know their own limit
+         * cannot tell a request that is theirs to take from one that is not — but at caption
+         * scale, in one line, rather than as the largest thing on the page.
+         *
+         * Rendered from `ceilings`, which the server reads unconditionally — so
+         * "ยังไม่มีเพดานอำนาจ" here is the server saying this role holds no live row, and not
+         * this screen guessing from an absent field.
+         */}
+        <div className="text-muted-foreground type-caption flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5" aria-hidden />
+            เพดานอำนาจอนุมัติของคุณ
           </span>
-        </CardContent>
-      </Card>
+          <span className="tabular-nums">
+            {DIMENSION_TH.margin} {ceilingTh(queue.ceilings.margin, baht)}
+          </span>
+          <span className="tabular-nums">
+            {DIMENSION_TH.cashflow} {ceilingTh(queue.ceilings.cashflow, baht)}
+          </span>
+          <span>ต่อหนึ่งใบเสนอราคา · กำหนดที่หน้า เพดานอำนาจอนุมัติ</span>
+        </div>
+      </section>
 
       {noAuthorityAtAll && (
         /*
@@ -269,16 +294,7 @@ export function ApprovalInbox() {
         </Alert>
       )}
 
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-base font-semibold">รอคุณตัดสิน ({queue.approvals.length})</h2>
-        <p className="text-muted-foreground text-sm">
-          {total === 0
-            ? 'ไม่มีคำขออนุมัติค้างอยู่ในระบบ'
-            : `ทั้งระบบมี ${total} คำขอที่ยังไม่ถูกตัดสิน${queue.isTruncated ? ' (นับเฉพาะที่เก่าที่สุด 200 รายการ)' : ''}`}
-        </p>
-      </div>
-
-      {withheld > 0 && (
+      {focus.withheld > 0 && (
         /*
          * Counted, never listed. This discloses nothing the reader could not already read from
          * `GET /quotes/approvals` — which asks for the same `quotes.read` this page does — and it
@@ -286,7 +302,7 @@ export function ApprovalInbox() {
          */
         <Alert>
           <Users />
-          <AlertTitle>ไม่ได้แสดงอีก {withheld} คำขอ</AlertTitle>
+          <AlertTitle>ไม่ได้แสดงอีก {focus.withheld} คำขอ</AlertTitle>
           <AlertDescription>
             <ul className="list-inside list-disc">
               {queue.withheld.beyondYourAuthority > 0 && (
@@ -306,23 +322,30 @@ export function ApprovalInbox() {
       )}
 
       {queue.approvals.length === 0 ? (
-        <Card>
-          <CardContent className="text-muted-foreground py-10 text-center text-sm">
-            ไม่มีคำขอที่คุณตัดสินได้ในขณะนี้
-          </CardContent>
-        </Card>
+        /* Nothing to separate from anything, so nothing to draw a border around. */
+        <p className="text-muted-foreground type-body py-10 text-center">
+          ไม่มีคำขอที่คุณตัดสินได้ในขณะนี้
+        </p>
       ) : (
-        <Card className="overflow-hidden py-0">
+        /*
+         * ⚠️ No `<Card>`. A table is already a grid of rules — `Card className="overflow-hidden
+         * py-0"` around it was a ring drawn around an edge, and the `py-0` was there to undo the
+         * padding the ring brought with it, which is the tell that the wrapper was fighting the
+         * content rather than framing it.
+         */
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ใบเสนอราคา</TableHead>
-                <TableHead>มิติ</TableHead>
-                <TableHead className="text-right">ยอดที่ขอลด</TableHead>
-                <TableHead>ผู้ขอ</TableHead>
-                <TableHead>รออยู่</TableHead>
-                <TableHead>เหตุผล</TableHead>
-                <TableHead />
+                <TableHead className="type-caption h-8">ใบเสนอราคา</TableHead>
+                <TableHead className="type-caption h-8">มิติ</TableHead>
+                <TableHead className="type-caption h-8 text-right">ยอดที่ขอลด</TableHead>
+                <TableHead className="type-caption h-8">ผู้ขอ</TableHead>
+                <TableHead className="type-caption h-8">รออยู่</TableHead>
+                <TableHead className="type-caption h-8">เหตุผล</TableHead>
+                {/* Slack goes to the last column — see the note in `order-list.tsx`. Here that is
+                    the action cell, which keeps the money, the age and the reason adjacent. */}
+                <TableHead className="type-caption h-8 w-full" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -330,37 +353,42 @@ export function ApprovalInbox() {
                 const days = waitingDays(approval.createdAt);
                 return (
                   <TableRow key={approval.id}>
-                    <TableCell>
+                    <TableCell className="px-2 py-1.5">
                       <Link
                         href={`/quotes/${approval.orderId}` as Route}
-                        className="font-mono text-sm hover:underline"
+                        className="focus-visible:outline-ring type-body rounded font-mono hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
                       >
                         {approval.orderNo ?? approval.orderId.slice(0, 8)}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-sm">{DIMENSION_TH[approval.dimension]}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
+                    <TableCell className="type-body px-2 py-1.5">
+                      {DIMENSION_TH[approval.dimension]}
+                    </TableCell>
+                    <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
                       {baht(approval.concessionThbMinor)}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="type-body px-2 py-1.5">
                       {/* An erased actor has no name — the id is what remains, and it is shown. */}
                       {approval.requestedByName ?? (
-                        <span className="text-muted-foreground font-mono text-xs">
+                        <span className="text-muted-foreground type-caption font-mono">
                           {approval.requestedByUserId.slice(0, 8)}
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="type-body px-2 py-1.5">
                       {days === 0 ? (
                         <span className="text-muted-foreground">วันนี้</span>
                       ) : (
                         <Badge variant={days >= 3 ? 'destructive' : 'outline'}>{days} วัน</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="max-w-88 truncate text-sm" title={approval.reasonTh}>
+                    <TableCell
+                      className="type-body max-w-88 truncate px-2 py-1.5"
+                      title={approval.reasonTh}
+                    >
                       {approval.reasonTh}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="px-2 py-1.5 text-right">
                       <Button size="sm" onClick={() => setDeciding(approval)}>
                         ตรวจและตัดสิน
                       </Button>
@@ -370,7 +398,7 @@ export function ApprovalInbox() {
               })}
             </TableBody>
           </Table>
-        </Card>
+        </div>
       )}
 
       {deciding !== null && (
@@ -416,54 +444,55 @@ function DecidedTable({
 
   if (rows.length === 0) {
     return (
-      <Card>
-        <CardContent className="text-muted-foreground py-10 text-center text-sm">
-          {kind === 'approved' ? 'ยังไม่มีคำขอที่ถูกอนุมัติ' : 'ยังไม่มีคำขอที่ถูกปฏิเสธ'}
-        </CardContent>
-      </Card>
+      <p className="text-muted-foreground type-body py-10 text-center">
+        {kind === 'approved' ? 'ยังไม่มีคำขอที่ถูกอนุมัติ' : 'ยังไม่มีคำขอที่ถูกปฏิเสธ'}
+      </p>
     );
   }
 
+  /* De-carded for the same reason as the pending table above — a table draws its own edges. */
   return (
-    <Card className="overflow-hidden py-0">
+    <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>ใบเสนอราคา</TableHead>
-            <TableHead>มิติ</TableHead>
-            <TableHead className="text-right">ยอดที่ลด</TableHead>
-            <TableHead>ผู้ขอ</TableHead>
-            <TableHead>ตัดสินเมื่อ</TableHead>
-            <TableHead className="text-right">เพดานตอนอนุมัติ</TableHead>
-            <TableHead>เหตุผล</TableHead>
+            <TableHead className="type-caption h-8">ใบเสนอราคา</TableHead>
+            <TableHead className="type-caption h-8">มิติ</TableHead>
+            <TableHead className="type-caption h-8 text-right">ยอดที่ลด</TableHead>
+            <TableHead className="type-caption h-8">ผู้ขอ</TableHead>
+            <TableHead className="type-caption h-8">ตัดสินเมื่อ</TableHead>
+            <TableHead className="type-caption h-8 text-right">เพดานตอนอนุมัติ</TableHead>
+            <TableHead className="type-caption h-8 w-full">เหตุผล</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((approval) => (
             <TableRow key={approval.id}>
-              <TableCell>
+              <TableCell className="px-2 py-1.5">
                 <Link
                   href={`/quotes/${approval.orderId}` as Route}
-                  className="font-mono text-sm hover:underline"
+                  className="focus-visible:outline-ring type-body rounded font-mono hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   {approval.orderNo ?? approval.orderId.slice(0, 8)}
                 </Link>
               </TableCell>
-              <TableCell className="text-sm">{DIMENSION_TH[approval.dimension]}</TableCell>
-              <TableCell className="text-right font-medium tabular-nums">
+              <TableCell className="type-body px-2 py-1.5">
+                {DIMENSION_TH[approval.dimension]}
+              </TableCell>
+              <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
                 {baht(approval.concessionThbMinor)}
               </TableCell>
-              <TableCell className="text-sm">
+              <TableCell className="type-body px-2 py-1.5">
                 {approval.requestedByName ?? (
-                  <span className="text-muted-foreground font-mono text-xs">
+                  <span className="text-muted-foreground type-caption font-mono">
                     {approval.requestedByUserId.slice(0, 8)}
                   </span>
                 )}
               </TableCell>
-              <TableCell className="text-muted-foreground text-sm">
+              <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
                 {approval.decidedAt === null ? '—' : at(approval.decidedAt)}
               </TableCell>
-              <TableCell className="text-right text-sm tabular-nums">
+              <TableCell className="type-body px-2 py-1.5 text-right tabular-nums">
                 {/*
                  * ⚠️ `—` on a refusal is not missing data: `approvals_ceiling_shape` makes this
                  * column present exactly when the status is `approved`, because a refusal needs no
@@ -473,7 +502,10 @@ function DecidedTable({
                   ? '—'
                   : baht(approval.decidedCeilingThbMinor)}
               </TableCell>
-              <TableCell className="max-w-88 truncate text-sm" title={approval.decisionNoteTh ?? ''}>
+              <TableCell
+                className="type-body max-w-88 truncate px-2 py-1.5"
+                title={approval.decisionNoteTh ?? ''}
+              >
                 {approval.decisionNoteTh ?? (
                   <span className="text-muted-foreground">ไม่ได้ระบุ</span>
                 )}
@@ -482,7 +514,7 @@ function DecidedTable({
           ))}
         </TableBody>
       </Table>
-    </Card>
+    </div>
   );
 }
 
@@ -563,7 +595,7 @@ function DecisionDialog({
         {detail !== null && needs !== null && live !== null && (
           <div className="flex flex-col gap-4">
             {/* What was conceded, by whom, why, and against which quote. */}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl className="type-body grid grid-cols-2 gap-x-6 gap-y-3">
               <Fact label="ผู้ขอ">
                 {detail.approval.requestedByName ?? detail.approval.requestedByUserId.slice(0, 8)}
               </Fact>
@@ -586,26 +618,34 @@ function DecisionDialog({
              * "100% on a line nobody looked at".
              */}
             {live.sources.length > 0 && (
+              /*
+               * ⚠️ The `rounded-md border` that used to wrap this table is gone. It was a Card
+               * lookalike in a *different* visual language — `Card` draws `rounded-xl ring-1
+               * ring-foreground/10` — so the dialog held two kinds of box that meant the same
+               * thing, and it was drawn around the one element that already has rules of its own.
+               */
               <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground text-xs">ที่มาของยอดที่ลด</span>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableBody>
-                      {live.sources.map((source, index) => (
-                        <TableRow key={`${source.kind}-${source.overrideId ?? source.quoteLineId ?? index}`}>
-                          <TableCell className="text-xs">{source.kind}</TableCell>
-                          <TableCell className="text-muted-foreground font-mono text-xs">
-                            {source.quoteLineId?.slice(0, 8) ?? '—'}
-                          </TableCell>
-                          <TableCell className="text-xs">{source.reasonCode ?? '—'}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
-                            {baht(source.amountThbMinor)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <span className="text-muted-foreground type-caption">ที่มาของยอดที่ลด</span>
+                <Table>
+                  <TableBody>
+                    {live.sources.map((source, index) => (
+                      <TableRow
+                        key={`${source.kind}-${source.overrideId ?? source.quoteLineId ?? index}`}
+                      >
+                        <TableCell className="type-caption px-2 py-1.5">{source.kind}</TableCell>
+                        <TableCell className="text-muted-foreground type-caption px-2 py-1.5 font-mono">
+                          {source.quoteLineId?.slice(0, 8) ?? '—'}
+                        </TableCell>
+                        <TableCell className="type-caption px-2 py-1.5">
+                          {source.reasonCode ?? '—'}
+                        </TableCell>
+                        <TableCell className="type-caption w-full px-2 py-1.5 text-right tabular-nums">
+                          {baht(source.amountThbMinor)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
 
@@ -645,7 +685,7 @@ function DecisionDialog({
              * is not an exercise of authority.
              */}
             <div className="flex flex-col gap-2">
-              <span className="text-muted-foreground text-xs">คำตอบ</span>
+              <span className="text-muted-foreground type-caption">คำตอบ</span>
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant={decision === 'approved' ? 'default' : 'outline'}
@@ -667,7 +707,9 @@ function DecisionDialog({
                * reasons by type, so a new one cannot arrive here as a blank space.
                */}
               {!needs.permitted && (
-                <span className="text-destructive text-xs">{REASON_TH[detail.rights.because]}</span>
+                <span className="text-destructive type-caption">
+                  {REASON_TH[detail.rights.because]}
+                </span>
               )}
             </div>
 
@@ -682,7 +724,7 @@ function DecisionDialog({
                 value={noteTh}
                 onChange={(event) => setNoteTh(event.target.value)}
               />
-              <span className="text-muted-foreground text-xs">
+              <span className="text-muted-foreground type-caption">
                 {needs.note
                   ? 'ผู้ขอเห็นข้อความนี้ — การไม่อนุมัติที่ไม่บอกเหตุผลคือคำขอที่กลับไปแล้วแก้อะไรไม่ได้'
                   : 'บันทึกไว้กับการตัดสินใจ และย้อนกลับมาอ่านได้ภายหลัง'}
@@ -726,7 +768,7 @@ function DecisionDialog({
         {detail !== null && (
           <Link
             href={`/quotes/${detail.approval.orderId}` as Route}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
+            className="text-muted-foreground hover:text-foreground type-caption focus-visible:outline-ring inline-flex w-fit items-center gap-1 rounded px-1 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             เปิดใบเสนอราคาฉบับเต็ม <ArrowRight className="size-3" />
           </Link>
@@ -739,7 +781,7 @@ function DecisionDialog({
 function Fact({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dt className="text-muted-foreground type-caption">{label}</dt>
       <dd>{children}</dd>
     </div>
   );

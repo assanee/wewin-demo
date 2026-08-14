@@ -97,8 +97,8 @@ export function UserGroupsDialog({
                 />
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label htmlFor={`group-${group.id}`}>{group.nameTh}</Label>
-                  <code className="text-muted-foreground text-xs">{group.code}</code>
-                  <span className="text-muted-foreground text-xs">
+                  <code className="text-muted-foreground type-caption">{group.code}</code>
+                  <span className="text-muted-foreground type-caption">
                     {group.permissions.length === 0
                       ? 'ไม่ให้สิทธิ์ใดเลย'
                       : group.permissions.join(' · ')}
@@ -108,12 +108,17 @@ export function UserGroupsDialog({
             ))}
           </div>
 
-          <div className="border-border/60 rounded-lg border border-dashed p-3">
-            <p className="text-sm">
-              รวมแล้วจะมี {granted.size} สิทธิ์
-              {granted.has('users.write') && ' — รวมสิทธิ์จัดการผู้ใช้'}
-            </p>
-          </div>
+          {/*
+            ⚠️ The `rounded-lg border border-dashed p-3` around this one sentence is gone. It was
+            a third visual language for a box, on a screen that also renders `Card`'s
+            `rounded-xl ring-1` — and it framed a single line of running text, which is the case
+            question 2 of the house rule answers "no" to most flatly. The sentence is a summary
+            of the tick boxes above it and reads as one from its position and its wording.
+          */}
+          <p className="type-body">
+            รวมแล้วจะมี {granted.size} สิทธิ์
+            {granted.has('users.write') && ' — รวมสิทธิ์จัดการผู้ใช้'}
+          </p>
         </div>
 
         <DialogFooter>

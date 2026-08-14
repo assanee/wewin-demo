@@ -140,10 +140,10 @@ export function ValueDialog({
           )}
 
           {editing ? (
-            <div className="border-border/60 text-muted-foreground rounded-lg border border-dashed p-3 text-sm">
-              <p className="text-xs">รหัสตัวเลือก</p>
+            <div className="border-border/60 text-muted-foreground rounded-lg border border-dashed type-body p-3">
+              <p className="type-caption">รหัสตัวเลือก</p>
               <code>{value.code}</code>
-              <p className="mt-1 text-xs">
+              <p className="type-caption mt-1">
                 แก้ไม่ได้ — รหัสนี้ถูกประกอบอยู่ในรหัส SKU ที่ออกใบเสนอราคาไปแล้ว
               </p>
             </div>

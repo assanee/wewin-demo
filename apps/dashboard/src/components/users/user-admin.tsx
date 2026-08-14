@@ -6,7 +6,6 @@ import { AlertTriangle, KeyRound, LogOut, Phone, PhoneOff, Plus, ShieldOff, User
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -33,6 +32,7 @@ import {
   type UserPhone,
   type UserSummary,
 } from './user-api';
+import { accessFocus, STATUS_LABEL_TH } from './access-focus';
 import { CreateUserDialog } from './create-user-dialog';
 import { GroupsPanel } from './groups-panel';
 import { AuditTrail } from './audit-trail';
@@ -106,13 +106,6 @@ type State =
       readonly available: readonly string[];
     };
 
-const STATUS_LABEL: Readonly<Record<UserSummary['status'], string>> = {
-  active: 'ใช้งานอยู่',
-  suspended: 'ถูกระงับ',
-  closed: 'ปิดบัญชีแล้ว',
-  erased: 'ลบข้อมูลแล้ว',
-};
-
 export function UserAdmin() {
   const { can, state: session } = useSession();
   const [state, setState] = useState<State>({ status: 'loading' });
@@ -157,7 +150,10 @@ export function UserAdmin() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    /* `gap-8` and not the `gap-4` this was: with the Cards gone, space is what separates the
+     * focal statement, the tabs and the audit trail from one another — see `overview-screen.tsx`,
+     * which makes the same trade of a ring for a gap. */
+    <div className="flex flex-col gap-8">
       {problem !== null && (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" />
@@ -183,39 +179,73 @@ export function UserAdmin() {
       )}
 
       {state.status === 'ready' && (
-        <Tabs defaultValue="users">
-          <TabsList>
-            <TabsTrigger value="users">ผู้ใช้ ({state.users.length})</TabsTrigger>
-            <TabsTrigger value="groups">กลุ่มและสิทธิ์ ({state.groups.length})</TabsTrigger>
-          </TabsList>
+        <>
+          {/*
+           * ⭐ THE PRIMARY THING: the state of access. On the page ground, no border.
+           *
+           * This screen used to go straight from its title into a tab strip, so the first thing
+           * a reader met was a navigation choice rather than an answer. The one fact somebody
+           * might have to *act* on here is that an account has lost access — and it was a badge
+           * in the third column of whichever row happened to hold it.
+           *
+           * Above the tabs rather than inside the ผู้ใช้ one: it is true of the screen, not of a
+           * tab, and `type-focal` is allowed once per screen. The gap between it and the tab
+           * strip is what says the tabs are subordinate to it.
+           */}
+          <AccessFocusLine users={state.users} />
 
-          <TabsContent value="users" className="flex flex-col gap-4">
-            {editable && (
-              <div>
-                <Button onClick={() => setCreating(true)}>
-                  <Plus className="size-4" />
-                  เพิ่มผู้ใช้
-                </Button>
-              </div>
-            )}
+          <Tabs defaultValue="users">
+            <TabsList>
+              <TabsTrigger value="users">ผู้ใช้ ({state.users.length})</TabsTrigger>
+              <TabsTrigger value="groups">กลุ่มและสิทธิ์ ({state.groups.length})</TabsTrigger>
+            </TabsList>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>ผู้ใช้ทั้งหมด</CardTitle>
-                <CardDescription>
-                  สิทธิ์มาจากกลุ่มเสมอ — ผู้ใช้ไม่ได้ถือสิทธิ์โดยตรง
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+            <TabsContent value="users" className="flex flex-col gap-4">
+              {editable && (
+                <div>
+                  <Button onClick={() => setCreating(true)}>
+                    <Plus className="size-4" />
+                    เพิ่มผู้ใช้
+                  </Button>
+                </div>
+              )}
+
+              {/*
+               * ⚠️ No `<Card>` around this table, and the `CardTitle` that said "ผู้ใช้ทั้งหมด" is
+               * gone with it. The table was the *only* thing in that card, its title repeated the
+               * tab label two centimetres above it, and a table is already a grid of rules — the
+               * ring was an edge drawn around an edge.
+               *
+               * The card's description survives, because it is the one thing in that header that
+               * was not a restatement: where permissions come from is a rule about this table that
+               * the table cannot show.
+               */}
+              <p className="text-muted-foreground type-body">
+                สิทธิ์มาจากกลุ่มเสมอ — ผู้ใช้ไม่ได้ถือสิทธิ์โดยตรง
+              </p>
+
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>ผู้ใช้</TableHead>
-                      <TableHead>เบอร์โทร</TableHead>
-                      <TableHead>สถานะ</TableHead>
-                      <TableHead>กลุ่ม</TableHead>
-                      <TableHead>เซสชัน</TableHead>
-                      {editable && <TableHead className="text-right">การจัดการ</TableHead>}
+                      <TableHead className="type-caption h-8">ผู้ใช้</TableHead>
+                      <TableHead className="type-caption h-8">เบอร์โทร</TableHead>
+                      <TableHead className="type-caption h-8">สถานะ</TableHead>
+                      <TableHead className="type-caption h-8">กลุ่ม</TableHead>
+                      {/* Slack to the *last rendered* column — see `order-list.tsx`. Without it the
+                        identity, the phone and the status drift apart across a wide screen. Which
+                        column is last depends on `editable`, so `w-full` moves with it rather than
+                        disappearing for a reader who may only look. */}
+                      <TableHead
+                        className={editable ? 'type-caption h-8' : 'type-caption h-8 w-full'}
+                      >
+                        เซสชัน
+                      </TableHead>
+                      {editable && (
+                        <TableHead className="type-caption h-8 w-full text-right">
+                          การจัดการ
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -224,20 +254,23 @@ export function UserAdmin() {
                       const busy = busyId === user.id;
 
                       return (
-                        <TableRow key={user.id} className={user.status === 'active' ? undefined : 'opacity-70'}>
-                          <TableCell>
+                        <TableRow
+                          key={user.id}
+                          className={user.status === 'active' ? undefined : 'opacity-70'}
+                        >
+                          <TableCell className="px-2 py-1.5">
                             <div className="flex flex-col">
-                              <span className="flex items-center gap-2">
+                              <span className="type-body flex items-center gap-2">
                                 {user.displayName ?? '(ไม่มีชื่อ)'}
                                 {isMe && <Badge variant="secondary">คุณ</Badge>}
                               </span>
-                              <span className="text-muted-foreground text-xs">
+                              <span className="text-muted-foreground type-caption">
                                 {user.emails.join(' · ') || 'ไม่มีอีเมลที่ยืนยันแล้ว'}
                               </span>
                             </div>
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="px-2 py-1.5">
                             <PhoneList
                               phones={user.phones}
                               editable={editable}
@@ -259,18 +292,18 @@ export function UserAdmin() {
                             />
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="px-2 py-1.5">
                             {user.status === 'active' ? (
-                              <Badge variant="outline">{STATUS_LABEL[user.status]}</Badge>
+                              <Badge variant="outline">{STATUS_LABEL_TH[user.status]}</Badge>
                             ) : (
-                              <Badge variant="destructive">{STATUS_LABEL[user.status]}</Badge>
+                              <Badge variant="destructive">{STATUS_LABEL_TH[user.status]}</Badge>
                             )}
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="px-2 py-1.5">
                             <div className="flex flex-wrap gap-1">
                               {user.groups.length === 0 ? (
-                                <span className="text-muted-foreground text-sm">ไม่มีกลุ่ม</span>
+                                <span className="text-muted-foreground type-body">ไม่มีกลุ่ม</span>
                               ) : (
                                 user.groups.map((group) => (
                                   <Badge key={group.id} variant="outline" title={group.code}>
@@ -280,16 +313,18 @@ export function UserAdmin() {
                               )}
                             </div>
                             {user.permissions.length > 0 && (
-                              <span className="text-muted-foreground text-xs">
+                              <span className="text-muted-foreground type-caption">
                                 {user.permissions.length} สิทธิ์
                               </span>
                             )}
                           </TableCell>
 
-                          <TableCell className="text-sm">{user.liveSessions}</TableCell>
+                          <TableCell className="type-body px-2 py-1.5 tabular-nums">
+                            {user.liveSessions}
+                          </TableCell>
 
                           {editable && (
-                            <TableCell className="text-right">
+                            <TableCell className="px-2 py-1.5 text-right">
                               <div className="flex flex-wrap items-center justify-end gap-1">
                                 <Button
                                   variant="ghost"
@@ -339,14 +374,14 @@ export function UserAdmin() {
                                 </Button>
 
                                 {/*
-                                  * ⭐ Disabled for your own row, and the title says why.
-                                  *
-                                  * Self-service disabling costs the account's password;
-                                  * this route asks for none, because an administrator does
-                                  * not have somebody else's. Pointed at yourself the two
-                                  * combine into a way round the password rule, so the API
-                                  * refuses it — and the button says so before the 409 does.
-                                  */}
+                                 * ⭐ Disabled for your own row, and the title says why.
+                                 *
+                                 * Self-service disabling costs the account's password;
+                                 * this route asks for none, because an administrator does
+                                 * not have somebody else's. Pointed at yourself the two
+                                 * combine into a way round the password rule, so the API
+                                 * refuses it — and the button says so before the 409 does.
+                                 */}
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -374,7 +409,11 @@ export function UserAdmin() {
                                     size="sm"
                                     disabled={busy}
                                     onClick={() =>
-                                      void act(user.id, () => reinstateUser(user.id), 'ปลดระงับบัญชีแล้ว')
+                                      void act(
+                                        user.id,
+                                        () => reinstateUser(user.id),
+                                        'ปลดระงับบัญชีแล้ว',
+                                      )
                                     }
                                   >
                                     ปลดระงับ
@@ -399,20 +438,20 @@ export function UserAdmin() {
                     })}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </div>
+            </TabsContent>
 
-          <TabsContent value="groups">
-            <GroupsPanel
-              groups={state.groups}
-              available={state.available}
-              editable={editable}
-              onChanged={() => void reload()}
-              onProblem={setProblem}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="groups">
+              <GroupsPanel
+                groups={state.groups}
+                available={state.available}
+                editable={editable}
+                onChanged={() => void reload()}
+                onProblem={setProblem}
+              />
+            </TabsContent>
+          </Tabs>
+        </>
       )}
 
       {creating && state.status === 'ready' && (
@@ -444,12 +483,12 @@ export function UserAdmin() {
       )}
 
       {/*
-        * ⭐ Last on the page, and present rather than hidden behind a tab.
-        *
-        * Every action above it writes a row here, in the same transaction. Putting the
-        * record where the actions are is what makes it get read — an audit behind a
-        * navigation step is one nobody opens until there is already an incident.
-        */}
+       * ⭐ Last on the page, and present rather than hidden behind a tab.
+       *
+       * Every action above it writes a row here, in the same transaction. Putting the
+       * record where the actions are is what makes it get read — an audit behind a
+       * navigation step is one nobody opens until there is already an incident.
+       */}
       {state.status === 'ready' && <AuditTrail />}
 
       {editingGroups !== null && state.status === 'ready' && (
@@ -489,7 +528,7 @@ function PhoneList({
   readonly onUnverify: (phone: UserPhone) => void;
 }) {
   if (phones.length === 0) {
-    return <span className="text-muted-foreground text-sm">ไม่มีเบอร์โทร</span>;
+    return <span className="text-muted-foreground type-body">ไม่มีเบอร์โทร</span>;
   }
 
   return (
@@ -499,7 +538,7 @@ function PhoneList({
 
         return (
           <div key={phone.id} className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-xs">{phone.number}</span>
+            <span className="type-caption font-mono">{phone.number}</span>
             <Badge variant={verified ? 'outline' : 'secondary'}>
               {verified ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}
             </Badge>
@@ -535,5 +574,30 @@ function PhoneList({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * ⭐ The screen's one primary statement, as its own component.
+ *
+ * Extracted rather than inlined into the `ready` branch for a dull reason worth stating: the
+ * sentence has two parts that both come from `accessFocus`, and calling it once per part inside
+ * JSX would run the count twice per render to say one thing. `state` is a discriminated union
+ * so the value cannot be hoisted above the `return`; a component is where it goes.
+ *
+ * ⚠️ Only rendered once the list has arrived, and that is safe here because `PageHeader` lives in
+ * `page.tsx` — the screen keeps its name in the loading and failure states even though it loses
+ * this line, which is the rule `page-header.tsx` states.
+ */
+function AccessFocusLine({ users }: { readonly users: readonly UserSummary[] }) {
+  const focus = accessFocus(users);
+
+  return (
+    <section className="flex flex-col gap-1">
+      <p className="type-focal text-balance">{focus.headlineTh}</p>
+      {focus.detailTh === null ? null : (
+        <p className="text-muted-foreground type-body">{focus.detailTh}</p>
+      )}
+    </section>
   );
 }

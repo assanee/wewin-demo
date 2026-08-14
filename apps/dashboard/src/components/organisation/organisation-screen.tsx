@@ -8,8 +8,6 @@ import { isPromptPayId } from '@wewin/core/promptpay';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { FieldGroup } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -19,7 +17,7 @@ import { useSession } from '@/lib/auth/session';
 
 import { BankAccountDialog } from './bank-account-dialog';
 import { BankAccountHistoryDialog } from './bank-account-history';
-import { FxHealthCard, type FxHealthState } from './fx-health';
+import { FxHealthSection, type FxHealthState } from './fx-health';
 import { getFxRateHealth } from './fx-health-api';
 import { getProfile, listBankAccounts, listTaxCountries, putProfile, setBankAccountAvailability } from './organisation-api';
 import { ProfileHistoryDialog } from './profile-history';
@@ -39,26 +37,57 @@ import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
  *
  * Four sections, and they are independent screens sharing one page rather than one form: the
  * profile is a single row a staff member edits a few times a year, the bank-account list is a
- * queue with its own history control, the exchange-rate health card is a read-only report, and
+ * queue with its own history control, the exchange-rate health report is read-only, and
  * the tax-country table is a short, mostly-static list with a history control of its own.
  * Loading, saving and failing are tracked separately for each, so a slow `bank-accounts` fetch
  * cannot leave the profile form looking broken, and a rejected profile save cannot disable the
  * account list or the tax table.
  *
- * ⚠️ **`FxHealthCard` sits immediately above `TaxCountriesSection`, and the adjacency is the
+ * ── ⭐ Four unrelated jobs, and only one of them can be *wrong right now* ─────
+ *
+ * That is what decides the order of this page, and the order changed. The profile, the bank
+ * accounts and the tax destinations are near-static configuration: they are exactly as somebody
+ * last typed them, and a screen full of them has nothing to report. **The exchange-rate feed is
+ * the only thing here with a live state that can have gone bad while nobody was looking** — the
+ * rate ages by itself, and past `refuseAfterHours` every foreign-currency quotation in the company
+ * is being refused. So its verdict is now this screen's one `type-focal` statement and it opens
+ * the page; the three configuration blocks are `type-section` bands underneath it.
+ *
+ * ⚠️ **The `type-focal` line lives in `fx-health.tsx`, not here.** "At most once per screen" is the
+ * rule, and the sentence is `fxHealthTitleTh(health)` — a function of a payload only that file
+ * holds. Nothing else on this page may use `type-focal`; the four bands are all `type-section`.
+ *
+ * ⚠️ **`FxHealthSection` still sits above `TaxCountriesSection`, and the adjacency is still the
  * point.** It is the only section here that sets nothing at all — its own header says so — and
  * the way out of everything it reports is one text box in the table underneath it:
- * `อัตราแลกเปลี่ยนกำหนดเอง` on the destination being quoted. A card that named a remedy on a
- * different screen, or a page that put the diagnosis at the top and the cure at the bottom, would
- * be asking a person to hold a sentence in their head while they scrolled. It reads its own
- * endpoint (`GET /admin/fx/health`, `admin/fx` and not `admin/organisation` — `fx-health-api.ts`
- * records why) and fails on its own, so a rate feed this dashboard cannot reach still leaves the
- * profile, the accounts and the destinations editable.
+ * `อัตราแลกเปลี่ยนกำหนดเอง` on the destination being quoted. A page that named a remedy on a
+ * different screen, or that put the diagnosis at the top and the cure at the bottom, would be
+ * asking a person to hold a sentence in their head while they scrolled — which is why the tax
+ * table was promoted with it rather than left where it was. `fxHealthRemedyTh` says
+ * "ในตารางประเทศปลายทางด้านล่าง" in so many words, and that sentence has to keep being true. It
+ * reads its own endpoint (`GET /admin/fx/health`, `admin/fx` and not `admin/organisation` —
+ * `fx-health-api.ts` records why) and fails on its own, so a rate feed this dashboard cannot reach
+ * still leaves the profile, the accounts and the destinations editable.
+ *
+ * ── ⚠️ The page title and the first heading used to be the same six characters ─
+ *
+ * `<h1>ข้อมูลบริษัท</h1>` sat about twenty pixels above `<CardTitle>ข้อมูลบริษัท</CardTitle>`, at
+ * 24px and 16px, which reads as one heading rendered twice by mistake. The page keeps the name —
+ * it is what the sidebar says, and a screen whose title disagrees with the link that opened it is
+ * worse — and the section is now named for what is actually in it: `ชื่อ ที่อยู่ และเลขผู้เสียภาษี`.
+ *
+ * ── No `Card` survives on this screen ────────────────────────────────────────
+ *
+ * Every one of the four failed the three questions in the README. Two of them wrap a `<Table>`,
+ * which draws its own rules — a ring around one is an edge around an edge, and the rule is
+ * explicit. The profile is a form whose inputs draw their own boxes. The exchange-rate report is
+ * the page's opening statement and cannot be inside a container that says "one item among
+ * several". `gap-10` and `type-section` do the separating, as they do on `/account`.
  *
  * ⚠️ **The profile's own `ประวัติ` control is simpler than either sibling's, on purpose.** A bank
- * account and a tax country are both rows in a list — `AccountsCard`/`TaxCountriesSection` open
+ * account and a tax country are both rows in a list — `AccountsSection`/`TaxCountriesSection` open
  * their history dialog against *one* row a person picked from a table. `organisation_profile` is
- * a singleton: there is no row to pick, so `ProfileCard` just opens `ProfileHistoryDialog` with
+ * a singleton: there is no row to pick, so `ProfileSection` just opens `ProfileHistoryDialog` with
  * no argument at all. It answers the same question `depositBp` made worth answering: who lowered
  * the approval floor, and when — see `profile-history.tsx` and `profile-changes.ts`.
  *
@@ -66,7 +95,7 @@ import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
  * `GET bank-accounts`, which returns `is_active = false` rows deliberately — an administrator
  * auditing what was retired, and when, has to be able to see the row, not just the ones still
  * receiving money. `AccountsTable` below renders every row the API sends and dims the inactive
- * ones with the same `opacity-60` treatment `option-group-card.tsx` uses for an unavailable
+ * ones with the same `opacity-60` treatment `option-group-section.tsx` uses for an unavailable
  * catalogue value, rather than filtering them out of the array. `TaxCountriesSection` makes the
  * identical choice for a withdrawn destination, for the identical reason.
  */
@@ -118,7 +147,7 @@ export function OrganisationScreen() {
    * ⚠️ Its own `catch`, like every sibling above, and here the alternative is worse than usual: a
    * throw that reached the caller would leave this card on its skeleton for ever, which reads as
    * "still checking" — the one thing a staleness report must never imply while it knows nothing.
-   * `failureMessage` puts the reason on the card instead, and `FxHealthCard` says out loud that a
+   * `failureMessage` puts the reason on the card instead, and `FxHealthSection` says out loud that a
    * failure to *read* the status is not a statement about the rate.
    */
   const reloadFxHealth = async (): Promise<void> => {
@@ -137,18 +166,64 @@ export function OrganisationScreen() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-6">
-      <ProfileCard state={profileState} editable={editable} onSaved={reloadProfile} />
-      <AccountsCard state={accountsState} editable={editable} onChanged={reloadAccounts} />
-      {/* ⚠️ This used to carry neither prop, with the note *"nothing on this card writes
+    <div className="flex flex-col gap-10">
+      {/* ⭐ First, because it is the only thing on this page that can be wrong right now, and it
+          carries the screen's one `type-focal` statement. See this file's header.
+
+          ⚠️ This used to carry neither prop, with the note *"nothing on this card writes
           anything, so there is no permission to gate and nothing to reload after"*. It now
           carries both, and the reason is one control: ซิงก์เดี๋ยวนี้ asks the provider for a rate
-          on demand. It still *sets* nothing — see the card's own header — but it is gated on
+          on demand. It still *sets* nothing — see the section's own header — but it is gated on
           `organisation.write` like every other action on this page, and a sync that brought a new
           observation in has to redraw the figures it moved, which is `reloadFxHealth`. */}
-      <FxHealthCard state={fxHealthState} editable={editable} onSynced={reloadFxHealth} />
+      <FxHealthSection state={fxHealthState} editable={editable} onSynced={reloadFxHealth} />
+      {/* Immediately under the report, because the remedy the report names is a text box in this
+          table. Promoted with it rather than left below the two blocks that have nothing to do
+          with an exchange rate. */}
       <TaxCountriesSection state={taxCountriesState} editable={editable} onChanged={reloadTaxCountries} />
+      <AccountsSection state={accountsState} editable={editable} onChanged={reloadAccounts} />
+      {/* Last, and it is the slowest-moving thing here: a row somebody edits a few times a year.
+          Being last also puts the most distance between the page's title and the heading that
+          used to be the same string as it. */}
+      <ProfileSection state={profileState} editable={editable} onSaved={reloadProfile} />
     </div>
+  );
+}
+
+/**
+ * One band of this page, and the shape all four share.
+ *
+ * A `<section>` with a `type-section` heading, the sentence that used to be its `CardDescription`
+ * at `type-body` under it, and its own control (`ประวัติ`, `เพิ่มบัญชี`) on the right of the
+ * heading row. `account-settings.tsx` settled this shape; the only addition here is `action`,
+ * because three of these four bands have a button that belongs to the whole band.
+ *
+ * ⚠️ Written out here rather than imported by `tax-countries.tsx` and `fx-health.tsx` as well:
+ * this module already imports both of those, so exporting a component *to* them would close an
+ * import cycle for the sake of five lines of JSX. They spell their own heading rows instead.
+ */
+function Section({
+  title,
+  descriptionTh,
+  action,
+  children,
+}: {
+  readonly title: string;
+  readonly descriptionTh: string;
+  readonly action?: React.ReactNode;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="type-section">{title}</h2>
+          <p className="text-muted-foreground type-body max-w-3xl">{descriptionTh}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -156,7 +231,12 @@ export function OrganisationScreen() {
  * The company profile
  * ------------------------------------------------------------------ */
 
-function ProfileCard({
+/**
+ * ⚠️ **Not called `ข้อมูลบริษัท` any more, and that is the whole of the fix.** The page's `<h1>` is
+ * that string — it is what the sidebar calls this route — and this heading was the same six
+ * characters twenty pixels below it. The section is named for the fields it actually contains.
+ */
+function ProfileSection({
   state,
   editable,
   onSaved,
@@ -168,42 +248,35 @@ function ProfileCard({
   const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle>ข้อมูลบริษัท</CardTitle>
-            <CardDescription>
-              ชื่อ ที่อยู่ เบอร์โทร และเลขผู้เสียภาษี — ข้อมูลนี้จะพิมพ์อยู่บนใบเสนอราคาทุกใบที่ออกจากนี้ไป
-            </CardDescription>
-          </div>
-          {/* Needs only `organisation.read`, like `AccountsCard`/`TaxCountriesSection`'s own
-              `ประวัติ` — GET /admin/organisation/changes carries no write permission at all, so
-              this is not gated behind `editable`. */}
-          <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-            <History className="size-4" />
-            ประวัติ
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {state.status === 'loading' && <Skeleton className="h-72 w-full" />}
+    <Section
+      title="ชื่อ ที่อยู่ และเลขผู้เสียภาษี"
+      descriptionTh="ข้อมูลชุดนี้พิมพ์อยู่บนใบเสนอราคาทุกใบที่ออกจากนี้ไป ส่วนเปอร์เซ็นต์มัดจำเป็นนโยบาย — ต่ำกว่าที่ตั้งไว้ต้องขออนุมัติ"
+      action={
+        /* Needs only `organisation.read`, like `AccountsSection`/`TaxCountriesSection`'s own
+           `ประวัติ` — GET /admin/organisation/changes carries no write permission at all, so
+           this is not gated behind `editable`. */
+        <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+          <History className="size-4" />
+          ประวัติ
+        </Button>
+      }
+    >
+      {state.status === 'loading' && <Skeleton className="h-72 w-full" />}
 
-        {state.status === 'failed' && (
-          <Alert variant="destructive">
-            <AlertTriangle className="size-4" />
-            <AlertTitle>โหลดข้อมูลบริษัทไม่สำเร็จ</AlertTitle>
-            <AlertDescription>{state.problem}</AlertDescription>
-          </Alert>
-        )}
+      {state.status === 'failed' && (
+        <Alert variant="destructive">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>โหลดข้อมูลบริษัทไม่สำเร็จ</AlertTitle>
+          <AlertDescription>{state.problem}</AlertDescription>
+        </Alert>
+      )}
 
-        {state.status === 'ready' && (
-          <ProfileForm profile={state.profile} editable={editable} onSaved={onSaved} />
-        )}
-      </CardContent>
+      {state.status === 'ready' && (
+        <ProfileForm profile={state.profile} editable={editable} onSaved={onSaved} />
+      )}
 
       {historyOpen && <ProfileHistoryDialog onClose={() => setHistoryOpen(false)} />}
-    </Card>
+    </Section>
   );
 }
 
@@ -356,7 +429,7 @@ function ProfileForm({
  * The bank accounts
  * ------------------------------------------------------------------ */
 
-function AccountsCard({
+function AccountsSection({
   state,
   editable,
   onChanged,
@@ -384,26 +457,19 @@ function AccountsCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle>บัญชีธนาคารที่รับเงิน</CardTitle>
-            <CardDescription>
-              บัญชีที่ลูกค้าเห็นเป็นทางเลือกโอนเงิน — ปิดใช้งานได้โดยไม่ต้องลบ บัญชีที่ปิดแล้วยังแสดงอยู่ที่นี่
-              (จางลง) และประวัติการแก้ไขทุกครั้งเก็บไว้ถาวร
-            </CardDescription>
-          </div>
-          {editable && (
-            <Button size="sm" onClick={() => setDialog('create')}>
-              <Plus className="size-4" />
-              เพิ่มบัญชี
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-3">
+    <Section
+      title="บัญชีธนาคารที่รับเงิน"
+      descriptionTh="บัญชีที่ลูกค้าเห็นเป็นทางเลือกโอนเงิน — ปิดใช้งานได้โดยไม่ต้องลบ บัญชีที่ปิดแล้วยังแสดงอยู่ที่นี่ (จางลง) และประวัติการแก้ไขทุกครั้งเก็บไว้ถาวร"
+      action={
+        editable && (
+          <Button size="sm" onClick={() => setDialog('create')}>
+            <Plus className="size-4" />
+            เพิ่มบัญชี
+          </Button>
+        )
+      }
+    >
+      <div className="flex flex-col gap-3">
         {problem !== null && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
@@ -423,32 +489,40 @@ function AccountsCard({
         )}
 
         {state.status === 'ready' && state.accounts.length === 0 && (
-          <Empty className="border-border/60 rounded-lg border border-dashed">
-            <EmptyHeader>
-              <EmptyTitle>ยังไม่มีบัญชีธนาคาร</EmptyTitle>
-              <EmptyDescription>เพิ่มบัญชีแรกเพื่อให้ลูกค้าเห็นตอนชำระเงิน</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          /* ⚠️ This was an `Empty` carrying `rounded-lg border border-dashed` **inside** the Card
+             this section used to be — a box drawn inside a box, to say that a list with no rows
+             has no rows. On the page ground there is nothing to separate it from, so there is
+             nothing to draw a border around; `order-list.tsx` settled the same question the same
+             way in phase 1. */
+          <div className="flex flex-col items-center gap-1 py-10 text-center">
+            <p className="type-body">ยังไม่มีบัญชีธนาคาร</p>
+            <p className="text-muted-foreground type-caption">เพิ่มบัญชีแรกเพื่อให้ลูกค้าเห็นตอนชำระเงิน</p>
+          </div>
         )}
 
         {state.status === 'ready' && state.accounts.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ธนาคาร</TableHead>
-                <TableHead>เลขบัญชี</TableHead>
-                <TableHead>ชื่อบัญชี</TableHead>
-                <TableHead>พร้อมเพย์</TableHead>
-                <TableHead>สถานะ</TableHead>
-                <TableHead className="text-right">การจัดการ</TableHead>
+                <TableHead className="type-caption h-8">ธนาคาร</TableHead>
+                <TableHead className="type-caption h-8">เลขบัญชี</TableHead>
+                <TableHead className="type-caption h-8">ชื่อบัญชี</TableHead>
+                <TableHead className="type-caption h-8">พร้อมเพย์</TableHead>
+                <TableHead className="type-caption h-8">สถานะ</TableHead>
+                {/* `w-full` on the last column, which is the one holding the buttons: the slack
+                    would otherwise be shared out between the five data columns and push facts
+                    about one account apart across a wide screen. See `order-list.tsx`. */}
+                <TableHead className="type-caption h-8 w-full text-right">การจัดการ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {state.accounts.map((account) => (
                 <TableRow key={account.id} className={account.isActive ? undefined : 'opacity-60'}>
-                  <TableCell className="font-mono text-sm">{account.bankCode}</TableCell>
-                  <TableCell className="font-mono text-sm">{account.accountNumber}</TableCell>
-                  <TableCell>{account.accountName}</TableCell>
+                  <TableCell className="type-body px-2 py-1.5 font-mono">{account.bankCode}</TableCell>
+                  <TableCell className="type-body px-2 py-1.5 font-mono">
+                    {account.accountNumber}
+                  </TableCell>
+                  <TableCell className="type-body px-2 py-1.5">{account.accountName}</TableCell>
                   {/*
                     ⭐ AN ID THAT CANNOT BECOME A QR, SAID OUT LOUD — the silent failure the
                     customer met and nobody here could see.
@@ -473,7 +547,7 @@ function AccountsCard({
                     while giving them a reason to doubt the transfer. The person who can fix it
                     is the one looking at this table.
                   */}
-                  <TableCell className="font-mono text-sm">
+                  <TableCell className="type-body px-2 py-1.5 font-mono">
                     <span className="flex items-center gap-2">
                       {account.promptpayId ?? '—'}
                       {account.promptpayId !== null && !isPromptPayId(account.promptpayId) ? (
@@ -483,14 +557,14 @@ function AccountsCard({
                       ) : null}
                     </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-2 py-1.5">
                     {account.isActive ? (
                       <Badge variant="outline">ใช้งาน</Badge>
                     ) : (
                       <Badge variant="destructive">ปิดใช้งาน</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="px-2 py-1.5 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => setHistoryOf(account)}>
                         <History className="size-4" />
@@ -521,7 +595,7 @@ function AccountsCard({
             </TableBody>
           </Table>
         )}
-      </CardContent>
+      </div>
 
       {dialog !== null && (
         <BankAccountDialog
@@ -537,6 +611,6 @@ function AccountsCard({
       {historyOf !== null && (
         <BankAccountHistoryDialog account={historyOf} onClose={() => setHistoryOf(null)} />
       )}
-    </Card>
+    </Section>
   );
 }

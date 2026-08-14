@@ -388,9 +388,18 @@ export function FieldsForm({
 
       <FieldSeparator />
 
+      {/*
+        ⚠️ `type-section` and not the unclassed `font-medium` this was — which inherited 14px
+        from `Card`, i.e. **the same size as the fields underneath it**, so the only thing
+        marking it as a heading was the weight. It reads as `type-section` even though the
+        section it sits inside is also `type-section`, and that is a real limitation of a
+        five-step scale rather than an oversight: there is deliberately no step between 18 and
+        14 (16 is the value that collided). What separates the two is the `FieldSeparator`
+        directly above and the gap — the space half of "type, space and weight".
+      */}
       <div className="flex flex-col gap-1">
-        <h3 className="font-medium">รูปด้าน</h3>
-        <p className="text-muted-foreground text-xs">
+        <h3 className="type-section">รูปด้าน</h3>
+        <p className="text-muted-foreground type-caption">
           ภาพด้านหน้าของสินค้าวาดจากค่าเหล่านี้ ไม่ได้มาจากไฟล์รูป — จำนวนบานและสัญลักษณ์การเปิดจึงต้องตรงกับของจริง
         </p>
       </div>
@@ -461,7 +470,7 @@ export function FieldsForm({
           ย้อนกลับ
         </Button>
         {dirty ? (
-          <span className="text-muted-foreground text-xs">
+          <span className="text-muted-foreground type-caption">
             มีการแก้ไขที่ยังไม่ได้บันทึกลงฉบับร่าง
           </span>
         ) : null}

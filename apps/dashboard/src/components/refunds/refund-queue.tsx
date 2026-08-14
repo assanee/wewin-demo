@@ -10,7 +10,6 @@ import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -26,8 +25,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { failureMessage } from '@/lib/api/errors';
-import { decideRefund, disburseRefund, listRefunds, type Refund, type RefundStatus } from './refund-api';
+import {
+  REFUND_PAGE_LIMIT,
+  decideRefund,
+  disburseRefund,
+  listRefunds,
+  type Refund,
+  type RefundStatus,
+} from './refund-api';
 import { decisionBody, decisionNeeds, type Decision } from './refund-decision';
+import { refundFocus } from './refund-focus';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +54,23 @@ import { decisionBody, decisionNeeds, type Decision } from './refund-decision';
  * `?payee=different` lists every refund going somewhere other than the account that paid.
  * It is not there for convenience — it is a list somebody is meant to read, and a refund
  * that appears on it was approved by a click that had to acknowledge it.
+ *
+ * ── ⭐ One primary thing: what the company owes and has not sent ─────────────
+ *
+ * The `approved` queue was visible as a tab and its **total was on no screen in this dashboard**.
+ * Somebody responsible for the bank account could read a page of approved refunds and still not
+ * know whether it came to ฿4,000 or ฿400,000. `refundFocus` states it at `type-focal`, on the
+ * page ground, above everything.
+ *
+ * ⚠️ **It is counted by its own request, not summed from the visible tab.** Summing the rows on
+ * screen would make the headline say ไม่มีเงินค้างจ่าย the moment somebody clicked another tab —
+ * a false statement produced by a filter. The extra call is the price of a sentence that is
+ * about the company rather than about the control the reader last touched.
+ *
+ * The `Card` around the table is gone (a table draws its own rules — house rule, and
+ * `order-list.tsx` explains it), the empty state's Card with it, and the four tabs now match the
+ * orders list: `type-caption` on `h-7` ghost buttons, quieter than the data they filter, with a
+ * line under them saying what the chosen one actually contains. Nothing said that before.
  */
 
 const STATUS_TH: Record<RefundStatus, string> = {
@@ -65,11 +89,20 @@ const at = (iso: string): string =>
 
 type Tab = 'payable' | 'requested' | 'different' | 'all';
 
-const TABS: readonly { readonly key: Tab; readonly labelTh: string }[] = [
-  { key: 'payable', labelTh: 'รอจ่าย' },
-  { key: 'requested', labelTh: 'รอตัดสินใจ' },
-  { key: 'different', labelTh: 'บัญชีไม่ตรงกับที่โอนมา' },
-  { key: 'all', labelTh: 'ทั้งหมด' },
+/**
+ * ⚠️ `meaningTh` is new and is not decoration. Four buttons sat above this table with nothing
+ * saying what any of them selected, and two of them — รอจ่าย and รอตัดสินใจ — are one word apart
+ * and opposite halves of the process. A reader who picked the wrong one saw a plausible table.
+ */
+const TABS: readonly { readonly key: Tab; readonly labelTh: string; readonly meaningTh: string }[] = [
+  { key: 'payable', labelTh: 'รอจ่าย', meaningTh: 'อนุมัติแล้ว เงินยังไม่ออกจากบัญชี' },
+  { key: 'requested', labelTh: 'รอตัดสินใจ', meaningTh: 'ลูกค้าขอมาแล้ว ยังไม่มีใครอนุมัติหรือปฏิเสธ' },
+  {
+    key: 'different',
+    labelTh: 'บัญชีไม่ตรงกับที่โอนมา',
+    meaningTh: 'ปลายทางไม่ใช่บัญชีที่ระบบจับคู่กับสลิปที่รับไว้ — ทุกสถานะ',
+  },
+  { key: 'all', labelTh: 'ทั้งหมด', meaningTh: 'ทุกคำขอคืนเงิน ทุกสถานะ' },
 ];
 
 const QUERY: Record<Tab, Parameters<typeof listRefunds>[0]> = {
@@ -84,9 +117,21 @@ type State =
   | { readonly status: 'ready'; readonly refunds: readonly Refund[] }
   | { readonly status: 'failed'; readonly problem: string };
 
+/**
+ * The payable total, which is **not** derived from the visible tab.
+ *
+ * `counting` is not `[]`: an empty list and a count that has not arrived are the same shape and
+ * opposite news, and `refundFocus` refuses to fold them together.
+ */
+type Payable =
+  | { readonly status: 'counting' }
+  | { readonly status: 'counted'; readonly refunds: readonly Refund[] }
+  | { readonly status: 'unknown' };
+
 export function RefundQueue() {
   const [tab, setTab] = useState<Tab>('payable');
   const [state, setState] = useState<State>({ status: 'loading' });
+  const [payable, setPayable] = useState<Payable>({ status: 'counting' });
   const [deciding, setDeciding] = useState<Refund | null>(null);
   const [paying, setPaying] = useState<Refund | null>(null);
 
@@ -99,23 +144,78 @@ export function RefundQueue() {
     }
   }
 
+  /*
+   * ⚠️ Separate from the tab's own load, and its failure is separate too — the same call
+   * `authority-screen.tsx` makes about its two reads. Losing the total must not lose the table,
+   * and a total that could not be fetched says so rather than reading as ฿0.
+   */
+  async function count(): Promise<void> {
+    try {
+      setPayable({ status: 'counted', refunds: await listRefunds(QUERY.payable) });
+    } catch {
+      setPayable({ status: 'unknown' });
+    }
+  }
+
   useEffect(() => {
     void reload(tab);
   }, [tab]);
 
+  useEffect(() => {
+    void count();
+  }, []);
+
+  /** Both loads, so a disbursement moves the headline as well as the row it came from. */
+  async function refresh(): Promise<void> {
+    await Promise.all([reload(tab), count()]);
+  }
+
+  const focus = refundFocus(
+    payable.status === 'counted' ? payable.refunds : null,
+    payable.status === 'counted' && payable.refunds.length >= REFUND_PAGE_LIMIT,
+  );
+
+  const chosen = TABS.find((entry) => entry.key === tab);
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((entry) => (
-          <Button
-            key={entry.key}
-            size="sm"
-            variant={tab === entry.key ? 'secondary' : 'ghost'}
-            onClick={() => setTab(entry.key)}
-          >
-            {entry.labelTh}
-          </Button>
-        ))}
+    <div className="flex flex-col gap-6">
+      {/*
+       * ⭐ THE PRIMARY THING. On the page ground, no border, type doing the work.
+       *
+       * Held back until the count has actually been attempted — a headline that said
+       * "ไม่มีเงินที่อนุมัติแล้วและยังไม่ได้จ่าย" for half a second on every load would be a
+       * reassurance the screen had not earned yet.
+       */}
+      {payable.status !== 'counting' && (
+        <section className="flex flex-col gap-1">
+          <p className="type-focal text-balance">{focus.headlineTh}</p>
+          <p className="text-muted-foreground type-body max-w-2xl">{focus.detailTh}</p>
+        </section>
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
+          {TABS.map((entry) => (
+            /*
+             * `type-caption` on an `h-7` ghost button — the orders list's treatment, and the
+             * same argument: the filter row is how you get to the answer, not the answer, so it
+             * is deliberately quieter than the table under it.
+             */
+            <Button
+              key={entry.key}
+              size="sm"
+              variant={tab === entry.key ? 'secondary' : 'ghost'}
+              className="type-caption h-7 px-2.5"
+              onClick={() => setTab(entry.key)}
+            >
+              {entry.labelTh}
+            </Button>
+          ))}
+        </div>
+        {/* What the chosen tab actually contains. Four buttons sat here saying nothing. */}
+        {chosen === undefined ? null : (
+          <p className="text-muted-foreground type-caption">{chosen.meaningTh}</p>
+        )}
       </div>
 
       {state.status === 'loading' && <Skeleton className="h-64 w-full" />}
@@ -129,92 +229,94 @@ export function RefundQueue() {
       )}
 
       {state.status === 'ready' && state.refunds.length === 0 && (
-        <Card>
-          <CardContent className="text-muted-foreground py-10 text-center text-sm">
-            ไม่มีรายการในหมวดนี้
-          </CardContent>
-        </Card>
+        /* Nothing to separate from anything, so nothing to draw a border around. */
+        <p className="text-muted-foreground type-body py-10 text-center">ไม่มีรายการในหมวดนี้</p>
       )}
 
       {state.status === 'ready' && state.refunds.length > 0 && (
-        <Card className="overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ออเดอร์</TableHead>
-                <TableHead className="text-right">ยอด</TableHead>
-                <TableHead>ปลายทาง</TableHead>
-                <TableHead>สถานะ</TableHead>
-                <TableHead>ขอเมื่อ</TableHead>
-                <TableHead />
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="type-caption h-8">ออเดอร์</TableHead>
+              <TableHead className="type-caption h-8 text-right">ยอด</TableHead>
+              <TableHead className="type-caption h-8">ปลายทาง</TableHead>
+              <TableHead className="type-caption h-8">สถานะ</TableHead>
+              <TableHead className="type-caption h-8">ขอเมื่อ</TableHead>
+              {/* `w-full` on the last column: the slack goes to the controls rather than being
+                  shared out between the order number, the amount and the destination, which are
+                  the three facts a scan reads together. Same call `order-list.tsx` explains. */}
+              <TableHead className="type-caption h-8 w-full" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {state.refunds.map((refund) => (
+              <TableRow key={refund.id}>
+                <TableCell className="px-2 py-1.5">
+                  <Link
+                    href={`/orders/${refund.orderId}` as Route}
+                    className="focus-visible:outline-ring type-body rounded font-mono hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    {refund.orderNo ?? refund.orderId.slice(0, 8)}
+                  </Link>
+                </TableCell>
+                <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
+                  {formatBaht(refund.amountThbMinor)}
+                </TableCell>
+                <TableCell className="type-body px-2 py-1.5">
+                  <div className="flex flex-col gap-0.5">
+                    <span>
+                      {refund.payeeName}{' '}
+                      <span className="text-muted-foreground type-caption font-mono">
+                        {refund.payeeBankCode} ···{refund.payeeAccountLast4}
+                      </span>
+                    </span>
+                    {/*
+                     * ⚠️ The flag, on the row, before anybody opens anything. It is derived
+                     * from the accepted slips — the system could not match this destination
+                     * to money that came in — and a refund reaching this state should be
+                     * visible at a glance rather than only inside the decision dialog.
+                     *
+                     * `text-destructive` survives this pass on purpose. It is not carrying
+                     * hierarchy — it is a warning about one row, which is what the token is for,
+                     * and it is the same colour the acknowledgement Alert uses two clicks later.
+                     */}
+                    {refund.payeeIsOriginalAccount === 'no' && (
+                      <span className="text-destructive type-caption inline-flex items-center gap-1">
+                        <ShieldAlert className="size-3" />
+                        ไม่ใช่บัญชีที่โอนเงินเข้ามา
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="px-2 py-1.5">
+                  <Badge variant={refund.status === 'approved' ? 'default' : 'outline'}>
+                    {STATUS_TH[refund.status]}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
+                  {at(refund.requestedAt)}
+                </TableCell>
+                <TableCell className="px-2 py-1.5 text-right">
+                  {refund.status === 'requested' && (
+                    <Button size="sm" onClick={() => setDeciding(refund)}>
+                      ตัดสินใจ
+                    </Button>
+                  )}
+                  {refund.status === 'approved' && (
+                    <Button size="sm" variant="outline" onClick={() => setPaying(refund)}>
+                      บันทึกการจ่าย
+                    </Button>
+                  )}
+                  {refund.status === 'disbursed' && refund.disbursementReference !== null && (
+                    <span className="text-muted-foreground type-caption font-mono">
+                      {refund.disbursementReference}
+                    </span>
+                  )}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {state.refunds.map((refund) => (
-                <TableRow key={refund.id}>
-                  <TableCell>
-                    <Link
-                      href={`/orders/${refund.orderId}` as Route}
-                      className="font-mono text-sm hover:underline"
-                    >
-                      {refund.orderNo ?? refund.orderId.slice(0, 8)}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    {formatBaht(refund.amountThbMinor)}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    <div className="flex flex-col gap-0.5">
-                      <span>
-                        {refund.payeeName}{' '}
-                        <span className="text-muted-foreground font-mono text-xs">
-                          {refund.payeeBankCode} ···{refund.payeeAccountLast4}
-                        </span>
-                      </span>
-                      {/*
-                       * ⚠️ The flag, on the row, before anybody opens anything. It is derived
-                       * from the accepted slips — the system could not match this destination
-                       * to money that came in — and a refund reaching this state should be
-                       * visible at a glance rather than only inside the decision dialog.
-                       */}
-                      {refund.payeeIsOriginalAccount === 'no' && (
-                        <span className="text-destructive inline-flex items-center gap-1 text-xs">
-                          <ShieldAlert className="size-3" />
-                          ไม่ใช่บัญชีที่โอนเงินเข้ามา
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={refund.status === 'approved' ? 'default' : 'outline'}>
-                      {STATUS_TH[refund.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {at(refund.requestedAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {refund.status === 'requested' && (
-                      <Button size="sm" onClick={() => setDeciding(refund)}>
-                        ตัดสินใจ
-                      </Button>
-                    )}
-                    {refund.status === 'approved' && (
-                      <Button size="sm" variant="outline" onClick={() => setPaying(refund)}>
-                        บันทึกการจ่าย
-                      </Button>
-                    )}
-                    {refund.status === 'disbursed' && refund.disbursementReference !== null && (
-                      <span className="text-muted-foreground font-mono text-xs">
-                        {refund.disbursementReference}
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {deciding !== null && (
@@ -223,7 +325,7 @@ export function RefundQueue() {
           onClose={() => setDeciding(null)}
           onDone={() => {
             setDeciding(null);
-            void reload(tab);
+            void refresh();
           }}
         />
       )}
@@ -234,7 +336,7 @@ export function RefundQueue() {
           onClose={() => setPaying(null)}
           onDone={() => {
             setPaying(null);
-            void reload(tab);
+            void refresh();
           }}
         />
       )}

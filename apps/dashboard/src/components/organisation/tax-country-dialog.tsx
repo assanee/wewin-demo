@@ -231,7 +231,7 @@ export function TaxCountryDialog({
             />
             <div className="flex flex-col gap-1">
               <Label htmlFor="prices-include-tax">ราคาที่ลูกค้าเห็นรวมภาษีแล้ว</Label>
-              <p className="text-muted-foreground text-sm">{basisLabelTh(fields.pricesIncludeTax)}</p>
+              <p className="text-muted-foreground type-body">{basisLabelTh(fields.pricesIncludeTax)}</p>
             </div>
           </div>
 

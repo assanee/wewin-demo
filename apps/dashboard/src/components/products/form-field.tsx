@@ -173,7 +173,7 @@ export function ReadOnlyField({
   return (
     <Field>
       <FieldLabel className="text-muted-foreground">{label}</FieldLabel>
-      <p className="text-sm break-words">{value}</p>
+      <p className="type-body break-words">{value}</p>
       {description === undefined ? null : <FieldDescription>{description}</FieldDescription>}
     </Field>
   );

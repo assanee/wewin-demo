@@ -7,7 +7,6 @@ import type { TaxCountryWire } from '@wewin/contract/tax';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { vatLabelTh } from '@/components/quotes/quote-alerts';
@@ -27,8 +26,8 @@ import { TaxCountryHistoryDialog } from './tax-country-history';
  * bank-account list, so an administrator auditing "which destinations did we stop selling
  * VAT-registered to, and when" can see the row and not just the active ones. Adding, editing,
  * withdrawing and restoring are each gated by `editable`, exactly the pattern
- * `organisation-screen.tsx`'s `AccountsCard` already sets for its own three write controls —
- * `เพิ่มประเทศ` mirrors `AccountsCard`'s own `เพิ่มบัญชี` down to the `dialog: 'create' |
+ * `organisation-screen.tsx`'s `AccountsSection` already sets for its own three write controls —
+ * `เพิ่มประเทศ` mirrors `AccountsSection`'s own `เพิ่มบัญชี` down to the `dialog: 'create' |
  * TaxCountryWire | null` state shape.
  *
  * Split the same way this feature's own precedent already splits: `bank-account-dialog.tsx`
@@ -36,6 +35,19 @@ import { TaxCountryHistoryDialog } from './tax-country-history';
  * rather than inside it. `TaxCountryDialog` (`./tax-country-dialog`, add *and* edit — see its
  * own header for why one dialog rather than two) and `TaxCountryHistoryDialog`
  * (`./tax-country-history`) are this table's siblings of those two.
+ *
+ * ── ⚠️ The `Card` is gone, and this one was the easiest of the four to decide ─
+ *
+ * The section's whole content is a `<Table>`. A table is already a grid of rules — it has every
+ * edge it needs — so a ring around it draws a border around a border, which the README states as
+ * a rule rather than a preference. What is left is the same rows on the page ground, tighter
+ * (`px-2 py-1.5` cells, `h-8 type-caption` heads), under a `type-section` heading carrying the
+ * sentence that used to be the `CardDescription`.
+ *
+ * ⚠️ **Its position on the page moved, and that was not cosmetic.** It sits directly under the
+ * exchange-rate band because `fxHealthRemedyTh` sends a reader to *this table* by name — the way
+ * out of a stale rate is `อัตราแลกเปลี่ยนกำหนดเอง` on a destination row here. See
+ * `organisation-screen.tsx`'s header.
  */
 
 export type TaxCountriesState =
@@ -71,37 +83,35 @@ export default function TaxCountriesSection({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle>ประเทศปลายทางและภาษีมูลค่าเพิ่ม</CardTitle>
-            <CardDescription>
-              {/*
-                ⚠️ The second sentence used to read *"ส่วนการตั้งค่าอัตราแลกเปลี่ยนบันทึกไว้แล้วแต่ยังไม่
-                ถูกนำไปใช้กับใบเสนอราคา"* — the fx settings are recorded but not yet applied to
-                quotations. That was true when the columns were added ahead of a consumer and false
-                from the moment `QuotationRateService` started pricing with them. It was the most
-                misleading sentence on the page: a member of staff reading it would take
-                `fxManualRate` for a note-to-self, when it is in fact the field that decides what a
-                customer is charged — and, since this round, the only way to issue a foreign-currency
-                quotation while the rate feed is stale.
-              */}
-              อัตราภาษี ประเภทการคำนวณ และฐานราคาของแต่ละประเทศปลายทาง — ใบเสนอราคาใช้ค่าเหล่านี้คำนวณภาษีให้อัตโนมัติตามปลายทางที่ลูกค้าเลือก
-              ส่วนการตั้งค่าอัตราแลกเปลี่ยนถูกนำไปใช้จริงกับใบเสนอราคาที่เสนอเป็นสกุลเงินต่างประเทศ และ &ldquo;อัตราแลกเปลี่ยนกำหนดเอง&rdquo;
-              จะใช้แทนอัตรากลางตลาดทันทีโดยไม่ติดเงื่อนไขความเก่าของอัตรา
-            </CardDescription>
-          </div>
-          {editable && (
-            <Button size="sm" onClick={() => setDialog('create')}>
-              <Plus className="size-4" />
-              เพิ่มประเทศ
-            </Button>
-          )}
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="type-section">ประเทศปลายทางและภาษีมูลค่าเพิ่ม</h2>
+          <p className="text-muted-foreground type-body max-w-3xl">
+            {/*
+              ⚠️ The second sentence used to read *"ส่วนการตั้งค่าอัตราแลกเปลี่ยนบันทึกไว้แล้วแต่ยังไม่
+              ถูกนำไปใช้กับใบเสนอราคา"* — the fx settings are recorded but not yet applied to
+              quotations. That was true when the columns were added ahead of a consumer and false
+              from the moment `QuotationRateService` started pricing with them. It was the most
+              misleading sentence on the page: a member of staff reading it would take
+              `fxManualRate` for a note-to-self, when it is in fact the field that decides what a
+              customer is charged — and, since this round, the only way to issue a foreign-currency
+              quotation while the rate feed is stale.
+            */}
+            อัตราภาษี ประเภทการคำนวณ และฐานราคาของแต่ละประเทศปลายทาง — ใบเสนอราคาใช้ค่าเหล่านี้คำนวณภาษีให้อัตโนมัติตามปลายทางที่ลูกค้าเลือก
+            ส่วนการตั้งค่าอัตราแลกเปลี่ยนถูกนำไปใช้จริงกับใบเสนอราคาที่เสนอเป็นสกุลเงินต่างประเทศ และ &ldquo;อัตราแลกเปลี่ยนกำหนดเอง&rdquo;
+            จะใช้แทนอัตรากลางตลาดทันทีโดยไม่ติดเงื่อนไขความเก่าของอัตรา
+          </p>
         </div>
-      </CardHeader>
+        {editable && (
+          <Button size="sm" onClick={() => setDialog('create')}>
+            <Plus className="size-4" />
+            เพิ่มประเทศ
+          </Button>
+        )}
+      </div>
 
-      <CardContent className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         {problem !== null && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
@@ -121,38 +131,44 @@ export default function TaxCountriesSection({
         )}
 
         {state.status === 'ready' && state.taxCountries.length === 0 && (
-          <p className="text-muted-foreground text-sm">ยังไม่มีประเทศปลายทางที่ตั้งค่าไว้</p>
+          <p className="text-muted-foreground type-body">ยังไม่มีประเทศปลายทางที่ตั้งค่าไว้</p>
         )}
 
         {state.status === 'ready' && state.taxCountries.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>รหัส</TableHead>
-                <TableHead>ประเทศ</TableHead>
-                <TableHead>ภาษี</TableHead>
-                <TableHead>ฐานราคา</TableHead>
-                <TableHead>อัตราแลกเปลี่ยน</TableHead>
-                <TableHead>สถานะ</TableHead>
-                <TableHead className="text-right">การจัดการ</TableHead>
+                <TableHead className="type-caption h-8">รหัส</TableHead>
+                <TableHead className="type-caption h-8">ประเทศ</TableHead>
+                <TableHead className="type-caption h-8">ภาษี</TableHead>
+                <TableHead className="type-caption h-8">ฐานราคา</TableHead>
+                <TableHead className="type-caption h-8">อัตราแลกเปลี่ยน</TableHead>
+                <TableHead className="type-caption h-8">สถานะ</TableHead>
+                {/* `w-full` on the last column so the slack lands in the button column rather than
+                    being shared out between the six data ones. See `order-list.tsx`. */}
+                <TableHead className="type-caption h-8 w-full text-right">การจัดการ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {state.taxCountries.map((country) => (
                 <TableRow key={country.code} className={country.isActive ? undefined : 'opacity-60'}>
-                  <TableCell className="font-mono text-sm">{country.code}</TableCell>
-                  <TableCell>{country.nameTh}</TableCell>
-                  <TableCell>{vatLabelTh(country.rateBp, country.treatment)}</TableCell>
-                  <TableCell>{basisLabelTh(country.pricesIncludeTax)}</TableCell>
-                  <TableCell className="text-sm">{fxSummaryTh(country)}</TableCell>
-                  <TableCell>
+                  <TableCell className="type-body px-2 py-1.5 font-mono">{country.code}</TableCell>
+                  <TableCell className="type-body px-2 py-1.5">{country.nameTh}</TableCell>
+                  <TableCell className="type-body px-2 py-1.5">
+                    {vatLabelTh(country.rateBp, country.treatment)}
+                  </TableCell>
+                  <TableCell className="type-body px-2 py-1.5">
+                    {basisLabelTh(country.pricesIncludeTax)}
+                  </TableCell>
+                  <TableCell className="type-body px-2 py-1.5">{fxSummaryTh(country)}</TableCell>
+                  <TableCell className="px-2 py-1.5">
                     {country.isActive ? (
                       <Badge variant="outline">ใช้งาน</Badge>
                     ) : (
                       <Badge variant="destructive">ปิดใช้งาน</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="px-2 py-1.5 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => setHistoryOf(country)}>
                         <History className="size-4" />
@@ -183,7 +199,7 @@ export default function TaxCountriesSection({
             </TableBody>
           </Table>
         )}
-      </CardContent>
+      </div>
 
       {dialog !== null && (
         <TaxCountryDialog
@@ -199,6 +215,6 @@ export default function TaxCountriesSection({
       {historyOf !== null && (
         <TaxCountryHistoryDialog country={historyOf} onClose={() => setHistoryOf(null)} />
       )}
-    </Card>
+    </section>
   );
 }

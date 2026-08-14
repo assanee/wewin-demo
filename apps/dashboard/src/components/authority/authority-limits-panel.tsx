@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, History, Loader2, Pencil, Plus, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, History, Loader2, Pencil, Plus } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import {
   type AuthorityGroupView,
   type AuthorityLimitView,
 } from './authority-limits-api';
+import { authorityFocus } from './authority-focus';
 import { DIMENSION_LABEL_TH, ceilingMeaningTh } from './authority-limits';
 import { AuthorityLimitDialog } from './authority-limit-dialog';
 import { AuthorityLimitHistoryDialog } from './authority-limit-history';
@@ -58,6 +59,28 @@ import { AuthorityLimitHistoryDialog } from './authority-limit-history';
  * `SessionProvider` would sit at `loading` forever, because static rendering never runs
  * effects. The gate that actually enforces anything is `@RequirePermissions('groups.write')` on
  * the route; this only decides which buttons exist.
+ *
+ * ── ⭐ The fail-closed sentence is the screen, and it used to be an Alert ─────
+ *
+ * This panel had **no heading of any kind** and opened with a muted `text-sm` paragraph where a
+ * heading belongs, so the loudest things on it were a table and an `<Alert>` — and that Alert
+ * was the *default* variant, carrying the single most consequential statement this dashboard can
+ * make: nobody in the company may reduce a price by one satang, and nobody may approve one
+ * either. It looked exactly like "ทำรายการไม่สำเร็จ" looks.
+ *
+ * `authorityFocus` now states it at `type-focal`, on the page ground, with a counterpart for the
+ * live case that the Alert never had — a warning that only ever fires in one direction leaves a
+ * reader unable to tell "healthy" from "not loaded".
+ *
+ * ⚠️ Unlike `/account`, whose one-way-in warning **stays** an `Alert`, this one does not: that
+ * one is an exceptional consequence of an action the reader is about to take, while this is the
+ * permanent state of the screen with two possible values. `Alert` is the app's shape for the
+ * first thing, not the second.
+ *
+ * ⚠️ **The table stays uncontained** — no `Card`, no wrapper — and that is not an omission. It
+ * is the only bare `<Table>` in the app and the house rule says a table draws its own rules; the
+ * standard density (`px-2 py-1.5` cells, `h-8 type-caption` heads, `w-full` on the last column)
+ * is what it gets instead of chrome.
  */
 
 export type AuthorityLimitsState =
@@ -103,31 +126,23 @@ export default function AuthorityLimitsPanel({
     }
   }
 
+  const focus = state.status === 'ready' ? authorityFocus(state) : null;
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="text-muted-foreground max-w-3xl text-sm">
-          เพดานคือจำนวนเงินสูงสุดที่บทบาทหนึ่งลดให้ลูกค้าได้เองต่อหนึ่งใบเสนอราคา
-          เกินเพดานต้องให้คนอื่นอนุมัติ และผู้อนุมัติต้องมีเพดานที่ครอบยอดนั้นด้วย
-        </p>
-        {/*
-         * ⚠️ `state.status === 'ready'` as well as `editable`, and it is not cosmetic.
-         *
-         * `PUT` is an **upsert**. The dialog's collision warning is the only thing that tells
-         * somebody "this role already has a ceiling and you are about to replace it", and it is
-         * driven by `taken`, which is `state.limits` — `[]` on `loading` and on `failed`. So a
-         * button that stayed live while the list had not arrived would let an administrator
-         * replace an existing ฿5,000 with ฿50,000 believing it was a new grant, with the warning
-         * suppressed and nothing on screen saying so. A control whose safety copy cannot be
-         * computed yet is a control that is not ready.
-         */}
-        {editable && state.status === 'ready' && (
-          <Button size="sm" onClick={() => setDialog('create')}>
-            <Plus className="size-4" />
-            กำหนดเพดาน
-          </Button>
-        )}
-      </div>
+    <div className="flex flex-col gap-8">
+      {/*
+       * ⭐ THE PRIMARY THING. On the page ground, no border, type doing the work.
+       *
+       * Only once the list has arrived: neither sentence can be told from the other while the
+       * request is in flight, and guessing would mean printing "ยังไม่มีใครมีอำนาจลดราคา" —
+       * the alarming one — on every load of a perfectly healthy company.
+       */}
+      {focus !== null && (
+        <section className="flex flex-col gap-1">
+          <p className="type-focal text-balance">{focus.headlineTh}</p>
+          <p className="text-muted-foreground type-body max-w-3xl">{focus.detailTh}</p>
+        </section>
+      )}
 
       {problem !== null && (
         <Alert variant="destructive">
@@ -147,101 +162,129 @@ export default function AuthorityLimitsPanel({
         </Alert>
       )}
 
-      {/*
-       * ⚠️ The fail-closed sentence, and it is the reason `isFailClosed` is on the response at
-       * all rather than being computed here. An empty table is the shipped default, so a bare
-       * empty list reads as "a feature nobody has used" when it actually means "nobody in this
-       * company may reduce a price by one satang". Note the condition: `isFailClosed`, not
-       * `limits.length === 0` — a table of nothing but withdrawn ceilings says the same thing.
-       */}
-      {state.status === 'ready' && state.isFailClosed && (
-        <Alert>
-          <ShieldCheck className="size-4" />
-          <AlertTitle>ยังไม่มีใครมีอำนาจลดราคา</AlertTitle>
-          <AlertDescription>
-            ตอนนี้ไม่มีเพดานที่ใช้งานอยู่เลย พนักงานขายจึงลดราคาเองไม่ได้ และไม่มีใครอนุมัติส่วนลดให้ได้
-            ใบเสนอราคาที่ไม่มีส่วนลดยังส่งได้ตามปกติ
-          </AlertDescription>
-        </Alert>
-      )}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {/*
+           * The screen's first heading. What stood here was a muted `text-sm` paragraph doing a
+           * heading's job — and its first clause repeated the page description word for word, so
+           * `PageHeader` now carries that half and this keeps the part it added: that an approver
+           * needs a ceiling covering the amount too.
+           */}
+          <div className="flex flex-col gap-1">
+            <h2 className="type-section">เพดานที่กำหนดไว้</h2>
+            <p className="text-muted-foreground type-body max-w-3xl">
+              ผู้อนุมัติต้องมีเพดานที่ครอบยอดนั้นด้วย — ไม่ใช่แค่มีสิทธิ์อนุมัติ
+            </p>
+          </div>
+          {/*
+           * ⚠️ `state.status === 'ready'` as well as `editable`, and it is not cosmetic.
+           *
+           * `PUT` is an **upsert**. The dialog's collision warning is the only thing that tells
+           * somebody "this role already has a ceiling and you are about to replace it", and it is
+           * driven by `taken`, which is `state.limits` — `[]` on `loading` and on `failed`. So a
+           * button that stayed live while the list had not arrived would let an administrator
+           * replace an existing ฿5,000 with ฿50,000 believing it was a new grant, with the warning
+           * suppressed and nothing on screen saying so. A control whose safety copy cannot be
+           * computed yet is a control that is not ready.
+           */}
+          {editable && state.status === 'ready' && (
+            <Button size="sm" onClick={() => setDialog('create')}>
+              <Plus className="size-4" />
+              กำหนดเพดาน
+            </Button>
+          )}
+        </div>
 
-      {state.status === 'ready' && state.limits.length === 0 && (
-        <p className="text-muted-foreground text-sm">ยังไม่มีการกำหนดเพดานให้บทบาทใด</p>
-      )}
+        {state.status === 'ready' && state.limits.length === 0 && (
+          /*
+           * Still said, even though the focal sentence above already covers the company-wide
+           * consequence: this one is a fact about *the table underneath this heading*, and an
+           * empty region with no explanation reads as a failed render.
+           */
+          <p className="text-muted-foreground type-body">ยังไม่มีการกำหนดเพดานให้บทบาทใด</p>
+        )}
 
-      {state.status === 'ready' && state.limits.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>บทบาท</TableHead>
-              <TableHead>มิติ</TableHead>
-              <TableHead className="text-right">เพดาน</TableHead>
-              <TableHead>ความหมาย</TableHead>
-              <TableHead>สถานะ</TableHead>
-              <TableHead className="text-right">การจัดการ</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {state.limits.map((limit) => {
-              const live = limit.revokedAt === null;
-              return (
-                <TableRow key={keyOf(limit)} className={live ? undefined : 'opacity-60'}>
-                  <TableCell>
-                    <div className="font-medium">{limit.groupNameTh}</div>
-                    <div className="text-muted-foreground font-mono text-xs">{limit.groupCode}</div>
-                  </TableCell>
-                  <TableCell className="text-sm">{DIMENSION_LABEL_TH[limit.dimension]}</TableCell>
-                  <TableCell className="text-right font-mono">
-                    {baht(limit.maxConcessionThbMinor)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground max-w-xs text-xs">
-                    {ceilingMeaningTh(limit)}
-                    {limit.noteTh !== null && <div className="mt-0.5">หมายเหตุ: {limit.noteTh}</div>}
-                  </TableCell>
-                  <TableCell>
-                    {live ? (
-                      <Badge variant="outline">ใช้งาน</Badge>
-                    ) : (
-                      <Badge variant="destructive">ยกเลิกแล้ว</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {/* Not behind `editable`: reading the history needs only `groups.read`. */}
-                      <Button variant="ghost" size="sm" onClick={() => setHistoryOf(limit)}>
-                        <History className="size-4" />
-                        ประวัติ
-                      </Button>
-
-                      {editable && (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => setDialog(limit)}>
-                            <Pencil className="size-4" />
-                            {live ? 'แก้ไข' : 'คืนอำนาจ'}
-                          </Button>
-                          {live && (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={pendingKey === keyOf(limit)}
-                              onClick={() => void withdraw(limit)}
-                            >
-                              {pendingKey === keyOf(limit) && (
-                                <Loader2 className="size-4 animate-spin" />
-                              )}
-                              ยกเลิกอำนาจ
-                            </Button>
-                          )}
-                        </>
+        {state.status === 'ready' && state.limits.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="type-caption h-8">บทบาท</TableHead>
+                <TableHead className="type-caption h-8">มิติ</TableHead>
+                <TableHead className="type-caption h-8 text-right">เพดาน</TableHead>
+                <TableHead className="type-caption h-8">ความหมาย</TableHead>
+                <TableHead className="type-caption h-8">สถานะ</TableHead>
+                {/* `w-full` on the last column so the slack lands on the controls instead of
+                    being shared out between the role, the dimension and the ceiling — the three
+                    that are read together. Same call `order-list.tsx` explains. */}
+                <TableHead className="type-caption h-8 w-full text-right">การจัดการ</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {state.limits.map((limit) => {
+                const live = limit.revokedAt === null;
+                return (
+                  <TableRow key={keyOf(limit)} className={live ? undefined : 'opacity-60'}>
+                    <TableCell className="px-2 py-1.5">
+                      <div className="type-body font-medium">{limit.groupNameTh}</div>
+                      <div className="text-muted-foreground type-caption font-mono">
+                        {limit.groupCode}
+                      </div>
+                    </TableCell>
+                    <TableCell className="type-body px-2 py-1.5">
+                      {DIMENSION_LABEL_TH[limit.dimension]}
+                    </TableCell>
+                    <TableCell className="type-body px-2 py-1.5 text-right font-mono">
+                      {baht(limit.maxConcessionThbMinor)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground type-caption max-w-xs px-2 py-1.5">
+                      {ceilingMeaningTh(limit)}
+                      {limit.noteTh !== null && <div className="mt-0.5">หมายเหตุ: {limit.noteTh}</div>}
+                    </TableCell>
+                    <TableCell className="px-2 py-1.5">
+                      {live ? (
+                        <Badge variant="outline">ใช้งาน</Badge>
+                      ) : (
+                        <Badge variant="destructive">ยกเลิกแล้ว</Badge>
                       )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
+                    </TableCell>
+                    <TableCell className="px-2 py-1.5 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Not behind `editable`: reading the history needs only `groups.read`. */}
+                        <Button variant="ghost" size="sm" onClick={() => setHistoryOf(limit)}>
+                          <History className="size-4" />
+                          ประวัติ
+                        </Button>
+
+                        {editable && (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => setDialog(limit)}>
+                              <Pencil className="size-4" />
+                              {live ? 'แก้ไข' : 'คืนอำนาจ'}
+                            </Button>
+                            {live && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={pendingKey === keyOf(limit)}
+                                onClick={() => void withdraw(limit)}
+                              >
+                                {pendingKey === keyOf(limit) && (
+                                  <Loader2 className="size-4 animate-spin" />
+                                )}
+                                ยกเลิกอำนาจ
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </section>
 
       {dialog !== null && (
         <AuthorityLimitDialog

@@ -1,4 +1,5 @@
 import { ApprovalInbox } from '@/components/approvals/approval-inbox';
+import { PageHeader } from '@/components/page-header';
 
 /**
  * ⭐ `quotes.read` **and** `quotes.approve` — the pair `GET /quotes/approvals/queue` asks for.
@@ -15,14 +16,16 @@ import { ApprovalInbox } from '@/components/approvals/approval-inbox';
  */
 export default function ApprovalsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">คำขออนุมัติส่วนลด</h1>
-        <p className="text-muted-foreground">
-          ส่วนลดที่เกินอำนาจของฝ่ายขาย รอให้ผู้มีอำนาจตัดสิน — อนุมัติได้เท่าที่เพดานของคุณครอบคลุม
-          และไม่อนุมัติได้ทุกคำขอ
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      {/*
+       * ⚠️ The hand-rolled pair this replaces was a `text-2xl` `h1` above an **unclassed** `<p>`,
+       * which inherits the browser's 16px — so the description was *larger* than every piece of
+       * body copy under it and read as the more important of the two. `PageHeader` is 30/14.
+       */}
+      <PageHeader
+        title="คำขออนุมัติส่วนลด"
+        description="ส่วนลดที่เกินอำนาจของฝ่ายขาย รอให้ผู้มีอำนาจตัดสิน — อนุมัติได้เท่าที่เพดานของคุณครอบคลุม และไม่อนุมัติได้ทุกคำขอ"
+      />
 
       <ApprovalInbox />
     </div>
