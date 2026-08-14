@@ -81,7 +81,7 @@ const WIRE: OrderWire = {
       toStatus: 'cancelled',
       eventType: 'cancelled',
       payloadKind: 'cancel_pre_freeze',
-      descriptionTh: 'ยกเลิกก่อนเข้าผลิต — ยังไม่มีอะไรถูกตัด',
+      descriptionTh: 'ยกเลิกก่อนเข้าผลิต — ยังไม่ได้เริ่มทำ',
     },
   ],
   openChangeRequest: CHANGE_REQUEST,
