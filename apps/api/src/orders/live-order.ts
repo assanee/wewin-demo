@@ -55,8 +55,17 @@ import { sql, type SQL } from '@wewin/db/sql';
  * carry-forward rather than a bill.
  *
  * `delivered` is deliberately absent. A delivered job whose balance was never transferred is
- * exactly the debt the money card exists to chase, and `SLIP_ATTACHABLE_STATUSES` refusing a
- * further slip against it does not make the money stop being owed — it makes it a phone call.
+ * exactly the debt the money card exists to chase — and since `0046_slips_after_delivery.sql`
+ * it is a debt the customer can still settle through the storefront, so the sentence this
+ * paragraph used to end on ("it makes it a phone call") is no longer true and has gone.
+ *
+ * ⚠️ That change means `isLiveOrder` and `acceptsPayment`
+ * (`src/payments/slips/attachable.ts`) now answer identically for all nine statuses;
+ * `tests/payments/slips/attachable.test.ts` enumerates them and asserts it. The two lists stay
+ * separate because they are pinned to different things — that one is a mirror of a Postgres
+ * trigger and this one is a definition with no database counterpart — and that file's header
+ * carries the argument. What was collapsed instead is the pair of booleans the customer's
+ * payment screen was reading; `PaymentInstructionsWire` now carries `orderIsLive` alone.
  */
 export const NON_LIVE_ORDER_STATUSES = [
   'draft',

@@ -26,26 +26,34 @@ import { describeOwedFigures, type OwedFigure } from '../../lib/payment/owedFigu
  * `owedFigures.ts` were extracted on, and this is the third of the three: which figures, then
  * which sentence, then whether there is a form at all.
  *
- * ── ⚠️ `acceptsPayment` is the SERVER's answer and is not re-derived here ────
+ * ── ⚠️ `orderIsLive` is the SERVER's answer and is not re-derived here ───────
  *
- * It arrives on `PaymentInstructionsWire`, computed from `SLIP_ATTACHABLE_STATUSES`
- * (`apps/api/src/payments/slips/attachable.ts`) — the very list that raises the 409 and
- * mirrors the `payment_slips_live_orders_only` trigger. So this screen and the endpoint that
- * would refuse the upload cannot disagree, which a fourth client-side copy of the status list
- * could not have promised. `lib/payment/payable.ts` still holds such a copy, and its header
- * now says what it is: a list-only mirror for the two *link* sites, which render from
- * `GET /orders` rows and have no instructions wire to read.
+ * It arrives on `PaymentInstructionsWire`, computed by `isLiveOrder()`
+ * (`apps/api/src/orders/live-order.ts`) — the same predicate the order encoder and the staff
+ * money card read. So this screen and the API cannot disagree about whether there is a debt,
+ * which a client-side copy of the status list could not have promised. `lib/payment/payable.ts`
+ * still holds such a copy, and its header says what it is: a list-only mirror for the two
+ * *link* sites, which render from `GET /orders` rows and have no instructions wire to read.
+ *
+ * ── ⚠️ THERE WAS A SECOND BOOLEAN AND A THIRD BRANCH. BOTH HAVE GONE ─────────
+ *
+ * `acceptsPayment` used to arrive beside `orderIsLive`, and the middle branch below existed
+ * for the one status where they disagreed: `delivered` was a live debt that could take no
+ * further slip, so this screen stated the amount and withheld the form — the customer read
+ * what they owed on the last screen that would ever mention it, with no way to pay it. That is
+ * the owner's *"ถ้าส่งมอบไปก่อนเก็บครบ จะเก็บผ่านระบบไม่ได้อีก"*, and `0046_slips_after_delivery.sql`
+ * closed it. The two booleans then answered identically on every status, so the wire carries
+ * one, and a delivered order with a balance now takes the ordinary paying path: figures, and a
+ * form that works.
  */
 
 /** Everything the screen needs to decide, so the component decides nothing. */
 export interface PanelInput {
-  /** `PaymentInstructionsWire.acceptsPayment` — can this order still receive a payment? */
-  readonly acceptsPayment: boolean;
   /**
-   * `PaymentInstructionsWire.orderIsLive` — is this still a live commitment?
+   * `PaymentInstructionsWire.orderIsLive` — is this still a commitment somebody owes on?
    *
-   * Only `false` for cancelled and superseded. `delivered` is live and does not accept payment,
-   * and that single disagreement is what the third branch below is for.
+   * Only `false` for cancelled and superseded, which are the two the first branch withholds
+   * every figure from.
    */
   readonly orderIsLive: boolean;
   readonly outstandingMinor: bigint;
@@ -58,16 +66,16 @@ export interface PaymentPanel {
   /**
    * The owed figures, in reading order — empty when the screen must state none.
    *
-   * ⚠️ Empty is not the same as ฿0.00 and is the whole point on a closed order. A figure with
-   * a "ยอดคงค้าง" label is a demand whatever its value; the residue on a cancelled order is a
-   * refund question, and the residue on a delivered one is a phone call. Neither is something
-   * this screen can act on, and printing it is how the screen came to bill a cancelled order.
+   * ⚠️ Empty is not the same as ฿0.00 and is the whole point on a dead order. A figure with a
+   * "ยอดคงค้าง" label is a demand whatever its value, and the residue on a cancelled order is a
+   * refund question — money the company may owe the customer. That is not something this
+   * screen can act on, and printing it is how the screen came to bill a cancelled order.
    */
   readonly figures: readonly OwedFigure[];
   /** One sentence in place of a demand, or `null` when the form itself is the answer. */
   readonly noteKey: Extract<
     UiKey,
-    'payment.closed' | 'payment.closedOwing' | 'payment.settled' | 'payment.account.none'
+    'payment.closed' | 'payment.settled' | 'payment.account.none'
   > | null;
   /** Whether the account picker and the slip form are rendered at all. */
   readonly showsForm: boolean;
@@ -76,59 +84,42 @@ export interface PaymentPanel {
 /**
  * What to render, from the wire and nothing else.
  *
- * ── ⚠️ DEAD BEFORE CLOSED BEFORE SETTLED, AND THE ORDER IS THE DECISION ──────
+ * ── ⚠️ DEAD BEFORE SETTLED, AND THE ORDER OF THE TWO IS THE DECISION ─────────
  *
- * A first attempt tested only `acceptsPayment` and collapsed everything it answered `false` for
- * into one "payment is closed" sentence. Measured against the live database, that turned out to
- * cover three states that need three different sentences:
+ * A first attempt tested only "can this be paid?" and collapsed everything it answered `false`
+ * for into one "payment is closed" sentence. Measured against the live database, that turned
+ * out to cover three states that need different sentences:
  *
  *   cancelled / superseded             outstanding ฿10,354.18, and the company owes it BACK
  *   delivered, fully paid              outstanding ฿0 — the ordinary happy ending
  *   delivered, still owing             outstanding ฿10,354.18, and the customer owes it
  *
- * The first version told the finished customer their order was "closed to payment" instead of
- * "ชำระครบแล้ว", and told the owing one nothing at all — no figure, no amount, on the last
- * screen where that money is ever mentioned to the person who owes it (`delivered` has no
- * transition out and is absent from `SLIP_ATTACHABLE_STATUSES`). Silence there is not caution;
- * it is the company's receivable disappearing from the only place its debtor could see it.
+ * The third row is the one this round changed. It used to be stated and withheld — the amount
+ * printed with no form under it, because the upload would have been refused 409 — which was
+ * the last screen that money was ever mentioned on to the person who owed it, and no way to
+ * pay it there. `0046_slips_after_delivery.sql` opened `delivered` to slips, so that row is now
+ * an ordinary owing order and takes the ordinary owing path.
  *
- * So the order of the tests below is the decision, and each branch earns its place:
+ * That leaves two questions and the order between them is the decision:
  *
- *   ⓵ not live — nothing about the money. A cancelled order's residue is a refund, and a
- *     "ยอดคงค้าง" label is a demand whatever the number beside it. This is the branch the whole
- *     pair of booleans was added to protect, and it stays first.
- *   ⓶ live but closed to payment — `delivered`. State the money honestly and offer no form:
- *     paid in full says so, and a balance is named with the amount and a way to settle it.
- *   ⓷ open to payment — untouched from before, form and all.
+ *   ⓵ **not live** — nothing about the money. A cancelled order's residue is a refund, and a
+ *     "ยอดคงค้าง" label is a demand whatever the number beside it. Deliberately first: an order
+ *     paid in full and *then* cancelled satisfies the settled test too, and "ชำระครบแล้ว" on an
+ *     order whose deposit the company is about to refund is the cruellest sentence available.
+ *   ⓶ **live** — state the figures, and offer the form to whoever still owes something. The
+ *     two sub-cases under it are about the money and not about the status: nothing owed says
+ *     so, and an organisation with no bank accounts has nowhere to send it.
  *
- * `payment.settled` therefore serves two states now, and correctly: a delivered order paid in
- * full, and an `in_production` job whose balance has been accepted. Both are true statements
- * about a live order on which nothing more is owed, which is exactly what the sentence says.
+ * `payment.settled` therefore serves two states, and correctly: a delivered order paid in full,
+ * and an `in_production` job whose balance has been accepted. Both are true statements about a
+ * live order on which nothing more is owed, which is exactly what the sentence says.
  */
 export function describePaymentPanel(input: PanelInput): PaymentPanel {
-  const { acceptsPayment, orderIsLive, outstandingMinor, nextDueMinor, accountCount } = input;
+  const { orderIsLive, outstandingMinor, nextDueMinor, accountCount } = input;
 
-  /*
-   * ⓵ Cancelled or superseded. No figures at any value — see `PaymentPanel.figures`.
-   * Deliberately before the settled test: an order paid in full and *then* cancelled satisfies
-   * both, and "ชำระครบแล้ว" on an order whose deposit the company is about to refund is the
-   * cruelest sentence available.
-   */
+  /* ⓵ Cancelled or superseded. No figures at any value — see `PaymentPanel.figures`. */
   if (!orderIsLive) {
     return { figures: [], noteKey: 'payment.closed', showsForm: false };
-  }
-
-  /*
-   * ⓶ Live, and this screen can take no more slips — `delivered`, the only status where the two
-   * booleans disagree. The figures are stated because the debt is real; the form is withheld
-   * because the upload route would refuse it 409 anyway, and a form that cannot succeed is worse
-   * than no form.
-   */
-  if (!acceptsPayment) {
-    const figures = describeOwedFigures(outstandingMinor, nextDueMinor);
-    return outstandingMinor <= 0n
-      ? { figures, noteKey: 'payment.settled', showsForm: false }
-      : { figures, noteKey: 'payment.closedOwing', showsForm: false };
   }
 
   /* The figures are the shared module's choice, not this one's — `owedFigures.ts` orders them

@@ -718,32 +718,32 @@ export interface UiParamsByKey {
   'payment.outstandingAmount': { owedMinor: bigint };
   'payment.settled': Plain;
   /**
-   * ⭐ "This order can no longer be paid" — the one sentence a closed order gets.
+   * ⭐ "This order can no longer be paid" — the one sentence a dead order gets.
    *
-   * Rendered when `PaymentInstructionsWire.acceptsPayment` is false, which the server answers
-   * from `SLIP_ATTACHABLE_STATUSES` — the same list that refuses the upload with a 409. The
-   * screen prints no owed figure at all in that state: the residue on a cancelled order is a
-   * refund question and on a delivered one it is a phone call, and a number under
-   * `payment.outstanding` is a demand whatever its value. It printed
+   * Rendered when `PaymentInstructionsWire.orderIsLive` is false, which the server answers with
+   * `isLiveOrder()` — cancelled and superseded, and nothing else. The screen prints no owed
+   * figure at all in that state: the residue on a cancelled order is a refund question, and a
+   * number under `payment.outstanding` is a demand whatever its value. It printed
    * "ยอดคงค้างทั้งหมด ฿10,354.18" over the upload form on a cancelled order until this key
    * existed.
    *
    * ⚠️ **It is not `payment.settled` and must never be worded like it.** That key says *paid
-   * in full*; this one says *closed to further payment*. They are both true of a delivered,
-   * fully-paid order and they are both "true" of an order the customer paid in full and then
-   * cancelled — where the company owes the money back, and "ชำระครบแล้ว" would be the
-   * cruellest sentence available.
+   * in full*; this one says *there is nothing here you can act on*. Both are "true" of an order
+   * the customer paid in full and then cancelled — where the company owes the money back, and
+   * "ชำระครบแล้ว" would be the cruellest sentence available.
    *
-   * ⚠️ **Cancelled and superseded only — narrowed after the first version was measured.** It
-   * began as one key for every order that could not take a slip, which put it on a delivered
-   * order too: the ordinary finished customer lost "ชำระครบแล้ว" and read an administrative
-   * sentence instead, and a delivered order still carrying a balance printed no figure at all.
-   * `orderIsLive` now separates the two, `payment.closedOwing` covers the owing half, and
-   * `payment.settled` went back to serving the finished one.
+   * ⚠️ **Cancelled and superseded only, and there is no longer a sibling key.** It began as one
+   * key for every order that could not take a slip, which put it on a delivered order too: the
+   * ordinary finished customer lost "ชำระครบแล้ว" and read an administrative sentence instead.
+   * A `payment.closedOwing` was added for the delivered-and-owing half — a balance stated with
+   * no form under it — and `0046_slips_after_delivery.sql` then made that state unreachable by
+   * letting a delivered order take the slip. A delivered order now renders as any other live
+   * one: figures, and a form that works. The key was removed rather than left in eight
+   * catalogues for a branch no code can reach.
    *
    * What remains is the state where the screen must say nothing about the money: the residue on
    * a cancelled order is owed *to* the customer. The sentence cannot say *why* the order closed
-   * — the wire carries booleans and deliberately not the status, because a status would put a
+   * — the wire carries a boolean and deliberately not the status, because a status would put a
    * copy of the list back in every client — so it says only what the server answered and points
    * at the people who can say the rest. The second clause is conditional ("if you have a
    * question about the amount"), which is the door for a customer owed a refund.
@@ -753,25 +753,6 @@ export interface UiParamsByKey {
    * them. Like every other label in this block it names no amount.
    */
   'payment.closed': Plain;
-  /**
-   * A delivered order that still owes money: the amount stands, the transfer form does not.
-   *
-   * ⚠️ **This is the last screen on which that money is ever mentioned to the person who owes
-   * it.** `delivered` is absent from `SLIP_ATTACHABLE_STATUSES` and has no transition out, so
-   * nothing in the software can collect it and nothing else will raise it. The first version of
-   * the closed screen printed no figure here at all, which did not make the receivable go away
-   * — it removed it from the only surface its debtor can see.
-   *
-   * ⚠️ **Names no amount.** The figure is already above this sentence, printed through
-   * `payment.outstandingAmount` — this app's only money template and a bare `f.bahtExact` in all
-   * eight locales — so it is formatted to the satang in the reader's own numerals and never
-   * enters a translated sentence. This key explains why there is no form and what to do instead.
-   *
-   * ⚠️ **Not `payment.closed`.** That key is for an order whose money may be owed the other way
-   * and must stay silent about figures; this one is a balance the customer genuinely owes. Same
-   * screen, opposite direction of money, so opposite sentences.
-   */
-  'payment.closedOwing': Plain;
   'payment.account.legend': Plain;
   'payment.account.copy': { accountDigits: string };
   'payment.account.copied': Plain;

@@ -551,8 +551,6 @@ export const la: PartialUiCatalogue = {
   'payment.settled': 'ອໍເດີນີ້ຊຳລະຄົບແລ້ວ',
   'payment.closed':
     'ອໍເດີນີ້ປິດຮັບການແຈ້ງຊຳລະເງິນແລ້ວ. ຫາກມີຂໍ້ສົງໄສກ່ຽວກັບຍອດເງິນ ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
-  'payment.closedOwing':
-    'ຍັງມີຍອດຄ້າງຈ່າຍຢູ່ ແຕ່ແຈ້ງຊຳລະເງິນຜ່ານໜ້ານີ້ບໍ່ໄດ້ແລ້ວ. ກະລຸນາຕິດຕໍ່ທີມຂາຍເພື່ອຊຳລະຍອດທີ່ເຫຼືອ.',
   'payment.account.legend': 'ໂອນເຂົ້າບັນຊີໃດບັນຊີໜຶ່ງ',
   'payment.account.copy': (p) => `ສຳເນົາເລກບັນຊີ ${p.accountDigits}`,
   'payment.account.copied': 'ສຳເນົາເລກບັນຊີແລ້ວ',

@@ -309,7 +309,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
   it('says a live order can still receive a payment', async () => {
     /*
      * The control the interesting test needs: without it, a route hard-coding `false` — or an
-     * `acceptsPayment` that lost its list — would pass the cancellation assertion below and be
+     * `isLiveOrder` that lost its list — would pass the cancellation assertion below and be
      * a screen that never lets anybody pay.
      */
     const order = await submittedOrder(call, customerA, line, contactFor('live'));
@@ -318,7 +318,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
       token: customerA.token,
     });
     expect(answer.status).toBe(200);
-    expect((answer.body as PaymentInstructionsWire).acceptsPayment).toBe(true);
+    expect((answer.body as PaymentInstructionsWire).orderIsLive).toBe(true);
   });
 
   it(
@@ -363,7 +363,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
         token: customerA.token,
       });
       expect(before.status).toBe(200);
-      expect((before.body as PaymentInstructionsWire).acceptsPayment).toBe(true);
+      expect((before.body as PaymentInstructionsWire).orderIsLive).toBe(true);
 
       const cancelled = await call('POST', `/orders/${order.id}/transitions/cancelled`, {
         token: customerA.token,
@@ -378,8 +378,13 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
       expect(answer.status).toBe(200);
       const body = answer.body as PaymentInstructionsWire;
 
-      /* The one field the screen gates on. */
-      expect(body.acceptsPayment).toBe(false);
+      /*
+       * The one field the screen gates on — and since `0046_slips_after_delivery.sql` the ONLY
+       * one. `acceptsPayment` shipped beside it until the two answered identically on every
+       * status; see `payments/slips/attachable.test.ts` for the enumeration that made dropping
+       * it safe.
+       */
+      expect(body.orderIsLive).toBe(false);
 
       /*
        * ⚠️ And the figures are still *stated*, which is the difference between withholding a
@@ -398,11 +403,12 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
       expect(toBigInt(body.grandTotalThbMinor)).toBe(grandTotal);
 
       /*
-       * ⭐ And the boolean is the *same list* the upload route refuses on. This is what makes
-       * it a fix rather than a second opinion: had the screen kept its own copy of the
-       * statuses — as `apps/web/src/lib/payment/payable.ts` does for the two link sites — the
-       * two could drift, and the drift is silent in the direction that hurts (a form offered
-       * over an endpoint that answers 409).
+       * ⭐ And the upload route refuses the same order. This is what makes it a fix rather than
+       * a second opinion: had the screen kept its own copy of the statuses — as
+       * `apps/web/src/lib/payment/payable.ts` does for the two link sites — the two could
+       * drift, and the drift is silent in the direction that hurts (a form offered over an
+       * endpoint that answers 409). The two predicates are held equal by
+       * `payments/slips/attachable.test.ts`, which is what lets one boolean stand for both.
        */
       const refused = await uploadImage(
         app.baseUrl,

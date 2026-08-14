@@ -567,8 +567,6 @@ export const vi: PartialUiCatalogue = {
   'payment.settled': 'Đơn hàng này đã thanh toán đủ',
   'payment.closed':
     'Đơn hàng này không còn nhận thanh toán nữa. Nếu bạn có thắc mắc về số tiền, vui lòng liên hệ bộ phận kinh doanh.',
-  'payment.closedOwing':
-    'Vẫn còn số tiền chưa thanh toán, nhưng bạn không thể gửi thanh toán tại đây nữa. Vui lòng liên hệ bộ phận kinh doanh để thanh toán phần còn lại.',
   'payment.account.legend': 'Chuyển vào một trong các tài khoản sau',
   'payment.account.copy': (p) => `Sao chép số tài khoản ${p.accountDigits}`,
   'payment.account.copied': 'Đã sao chép số tài khoản',

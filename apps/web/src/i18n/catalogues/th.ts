@@ -556,8 +556,6 @@ export const th: UiCatalogue = {
    * `payment.heading` ("แจ้งชำระเงิน") กับ `payment.account.none` ("ติดต่อทีมขาย") ไม่ได้ตั้งคำใหม่
    */
   'payment.closed': 'ออเดอร์นี้ปิดรับแจ้งชำระเงินแล้ว หากมีข้อสงสัยเรื่องยอดเงิน กรุณาติดต่อทีมขาย',
-  'payment.closedOwing':
-    'ยังมียอดค้างชำระอยู่ แต่แจ้งชำระเงินผ่านหน้านี้ไม่ได้แล้ว กรุณาติดต่อทีมขายเพื่อชำระยอดที่เหลือ',
   'payment.account.legend': 'โอนเข้าบัญชีใดบัญชีหนึ่ง',
   'payment.account.copy': (p) => `คัดลอกเลขบัญชี ${p.accountDigits}`,
   'payment.account.copied': 'คัดลอกเลขบัญชีแล้ว',

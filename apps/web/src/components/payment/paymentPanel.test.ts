@@ -13,22 +13,28 @@ import { describePaymentPanel, type PanelInput } from './paymentPanel';
  * "ยอดคงค้างทั้งหมด ฿10,354.18" in `text-lead text-lime` with the upload form beneath it. The
  * customer had cancelled the order; the company owed *them* ฿4,437.50 of deposit.
  *
- * The first fix tested `acceptsPayment` alone, and measuring the six real wire payloads showed
- * that one boolean was answering for three states that need three sentences:
+ * The first fix tested "can this be paid?" alone, and measuring the six real wire payloads
+ * showed that one boolean was answering for three states that need three sentences:
  *
- *   cancelled / superseded   acceptsPayment false, orderIsLive false, outstanding ฿10,354.18
- *   delivered, fully paid    acceptsPayment false, orderIsLive TRUE,  outstanding ฿0
- *   delivered, still owing   acceptsPayment false, orderIsLive TRUE,  outstanding ฿10,354.18
+ *   cancelled / superseded   not live, outstanding ฿10,354.18 — owed the OTHER way
+ *   delivered, fully paid    live,     outstanding ฿0
+ *   delivered, still owing   live,     outstanding ฿10,354.18 — owed by the customer
  *
  * It told the finished customer their order was closed instead of paid, and told the owing one
  * nothing at all — no amount, on the last screen where that debt is ever put in front of them.
- * Every `acceptsPayment: false` case below therefore has to say which of the three it is, and
- * the ones that do not name `orderIsLive` are asserting the default, which is a live order.
+ *
+ * ── ⚠️ And then the third row stopped being a special case ───────────────────
+ *
+ * That fix stated the delivered balance and still withheld the form, because
+ * `SLIP_ATTACHABLE_STATUSES` would have refused the upload: the customer read what they owed
+ * with no way to pay it — the owner's *"ถ้าส่งมอบไปก่อนเก็บครบ จะเก็บผ่านระบบไม่ได้อีก"*.
+ * `0046_slips_after_delivery.sql` opened `delivered` to slips, so it is now an ordinary live
+ * order and the second boolean this module read has gone with the branch it fed. The delivered
+ * cases below therefore assert the *paying* path, and they are the mutation target for it.
  */
 
 const panel = (over: Partial<PanelInput>): ReturnType<typeof describePaymentPanel> =>
   describePaymentPanel({
-    acceptsPayment: true,
     /* Live unless a case says otherwise — only cancelled and superseded are not. */
     orderIsLive: true,
     outstandingMinor: 1_035_418n,
@@ -39,7 +45,7 @@ const panel = (over: Partial<PanelInput>): ReturnType<typeof describePaymentPane
 
 /** Cancelled and superseded: money may be owed the other way, so no figure at any value. */
 describe('⭐ an order that is no longer a live commitment', () => {
-  const dead = { acceptsPayment: false, orderIsLive: false } as const;
+  const dead = { orderIsLive: false } as const;
 
   it('states no owed figure at all, and offers no form', () => {
     /*
@@ -79,26 +85,30 @@ describe('⭐ an order that is no longer a live commitment', () => {
 });
 
 /**
- * `delivered` — the one status where the two booleans disagree, and the two states the
- * single-boolean version got wrong.
+ * `delivered` — the status this round changed, and the two states the screen used to get wrong.
  */
-describe('⭐ a delivered order: live, but this screen takes no more slips', () => {
-  const delivered = { acceptsPayment: false, orderIsLive: true } as const;
+describe('⭐ a delivered order: live, and payable like any other', () => {
+  /*
+   * ⚠️ No override at all, and that is the assertion. A delivered order arrives on this module
+   * as `orderIsLive: true` and nothing else — exactly what an `in_production` order looks like
+   * — because the wire no longer carries a second boolean to tell them apart. The cases below
+   * are what a delivered order now renders as.
+   */
+  const delivered = { orderIsLive: true } as const;
 
-  it('⭐ says the balance is still owing, and names it', () => {
+  it('⭐ names the balance AND offers the form to settle it', () => {
     /*
-     * THE REGRESSION THIS BRANCH EXISTS FOR. `delivered` is absent from
-     * `SLIP_ATTACHABLE_STATUSES` and has no transition out, so this is the last screen on which
-     * this money is ever mentioned to the person who owes it. The single-boolean version printed
-     * no figure here — the company's receivable, removed from the only surface its debtor has.
+     * THE OWNER'S DEFECT, ASSERTED. `delivered` has no transition out, so before 0046 this was
+     * the last screen the money was ever mentioned on and it carried no way to pay: the figure
+     * was printed under `payment.closedOwing` and `showsForm` was false. Both halves are
+     * checked here — a fix that stated the amount and still withheld the form would pass the
+     * first expectation and fail the third.
      */
     const owing = panel(delivered);
 
-    expect(owing.noteKey).toBe('payment.closedOwing');
-    expect(owing.figures.length).toBeGreaterThan(0);
     expect(owing.figures.map((f) => f.amountMinor)).toContain(1_035_418n);
-    /* Named, but not collectable here: the upload route would answer 409 either way. */
-    expect(owing.showsForm).toBe(false);
+    expect(owing.noteKey).toBeNull();
+    expect(owing.showsForm).toBe(true);
   });
 
   it('⭐ says "paid in full" once nothing is outstanding', () => {
@@ -113,10 +123,15 @@ describe('⭐ a delivered order: live, but this screen takes no more slips', () 
     expect(finished.showsForm).toBe(false);
   });
 
-  it('is not affected by whether the organisation has accounts', () => {
-    /* Same reasoning as the dead case: accounts say where money could go, not whether it may. */
-    expect(panel({ ...delivered, accountCount: 0 }).noteKey).toBe('payment.closedOwing');
-    expect(panel({ ...delivered, accountCount: 5 }).noteKey).toBe('payment.closedOwing');
+  it('withholds the form when the organisation has nowhere for the money to go', () => {
+    /*
+     * ⚠️ The reasoning INVERTED here, and it is worth stating. It used to read "accounts say
+     * where money could go, not whether it may" — true while the form was withheld from a
+     * delivered order on status grounds. Now that the form is offered, the account list is the
+     * only thing left that can withhold it, exactly as on any other live order.
+     */
+    expect(panel({ ...delivered, accountCount: 0 }).noteKey).toBe('payment.account.none');
+    expect(panel({ ...delivered, accountCount: 5 }).showsForm).toBe(true);
   });
 });
 

@@ -521,7 +521,6 @@ export const zh: PartialUiCatalogue = {
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': '此订单已付清',
   'payment.closed': '此订单已停止接受付款通知。如对金额有疑问，请联系销售团队。',
-  'payment.closedOwing': '仍有未付金额，但此处已无法提交付款通知。请联系销售团队结清余款。',
   'payment.account.legend': '转账至以下任一账户',
   'payment.account.copy': (p) => `复制账号 ${p.accountDigits}`,
   'payment.account.copied': '账号已复制',
