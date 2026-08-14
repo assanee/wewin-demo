@@ -93,10 +93,11 @@ export function statusTone(status: OrderStatus): 'attention' | 'live' | 'done' |
  * ⭐ The third table: what *happened*, as opposed to where the order now is.
  *
  * ⚠️ **Not a duplicate of `STATUS_TH`, and the spine needs both.** A status is a place and an
- * event is an act, and two of them cannot be recovered from a status at all:
- * `change_requested` and `change_resolved` are written with `from_status` and `to_status` both
- * `null` — an objection is a fact about an order that does not move it — so
- * `statusLabel(event.toStatus)` has nothing to label. The old spine rendered `event.eventType`
+ * event is an act, and **four** of them cannot be recovered from a status at all:
+ * `quote_revised`, `change_requested`, `change_resolved` and `balance_reminded` are written
+ * with `from_status` and `to_status` both `null` — an objection, a quote edit and a chase for
+ * money are facts about an order that do not move it — so `statusLabel(event.toStatus)` has
+ * nothing to label. The old spine rendered `event.eventType`
  * as its primary heading and that is the machine's word for it on a Thai-only screen.
  *
  * `quote_revised` is declared by the API and has no producer in it yet. It is labelled anyway:
@@ -117,6 +118,7 @@ export const ORDER_EVENT_TYPES = [
   'superseded',
   'change_requested',
   'change_resolved',
+  'balance_reminded',
 ] as const;
 
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
@@ -135,6 +137,13 @@ const EVENT_TH: Record<OrderEventType, string> = {
   superseded: 'ถูกแทนที่ด้วยใบใหม่',
   change_requested: 'ลูกค้าขอแก้ไข',
   change_resolved: 'ตอบคำขอแก้ไข',
+  /*
+   * ⭐ 0050. The verb is the company's, not the customer's: *we asked them*. `ทวงถาม` was
+   * rejected — it is the word for dunning and reads as an accusation on a timeline a customer
+   * can also see through `GET /orders/:id/events`. `แจ้งเตือนยอดค้างชำระ` is built from
+   * `แจ้งเตือน` and `ค้างชำระ`, both of which this dashboard already uses.
+   */
+  balance_reminded: 'แจ้งเตือนยอดค้างชำระ',
 };
 
 /**

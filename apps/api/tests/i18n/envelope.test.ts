@@ -514,5 +514,33 @@ describe('what is still a Thai string, as a number', () => {
  * or a psql session gets, and it never reaches a client. Same readers as the block above — Thai
  * staff behind `orders.write` + `payments.read` and `quotes.approve` + `payments.write_off` — and
  * no customer, in any locale, can reach either route.
+ *
+ * ── 233 → 236: the company asking the customer for money ──────────────────────────
+ *
+ * ⭐ Three, all in `orders/orders.service.ts`'s `remindBalance` — the refusals on
+ * `POST /orders/:orderId/balance-reminders` (0050):
+ *
+ *   **not a live obligation** — a cart has agreed to owe nothing, and a cancelled or superseded
+ *   order's remainder is a refund or a carry-forward. Chasing either is asking somebody for money
+ *   they do not owe.
+ *
+ *   **nothing outstanding** — the balance was settled between the screen being drawn and the
+ *   button being pressed. This is the refusal that matters most in this feature: chasing a
+ *   customer who has already paid is the worst thing it can do.
+ *
+ *   **too soon** — the 24-hour cooldown, refused with a sentence naming when the next one may go.
+ *
+ * ⚠️ The number goes **up**, which is the direction this counter exists to make visible, so the
+ * reason is written here rather than absorbed by converting something else. All three are read
+ * only by Thai staff on the dashboard: the route demands `orders.read` + `orders.write` +
+ * `payments.read`, and `remindBalance` additionally refuses any actor that is not `staff` — so no
+ * customer, in any locale, can reach a single one of these strings. That is the same argument the
+ * two blocks above make, and it is a deferral rather than an exemption: they are three more lines
+ * in the handoff, not three fewer.
+ *
+ * ⚠️ What is *not* here is the message a customer actually reads, which is the whole point of the
+ * round: `order.balance_reminded.customer` is written in **all eight languages**
+ * (`notifications/templates/templates.ts`), with the amount formatted by the locale's own
+ * formatter rather than written into any of the eight sentences.
  */
-const RAW_LITERAL_CALL_SITES = 233;
+const RAW_LITERAL_CALL_SITES = 236;

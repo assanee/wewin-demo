@@ -13,7 +13,7 @@ import type { NotificationsConfig } from './notifications.config';
 import { DocumentLinkService, documentLinkUrl } from '../orders/document-link';
 import { NotificationsRepository, type ClaimedNotification } from './notifications.repository';
 import { NOTIFICATIONS_CONFIG, NOTIFICATION_CHANNEL_ADAPTERS } from './notifications.tokens';
-import { renderTemplate } from './templates/templates';
+import { hasTemplate, renderTemplate, sendSuppression, type TemplateContext } from './templates/templates';
 
 /**
  * The consumer half of plan 10.1: `order_events` produces, this delivers.
@@ -174,24 +174,89 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
      */
     const locale = resolveRenderLocale(preferred, notification.templateKey);
 
-    const rendered = renderTemplate(locale.rendered, notification.templateKey, {
+    const context: TemplateContext = {
       orderNo: notification.orderNo,
       contactName: notification.contactName,
       coalescedCount: notification.coalescedCount,
       documentUrl: this.documentUrl(notification, locale.rendered),
-    });
+      /*
+       * ⭐ The two balances, as Postgres computed them in the claim statement — see
+       * `ClaimedNotification.outstandingThbMinor` for why they are read at claim time and not
+       * snapshotted when the event was written, and `nextDueThbMinor` for why the message
+       * carries the instalment beside the total.
+       *
+       * ⛔ Handed over as satang, untouched. The renderer picked for `locale.rendered` formats
+       * them with that locale's own formatter; this file never turns either into a string,
+       * because a string formatted here would be one locale's typography imposed on all eight.
+       */
+      outstandingThbMinor: notification.outstandingThbMinor,
+      nextDueThbMinor: notification.nextDueThbMinor,
+    };
+
+    /*
+     * ⭐ **The message is still queued, and it must no longer be sent.**
+     *
+     * Asked before rendering and answered from the facts read at claim time: today, a balance
+     * reminder for an order that has been settled since the button was pressed. `templates.ts`
+     * carries the whole argument, including why this is `suppressed` rather than a dead row —
+     * in one line, because a customer who paid promptly is not a delivery failure and must not
+     * arrive in the queue whose sentence is "nobody has been told".
+     *
+     * ⚠️ No attempt is recorded, because nothing was attempted. The renderer refuses the same
+     * case independently; that refusal is the backstop for any path that does not come through
+     * here, and this is the one that keeps the outbox honest about what happened.
+     */
+    const suppression = sendSuppression(notification.templateKey, context);
+    if (suppression !== undefined) {
+      /*
+       * ⚠️ `suppress()` answers whether it actually closed the row, and that answer was being
+       * thrown away. It updates `where … and status = 'sending'`, so a row another process took
+       * back under the lease is left alone — and this worker then logged "was not sent: <reason>"
+       * about a message it had not touched and may be watching somebody else deliver. A log line
+       * is the only trace this branch leaves anywhere (no attempt row, by design), so a false one
+       * is the whole record being wrong.
+       *
+       * Returning either way is right in both cases: if we still held the claim the row is now
+       * closed, and if we did not we have no business rendering or sending it.
+       */
+      const closed = await this.repository.suppress(notification.id, suppression);
+      this.logger.debug(
+        closed
+          ? `Notification ${notification.id} (${notification.templateKey}) was not sent: ${suppression}`
+          : `Notification ${notification.id} (${notification.templateKey}) was left alone: ` +
+              `it would have been suppressed (${suppression}), but the claim had already been taken back under the lease`,
+      );
+      return;
+    }
+
+    const rendered = renderTemplate(locale.rendered, notification.templateKey, context);
 
     if (rendered === undefined) {
       /*
-       * A rule names a template this build cannot render. That is a deployment mismatch —
-       * a migration ahead of the code — and it will not fix itself on the fifth attempt, so
-       * it goes to the dead queue immediately with the key that is missing. What it must
-       * never do is send a placeholder: "order.delivered.customer" in a customer's inbox is
-       * worse than a row in a queue an engineer reads.
+       * Two different failures wearing one `undefined`, and the dead row has to say which,
+       * because they are fixed by different people:
+       *
+       *   **no template for this key in this locale** — a deployment mismatch, a migration
+       *   ahead of the code. Fixed by deploying.
+       *
+       *   **the renderer refused** — the template exists and declined to produce a message
+       *   because the context was missing something it requires. Today that is the balance
+       *   reminder with no `outstandingThbMinor`, which means a caller built a context the
+       *   claim query is supposed to fill. Fixed by fixing the caller.
+       *
+       * Both are permanent: neither fixes itself on the fifth attempt, and four more tries
+       * delay the dead queue by a quarter of an hour during which the company believes the
+       * customer was told (plan 10.5(3)). What neither may do is send a placeholder —
+       * "order.delivered.customer" in a customer's inbox, or a reminder with no figure in it,
+       * are both worse than a row in a queue an engineer reads.
        */
+      const error = hasTemplate(locale.rendered, notification.templateKey)
+        ? `template '${notification.templateKey}' for locale '${locale.rendered}' refused to render: the notification did not carry a fact the message requires`
+        : `no template '${notification.templateKey}' for locale '${locale.rendered}'`;
+
       await this.record(notification, locale.rendered, '(no template)', {
         ok: false,
-        error: `no template '${notification.templateKey}' for locale '${locale.rendered}'`,
+        error,
         retryable: false,
       });
       return;

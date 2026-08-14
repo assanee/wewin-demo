@@ -160,6 +160,55 @@ describeWithPg('notification rules cover every event, and this build can render 
     expect(byKey.get('delivered/customer')?.coalesce_group).toBeNull();
     expect(byKey.get('payment_confirmed/customer')?.coalesce_group).toBeNull();
     expect(byKey.get('cancelled/customer')?.coalesce_group).toBeNull();
+
+    /*
+     * ⭐ And the reminder, which is the one somebody would be most tempted to coalesce, since
+     * it is the only rule whose event a *person* can produce twice in a row on purpose.
+     *
+     * It must not be. Coalescing folds two messages into one and increments a counter; every
+     * reminder is a separate deliberate act by a member of staff, so folding two of them
+     * silently discards one somebody chose to send — and the person who pressed the button
+     * would see nothing to tell them so. The protection against a double-press is a **refusal
+     * at the ask** (`BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT`), which answers 409 with a
+     * sentence naming when the next one may go.
+     */
+    expect(byKey.get('balance_reminded/customer')?.coalesce_group).toBeNull();
+    expect(byKey.get('balance_reminded/customer')?.coalesce_seconds).toBe(0);
+  });
+
+  it('⭐ tells the customer about the balance, and tells nobody internally', () => {
+    /*
+     * 0050's one rule, asserted by name in both directions.
+     *
+     * The internal queue exists so that nobody has to notice something on their own — an
+     * objection arriving, a bounce from the factory. A reminder was sent by a member of staff
+     * who was looking at the order at the time, so a `sales_queue` row here would be an email
+     * telling somebody a thing they had just done. The spine row is the record, on the screen
+     * they pressed the button on.
+     */
+    const reminders = rules.filter((rule) => rule.event_type === 'balance_reminded');
+
+    expect(reminders.map((rule) => rule.recipient_kind)).toStrictEqual(['customer']);
+    expect(reminders[0]?.template_key).toBe('order.balance_reminded.customer');
+    expect(reminders[0]?.channel).toBe('email');
+    expect(reminders[0]?.is_enabled).toBe(true);
+  });
+
+  it('⭐ can render the balance reminder in every one of the eight languages', () => {
+    /*
+     * ⚠️ The one rule this is asserted for, and the assertion above about the *fallback* is
+     * still what protects delivery for the other fourteen. The reminder is different because
+     * its content is a **number**: a customer who reads only Burmese can act on a figure beside
+     * a label they recognise, and cannot act on eleven lines of Thai about money they owe. Plan
+     * 10.6's ~96-message bottleneck is untouched — this is one message, written eight times,
+     * shipped through the per-template resolution that exists precisely so it can be.
+     *
+     * ⛔ Rendered with a real amount, because without one the template refuses by design and a
+     * loop that passed no money would assert the opposite of what it means to.
+     */
+    for (const locale of SUPPORTED_LOCALES) {
+      expect(hasTemplate(locale, 'order.balance_reminded.customer'), locale).toBe(true);
+    }
   });
 
   it('ships email only, because plan 13’s channel question is unanswered', () => {

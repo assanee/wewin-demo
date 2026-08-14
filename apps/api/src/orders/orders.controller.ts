@@ -18,6 +18,7 @@ import {
   createChangeRequestSchema,
   createOrderRequestSchema,
   resolveChangeRequestSchema,
+  type BalanceReminderWire,
   type CancellationPreviewWire,
   type ChangeRequestWire,
   type CreateChangeRequestWire,
@@ -38,6 +39,7 @@ import type { Env } from '../config/env';
 import {
   AllowAnonymous,
   CurrentScope,
+  RequirePermissions,
   RequirePrincipal,
   serialiseGuestCookie,
   type Scope,
@@ -412,6 +414,72 @@ export class OrdersController {
    * the bug it was meant to prevent: the first objection would block every later one for the
    * life of the order.
    */
+  /**
+   * ⭐ แจ้งเตือนยอดค้างชำระ — ask the customer for the outstanding balance.
+   *
+   *     POST /orders/:orderId/balance-reminders
+   *
+   * ── Why a resource of its own and not a transition ────────────────────────────
+   *
+   * Because nothing moves. `POST /orders/:id/transitions/:toStatus` is keyed on a destination
+   * status and answers with an `OrderWire` because the order is different afterwards; this
+   * order is identical afterwards in every field. What it gains is a row on the spine, so the
+   * response is that row (`BalanceReminderWire`) and not a re-read of an unchanged order.
+   *
+   * ── ⚠️ 201, and what was created ──────────────────────────────────────────────
+   *
+   * The `order_events` row. It is a real, citable, append-only record of an ask a member of
+   * staff made, and it exists whether or not a message ever leaves the building — which is
+   * exactly why the response also says whether one was queued.
+   *
+   * ── The permissions, and why no new code ──────────────────────────────────────
+   *
+   * `orders.read` + `orders.write` + `payments.read`.
+   *
+   *   `orders.write`   this **writes to an order** — a row on its append-only spine.
+   *   `payments.read`  the message it causes **names a balance**, so somebody who may not read
+   *                    ค้างชำระ must not be able to have it emailed to a customer on their
+   *                    behalf. Same pairing the write-off request declares, for the same reason.
+   *   `orders.read`    ⚠️ not redundant beside `orders.write`, and not belt-and-braces: it is
+   *                    what the *row* reaches by. `order-reach.ts` widens a staff caller to
+   *                    every order only when they hold **both** codes, having found that
+   *                    `orders.write` alone produced "may act on every order in the company
+   *                    while being unable to look at any of them". Without it here the route
+   *                    would answer 404 on every order but the caller's own — a decorator
+   *                    promising something the loader underneath it refuses.
+   *
+   * ⚠️ Deliberately **not** a new permission. A new code is warranted when an act carries an
+   * authority nobody has granted — `payments.write_off` forgives cash, `quotes.approve`
+   * decides. Asking a customer for money they already contracted to pay grants nobody anything:
+   * it moves no balance, changes no status, and creates no obligation on anybody in this
+   * company. Inventing a code for it would mean shipping a route that nobody can use until the
+   * owner grants something, for an act that needs no permission the collections clerk chasing
+   * the debt does not already hold.
+   *
+   * ⚠️ And it is **not** reachable by the customer, whatever token they hold: `remindBalance`
+   * refuses a non-staff actor with a 403, and `order_events_guard_insert()` refuses the row
+   * underneath it. `RequirePermissions` is the outer gate; neither of the two inner ones is
+   * redundant, because this service is not the only writer to that table.
+   */
+  @Post(':orderId/balance-reminders')
+  @HttpCode(201)
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePermissions('orders.read', 'orders.write', 'payments.read')
+  async remindBalance(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+  ): Promise<BalanceReminderWire> {
+    /*
+     * No body at all, and no schema for one. There is nothing to say: the amount is the
+     * server's (`order_outstanding_thb_minor()`), the recipient is the order's, the language is
+     * the recipient's and the wording is `notification_rules`'. A body would be a place for one
+     * of those four to be overridden by a client — which is the shape
+     * `authority.contract.ts` refuses at length for the amount on an approval request.
+     */
+    return this.orders.remindBalance(scope, orderId);
+  }
+
   @Post(':orderId/change-requests/:changeRequestId/resolution')
   @HttpCode(200)
   @contractVersion()

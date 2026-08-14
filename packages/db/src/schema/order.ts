@@ -133,9 +133,22 @@ export const TERMINAL_ORDER_STATUSES = ['delivered', 'cancelled', 'superseded'] 
  * `event_type` (plan 10.3 is a table of event → recipient), so an event type that drifted
  * from the transition it recorded would send the wrong message about the right change.
  *
- * Three of these are not status changes at all — `quote_revised`, `change_requested`,
- * `change_resolved`. They are on the spine because plan 10.3 has to notify about them and
- * plan 10.1 makes notifications a consumer of this table and of nothing else.
+ * **Four** of these are not status changes at all — `quote_revised`, `change_requested`,
+ * `change_resolved` and `balance_reminded`. They are on the spine because plan 10.3 has to
+ * notify about them and plan 10.1 makes notifications a consumer of this table and of
+ * nothing else. All four carry a null `(from_status, to_status)` pair, which
+ * `order_events_status_pair_shape` has permitted by construction since 0007, and none of
+ * them has — or may have — a row in `order_status_transitions`, which is keyed on that pair.
+ *
+ * ⭐ `balance_reminded` (0050) is the newest and the first that is about **money rather than
+ * the quotation**: a member of staff asked the customer for the outstanding balance. Its
+ * two rules — staff-only, and a payload carrying `outstanding_thb_minor` — are enforced by
+ * `order_events_guard_insert()`, because the transition row that would normally carry
+ * `allowed_actor_kinds` and `required_payload_keys` cannot exist for an event with no pair.
+ *
+ * ⚠️ It is named for the **ask**, not for the send. Whether a message left the building is
+ * `notifications` / `notification_attempts`' fact, knowable minutes later and false for an
+ * order with no contact channel; the spine records what a person did, in their transaction.
  *
  * SEAM 5b: `slip_received`, `slip_rejected`, `refund_requested`, `refund_disbursed` are
  * added here by migration, with rows in `notification_rules` beside them. None of them is
@@ -155,6 +168,7 @@ export const ORDER_EVENT_TYPES = [
   'superseded',
   'change_requested',
   'change_resolved',
+  'balance_reminded',
 ] as const;
 
 /**
@@ -1272,8 +1286,21 @@ export const notifications = pgTable(
      * so this widening needs no DDL. That is stated rather than assumed — it is the reason
      * this change is one line and not a migration of an enum type.
      */
+    /*
+     * ⚠️ `balance_settled` is the fourth, and the first that is not about reachability. The
+     * other three all mean *we could not write to them*; this one means *there was no longer
+     * anything to say* — a customer who paid their balance between the reminder being asked for
+     * and the worker draining the queue. The outbox groups them apart for that reason, and the
+     * screen used to file this one under "go and find their address", which is an errand for a
+     * customer who has already paid.
+     *
+     * It was added to the writer and to the screen and NOT to this list, and it compiled anyway:
+     * `suppress()` takes `reason: string` and writes raw SQL, and the column has no CHECK. So
+     * the narrowing sat here presenting three reasons as the set while a fourth was already in
+     * the table — a type that is wrong in the one direction a type cannot warn about.
+     */
     suppressedReason: text('suppressed_reason', {
-      enum: ['no_contact_channel', 'channel_disabled', 'recipient_erased'],
+      enum: ['no_contact_channel', 'channel_disabled', 'recipient_erased', 'balance_settled'],
     }),
 
     /** The folding bucket, copied from the rule that produced this row. Null means never fold. */

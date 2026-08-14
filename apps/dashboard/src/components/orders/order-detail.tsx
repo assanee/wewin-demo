@@ -41,6 +41,7 @@ import { statusLabel, transitionForm } from './order-language';
 import { outstandingDisplay, readOutstanding, type OwedFigures } from './order-outstanding';
 import { OrderTimeline } from './order-spine';
 import { WriteOffButton } from './write-off-dialog';
+import { BalanceReminderButton } from './balance-reminder-button';
 import { balanceNoticeFor } from './transition-balance';
 
 /**
@@ -512,6 +513,34 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                 outstandingThbMinor={order.outstandingThbMinor}
                 pendingCashflowApprovalId={pendingCashflowApprovalId}
                 onRequested={() => void reload()}
+              />
+
+              {/*
+               * ⭐ THE ONE THING FIVE ROUNDS OF PAYMENT WORK NEVER DID: **ask the customer**.
+               *
+               * ⚠️ Under ค้างชำระ and inside this card for the same reason as the two buttons
+               * above it — the act only makes sense against the amounts on these four lines. The
+               * person deciding whether to chase ฿9,940 is deciding whether ฿9,940 is the right
+               * figure, and that is a question about ยอดรวม and มัดจำตามสัญญา.
+               *
+               * ⚠️ **It is a person pressing it, and nothing else ever presses it.** There is no
+               * due-date column anywhere in this system, so nothing is overdue; asked when they
+               * collect, the owner said *"แล้วแต่งาน ไม่ตายตัว"*. A reminder that fired on a rule
+               * nobody agreed to is how a customer learns to ignore the messages that matter.
+               *
+               * ⚠️ Unlike the two above, this one **does** change something the customer sees:
+               * it appends a `balance_reminded` row to the spine and the fan-out emails them.
+               * `onReminded` reloads, so the rail above shows the ask a second later — which is
+               * how the person who pressed it can see that it went.
+               *
+               * ⚠️ `events` is passed because the cooldown is read from the spine and there is no
+               * `last_reminded_at` column — deliberately, see `balance-reminder.ts`.
+               */}
+              <BalanceReminderButton
+                orderId={order.id}
+                outstandingThbMinor={order.outstandingThbMinor}
+                events={events}
+                onReminded={() => void reload()}
               />
             </CardContent>
           )}

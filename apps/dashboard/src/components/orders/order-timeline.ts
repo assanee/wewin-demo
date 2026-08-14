@@ -285,6 +285,7 @@ const PAYLOAD_ORDER = [
   /* Money and the decisions attached to it. */
   'slip_amount_thb_minor',
   'absorbed_delta_thb_minor',
+  'outstanding_thb_minor',
   'fault',
   'resolution',
   /* What was pinned. */
@@ -302,6 +303,14 @@ const PAYLOAD_LABEL_TH: Readonly<Record<(typeof PAYLOAD_ORDER)[number], string>>
   note_th: 'หมายเหตุ',
   slip_amount_thb_minor: 'ยอดในสลิป',
   absorbed_delta_thb_minor: 'ส่วนต่างที่บริษัทรับไว้',
+  /*
+   * ⭐ `balance_reminded`'s whole content. Labelled *ณ ตอนแจ้ง* — at the moment of the ask —
+   * because the balance moves: the figure on this row is not the ค้างชำระ in the money card
+   * above it, and a reader comparing the two must be able to see why they differ rather than
+   * conclude one of them is wrong. It is also not the figure the email carried, which was read
+   * again at send time.
+   */
+  outstanding_thb_minor: 'ยอดคงค้าง ณ ตอนแจ้ง',
   fault: 'ผู้รับภาระ',
   resolution: 'ผลการตัดสิน',
   line_count: 'จำนวนรายการ',
@@ -345,6 +354,8 @@ const PAYLOAD_LABEL_TH: Readonly<Record<(typeof PAYLOAD_ORDER)[number], string>>
 const SATANG_READERS = {
   slip_amount_thb_minor: baht,
   absorbed_delta_thb_minor: signedBaht,
+  /* Unsigned: a balance owed is never negative in a reminder — the ask is refused at ฿0.00. */
+  outstanding_thb_minor: baht,
 } as const satisfies Readonly<Record<`${string}_thb_minor`, (minor: bigint) => string>>;
 
 /**
@@ -393,9 +404,10 @@ function readValue(key: (typeof PAYLOAD_ORDER)[number], value: unknown): string 
     case 'note_th':
       return typeof value === 'string' && value.trim() !== '' ? value : null;
 
-    /* Both money keys go through `SATANG_READERS` and nothing else may. See its header. */
+    /* All three money keys go through `SATANG_READERS` and nothing else may. See its header. */
     case 'slip_amount_thb_minor':
-    case 'absorbed_delta_thb_minor': {
+    case 'absorbed_delta_thb_minor':
+    case 'outstanding_thb_minor': {
       const minor = readSatang(value);
       return minor === null ? null : SATANG_READERS[key](minor);
     }

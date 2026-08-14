@@ -453,6 +453,64 @@ export const resolveChangeRequest = async (
  * needs nothing from it but the fact that it was created — the request then appears through
  * `GET /quotes/approvals?orderId=`, which is the one reader of that shape.
  */
+/**
+ * ⭐ แจ้งเตือนยอดค้างชำระ — what the API answers when the ask is recorded.
+ *
+ * ⚠️ `queued` is **not** `sent`, and the field is named for what it is. The row goes into the
+ * outbox in the transaction that wrote the spine event; the worker polls, renders and talks to
+ * an SMTP server afterwards. `/admin/notifications` is where delivery is visible.
+ *
+ * `suppressedReason` is the database's own machine word (`no_contact_channel`,
+ * `recipient_erased`) and is decoded as a bare string on purpose: a migration may add a reason
+ * without this bundle being rebuilt, and a decoder that refused an unknown one would turn a more
+ * informative server into a broken screen. `balance-reminder.ts` maps the known ones to Thai and
+ * prints the rest verbatim.
+ */
+export interface BalanceReminderResult {
+  readonly eventId: string;
+  readonly outstandingThbMinor: bigint;
+  readonly queued: number;
+  readonly suppressedReason: string | null;
+}
+
+/**
+ * ⭐ Ask the customer for the outstanding balance.
+ *
+ * `POST /orders/:orderId/balance-reminders`, behind `orders.read` + `orders.write` +
+ * `payments.read`. No body: the amount is the server's (`order_outstanding_thb_minor()`), the
+ * recipient is the order's, the language is the recipient's and the wording is
+ * `notification_rules`'. A body would be a place for one of those four to be overridden by a
+ * client.
+ *
+ * ⚠️ **Nothing here sends anything.** The call appends one row to `order_events`; the fan-out
+ * trigger turns that into an outbox row in the same transaction. That is why the response is
+ * decoded at all — `queued` and `suppressedReason` are the only way this screen can tell a
+ * message that is on its way from one the fan-out had nowhere to send.
+ */
+export const sendBalanceReminder = async (orderId: string): Promise<BalanceReminderResult> => {
+  const response = await apiFetch(`/orders/${orderId}/balance-reminders`, { method: 'POST' });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+
+  const body = asRecord(await response.json(), 'การแจ้งเตือนยอดค้างชำระ');
+
+  return {
+    eventId: asText(body['eventId'], 'reminder.eventId'),
+    /*
+     * ⛔ `asSatang` and not a bare number: the unit tag is checked, for the reason that function
+     * gives — a `MoneyRateWire` in this slot is a hundredfold error nobody catches by looking.
+     */
+    outstandingThbMinor: asSatang(body['outstandingThbMinor'], 'reminder.outstandingThbMinor'),
+    /*
+     * ⚠️ Absent decodes as 0, which is the *fail-closed* direction here and the opposite call
+     * from `writtenOffThbMinor` above. Reading a missing `queued` as "something was sent" would
+     * make this screen claim a delivery on the word of an API that said nothing; reading it as
+     * "nothing was sent" costs a cautious sentence about a message that may well be on its way.
+     */
+    queued: typeof body['queued'] === 'number' ? body['queued'] : 0,
+    suppressedReason: asTextOrNull(body['suppressedReason'], 'reminder.suppressedReason'),
+  };
+};
+
 export const requestWriteOff = async (
   orderId: string,
   body: { readonly amountThbMinor: string; readonly reasonTh: string },

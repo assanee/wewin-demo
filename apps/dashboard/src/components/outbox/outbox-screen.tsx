@@ -12,8 +12,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { failureMessage } from '@/lib/api/errors';
-import { getOutbox, listAttempts, retry, type Attempt, type Outbox } from './outbox-api';
+import { getOutbox, listAttempts, retry, type Attempt, type Outbox, type SuppressedMessage } from './outbox-api';
 import { outboxFocus } from './outbox-focus';
+import {
+  groupSuppressed,
+  NOTHING_TO_SEND_DESCRIPTION_TH,
+  NOTHING_TO_SEND_TITLE_TH,
+  SUPPRESSED_FIGURE_LABEL_TH,
+  UNKNOWN_DESCRIPTION_TH,
+  UNKNOWN_TITLE_TH,
+  UNREACHABLE_DESCRIPTION_TH,
+  UNREACHABLE_TITLE_TH,
+} from './outbox-suppression';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -27,11 +37,25 @@ import { outboxFocus } from './outbox-focus';
  * ── ⚠️ Dead and suppressed are two lists, not one ────────────────────────────
  *
  *   `dead`        tried and failed. Retryable, and the button is here.
- *   `suppressed`  **never addressable.** A quote submitted with no contact channel, a LINE
- *                 rule with nowhere to send. Retrying would fail identically, so there is no
- *                 button — what it needs is somebody to get an address, which is a different
- *                 job for a different person. Merging the two would bury the ones that can
- *                 actually be fixed.
+ *   `suppressed`  closed without being sent, and not a failure. Retrying would change nothing,
+ *                 so there is no button. Merging the two would bury the ones that can actually
+ *                 be fixed.
+ *
+ * ── ⭐ …and `suppressed` is itself two lists, which is what this round found ──
+ *
+ * The whole screen was worded as though `suppressed` meant one thing — *nobody to write to*.
+ * A Figure labelled `ไม่มีที่อยู่ให้ส่ง`, a section titled the same, and a description reading
+ * *"ต้องไปหาที่อยู่หรือเบอร์ของลูกค้ามาก่อน"*. Then `balance_settled` arrived: a customer who
+ * settled up before the worker drained the queued reminder. Undelivered, correct, nothing wrong —
+ * and appearing in three places as a contact-details problem, with `suppress()`'s
+ * `recipient_key = null` making the row itself corroborate the story.
+ *
+ * The suppressed **list** is therefore split by reason (`outbox-suppression.ts`), and the
+ * `ไม่มีที่อยู่ให้ส่ง` section keeps every word it had — it is true again because the rows it was
+ * never true of are no longer under it. The suppressed **count** is not split, because the API
+ * sends one total with no breakdown; its Figure is relabelled to the status instead of to one of
+ * its causes. All of that copy lives in a `.ts`: a `.test.tsx` is silently never collected here,
+ * which is how a sentence instructing staff to chase a paid-up customer survived a green suite.
  *
  * `stuckSending` is its own alarm: a row claimed by a worker that never finished. Nothing
  * retries it on a timer, so a number above zero is somebody's process dying mid-send.
@@ -116,6 +140,12 @@ export function OutboxScreen() {
 
   const { summary, dead, suppressed } = state.outbox;
   const focus = outboxFocus(summary);
+  /*
+   * ⚠️ Grouping the rows the API sent, not dividing `summary.suppressed`. The list arrives capped
+   * at `limit`; a count taken from it would silently disagree with the Figure above, so no
+   * section heading below carries one.
+   */
+  const closed = groupSuppressed(suppressed);
 
   return (
     <div className="flex flex-col gap-10">
@@ -151,7 +181,13 @@ export function OutboxScreen() {
               number in the row that is a running total rather than work. */}
           <Figure label="ส่งแล้ว" value={summary.sent} muted />
           <Figure label="ส่งไม่สำเร็จ" value={summary.dead} />
-          <Figure label="ไม่มีที่อยู่ให้ส่ง" value={summary.suppressed} />
+          {/*
+           * ⚠️ Labelled with the **status**, not with one of its causes. This one number counts
+           * both "we could not reach them" and "there was nothing left to say"; the API sends no
+           * breakdown of it, so any label naming a cause is wrong for part of the total. It was
+           * `ไม่มีที่อยู่ให้ส่ง` — see `outbox-suppression.ts`.
+           */}
+          <Figure label={SUPPRESSED_FIGURE_LABEL_TH} value={summary.suppressed} />
           {/*
            * ⚠️ Nothing retries these on a timer. A row stuck in `sending` was claimed by a
            * worker that then died, so the number does not come down on its own.
@@ -297,52 +333,95 @@ export function OutboxScreen() {
         </Card>
       )}
 
-      <Section
-        title="ไม่มีที่อยู่ให้ส่ง — ส่งซ้ำไม่ได้"
-        /*
-         * No button, and the sentence says why. These were never addressable, so a retry
-         * would fail identically — what they need is somebody to obtain a contact.
-         */
-        descriptionTh="ตั้งแต่แรกก็ไม่มีช่องทางติดต่อ ส่งซ้ำก็ล้มเหมือนเดิม — ต้องไปหาที่อยู่หรือเบอร์ของลูกค้ามาก่อน"
-      >
-        {suppressed.length === 0 ? (
-          <p className="text-muted-foreground type-body">ไม่มีรายการ</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="type-caption h-8">ออเดอร์</TableHead>
-                <TableHead className="type-caption h-8">ข้อความ</TableHead>
-                <TableHead className="type-caption h-8">ช่องทาง</TableHead>
-                <TableHead className="type-caption h-8">เหตุผล</TableHead>
-                {/* The slack goes to the timestamp, the least important column — same argument as
-                    `order-list.tsx`'s `อัปเดตล่าสุด`. */}
-                <TableHead className="type-caption h-8 w-full">เมื่อ</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {suppressed.map((message) => (
-                <TableRow key={message.id}>
-                  <TableCell className="px-2 py-1.5">
-                    <OrderLink orderId={message.orderId} orderNo={message.orderNo} />
-                  </TableCell>
-                  <TableCell className="type-caption px-2 py-1.5 font-mono">
-                    {message.templateKey}
-                  </TableCell>
-                  <TableCell className="type-body px-2 py-1.5">{message.channel}</TableCell>
-                  <TableCell className="text-muted-foreground type-body px-2 py-1.5">
-                    {message.reason ?? '—'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
-                    {at(message.createdAt)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+      {/*
+       * ⭐ Two sections where there was one, because `suppressed` covers two unrelated facts and
+       * this screen is organised by **what you do next** — its other headings say `ส่งซ้ำได้` and
+       * `ส่งซ้ำไม่ได้`, which is an action, not a status.
+       *
+       * The instruction below is the reason a split was the only honest fix available. It is an
+       * instruction, so it is either right for every row under it or it is wrong; softening it to
+       * cover a settled balance too would have cost the contact rows — the common case, and the
+       * one that genuinely needs somebody to go and do this — their remedy. Removing the rows it
+       * was never true of is what makes it true again, and every word of it is unchanged.
+       */}
+      <Section title={UNREACHABLE_TITLE_TH} descriptionTh={UNREACHABLE_DESCRIPTION_TH}>
+        <SuppressedTable rows={closed.unreachable} />
       </Section>
+
+      {/*
+       * ⭐ The rows this round is about. `balance_settled` — the customer paid before the worker
+       * drained the reminder. Undelivered, terminal, and *nothing is wrong*; the one thing a
+       * reader must not do about these is go looking for an address, which is what the section
+       * above was telling them to do.
+       *
+       * Rendered even when empty, like the section above it: a class of message this screen knows
+       * about is a permanent fixture, and `ไม่มีรายการ` under it is news worth having.
+       */}
+      <Section title={NOTHING_TO_SEND_TITLE_TH} descriptionTh={NOTHING_TO_SEND_DESCRIPTION_TH}>
+        <SuppressedTable rows={closed.nothingToSend} />
+      </Section>
+
+      {/*
+       * ⚠️ And the one that appears only when it has something to say. A reason this build has
+       * never seen belongs in neither group above — see `outbox-suppression.ts` for why each
+       * would be a false sentence — so it gets a heading that claims nothing and points at the
+       * เหตุผล column. Unlike the two above, an *empty* one of these is not news: "no reason we
+       * failed to recognise" is the normal state, and a permanently empty band saying so would be
+       * a fourth heading on a page whose whole argument is that it had too little ranking.
+       */}
+      {closed.unknown.length > 0 && (
+        <Section title={UNKNOWN_TITLE_TH} descriptionTh={UNKNOWN_DESCRIPTION_TH}>
+          <SuppressedTable rows={closed.unknown} />
+        </Section>
+      )}
     </div>
+  );
+}
+
+/**
+ * One suppressed group's table — the same five columns for all three.
+ *
+ * ⚠️ The เหตุผล column keeps printing `suppressed_reason` **verbatim**, and that is a decision
+ * rather than an omission. `orders/balance-reminder.ts` maps these codes to Thai because its
+ * audience is a member of sales reading a toast about the order in front of them; the audience
+ * here is whoever works the outbox, the machine word is the precise fact, and it is the term they
+ * will quote in a bug report. What the reader needs in Thai is *what to do*, and that is now the
+ * section heading above the row rather than a translation inside it.
+ */
+function SuppressedTable({ rows }: { readonly rows: readonly SuppressedMessage[] }) {
+  if (rows.length === 0) return <p className="text-muted-foreground type-body">ไม่มีรายการ</p>;
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="type-caption h-8">ออเดอร์</TableHead>
+          <TableHead className="type-caption h-8">ข้อความ</TableHead>
+          <TableHead className="type-caption h-8">ช่องทาง</TableHead>
+          <TableHead className="type-caption h-8">เหตุผล</TableHead>
+          {/* The slack goes to the timestamp, the least important column — same argument as
+              `order-list.tsx`'s `อัปเดตล่าสุด`. */}
+          <TableHead className="type-caption h-8 w-full">เมื่อ</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((message) => (
+          <TableRow key={message.id}>
+            <TableCell className="px-2 py-1.5">
+              <OrderLink orderId={message.orderId} orderNo={message.orderNo} />
+            </TableCell>
+            <TableCell className="type-caption px-2 py-1.5 font-mono">{message.templateKey}</TableCell>
+            <TableCell className="type-body px-2 py-1.5">{message.channel}</TableCell>
+            <TableCell className="text-muted-foreground type-body px-2 py-1.5">
+              {message.reason ?? '—'}
+            </TableCell>
+            <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
+              {at(message.createdAt)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
