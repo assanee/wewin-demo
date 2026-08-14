@@ -32,6 +32,33 @@ import { isCurrent, visibleNavigation } from '@/lib/nav/navigation';
  * Worth repeating where somebody editing a sidebar will read it: this is presentation. An
  * item that is not rendered is an item the person is not being *offered*, not one they are
  * being prevented from reaching — `RbacGuard` on apps/api is what prevents.
+ *
+ * ── ⚠️ Why this file overrides the sidebar's own spacing ─────────────────────
+ *
+ * **Measured, not tuned to taste.** At stock spacing the nav's `scrollHeight` is **768px**, and
+ * with the 72px header and 48px footer the sidebar needs **888px of viewport height to show
+ * itself whole**. A 1440×900 laptop gives about 800px of *inner* height and a 13" 1280×800
+ * about 700px, so on both of the machines staff actually use, the bottom of the menu was cut
+ * off — `คืนเงิน` and `รีวิวรอกลั่นกรอง` sliced mid-row.
+ *
+ * ⚠️ It was never *overlapping* the sign-out button, which is what a `--full` screenshot made
+ * it look like and what an earlier report of mine claimed. The DOM was always correct:
+ * `SidebarContent` is `min-h-0 flex-1 overflow-auto` and `SidebarFooter` is a sibling below it.
+ * The real defect is subtler and worse — **`SidebarContent` also carries `no-scrollbar`**, so
+ * the one signal that would have told somebody the list continues was suppressed. A menu that
+ * scrolls silently and ends mid-word reads as a rendering bug, not as a scroll.
+ *
+ * Two changes, and they are different in kind:
+ *
+ *   ⓵ **Density.** `py-1` groups, `h-6` labels, `h-7` rows. This is the house's own
+ *      "denser where density helps" applied to the one list every screen carries: a 32px row
+ *      for a one-line link was airy, and the compression buys back ~150px, which is the
+ *      difference between fitting and not on a 900px screen.
+ *   ⓶ **An honest scrollbar.** `[scrollbar-width:thin]` overrides `no-scrollbar` so that when
+ *      the menu *does* still overflow — a 13" screen, or the day a sixteenth section is added —
+ *      it says so. Density alone would have been a fix that silently expires.
+ *
+ * Both are applied here rather than in `ui/sidebar.tsx`, so `shadcn add --diff` stays readable.
  */
 export function AppSidebar() {
   const pathname = usePathname();
@@ -44,20 +71,20 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex flex-col gap-0.5 px-2 py-1.5">
+        <div className="flex flex-col gap-0.5 px-2 py-1">
           <span className="truncate font-medium">WEWIN</span>
           <span className="text-muted-foreground truncate text-xs">ระบบจัดการภายใน</span>
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="[scrollbar-width:thin]">
         {state.status === 'loading' ? (
           /*
            * Skeletons rather than an empty sidebar. The permission list arrives one round
            * trip after the first paint, so an empty menu here would be indistinguishable
            * from "you may not do anything" for the second it takes.
            */
-          <SidebarGroup>
+          <SidebarGroup className="py-1">
             <SidebarGroupContent>
               <SidebarMenu>
                 {[0, 1, 2].map((row) => (
@@ -70,14 +97,15 @@ export function AppSidebar() {
           </SidebarGroup>
         ) : (
           sections.map((section) => (
-            <SidebarGroup key={section.labelTh}>
-              <SidebarGroupLabel>{section.labelTh}</SidebarGroupLabel>
+            <SidebarGroup key={section.labelTh} className="py-1">
+              <SidebarGroupLabel className="h-6">{section.labelTh}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {section.items.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
                         asChild
+                        className="h-7"
                         isActive={isCurrent(item, pathname)}
                         tooltip={item.labelTh}
                       >

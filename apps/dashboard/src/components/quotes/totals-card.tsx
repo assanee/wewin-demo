@@ -95,7 +95,7 @@ export function TotalsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="type-section">ยอดรวม</CardTitle>
+        <CardTitle>ยอดรวม</CardTitle>
         <CardDescription>
           ยอดรวมสุทธิรวม VAT เสมอ — เป็นยอดเดียวที่งวดชำระ มัดจำ การริบ และการคืนเงินอ้างถึง
         </CardDescription>

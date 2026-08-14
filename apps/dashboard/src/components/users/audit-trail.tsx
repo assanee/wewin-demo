@@ -92,7 +92,7 @@ export function AuditTrail() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle className="flex items-center gap-2">
           <History className="size-4" />
           บันทึกการจัดการ
         </CardTitle>

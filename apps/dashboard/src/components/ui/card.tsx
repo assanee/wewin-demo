@@ -33,14 +33,34 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+/**
+ * ⚠️ **`type-section`, and this line is the one the whole hierarchy pass turns on.**
+ *
+ * This was shadcn's generated `text-base ... font-medium`, i.e. 16px — while `Card` above sets
+ * `text-sm` (14px) on everything inside it. A card heading was therefore **two pixels larger
+ * than its own body copy**, in 39 of the app's 41 `<CardTitle>`s. That is not a weak hierarchy,
+ * it is the absence of one, and it is the whole of what the owner was reading as ไม่มีจุดเด่น.
+ *
+ * `type-section` is 18px/600 — see the scale block in `globals.css` and the rule in the app's
+ * README. Phase 1 applied it at four screens' call sites and deliberately left this default
+ * alone, because changing it restyles every screen in the app and doing that to eleven
+ * unreviewed ones is a side effect rather than a decision. Phase 2 *is* that review, so the
+ * reason has expired and the default moves.
+ *
+ * ⚠️ **`group-data-[size=sm]/card:text-sm` is gone with it, and that is not an oversight.** A
+ * `size="sm"` card dropped its title to 14px — the exact size of the body underneath it, so the
+ * heading and its content became indistinguishable. A denser card is a reason for less padding,
+ * never for a heading that has stopped being one. `--card-spacing` already carries the density;
+ * the type does not need to help.
+ *
+ * If you are adding a card and want a *smaller* heading than this, you almost certainly want no
+ * `CardTitle` at all — see the three questions in `apps/dashboard/README.md`.
+ */
 function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn(
-        "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
-        className
-      )}
+      className={cn("font-heading type-section", className)}
       {...props}
     />
   )

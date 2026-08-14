@@ -174,7 +174,7 @@ export function AuthorityPanel({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="type-section">อำนาจอนุมัติ</CardTitle>
+          <CardTitle>อำนาจอนุมัติ</CardTitle>
           <CardDescription>
             อ่านสถานะอำนาจอนุมัติไม่ได้ — {failureMessage(state.error)}
           </CardDescription>
@@ -193,7 +193,7 @@ export function AuthorityPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="type-section flex flex-wrap items-center gap-2">
+        <CardTitle className="flex flex-wrap items-center gap-2">
           อำนาจอนุมัติ
           {assessment.allowed ? (
             <Badge variant="secondary">

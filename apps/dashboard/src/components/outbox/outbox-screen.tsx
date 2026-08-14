@@ -106,7 +106,7 @@ export function OutboxScreen() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">ส่งไม่สำเร็จ — ส่งซ้ำได้</CardTitle>
+          <CardTitle>ส่งไม่สำเร็จ — ส่งซ้ำได้</CardTitle>
           <CardDescription>
             ระบบพยายามส่งจนครบแล้วและไม่สำเร็จ ลูกค้ายังไม่ได้รับข้อความเหล่านี้
           </CardDescription>
@@ -196,7 +196,7 @@ export function OutboxScreen() {
       {attempts !== null && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ประวัติการส่ง</CardTitle>
+            <CardTitle>ประวัติการส่ง</CardTitle>
             <CardDescription className="font-mono text-xs">{attempts.id}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -238,7 +238,7 @@ export function OutboxScreen() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">ไม่มีที่อยู่ให้ส่ง — ส่งซ้ำไม่ได้</CardTitle>
+          <CardTitle>ไม่มีที่อยู่ให้ส่ง — ส่งซ้ำไม่ได้</CardTitle>
           <CardDescription>
             {/*
              * No button, and the sentence says why. These were never addressable, so a retry
