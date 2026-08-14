@@ -108,7 +108,7 @@ export const en: PartialUiCatalogue = {
   'home.pricing.formula.title': 'The formula',
   'home.pricing.formula.body': 'Price = price per m² × billable area + options',
   'home.pricing.formula.note':
-    'Options are the profile colour, the glass colour and thickness, and any hardware you add. Every one of them is listed separately on the pricing page.',
+    'Options are the profile colour, what fills the panel — glass, louvre blades or mesh — and any hardware you add. Every one of them is listed separately on the pricing page.',
   'home.pricing.floor.title': 'Minimum billable area',
   'home.pricing.floor.body': 'A panel smaller than the minimum is charged at the minimum area.',
   'home.pricing.floor.range': (p, f) =>
@@ -261,7 +261,7 @@ export const en: PartialUiCatalogue = {
     'Most made-to-order work asks for your number before it gives you a figure, which means anyone who just wants a rough budget has to accept the call that follows. We removed that step.',
   'about.stance.itemised.title': 'A price should show where it came from',
   'about.stance.itemised.body':
-    'The pricing page lists every line that makes up the total — area, colour, glass and hardware. When the figure changes, you can see what changed it.',
+    'The pricing page lists every line that makes up the total — area, colour, what fills the panel, and hardware. When the figure changes, you can see what changed it.',
   'about.stance.limits.title': 'Limits stated up front, not afterwards',
   'about.stance.limits.body':
     'The minimum billable area, the sizes we cannot make, and what the price excludes are all on the site before you enter a size, rather than appearing during a conversation.',
@@ -325,7 +325,7 @@ export const en: PartialUiCatalogue = {
   'review.form.heading': 'Write a review',
   'review.form.for': (p) => `Reviewing ${p.name}`,
   'review.form.intro':
-    'Aluminium is judged after a rainy season, not three days after installation — write whenever you are ready. This never closes.',
+    'Made-to-order work is judged after a rainy season, not three days after installation — write whenever you are ready. This never closes.',
   'review.form.rating.legend': 'How many stars',
   'review.form.rating.option': (p, f) =>
     `${f.integer(p.stars)} ${count(p.stars, 'star', 'stars')}`,
@@ -479,9 +479,9 @@ export const en: PartialUiCatalogue = {
   'orderActions.cancel.title': 'Cancel this order',
   'orderActions.cancel.body': 'Cancelling cannot be undone. Ordering again means starting a new quotation.',
   'orderActions.cancel.start': 'Cancel this order',
-  'orderActions.cancel.preFreezeNote': 'This order has not entered production. No aluminium has been cut.',
+  'orderActions.cancel.preFreezeNote': 'This order has not entered production. Nothing has been made to your design yet.',
   'orderActions.cancel.postFreezeNote':
-    '⚠️ This order is already in production — aluminium has been cut to your design. Cancelling now means money is kept, under the policy agreed when the contract was signed.',
+    '⚠️ This order is already in production — the factory has begun making it to your design. Cancelling now means money is kept, under the policy agreed when the contract was signed.',
   'orderActions.cancel.pricing': 'Working out the amount…',
   'orderActions.cancel.held': ({ heldMinor }, f) => `We are holding ${f.bahtExact(heldMinor)}`,
   'orderActions.cancel.forfeit': ({ forfeitMinor }, f) => `${f.bahtExact(forfeitMinor)} would be kept`,

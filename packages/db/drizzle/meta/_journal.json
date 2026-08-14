@@ -309,6 +309,13 @@
       "when": 1786400000014,
       "tag": "0043_transition_wording_material_neutral",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786400000015,
+      "tag": "0044_transition_wording_no_cutting",
+      "breakpoints": true
     }
   ]
 }

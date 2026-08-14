@@ -3,7 +3,7 @@ import { UI_CATALOGUES } from './catalogues';
 import { th } from './catalogues/th';
 import { formattersFor } from './format';
 import { parseMeasure } from '@wewin/core/units';
-import type { UiKey } from './keys';
+import type { PlainKey, UiKey } from './keys';
 import { LOCALES, LOCALE_ENDONYMS, LOCALE_TAGS, SOURCE_LOCALE, type Locale } from './locales';
 import { coverageOf, translatorFor, UI_KEYS } from './translate';
 import { decodeNumber, decodeNumerals } from './testing/decode';
@@ -612,4 +612,117 @@ describe('typing', () => {
   test('the key list keeps its type', () => {
     expect(KEYS_ARE_TYPED.length).toBe(UI_KEYS.length);
   });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ A MATERIAL BELONGS TO A PRODUCT, NEVER TO A STATUS OR A SHARED LABEL.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner's rule, in their own words: *"ที่ฉันพูดก่อนหน้าคือมีคำว่า อะลูมิเนียม อยู่ในสถานะ
+ * หรือ หัวตาราง ซึ่งไม่ควรเป็นแบบนั้นเพราะวัสดุของสินค้าไม่เหมือนกัน"* — a material may sit in a
+ * product's own attributes, and must not sit in a status or a heading, because those are shared
+ * by every product.
+ *
+ * ⚠️ **This pins the rule, not the sentences.** An earlier round rewrote five keys across all
+ * eight catalogues and every suite stayed green, because nothing asserted anything about their
+ * text — the suite proved only that the structure held. Pinning the strings instead would be
+ * worse than nothing: copy is meant to be edited, and a test that fails on every edit is a test
+ * people delete. What must not come back is a *material noun on a shared surface*.
+ *
+ * ⚠️ The catalogue keys listed here are the shared ones by construction: the cancel panel is
+ * gated on order state and never on product (`OrderActions.tsx:85`), the review intro renders
+ * directly beneath whichever product was invited (`ReviewFormIsland.tsx:152`), and the pricing
+ * notes describe how every order is priced.
+ *
+ * ⚠️ Deliberately NOT listed, and they must stay that way: `spec.material.value`, `home.hero.*`
+ * and `about.intro`. Those describe a product's own attribute or the company, where naming
+ * aluminium is correct — the company does make aluminium joinery, and every profile in the
+ * catalogue is aluminium. Over-correcting them would be the mirror defect.
+ */
+const SILENT_KEYS: readonly PlainKey[] = [
+  'about.stance.itemised.body',
+  'review.form.intro',
+  'orderActions.cancel.preFreezeNote',
+  'orderActions.cancel.postFreezeNote',
+];
+
+/**
+ * ⚠️ The exception, and it is what makes the rule precise.
+ *
+ * `home.pricing.formula.note` exists to make "options" tangible, and the thing that fills a
+ * panel is one of exactly three: glass, louvre blades, or mesh (`KIT_INFILL`,
+ * packages/core/src/data/products.ts:224). Naming all three is accurate for all 81 products and
+ * is the fix. Naming only glass — which is what this key used to do — describes 53 of them and
+ * silently omits the 4 insect screens and the 24 louvre products.
+ *
+ * So the invariant is not "no material" but "not one material as though it were universal": if
+ * glass is named here, mesh must be too. That is exactly the state a revert would break.
+ */
+const ENUMERATING_KEY: PlainKey = 'home.pricing.formula.note';
+
+/*
+ * One entry per language, because a Thai search reaches none of the other seven — which is how
+ * "cut aluminium" survived in all of them after the Thai was fixed. Materials only: the verbs
+ * (ตัด / cut / schneiden) are excluded on purpose, since naming a process is not the defect.
+ */
+const MATERIAL_WORDS: Readonly<Record<Locale, readonly string[]>> = {
+  th: ['อะลูมิเนียม', 'อลูมิเนียม', 'กระจก'],
+  en: ['aluminium', 'aluminum', 'glass'],
+  de: ['aluminium', 'glas'],
+  vi: ['nhôm', 'kính'],
+  zh: ['铝', '玻璃'],
+  hi: ['एल्युमिनियम', 'एल्यूमिनियम', 'काँच', 'कांच'],
+  my: ['အလူမီနီယမ်', 'မှန်'],
+  la: ['ອາລູມິນຽມ', 'ແກ້ວ'],
+};
+
+/** The infill that no glass product has, in each language. */
+const MESH_WORD: Readonly<Record<Locale, string>> = {
+  th: 'มุ้ง',
+  en: 'mesh',
+  de: 'Gewebe',
+  vi: 'lưới',
+  zh: '纱网',
+  hi: 'जाली',
+  my: 'ဇကာ',
+  la: 'ມຸ້ງ',
+};
+
+describe('⭐ no shared surface names a material', () => {
+  for (const locale of LOCALES) {
+    const { t } = translatorFor(locale);
+
+    for (const key of SILENT_KEYS) {
+      test(`${locale} · ${key}`, () => {
+        const sentence = t(key).toLowerCase();
+
+        for (const word of MATERIAL_WORDS[locale]) {
+          expect(
+            sentence.includes(word.toLowerCase()),
+            `${key} in ${locale} names "${word}". This surface is shown for every product, and ` +
+              'the catalogue spans ten categories — louvres, glass units and insect screens ' +
+              'among them. Name what the sentence is actually about (the production ' +
+              'commitment, made-to-order work) rather than one material. See ' +
+              'packages/db/drizzle/0043 for the same fix on the transition descriptions.',
+          ).toBe(false);
+        }
+      });
+    }
+
+    test(`${locale} · ${ENUMERATING_KEY} lists every infill, not just glass`, () => {
+      const sentence = t(ENUMERATING_KEY).toLowerCase();
+      const glass = MATERIAL_WORDS[locale].find((word) => sentence.includes(word.toLowerCase()));
+
+      if (glass === undefined) return; // named no material at all, which is also fine
+
+      expect(
+        sentence.includes(MESH_WORD[locale].toLowerCase()),
+        `${ENUMERATING_KEY} in ${locale} names "${glass}" but not ` +
+          `"${MESH_WORD[locale]}". A panel is filled with glass, louvre blades OR mesh; ` +
+          'naming one of the three here tells the 4 insect-screen and 24 louvre products ' +
+          'that their price is made of something they do not have.',
+      ).toBe(true);
+    });
+  }
 });
