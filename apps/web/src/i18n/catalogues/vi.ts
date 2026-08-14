@@ -565,6 +565,7 @@ export const vi: PartialUiCatalogue = {
   'payment.dueNow': 'Cần thanh toán bây giờ',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'Đơn hàng này đã thanh toán đủ',
+  'payment.writtenOff': 'Số dư còn lại của đơn hàng này đã được phê duyệt xoá nợ — không cần thanh toán thêm',
   'payment.closed':
     'Đơn hàng này không còn nhận thanh toán nữa. Nếu bạn có thắc mắc về số tiền, vui lòng liên hệ bộ phận kinh doanh.',
   'payment.account.legend': 'Chuyển vào một trong các tài khoản sau',

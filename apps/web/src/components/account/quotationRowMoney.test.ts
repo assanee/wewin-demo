@@ -27,6 +27,8 @@ const row = (figures: Partial<RowFigures>): RowFigures => ({
   totalMinor: TOTAL,
   outstandingMinor: TOTAL,
   nextDueMinor: DEPOSIT,
+  /* Nothing forgiven unless a case says otherwise — the state of all but a handful of orders. */
+  writtenOffMinor: 0n,
   ...figures,
 });
 
@@ -147,6 +149,7 @@ describe('the figures the wire can withhold', () => {
       totalMinor: null,
       outstandingMinor: null,
       nextDueMinor: null,
+      writtenOffMinor: null,
     });
 
     expect(money.figures).toStrictEqual([]);
@@ -164,6 +167,7 @@ describe('the figures the wire can withhold', () => {
       totalMinor: TOTAL,
       outstandingMinor: null,
       nextDueMinor: null,
+      writtenOffMinor: null,
     });
 
     expect(money.figures).toStrictEqual([
@@ -182,5 +186,49 @@ describe('the figures the wire can withhold', () => {
       { labelKey: 'payment.outstanding', amountMinor: BALANCE, emphasis: 'lead' },
     ]);
     expect(money.owes).toBe(true);
+  });
+});
+
+/**
+ * ⭐ ⓸ A row whose remaining balance was **written off** — and it must not say "paid in full".
+ *
+ * The same falsehood `paymentPanel.ts` was fixed for, one click earlier: this list is the first
+ * screen a customer sees, and `outstandingMinor <= 0n` reached `payment.settled` on an order the
+ * company had forgiven rather than been paid for.
+ */
+describe('⭐ ⓸ a row whose balance was written off', () => {
+  it('says the balance was written off, not that it was paid', () => {
+    const money = describeRowMoney(
+      row({ outstandingMinor: 0n, nextDueMinor: 0n, writtenOffMinor: TOTAL }),
+    );
+
+    expect(money.noteKey).toBe('payment.writtenOff');
+    expect(money.noteKey).not.toBe('payment.settled');
+    /* Quiet, and unlabelled: the order's own total, exactly as the settled row prints it. */
+    expect(money.figures).toStrictEqual([
+      { labelKey: null, amountMinor: TOTAL, emphasis: 'quiet' },
+    ]);
+    expect(money.owes).toBe(false);
+  });
+
+  it('⚠️ keeps the debt and the payment action when only part of it was written off', () => {
+    /*
+     * The settlement case, and the regression a one-term branch would ship: ฿4,320.00 forgiven,
+     * ฿10,080.00 still to pay. This customer needs the figures and the "ชำระเงิน" link.
+     */
+    const money = describeRowMoney(
+      row({ outstandingMinor: BALANCE, nextDueMinor: BALANCE, writtenOffMinor: DEPOSIT }),
+    );
+
+    expect(money.noteKey).toBeNull();
+    expect(money.owes).toBe(true);
+  });
+
+  it('⚠️ an ordinary paid-off row still says "paid in full"', () => {
+    const money = describeRowMoney(
+      row({ outstandingMinor: 0n, nextDueMinor: 0n, writtenOffMinor: 0n }),
+    );
+
+    expect(money.noteKey).toBe('payment.settled');
   });
 });

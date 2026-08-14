@@ -568,6 +568,7 @@ export const en: PartialUiCatalogue = {
   'payment.dueNow': 'To pay now',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'This order is paid in full',
+  'payment.writtenOff': 'The remaining balance on this order has been written off — nothing further is due',
   /*
    * ⚠️ Not "paid in full" — a cancelled order reaches this line too, and on one the company
    * may owe the customer their deposit back. It states only what the server answered (this

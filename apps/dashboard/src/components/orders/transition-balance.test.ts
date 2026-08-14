@@ -28,7 +28,7 @@ import { BALANCE_ANNOUNCED_ON, balanceNoticeFor } from './transition-balance';
  * sentences on this screen identical.
  */
 
-const owing = { outstandingThbMinor: 1_035_418n, nextDueThbMinor: 1_035_418n };
+const owing = { outstandingThbMinor: 1_035_418n, nextDueThbMinor: 1_035_418n, writtenOffThbMinor: 0n };
 
 describe('which transitions say anything at all', () => {
   it('⭐ announces the balance on the two closing moves, and on nothing else', () => {
@@ -107,7 +107,7 @@ describe('⭐ what the two closing moves say when money is outstanding', () => {
      * module that reached for the next-due would pass every assertion above, where the two are
      * equal, and understate the debt on exactly the orders that have one.
      */
-    const thirtySeventy = { outstandingThbMinor: 1_440_000n, nextDueThbMinor: 432_000n };
+    const thirtySeventy = { outstandingThbMinor: 1_440_000n, nextDueThbMinor: 432_000n, writtenOffThbMinor: 0n };
 
     expect(balanceNoticeFor('delivered', thirtySeventy)?.headlineTh).toBe(
       'ออเดอร์นี้ยังค้างชำระ ฿14,400',
@@ -122,14 +122,14 @@ describe('the states that must stay silent', () => {
      * learn to dismiss without reading — and then dismiss the one that matters the same way.
      */
     expect(
-      balanceNoticeFor('delivered', { outstandingThbMinor: 0n, nextDueThbMinor: 0n }),
+      balanceNoticeFor('delivered', { outstandingThbMinor: 0n, nextDueThbMinor: 0n, writtenOffThbMinor: 0n }),
     ).toBeNull();
   });
 
   it('says nothing about an overpaid job either', () => {
     /* `readOutstanding` treats a credit as settled; a "ค้างชำระ -฿500" sentence is not one. */
     expect(
-      balanceNoticeFor('delivered', { outstandingThbMinor: -50_000n, nextDueThbMinor: 0n }),
+      balanceNoticeFor('delivered', { outstandingThbMinor: -50_000n, nextDueThbMinor: 0n, writtenOffThbMinor: 0n }),
     ).toBeNull();
   });
 
@@ -140,7 +140,7 @@ describe('the states that must stay silent', () => {
      * `grandTotalThbMinor` would be this file computing money.
      */
     expect(
-      balanceNoticeFor('delivered', { outstandingThbMinor: null, nextDueThbMinor: null }),
+      balanceNoticeFor('delivered', { outstandingThbMinor: null, nextDueThbMinor: null, writtenOffThbMinor: 0n }),
     ).toBeNull();
   });
 
@@ -152,7 +152,7 @@ describe('the states that must stay silent', () => {
      * because a second column went missing.
      */
     expect(
-      balanceNoticeFor('delivered', { outstandingThbMinor: 1_035_418n, nextDueThbMinor: null })
+      balanceNoticeFor('delivered', { outstandingThbMinor: 1_035_418n, nextDueThbMinor: null, writtenOffThbMinor: 0n })
         ?.headlineTh,
     ).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354');
   });

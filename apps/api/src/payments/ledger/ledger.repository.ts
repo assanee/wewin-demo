@@ -87,6 +87,25 @@ export interface OrderMoney {
    * made it not.
    */
   readonly nextDueThbMinor: bigint;
+  /**
+   * ⭐ How much of the balance the company has **forgiven** — `order_written_off_thb_minor()`
+   * (0048), the sum of approved ตัดยอดค้างทิ้ง on this order.
+   *
+   * Read here beside the others rather than derived, and named apart from every one of them for
+   * this class's own stated reason: *"four designs used three of them interchangeably"*.
+   *
+   *   `settledThbMinor`    money that ARRIVED. 0048 does not touch it and it must never carry a
+   *                        forgiveness — a "received this month" card reading this would report
+   *                        revenue the company chose not to collect.
+   *   `cashThbMinor`       ledger postings. A write-off posts none: no money changed hands.
+   *   `outstandingThbMinor` already **net of this**. `outstanding + writtenOff` is
+   *                        `grandTotal − settled`; subtracting it again double-counts.
+   *
+   * What it is for is the one question the outstanding figure alone cannot answer: ฿0.00 owed
+   * because the customer paid, or ฿0.00 owed because the company gave up. The payment screen
+   * says a different sentence for each — see `PaymentInstructionsWire`.
+   */
+  readonly writtenOffThbMinor: bigint;
   readonly refundPayableThbMinor: bigint;
   readonly remittanceInTransitThbMinor: bigint;
   /** `terminal_holding_money` · `settled` · `awaiting_review` · `awaiting_customer_transfer` · `closed`. */
@@ -171,6 +190,7 @@ export class LedgerRepository {
              order_settled_thb_minor(${orderId}::uuid)::text                       as settled,
              coalesce(order_outstanding_thb_minor(${orderId}::uuid), 0)::text      as outstanding,
              order_next_due_thb_minor(${orderId}::uuid)::text                      as next_due,
+             order_written_off_thb_minor(${orderId}::uuid)::text                    as written_off,
              order_account_thb_minor(${orderId}::uuid, 'refund_payable')::text     as refund_payable,
              order_account_thb_minor(${orderId}::uuid, 'remittance_in_transit')::text
                                                                                    as in_transit,
@@ -185,6 +205,7 @@ export class LedgerRepository {
       settledThbMinor: bigintOf(row['settled']),
       outstandingThbMinor: bigintOf(row['outstanding']),
       nextDueThbMinor: bigintOf(row['next_due']),
+      writtenOffThbMinor: bigintOf(row['written_off']),
       /* Credited, therefore negative in the fold. Negated so a payable reads as a positive debt. */
       refundPayableThbMinor: -bigintOf(row['refund_payable']),
       remittanceInTransitThbMinor: bigintOf(row['in_transit']),

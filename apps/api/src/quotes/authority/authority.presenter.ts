@@ -122,6 +122,15 @@ export function approvalWire(row: ApprovalRow): ApprovalWire {
     documentRevision: row.documentRevision,
     quoteRevision: row.quoteRevision,
     dimension: row.dimension,
+    /*
+     * ⭐ On every response that carries an approval, and not only on the write-off screens.
+     *
+     * The inbox lists both mechanisms in one table — that is the point of one table — and
+     * `concessionThbMinor` means two different things across them: money the customer will not be
+     * charged, and money the company will not be paid. A row that did not say which is a figure an
+     * approver reads under the wrong heading.
+     */
+    kind: row.kind,
     status: row.status,
     concessionThbMinor: row.concessionThbMinor.toString(),
     reasonTh: row.reasonTh,

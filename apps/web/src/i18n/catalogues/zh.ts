@@ -520,6 +520,7 @@ export const zh: PartialUiCatalogue = {
   'payment.dueNow': '现在应付',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': '此订单已付清',
+  'payment.writtenOff': '此订单的剩余款项已获批准注销 — 无需再付款',
   'payment.closed': '此订单已停止接受付款通知。如对金额有疑问，请联系销售团队。',
   'payment.account.legend': '转账至以下任一账户',
   'payment.account.copy': (p) => `复制账号 ${p.accountDigits}`,

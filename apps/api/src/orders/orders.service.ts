@@ -372,6 +372,16 @@ export class OrdersService {
       outstandingThbMinor: encodeThb(money.outstandingThbMinor),
       nextDueThbMinor: encodeThb(money.nextDueThbMinor),
       /*
+       * ⭐ WHY THE OUTSTANDING IS ZERO, WHEN IT IS ZERO — the field that stops this screen saying
+       * "ออเดอร์นี้ชำระครบแล้ว" to somebody who did not pay.
+       *
+       * Since 0048 an approved ตัดยอดค้างทิ้ง makes `outstandingThbMinor` fall, and
+       * `describePaymentPanel` decided `payment.settled` from `outstanding <= 0` alone. Without
+       * this figure the screen has one number for two facts and no way to tell them apart. See
+       * `PaymentInstructionsWire.writtenOffThbMinor`, where the argument is written out.
+       */
+      writtenOffThbMinor: encodeThb(money.writtenOffThbMinor),
+      /*
        * ⭐ WHETHER THIS ORDER IS STILL A LIVE COMMITMENT — asked here because the screen cannot.
        *
        * This route does not go through `encodeOrderSummary`, so the live-order predicate that

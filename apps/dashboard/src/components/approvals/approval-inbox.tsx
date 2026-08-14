@@ -100,6 +100,38 @@ const DIMENSION_TH = {
   cashflow: 'เงินเข้าก่อนผลิต',
 } as const;
 
+/**
+ * ⭐ WHAT THE `มิติ` CELL SAYS — and why `DIMENSION_TH` alone is no longer enough.
+ *
+ * `cashflow` covers **two mechanisms** since 0048 and the sentence "เงินเข้าก่อนผลิต" is only true of
+ * one of them:
+ *
+ *   `quote_concession` + `cashflow`  a deposit schedule that gates less before production than the
+ *                                    company's own floor. Money arriving *later*.
+ *   `write_off` + `cashflow`         ขออนุมัติตัดยอดค้างทิ้ง. Money that will **never** arrive, taken
+ *                                    off the customer's balance the moment this is approved.
+ *
+ * ⚠️ Labelling the second "เงินเข้าก่อนผลิต" would put an approver in front of a ฿20,000 debt
+ * forgiveness under a heading about a deposit timetable — and `ยอดที่ขอลด` over the figure, which
+ * says *discount*. So the kind wins where they disagree, and the two words are the owner's own from
+ * *"ขออนุมัติตัดยอดค้างทิ้ง"* rather than new vocabulary.
+ *
+ * ⚠️ It reads `kind` and never `dimension === 'cashflow'`: the two are not the same question, which
+ * is the whole reason `APPROVAL_KINDS_WIRE` exists.
+ */
+const subjectTh = (approval: Pick<ApprovalView, 'kind' | 'dimension'>): string =>
+  approval.kind === 'write_off' ? 'ตัดยอดค้างทิ้ง' : DIMENSION_TH[approval.dimension];
+
+/**
+ * What the **figure** on a row means, which is not the same across the two kinds.
+ *
+ * A quote concession is money the customer will not be charged — `ยอดที่ขอลด`, the phrase this
+ * screen has always used. A write-off is money the company will not be paid, and the balance it
+ * comes off is `ยอดคงค้าง`, so the ask is `ยอดที่ขอตัดทิ้ง`. Same two roots, one honest sentence each.
+ */
+const amountLabelTh = (approval: Pick<ApprovalView, 'kind'>): string =>
+  approval.kind === 'write_off' ? 'ยอดที่ขอตัดทิ้ง' : 'ยอดที่ขอลด';
+
 const at = (iso: string): string =>
   new Date(iso).toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok',
@@ -362,7 +394,8 @@ export function ApprovalInbox() {
                       </Link>
                     </TableCell>
                     <TableCell className="type-body px-2 py-1.5">
-                      {DIMENSION_TH[approval.dimension]}
+                      {/* ⭐ The kind, not the dimension, where the two disagree — see `subjectTh`. */}
+                      {subjectTh(approval)}
                     </TableCell>
                     <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
                       {baht(approval.concessionThbMinor)}
@@ -477,7 +510,7 @@ function DecidedTable({
                 </Link>
               </TableCell>
               <TableCell className="type-body px-2 py-1.5">
-                {DIMENSION_TH[approval.dimension]}
+                {subjectTh(approval)}
               </TableCell>
               <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
                 {baht(approval.concessionThbMinor)}
@@ -558,25 +591,42 @@ function DecisionDialog({
   }, [approvalId]);
 
   const needs = detail === null ? null : decisionNeeds(decision, detail.rights);
+  /*
+   * ⭐ A WRITE-OFF HAS NO LIVE CONCESSION, AND SHOWING ONE WOULD BE A LIE.
+   *
+   * `liveConcession.cashflow` measures the *quote's* `gate_below_floor` — a deposit schedule — and on
+   * a delivered order that is ฿0.00. Printing it under "ลดอยู่จริงตอนนี้" beside a ฿20,000 write-off
+   * would tell the approver the request had evaporated. `detail.writeOff` is this row's equivalent
+   * and it is the balance, which is what the decision actually turns on.
+   */
+  const isWriteOff = detail?.approval.kind === 'write_off';
   const live =
-    detail === null
+    detail === null || isWriteOff
       ? null
       : detail.approval.dimension === 'margin'
         ? detail.liveConcession.margin
         : detail.liveConcession.cashflow;
-  const staleQuote = detail !== null && detail.quoteRevisionNow !== detail.approval.quoteRevision;
+  /*
+   * ⚠️ Never for a write-off. Editing a quote line does not un-forgive a debt, and nothing in
+   * `decide` matches a write-off to a revision — so the "ใบเสนอราคาถูกแก้" alarm would be a warning
+   * about a consequence that does not exist. `writeOff.stillCovered` is this row's real warning.
+   */
+  const staleQuote =
+    detail !== null && !isWriteOff && detail.quoteRevisionNow !== detail.approval.quoteRevision;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {detail === null ? 'กำลังอ่านคำขอ' : `ขอลด ${baht(detail.approval.concessionThbMinor)}`}
+            {detail === null
+              ? 'กำลังอ่านคำขอ'
+              : `${amountLabelTh(detail.approval)} ${baht(detail.approval.concessionThbMinor)}`}
           </DialogTitle>
           <DialogDescription>
             {detail === null
               ? 'อ่านยอดที่ใบเสนอราคานี้ลดอยู่จริงในตอนนี้'
-              : `${DIMENSION_TH[detail.approval.dimension]} · ${
+              : `${subjectTh(detail.approval)} · ${
                   detail.approval.orderNo ?? detail.approval.orderId.slice(0, 8)
                 }`}
           </DialogDescription>
@@ -592,7 +642,7 @@ function DecisionDialog({
 
         {detail === null && problem === null && <Skeleton className="h-48 w-full" />}
 
-        {detail !== null && needs !== null && live !== null && (
+        {detail !== null && needs !== null && (live !== null || isWriteOff) && (
           <div className="flex flex-col gap-4">
             {/* What was conceded, by whom, why, and against which quote. */}
             <dl className="type-body grid grid-cols-2 gap-x-6 gap-y-3">
@@ -603,9 +653,24 @@ function DecisionDialog({
               <Fact label="เพดานอำนาจของคุณ">
                 <span className="tabular-nums">{ceilingTh(detail.rights.ceiling, baht)}</span>
               </Fact>
-              <Fact label="ลดอยู่จริงตอนนี้">
-                <span className="tabular-nums">{baht(live.concessionThbMinor)}</span>
-              </Fact>
+              {/*
+                * ⭐ Two different questions for two different mechanisms, in the same slot.
+                *
+                * A quote concession's approver needs to know what the document concedes **now**; a
+                * write-off's needs the order's ยอดคงค้าง, because that is the figure the decision is
+                * bounded by and the one that may have moved. Neither answers the other's question.
+                */}
+              {live !== null ? (
+                <Fact label="ลดอยู่จริงตอนนี้">
+                  <span className="tabular-nums">{baht(live.concessionThbMinor)}</span>
+                </Fact>
+              ) : (
+                <Fact label="ยอดคงค้างตอนนี้">
+                  <span className="tabular-nums">
+                    {detail.writeOff === null ? '—' : baht(detail.writeOff.outstandingThbMinor)}
+                  </span>
+                </Fact>
+              )}
               <div className="col-span-2">
                 <Fact label="เหตุผลที่ขอ">{detail.approval.reasonTh}</Fact>
               </div>
@@ -617,7 +682,7 @@ function DecisionDialog({
              * the salesperson chose, which is what makes "6.97% on one door" different from
              * "100% on a line nobody looked at".
              */}
-            {live.sources.length > 0 && (
+            {live !== null && live.sources.length > 0 && (
               /*
                * ⚠️ The `rounded-md border` that used to wrap this table is gone. It was a Card
                * lookalike in a *different* visual language — `Card` draws `rounded-xl ring-1
@@ -667,7 +732,29 @@ function DecisionDialog({
               </Alert>
             )}
 
-            {!staleQuote && detail.liveConcession.hasMovedSinceRequest && (
+            {/*
+             * ⭐ A WRITE-OFF'S OWN WARNING, and the one thing an approver must read before pressing
+             * อนุมัติ: the customer has transferred money since the request was raised, so the figure
+             * asked for is larger than what is left owing and `decide` will refuse the approval.
+             *
+             * ⚠️ It names the answer that *is* available. The API deliberately does not reduce the
+             * figure to what remains — `approvals.concession_thb_minor` is frozen while pending — so
+             * the correct next step is ไม่อนุมัติ with a note, and the alert says so rather than
+             * leaving the approver pressing a button that 409s.
+             */}
+            {detail.writeOff !== null && !detail.writeOff.stillCovered && (
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertTitle>ยอดคงค้างลดลงหลังยื่นคำขอ</AlertTitle>
+                <AlertDescription>
+                  ขอตัดทิ้ง {baht(detail.approval.concessionThbMinor)} แต่ตอนนี้ยอดคงค้างเหลือ{' '}
+                  {baht(detail.writeOff.outstandingThbMinor)} — อนุมัติตามจำนวนที่ขอไม่ได้ ต้องไม่อนุมัติคำขอนี้
+                  แล้วแจ้งให้ผู้ขอยื่นใหม่ตามยอดคงค้างปัจจุบัน
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {live !== null && !staleQuote && detail.liveConcession.hasMovedSinceRequest && (
               <Alert>
                 <AlertTriangle />
                 <AlertTitle>ยอดที่ลดเพิ่มขึ้นหลังยื่นคำขอ</AlertTitle>

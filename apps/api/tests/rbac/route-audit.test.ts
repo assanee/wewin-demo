@@ -529,6 +529,21 @@ describe('boot-time route audit', () => {
       'POST /orders/:orderId/quote/overrides/:overrideId/revocation [permissions]',
       'POST /orders/:orderId/quote/verification [permissions]',
       'POST /orders/:orderId/transitions/:toStatus [principal]',
+      /*
+       * ⭐ ขออนุมัติตัดยอดค้างทิ้ง — ask for a customer's outstanding balance to be forgiven.
+       *
+       * `[permissions]` and not `[principal]`, which is the whole reason it sits under `/orders`
+       * and is still not one of the routes B6 is about: `principal` here would let any signed-in
+       * customer ask the company to write off their own debt.
+       *
+       * ⚠️ Two codes to **ask** — `orders.write` + `payments.read` — and a *different* pair to
+       * answer: `POST /quotes/approvals/:approvalId/decision` demands `quotes.approve` and, for a
+       * write-off row, `payments.write_off` on top, checked inside the service because the guard
+       * runs before the row is read. If requesting needed the deciding code the separation would
+       * collapse to the four-eyes CHECK plus a ceiling, which is exactly the hole `quotes.approve`
+       * was split off to close.
+       */
+      'POST /orders/:orderId/write-offs [permissions]',
       'POST /payments/refunds [permissions]',
       'POST /payments/refunds/:refundId/decision [permissions]',
       'POST /payments/refunds/:refundId/disbursement [permissions]',

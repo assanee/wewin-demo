@@ -182,10 +182,8 @@ export class ApprovalsController {
     @CurrentScope() scope: Scope,
     @Param('approvalId') approvalId: string,
   ): Promise<ApprovalDetailWire> {
-    const { row, live, quoteRevisionNow, rights, ceilingThbMinor } = await this.authority.approval(
-      scope,
-      approvalIdOrNotFound(approvalId),
-    );
+    const { row, live, quoteRevisionNow, rights, ceilingThbMinor, outstandingThbMinor } =
+      await this.authority.approval(scope, approvalIdOrNotFound(approvalId));
 
     const liveForDimension =
       row.dimension === 'margin' ? live.margin : live.cashflow;
@@ -209,6 +207,21 @@ export class ApprovalsController {
         cashflow: bareMeasurementWire(live.cashflow),
         hasMovedSinceRequest: liveForDimension.concessionThbMinor > row.concessionThbMinor,
       },
+      /*
+       * ⭐ A write-off's own warning, and the reason it cannot reuse `hasMovedSinceRequest`.
+       *
+       * `outstandingThbMinor` is `undefined` unless the row is a write-off — `AuthorityService`
+       * reads the fold only for those — so this block is present exactly when it means something.
+       * A screen that had to infer that from `kind` would be one release away from reading the
+       * cashflow measurement (a *deposit schedule*) as the state of a debt.
+       */
+      writeOff:
+        outstandingThbMinor === undefined
+          ? null
+          : {
+              outstandingThbMinor: outstandingThbMinor.toString(),
+              stillCovered: row.concessionThbMinor <= outstandingThbMinor,
+            },
     };
   }
 
@@ -217,6 +230,22 @@ export class ApprovalsController {
    *
    * Splitting them into two would let a caller take neither, and the queue would have no way
    * to record that a request was *considered*. The same argument the refund module makes.
+   *
+   * ── ⭐ AND IT DECIDES WRITE-OFFS TOO, WITH ONE MORE PERMISSION CHECKED INSIDE ────
+   *
+   * ขออนุมัติตัดยอดค้างทิ้ง is asked for on `POST /orders/:orderId/write-offs` — a different
+   * resource, a different figure, a different permission — and answered **here**, because it is
+   * one inbox and one decision. A second decision route would be a second copy of the two-person
+   * rule, the ceiling comparison and the pinned `decided_ceiling_thb_minor`, which is plan 7.13's
+   * opening finding arriving again.
+   *
+   * ⚠️ `@RequirePermissions('quotes.approve')` and **not** `payments.write_off` beside it, even
+   * though a write-off needs both. The guard runs before the row is read, so it cannot know which
+   * kind this is, and listing the second code here would demand it of every quote-concession
+   * decision — locking out every approver the owner has already trusted. The conjunction is
+   * completed in `AuthorityService.decide`, which reads the row first; `approvalRights` mirrors it
+   * so the queue and this endpoint cannot disagree, and `rights.because` reports
+   * `not_a_write_off_approver` to the screen before a button is offered.
    */
   @Post(':approvalId/decision')
   @HttpCode(200)

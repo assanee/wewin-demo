@@ -347,6 +347,14 @@ describeWithPg('RED TEAM 5a round two', () => {
      * bearer credential for anybody's quotation. It moves nothing, so it is not what this
      * finding is about, and folding it in would make the assertion pass or fail on a route
      * whose policy is deliberately the opposite of the ones under discussion.
+     *
+     * ⚠️ And `write-offs` is excluded on exactly those terms. `POST /orders/:orderId/write-offs`
+     * asks for a customer's outstanding balance to be forgiven and states
+     * `orders.write` + `payments.read` — a `principal` there would let any signed-in customer
+     * ask the company to write off their own debt. It moves no status; it records a request that
+     * somebody else has to answer under `quotes.approve` + `payments.write_off`. Same shape as
+     * `customer-link`: a route whose policy is deliberately the *opposite* of the nine this
+     * finding is about, so including it would flip the assertion for the wrong reason.
      */
     const orderRoutes = registry
       .records()
@@ -354,7 +362,8 @@ describeWithPg('RED TEAM 5a round two', () => {
         (record: RouteRecord) =>
           /\s\/orders\b/.test(record.key) &&
           !record.key.includes('/quote/') &&
-          !record.key.includes('/customer-link'),
+          !record.key.includes('/customer-link') &&
+          !record.key.includes('/write-offs'),
       );
 
     expect(

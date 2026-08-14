@@ -63,6 +63,20 @@ export interface OrderSummary {
    * than null when an order is settled in full** — null is reserved for "no contract yet".
    */
   readonly nextDueThbMinor: bigint | null;
+  /**
+   * ⭐ How much of this balance the company has **forgiven** — `order_written_off_thb_minor()`
+   * (0048), the sum of approved ขออนุมัติตัดยอดค้างทิ้ง on this order.
+   *
+   * ⛔ `outstandingThbMinor` is already net of this; Postgres subtracts it. Nothing here does.
+   *
+   * It travels beside the outstanding because it is the only thing that tells the two ฿0.00s apart:
+   * the customer paid, or the company gave up. `order-outstanding.ts` reads it to keep
+   * `ชำระครบแล้ว` off a written-off row, and the money card names the figure.
+   *
+   * ⚠️ Null on exactly the same fact as the two fields above — no contract, or a cancelled order
+   * that states no money at all. ฿0.00 is the real answer *nothing was forgiven*.
+   */
+  readonly writtenOffThbMinor: bigint | null;
   readonly updatedAt: string;
 }
 
@@ -207,6 +221,7 @@ const decodeSummary = (raw: unknown): OrderSummary => {
      */
     outstandingThbMinor: asSatangOrNull(order['outstandingThbMinor'], 'order.outstandingThbMinor'),
     nextDueThbMinor: asSatangOrNull(order['nextDueThbMinor'], 'order.nextDueThbMinor'),
+    writtenOffThbMinor: asSatangOrNull(order['writtenOffThbMinor'], 'order.writtenOffThbMinor'),
     updatedAt: asText(order['updatedAt'], 'order.updatedAt'),
   };
 };
@@ -373,6 +388,36 @@ export const resolveChangeRequest = async (
       body: JSON.stringify({ resolution, ...(trimmed === '' ? {} : { noteTh: trimmed }) }),
     },
   );
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+};
+
+/**
+ * ⭐ ขออนุมัติตัดยอดค้างทิ้ง — ask for part or all of this order's balance to be forgiven.
+ *
+ * `POST /orders/:orderId/write-offs`, behind `orders.write` + `payments.read`. The route is under
+ * `/orders` and not under `/quotes/approvals` because a collection-time write-off is not a
+ * concession on a quotation — the quote was right and the customer agreed to it. See
+ * `apps/api/src/quotes/authority/write-offs.controller.ts`.
+ *
+ * ⚠️ **Nothing is forgiven by this call.** It records a request; the balance moves when somebody
+ * holding `quotes.approve` + `payments.write_off` approves it in the approval inbox. The dialog says
+ * so above its own fields, for the reason `record-payment-dialog.tsx` gives about its own button: a
+ * control beside a debt that does not change the debt is a control somebody presses twice.
+ *
+ * ⚠️ The response is an `approvals` row and is deliberately not decoded into a type here. The screen
+ * needs nothing from it but the fact that it was created — the request then appears through
+ * `GET /quotes/approvals?orderId=`, which is the one reader of that shape.
+ */
+export const requestWriteOff = async (
+  orderId: string,
+  body: { readonly amountThbMinor: string; readonly reasonTh: string },
+): Promise<void> => {
+  const response = await apiFetch(`/orders/${orderId}/write-offs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
   if (!response.ok) throw await apiErrorFromResponse(response);
 };

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   approvalRights,
   DECIDE_PERMISSION,
+  WRITE_OFF_PERMISSION,
   type ApprovalFacts,
 } from '../../../src/quotes/authority/approval-rights';
 import {
@@ -51,9 +52,25 @@ const requesterScope = (permissions: readonly PermissionCode[] = [DECIDE_PERMISS
 
 const pending: ApprovalFacts = {
   status: 'pending',
+  /*
+   * ⚠️ The default in this file is a quote concession, so every existing assertion below keeps
+   * describing the rule it was written for. The write-off arms — the second permission and the
+   * balance — get their own fixtures and their own block at the foot of the file, because they add
+   * two locks rather than changing any of these.
+   */
+  kind: 'quote_concession',
   requestedByUserId: requester,
   concessionThbMinor: 53_500n,
   ceilingThbMinor: 100_000n,
+  /* Not consulted for a quote concession — see `ApprovalFacts.outstandingThbMinor`. */
+  outstandingThbMinor: undefined,
+};
+
+/** The same request, asking to forgive a debt instead of to discount a quote. */
+const pendingWriteOff: ApprovalFacts = {
+  ...pending,
+  kind: 'write_off',
+  outstandingThbMinor: 53_500n,
 };
 
 describe('who may decide one approval request', () => {
@@ -156,9 +173,11 @@ describe('who may decide one approval request', () => {
      */
     const rights = approvalRights(requesterScope(['quotes.read']), {
       status: 'approved',
+      kind: 'quote_concession',
       requestedByUserId: requester,
       concessionThbMinor: 1_000_000n,
       ceilingThbMinor: undefined,
+      outstandingThbMinor: undefined,
     });
 
     expect(rights.because).toBe('not_an_approver');
@@ -167,9 +186,11 @@ describe('who may decide one approval request', () => {
   it('⭐ reports a decided request ahead of the two-person rule and the ceiling', () => {
     const rights = approvalRights(requesterScope(), {
       status: 'rejected',
+      kind: 'quote_concession',
       requestedByUserId: requester,
       concessionThbMinor: 1_000_000n,
       ceilingThbMinor: undefined,
+      outstandingThbMinor: undefined,
     });
 
     expect(rights.because).toBe('already_decided');
@@ -184,6 +205,136 @@ describe('who may decide one approval request', () => {
     const rights = approvalRights(requesterScope(), { ...pending, ceilingThbMinor: undefined });
 
     expect(rights.because).toBe('own_request');
+  });
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ WRITE-OFFS — two more locks, and neither is a ceiling
+   * ---------------------------------------------------------------- */
+
+  it('⭐ refuses BOTH answers on a write-off to somebody who holds only quotes.approve', () => {
+    /*
+     * ⚠️ `mayRefuse: false` is the assertion, and it is the one that looks wrong at a glance.
+     *
+     * Every other lock below the permission widens a refusal — saying no needs no authority. This
+     * one does not, because it is not a ceiling: it is whether this person has any standing in the
+     * decision at all. A quote approver who may not forgive debts must not be the person who
+     * *rejects* a write-off request either, or the request leaves the queue answered by somebody
+     * with no authority over it and the requester reads a refusal that means nothing.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION]), pendingWriteOff);
+
+    expect(rights).toStrictEqual({
+      mayApprove: false,
+      mayRefuse: false,
+      because: 'not_a_write_off_approver',
+    });
+  });
+
+  it('lets an approver holding both codes decide a write-off the balance still covers', () => {
+    const rights = approvalRights(
+      approverScope([DECIDE_PERMISSION, WRITE_OFF_PERMISSION]),
+      pendingWriteOff,
+    );
+
+    expect(rights).toStrictEqual({ mayApprove: true, mayRefuse: true, because: 'may_decide' });
+  });
+
+  it('⚠️ does not ask for the write-off code on an ordinary quote concession', () => {
+    /*
+     * The other direction of the same rule, and the regression that would lock the owner out of
+     * their own inbox: `payments.write_off` is granted to nobody at boot, so demanding it of every
+     * decision would refuse every quote approval on every database that exists today.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION]), pending);
+
+    expect(rights.mayApprove).toBe(true);
+  });
+
+  it('⭐ refuses the approval when the customer has paid since the request was raised', () => {
+    /*
+     * ฿535.00 asked for, ฿300.00 left owing — `approvals_write_off_within_balance` accepted the
+     * request when it was raised and the balance has fallen underneath it. Approving would forgive
+     * more than is owed and drive the outstanding negative, which every screen here reads as
+     * *settled*.
+     *
+     * ⚠️ `mayRefuse` stays TRUE. Rejecting is the correct next step — the requester reads the note
+     * and asks again for ฿300.00 — and `decide` does not silently reduce the figure instead. See
+     * its header for why.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION, WRITE_OFF_PERMISSION]), {
+      ...pendingWriteOff,
+      concessionThbMinor: 53_500n,
+      outstandingThbMinor: 30_000n,
+    });
+
+    expect(rights).toStrictEqual({
+      mayApprove: false,
+      mayRefuse: true,
+      because: 'above_balance',
+    });
+  });
+
+  it('treats a balance exactly equal to the figure asked for as covering it', () => {
+    /*
+     * The boundary, in the direction the database takes it: `approvals_write_off_within_balance`
+     * refuses only when the fold goes *below* zero, so writing off the whole remaining debt is
+     * legal and leaves ฿0.00. A `>=` here would refuse the commonest write-off there is — the
+     * customer who will not pay anything more at all.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION, WRITE_OFF_PERMISSION]), {
+      ...pendingWriteOff,
+      concessionThbMinor: 53_500n,
+      outstandingThbMinor: 53_500n,
+    });
+
+    expect(rights.mayApprove).toBe(true);
+  });
+
+  it('⚠️ refuses rather than allows when the balance was not read at all', () => {
+    /*
+     * `undefined` is a caller that forgot to fold the outstanding, and it must not be the way the
+     * one approval that subtracts from money gets granted. Fail-closed: unknown reads as ฿0.00,
+     * which no positive concession fits inside.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION, WRITE_OFF_PERMISSION]), {
+      ...pendingWriteOff,
+      outstandingThbMinor: undefined,
+    });
+
+    expect(rights.because).toBe('above_balance');
+  });
+
+  it('⭐ reports the missing write-off code ahead of the ceiling and the balance', () => {
+    /*
+     * All three hold: no write-off permission, no ceiling, and a balance far below the figure. The
+     * endpoint answers with the permission because `decide` checks it first — before the status,
+     * before the two-person rule, before the ceiling — so that is the one to print.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION]), {
+      ...pendingWriteOff,
+      ceilingThbMinor: undefined,
+      outstandingThbMinor: 0n,
+    });
+
+    expect(rights.because).toBe('not_a_write_off_approver');
+  });
+
+  it('⭐ reports the ceiling ahead of the balance', () => {
+    /*
+     * Both refuse the approval and both leave the refusal open, so the order is not about which is
+     * stricter — it is about which sentence is actionable. `above_ceiling` is a message about *this
+     * approver* ("somebody more senior has to take this"); `above_balance` is a message about the
+     * *request* ("this can no longer be granted by anybody"). `decide` reads the ceiling first, so
+     * this does too.
+     */
+    const rights = approvalRights(approverScope([DECIDE_PERMISSION, WRITE_OFF_PERMISSION]), {
+      ...pendingWriteOff,
+      concessionThbMinor: 53_500n,
+      ceilingThbMinor: 1_000n,
+      outstandingThbMinor: 0n,
+    });
+
+    expect(rights.because).toBe('above_ceiling');
   });
 
   /* ---------------------------------------------------------------- *

@@ -58,6 +58,23 @@ export const APPROVAL_STATUSES_WIRE = ['pending', 'approved', 'rejected'] as con
 export type ApprovalStatusWire = (typeof APPROVAL_STATUSES_WIRE)[number];
 
 /**
+ * ⭐ WHICH MECHANISM AN APPROVAL IS — closed here, so an unknown kind is a decode failure.
+ *
+ *   `quote_concession`  money the customer will not be **charged**, measured from the quote.
+ *   `write_off`         ขออนุมัติตัดยอดค้างทิ้ง: money the company will not be **paid**, and the only
+ *                       kind that `order_outstanding_thb_minor()` subtracts.
+ *
+ * ⚠️ **Not derivable from `dimension`.** A write-off is `cashflow` because it draws on the cashflow
+ * ceiling — and so is a quote's `gate_below_floor` concession, which is a *deposit schedule*. A
+ * screen that read `dimension === 'cashflow'` as "a write-off" would label an approved schedule as a
+ * forgiven debt, and one that read the reverse would print "ยอดที่ขอลด" over a debt nobody is
+ * discounting. The API sends the answer; this list is what stops an unrecognised one rendering as
+ * either.
+ */
+export const APPROVAL_KINDS_WIRE = ['quote_concession', 'write_off'] as const;
+export type ApprovalKindWire = (typeof APPROVAL_KINDS_WIRE)[number];
+
+/**
  * ⭐ Why the caller may or may not decide — the server's word, mirroring `ApprovalRightsWire`.
  *
  * The list is closed here so that an unknown reason is a **decode failure** rather than a blank
@@ -67,10 +84,21 @@ export type ApprovalStatusWire = (typeof APPROVAL_STATUSES_WIRE)[number];
 export const APPROVAL_RIGHT_REASONS_WIRE = [
   'may_decide',
   'not_an_approver',
+  /*
+   * ⭐ Holds `quotes.approve` and not `payments.write_off`. ⚠️ It blocks **both** answers, unlike
+   * every other reason below the permission: forgiving cash is not a ceiling, it is whether this
+   * person has any standing in the decision, so they may not reject the request either.
+   */
+  'not_a_write_off_approver',
   'already_decided',
   'own_request',
   'no_ceiling',
   'above_ceiling',
+  /*
+   * ⭐ A write-off the customer has part-paid since it was raised. Nobody may approve it and
+   * anybody may reject it — the API refuses the approval rather than silently reducing the figure.
+   */
+  'above_balance',
 ] as const;
 export type ApprovalRightReasonWire = (typeof APPROVAL_RIGHT_REASONS_WIRE)[number];
 
@@ -90,6 +118,8 @@ export interface ApprovalView {
   readonly quoteRevision: string;
   readonly documentRevision: number | null;
   readonly dimension: ApprovalDimensionWire;
+  /** ⭐ What this approval *does* — see `APPROVAL_KINDS_WIRE`. Never inferred from `dimension`. */
+  readonly kind: ApprovalKindWire;
   readonly status: ApprovalStatusWire;
   readonly concessionThbMinor: bigint;
   readonly reasonTh: string;
@@ -131,6 +161,21 @@ export interface ApprovalDetailView {
    * the button is pressed.
    */
   readonly quoteRevisionNow: string;
+  /**
+   * ⭐ PRESENT EXACTLY WHEN `approval.kind === 'write_off'`, and `null` otherwise.
+   *
+   * `liveConcession` is the wrong reading for a write-off in both dimensions — `margin` is a
+   * discount nobody asked about and `cashflow` measures the quote's deposit schedule — so the inbox
+   * reads this instead. `stillCovered: false` means the balance has fallen below the figure asked
+   * for and `decide` will refuse the approval; the screen has to say so before the button.
+   *
+   * ⚠️ Read from its own key rather than reconstructed from `kind`, so a bundle can never end up
+   * showing a deposit measurement as the state of a debt.
+   */
+  readonly writeOff: {
+    readonly outstandingThbMinor: bigint;
+    readonly stillCovered: boolean;
+  } | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -233,6 +278,7 @@ export function decodeApproval(input: unknown): ApprovalView {
     quoteRevision: str(row, 'quoteRevision', what),
     documentRevision: nullableInt(row, 'documentRevision', what),
     dimension: oneOf(APPROVAL_DIMENSIONS_WIRE, row, 'dimension', what),
+    kind: oneOf(APPROVAL_KINDS_WIRE, row, 'kind', what),
     status: oneOf(APPROVAL_STATUSES_WIRE, row, 'status', what),
     concessionThbMinor: minorOf(row, 'concessionThbMinor', what),
     reasonTh: str(row, 'reasonTh', what),
@@ -300,6 +346,25 @@ export function decodeApprovalDetail(input: unknown): ApprovalDetailView {
       hasMovedSinceRequest: bool(live, 'hasMovedSinceRequest', 'approval detail.liveConcession'),
     },
     quoteRevisionNow: str(row, 'quoteRevisionNow', 'approval detail'),
+    writeOff: decodeWriteOff(row['writeOff']),
+  };
+}
+
+/**
+ * ⭐ The write-off block, or `null`.
+ *
+ * `null` and an absent key are the same answer here and that is correct: the API sends this exactly
+ * when the row is a write-off, and every other row has no balance to report. What must **not** be
+ * lenient is the shape when it *is* present — a malformed `outstandingThbMinor` is a decode failure
+ * rather than a missing warning beside a live approve button.
+ */
+function decodeWriteOff(input: unknown): ApprovalDetailView['writeOff'] {
+  if (input === null || input === undefined) return null;
+  const row = object(input, 'approval detail.writeOff');
+
+  return {
+    outstandingThbMinor: minorOf(row, 'outstandingThbMinor', 'approval detail.writeOff'),
+    stillCovered: bool(row, 'stillCovered', 'approval detail.writeOff'),
   };
 }
 

@@ -376,6 +376,12 @@ function PaymentForOrder({
     orderIsLive: data.orderIsLive,
     outstandingMinor: data.outstandingThbMinor,
     nextDueMinor: data.nextDueThbMinor,
+    /*
+     * ⭐ ⓸ The figure that decides whether a zero balance was **paid** or **forgiven**. Without it
+     * this screen printed "ออเดอร์นี้ชำระครบแล้ว" at a customer whose remainder the company wrote
+     * off. See `paymentPanel.ts`, which owns the branch.
+     */
+    writtenOffMinor: data.writtenOffThbMinor,
     accountCount: data.accounts.length,
   });
   const parsedAmount = readSatang(amountText);
@@ -428,12 +434,14 @@ function PaymentForOrder({
 
       {/*
         One sentence in place of a demand — `payment.closed` when this order can no longer
-        receive a payment, `payment.settled` when it can and owes nothing, `payment.account.none`
-        when there is nowhere for the money to go (`0027_organisation.sql` seeds no bank
-        accounts, so a fresh database reaches that on every order). Which of the three, and
-        whether the form exists at all, is `paymentPanel.ts`'s decision and is tested there.
+        receive a payment, `payment.writtenOff` when what is left of the balance was **forgiven**
+        rather than paid (⓸, and the sentence deliberately does not say "paid in full"),
+        `payment.settled` when the customer really did pay it off, `payment.account.none` when
+        there is nowhere for the money to go (`0027_organisation.sql` seeds no bank accounts, so a
+        fresh database reaches that on every order). Which of the four, and whether the form exists
+        at all, is `paymentPanel.ts`'s decision and is tested there.
 
-        ⚠️ `SlipForm` and its submit button are not rendered *disabled* in any of the three:
+        ⚠️ `SlipForm` and its submit button are not rendered *disabled* in any of the four:
         there is nothing to send, or nowhere to send it, so the control that would send it is
         unreachable rather than merely refused on press.
       */}

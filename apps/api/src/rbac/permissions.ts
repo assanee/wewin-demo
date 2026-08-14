@@ -82,6 +82,47 @@ export const PERMISSIONS = {
    * for want of a permission and self-review is refused by the rule it bypasses — which is the
    * fail-closed direction in both cases.
    */
+  /*
+   * ⭐ ITS OWN CODE, BECAUSE FORGIVING CASH IS NOT APPROVING A DISCOUNT.
+   *
+   * The owner's fifth payment requirement is ขออนุมัติตัดยอดค้างทิ้ง — a customer will not pay, a
+   * settlement was agreed halfway, the remainder is not worth chasing, and somebody with
+   * authority writes the balance off. `POST /orders/:orderId/write-offs` asks; the existing
+   * `POST /quotes/approvals/:id/decision` answers, because it is one inbox and one decision.
+   *
+   * `quotes.approve` was the obvious place to leave it and is the wrong one. That code's own
+   * description is *"approve or reject a concession somebody else asked for"* — a concession
+   * measured from a quote, at quote time, before a customer has agreed to anything and before
+   * any money has been asked for. A write-off happens at **collection** time, on a contract the
+   * customer already signed, and it is the only approval in this system that money is *derived*
+   * from rather than compared against: `order_written_off_thb_minor()` folds it and
+   * `order_outstanding_thb_minor()` subtracts it, so approving one makes a live debt disappear
+   * from the order list, from the ค้างชำระ filter and from the overview's money card. Somebody
+   * the owner trusts to sign off 7% on a door is not thereby somebody the owner trusts to cancel
+   * ฿20,000 the company is owed, and bundling the two would be plan 7.14(ข)3 again — a
+   * permission that quietly carried an authority nobody agreed to, discovered afterwards by
+   * reading what its holder could actually reach.
+   *
+   * ⚠️ It **adds to** `quotes.approve` and does not replace it. The decision route asks for both,
+   * so a write-off needs *approver* and *may forgive cash*; `quotes.approve` alone still decides
+   * every quote concession exactly as it did, and this code alone decides nothing at all — its
+   * holder could not read the request they were being asked to judge (the same argument
+   * `GET /quotes/approvals/queue` makes for demanding two codes).
+   *
+   * ⚠️ Nor does it replace the **ceiling**. A write-off is measured against `authority_limits`'
+   * `cashflow` row exactly as any other cashflow concession is, and on a database with no live
+   * row there — which is how this ships — no write-off can be approved whoever holds this.
+   *
+   * ⚠️ GRANTED TO NO GROUP AT BOOT, exactly as `quotes.approve`, `users.erase` and the two slip
+   * codes above are, and for the identical reason. `permission-sync.service.ts` inserts the code
+   * so a grant has something to reference; **who may forgive a customer's debt is the owner's
+   * answer and inventing a grant would be inventing it.** Until they grant it by hand, a
+   * write-off can be asked for and read in the inbox and cannot be approved — which is the
+   * fail-closed direction, and the same shape as the empty ceiling table one layer down.
+   */
+  'payments.write_off':
+    "Approve writing off part or all of a balance a customer owes — the only approval that subtracts from an order's outstanding figure. Asked for on the order, decided in the approval inbox, and needs `quotes.approve` beside it.",
+
   'payments.record_without_slip':
     'Record a payment with no slip image, stating why there is none. The entry still goes to the review queue.',
   'payments.self_review_slip':

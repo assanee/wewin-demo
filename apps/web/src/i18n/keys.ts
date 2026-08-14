@@ -718,6 +718,35 @@ export interface UiParamsByKey {
   'payment.outstandingAmount': { owedMinor: bigint };
   'payment.settled': Plain;
   /**
+   * ⭐ ⓸ "The rest of this balance was written off" — the sentence a **forgiven** order gets, and
+   * the one thing `payment.settled` must never be allowed to say on its behalf.
+   *
+   * Rendered when the outstanding has reached zero **and** `writtenOffThbMinor > 0` — an approved
+   * ขออนุมัติตัดยอดค้างทิ้ง (`order_written_off_thb_minor()`, migration 0048). The customer did not
+   * pay in full; the company forgave the remainder, after a refusal to pay, or a settlement at
+   * half, or a decision that chasing it was not worth the cost.
+   *
+   * ⚠️ **It must never be worded as paid, settled, complete or cleared, in any locale.** That is
+   * `payment.settled`'s sentence and it would be a falsehood told to the one reader who knows
+   * better — the same class of wrong as `payment.closed`'s note two keys down, and worse in one
+   * respect: a customer who believes their account is square disputes the company's own ledger
+   * months later with the company's own screen as the evidence.
+   *
+   * ⚠️ **It states no reason.** `approvals.reason_th` is *"ลูกค้าไม่ยอมจ่าย"* or *"ตกลงจ่ายครึ่ง"* —
+   * a note one employee wrote about a customer, for other staff. The *fact* is the customer's
+   * business; the internal justification is not, and putting it on their screen is a disclosure
+   * nobody approved.
+   *
+   * ⚠️ It names no amount, like every other key here: `describePaymentPanel` returns no owed
+   * figures in this state at all, because a ยอดคงค้าง label is a demand whatever number is beside
+   * it and this order's is ฿0.00. The forgiven figure reaches the panel for the branch and is not
+   * welded into a translator's sentence.
+   *
+   * ⚠️ A **partial** write-off does not reach this key. The customer still owes the balance and
+   * still gets the figures and the form — see `describePaymentPanel`, which requires both terms.
+   */
+  'payment.writtenOff': Plain;
+  /**
    * ⭐ "This order can no longer be paid" — the one sentence a dead order gets.
    *
    * Rendered when `PaymentInstructionsWire.orderIsLive` is false, which the server answers with

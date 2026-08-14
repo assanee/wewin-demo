@@ -1222,6 +1222,38 @@ export type ApprovalDimension = (typeof APPROVAL_DIMENSIONS)[number];
 export const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
 
 /**
+ * ⭐ WHICH MECHANISM AN APPROVAL IS — beside `dimension`, which is the budget it draws on.
+ *
+ *   `quote_concession`  the original: a figure measured from `quote_lines` and
+ *                       `quote_overrides` at submit, compared against a ceiling, and
+ *                       subtracted from nothing. Every row that existed before 0048.
+ *   `write_off`         ขออนุมัติตัดยอดค้างทิ้ง — the company forgives part or all of a
+ *                       balance a customer owes. **This one is subtracted from money**:
+ *                       `order_written_off_thb_minor()` folds it and
+ *                       `order_outstanding_thb_minor()` takes it off the debt.
+ *
+ * ── ⚠️ WHY `dimension` COULD NOT CARRY THIS ON ITS OWN ───────────────────────────
+ *
+ * A write-off is a `cashflow` act — it forgives cash the company is owed, and
+ * `authority_limits` already holds a `cashflow` ceiling for exactly that kind of authority. But
+ * `cashflow` is **already spoken for** at quote time: `concession.ts`'s `gate_below_floor`
+ * measures a schedule that gates less before production than `organisation_profile.deposit_bp`
+ * requires, and `POST /quotes/approvals` accepts `dimension: 'cashflow'` today.
+ *
+ * So a fold defined as *"approved cashflow approvals"* would count an approved **deposit
+ * schedule** as forgiven debt and silently take it off a live balance. That is the same defect
+ * as folding forgiveness into `order_settled_thb_minor()` — one value meaning two things — one
+ * table along. `dimension` says *whose authority this spends*; `kind` says *what it does*.
+ *
+ * ⚠️ Frozen while pending by `approvals_guard_write()` (0048). A `kind` that could be edited
+ * under an approver mid-read turns an agreed discount into a forgiven debt at the same figure,
+ * with the same four-eyes row to show for it.
+ */
+export const APPROVAL_KINDS = ['quote_concession', 'write_off'] as const;
+
+export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
+
+/**
  * One decision about one **quote revision**, in one dimension.
  *
  * Assessed **at the document level at submit**, not per line: plan 7.13 found per-row
@@ -1277,13 +1309,25 @@ export const approvals = pgTable(
      */
     quoteRevision: char('quote_revision', { length: 16 }).notNull(),
     dimension: text('dimension', { enum: APPROVAL_DIMENSIONS }).notNull(),
+    /**
+     * ⭐ What this approval *does* — see `APPROVAL_KINDS`. Defaulted, so every row written
+     * before 0048 is what it always was: a concession measured from a quote.
+     */
+    kind: text('kind', { enum: APPROVAL_KINDS }).notNull().default('quote_concession'),
     status: text('status', { enum: APPROVAL_STATUSES }).notNull().default('pending'),
 
     /**
      * How big the concession is, in THB minor units, always positive.
      *
      * `margin`: how much less the customer pays than the computed price.
-     * `cashflow`: how much less arrives before production than the deposit floor requires.
+     * `cashflow` + `quote_concession`: how much less arrives before production than the
+     *   deposit floor requires.
+     * `cashflow` + `write_off`: how much of a balance the company is forgiving. ⚠️ This is the
+     *   one variant that money is **derived from** rather than merely compared against:
+     *   `order_written_off_thb_minor()` sums it over approved rows and
+     *   `order_outstanding_thb_minor()` subtracts it. `approvals_write_off_within_balance`
+     *   (0048) is what stops it exceeding the debt it forgives, at the ask and at the yes.
+     *
      * One column because the authority ceiling plan 13 asks the owner for is one number
      * per dimension per role, and a ceiling compared against two columns is two ceilings.
      */
@@ -1332,6 +1376,17 @@ export const approvals = pgTable(
       .where(sql`status = 'pending'`),
 
     check('approvals_dimension_known', sql`${table.dimension} in ${inList(APPROVAL_DIMENSIONS)}`),
+    check('approvals_kind_known', sql`${table.kind} in ${inList(APPROVAL_KINDS)}`),
+    /*
+     * 🔒 A write-off draws on the `cashflow` ceiling and on no other. Without this, a `margin`
+     * write-off would forgive a debt out of the discount budget — and
+     * `order_written_off_thb_minor()`, which reads both columns, would not see it at all: the
+     * money would leave the balance guard's arithmetic while still being forgiven.
+     */
+    check(
+      'approvals_write_off_is_cashflow',
+      sql`${table.kind} <> 'write_off' or ${table.dimension} = 'cashflow'`,
+    ),
     check(
       'approvals_quote_revision_is_hex',
       sql`${table.quoteRevision} ~ '^[0-9a-f]{16}$'`,
@@ -1367,5 +1422,14 @@ export const approvals = pgTable(
       .on(table.createdAt)
       .where(sql`status = 'pending'`),
     index('approvals_order_idx').on(table.orderId),
+    /*
+     * ⭐ *"How much did we write off this year?"* — the question that makes folding forgiveness
+     * into `order_settled_thb_minor()` unacceptable, and therefore the question this index has
+     * to be able to answer cheaply. Partial, because write-offs are a handful of rows in a
+     * table that grows with every quote.
+     */
+    index('approvals_write_off_idx')
+      .on(sql`${table.decidedAt} desc`)
+      .where(sql`kind = 'write_off' and status = 'approved'`),
   ],
 );

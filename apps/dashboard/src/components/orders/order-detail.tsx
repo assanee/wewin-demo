@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
 import { RecordPaymentButton } from '@/components/slips/record-payment-dialog';
+import { listApprovals } from '@/components/approvals/approvals-api';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -25,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { failureMessage } from '@/lib/api/errors';
+import { useSession } from '@/lib/auth/session';
 import {
   getOrder,
   listEvents,
@@ -38,6 +40,7 @@ import { orderFocus } from './order-focus';
 import { statusLabel, transitionForm } from './order-language';
 import { outstandingDisplay, readOutstanding, type OwedFigures } from './order-outstanding';
 import { OrderTimeline } from './order-spine';
+import { WriteOffButton } from './write-off-dialog';
 import { balanceNoticeFor } from './transition-balance';
 
 /**
@@ -129,6 +132,21 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
   const [state, setState] = useState<State>({ status: 'loading' });
   const [moving, setMoving] = useState<AvailableTransition | null>(null);
   const [resolving, setResolving] = useState(false);
+  /**
+   * ⭐ The order's pending `cashflow` approval, if it has one — read so the money card can say *"a
+   * request is already waiting"* instead of offering a button that answers 409.
+   *
+   * ⚠️ Either **kind** counts. `approvals_one_open_per_order_dimension` is
+   * `(order_id, dimension) WHERE status = 'pending'` and knows nothing about `kind`, so a pending
+   * quote-time cashflow concession blocks a write-off exactly as another write-off would. Filtering
+   * to `write_off` here would make this screen disagree with the database about what is in the way.
+   *
+   * ⚠️ `null` when the reader does not hold `quotes.read` and when the read fails. In both cases the
+   * button is offered and the server has the final word — a failed side read must not remove a
+   * control somebody is entitled to, and the ask is refused with a sentence either way.
+   */
+  const [pendingCashflowApprovalId, setPendingCashflowApprovalId] = useState<string | null>(null);
+  const { can } = useSession();
 
   async function reload(): Promise<void> {
     try {
@@ -136,6 +154,21 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
       setState({ status: 'ready', order, events });
     } catch (error) {
       setState({ status: 'failed', problem: failureMessage(error) });
+      return;
+    }
+
+    /*
+     * After the order, never in the same `Promise.all`: this is a side fact about a button, and a
+     * failure here must not be able to fail the screen. Swallowed deliberately — see the state note.
+     */
+    if (!can('quotes.read')) return;
+    try {
+      const waiting = await listApprovals({ status: 'pending', orderId });
+      setPendingCashflowApprovalId(
+        waiting.find((approval) => approval.dimension === 'cashflow')?.id ?? null,
+      );
+    } catch {
+      setPendingCashflowApprovalId(null);
     }
   }
 
@@ -397,6 +430,33 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                  * read as one debt stated twice, it reads as two debts. `README.md`'s rule, and
                  * `order-outstanding.ts` is where the comparison is decided and tested.
                  */}
+                {/*
+                 * ⭐ WHAT WAS FORGIVEN — present only when something was, which is almost never.
+                 *
+                 * ⚠️ It is **not** a second reading of ค้างชำระ. Since 0048 that figure is
+                 * `grand_total − settled − written_off`, so this line is the term Postgres already
+                 * took off it: `ค้างชำระ + ตัดยอดค้างทิ้งแล้ว` is what the customer still owed before
+                 * the forgiveness. Printing it is what makes ค้างชำระ ฿0.00 legible — the customer
+                 * paid, or the company gave up — and `README.md`'s "a number already on the screen is
+                 * not a highlight" rule does not bite, because this number is on the screen nowhere
+                 * else and cannot be derived from the four lines above it.
+                 *
+                 * ⛔ Read off the order, not computed. `order_written_off_thb_minor()` is the only
+                 * definition of it.
+                 */}
+                {order.writtenOffThbMinor !== null && order.writtenOffThbMinor > 0n && (
+                  <>
+                    <dt className="text-muted-foreground">ตัดยอดค้างทิ้งแล้ว</dt>
+                    <dd className="tabular-nums">
+                      {formatBaht(order.writtenOffThbMinor)}
+                      {/* Where the decision lives, so the reader can go and read who agreed and why. */}
+                      <span className="text-muted-foreground type-caption ml-2">
+                        อนุมัติแล้ว — ดูได้ในกล่องขาเข้าผู้อนุมัติ
+                      </span>
+                    </dd>
+                  </>
+                )}
+
                 {owed.kind === 'owing' && !owed.nextDueIsWholeDebt && (
                   <>
                     {/*
@@ -430,6 +490,28 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                 orderId={order.id}
                 outstandingThbMinor={order.outstandingThbMinor}
                 onRecorded={() => void reload()}
+              />
+
+              {/*
+               * ⭐ THE OWNER'S *"ขออนุมัติตัดยอดค้างทิ้ง"*, beside the figure it is about.
+               *
+               * ⚠️ Under ค้างชำระ and inside this card for the reason the button above it is: the act
+               * only makes sense against the amounts on these four lines. Somebody asking to forgive
+               * ฿9,940 is deciding whether ฿9,940 is the right figure, and that is a question about
+               * ยอดรวม and มัดจำตามสัญญา.
+               *
+               * ⚠️ It does not move ค้างชำระ either. It writes a คำขอรออนุมัติ; the balance changes
+               * when somebody holding both deciding codes approves it in กล่องขาเข้าผู้อนุมัติ — and
+               * that person must not be this one. The dialog says so above its own fields.
+               *
+               * ⚠️ It renders nothing at all for a caller without `orders.write` + `payments.read`,
+               * and nothing when there is no balance to forgive. `write-off-request.ts` decides both.
+               */}
+              <WriteOffButton
+                orderId={order.id}
+                outstandingThbMinor={order.outstandingThbMinor}
+                pendingCashflowApprovalId={pendingCashflowApprovalId}
+                onRequested={() => void reload()}
               />
             </CardContent>
           )}

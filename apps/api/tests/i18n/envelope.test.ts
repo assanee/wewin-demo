@@ -469,5 +469,29 @@ describe('what is still a Thai string, as a number', () => {
  * that would send them to an administrator instead of to the text box. The route behind both is
  * `POST /payments/slips/:slipId/acceptance`, gated on `payments.verify` — staff-only, Thai, and
  * the same argument the rest of this file's slip literals already rest on.
+ *
+ * ── 224 → 230: ขออนุมัติตัดยอดค้างทิ้ง ────────────────────────────────────────────
+ *
+ * Six, and they split three ways rather than being six of a kind:
+ *
+ *   `quotes/authority/write-off.service.ts` **5** — the whole of the request path's refusals:
+ *   an order that does not exist, one with no contract yet (*"ยังไม่มีสัญญา จึงยังไม่มียอดคงค้างให้
+ *   ตัดทิ้ง"*), one with nothing outstanding, an amount larger than the balance, and a cashflow
+ *   question already waiting for an answer. Every one is read on `/orders/:id` in the dashboard,
+ *   behind `orders.write` + `payments.read`.
+ *
+ *   `quotes/authority/authority.service.ts` **+1 net of a reword** — `decide` gained the 403 for
+ *   a caller without `payments.write_off` and the 409 for a balance that fell after the request
+ *   was raised, and `request`'s single "there is already a question waiting" literal became a
+ *   ternary over two sentences (a write-off blocking a quote concession is different news from a
+ *   duplicate of your own). The ternary is *inside* one `AppError.conflict` call, so the regex
+ *   counts it once — which is why the arithmetic here is +2 and not +3.
+ *
+ * ⚠️ Same argument as the ceiling-screen block above, and narrower still. Every reader is Thai
+ * staff: the request route is behind `orders.write` + `payments.read`, the decision route behind
+ * `quotes.approve` + `payments.write_off`, and the second of those is granted to nobody at boot.
+ * **No customer, in any locale, can reach a route that writes or decides a write-off** — the one
+ * sentence a customer *does* read about a write-off is `payment.writtenOff`, and that one is a
+ * proper `apps/web` catalogue key in all eight languages precisely because its reader is not staff.
  */
-const RAW_LITERAL_CALL_SITES = 224;
+const RAW_LITERAL_CALL_SITES = 230;

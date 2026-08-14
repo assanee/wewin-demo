@@ -58,6 +58,8 @@ const WIRE: OrderWire = {
    */
   outstandingThbMinor: encodeThb(1290240n),
   nextDueThbMinor: encodeThb(1290240n),
+  /* ⭐ 0048's third fold. ฿0.00 is the real answer here: nothing on this order was forgiven. */
+  writtenOffThbMinor: encodeThb(0n),
   updatedAt: '2026-08-09T09:09:09.000Z',
   createdAt: '2026-08-08T02:00:00.000Z',
   contact: {

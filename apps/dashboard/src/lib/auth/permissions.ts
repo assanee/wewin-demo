@@ -39,6 +39,16 @@ export const PERMISSION_CODES = [
   /* ⭐ 0047. Both held by no group at boot — the owner grants them by hand. */
   'payments.record_without_slip',
   'payments.self_review_slip',
+  /*
+   * ⭐ 0048 — ขออนุมัติตัดยอดค้างทิ้ง. The **decision** side of a write-off, on top of
+   * `quotes.approve`: the only approval in this system that subtracts from a customer's
+   * outstanding balance. Held by no group at boot, like the two above and for the same reason —
+   * who may forgive a debt is the owner's answer, granted by hand.
+   *
+   * ⚠️ Requesting one is `orders.write` + `payments.read` and deliberately not this code, or
+   * requester and decider would hold the same permission.
+   */
+  'payments.write_off',
   'organisation.read',
   'organisation.write',
   'users.read',

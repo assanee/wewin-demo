@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { APPROVAL_DIMENSIONS, APPROVAL_STATUSES } from '@wewin/db/schema';
+import { APPROVAL_DIMENSIONS, APPROVAL_KINDS, APPROVAL_STATUSES } from '@wewin/db/schema';
 
 import { CONCESSION_SOURCE_KINDS } from './concession';
 
@@ -30,12 +30,53 @@ import { CONCESSION_SOURCE_KINDS } from './concession';
  */
 
 export const approvalDimensionSchema = z.enum(APPROVAL_DIMENSIONS);
+export const approvalKindSchema = z.enum(APPROVAL_KINDS);
 export const approvalStatusSchema = z.enum(APPROVAL_STATUSES);
 
 /** Minor units as a string of digits, and negative is not representable — a concession is a size. */
 const minorSchema = z
   .string()
   .regex(/^(?:0|[1-9][0-9]{0,17})$/u, 'an amount in THB minor units, digits only');
+
+/**
+ * ⭐ ขออนุมัติตัดยอดค้างทิ้ง — `POST /orders/:orderId/write-offs`.
+ *
+ * ── ⚠️ THIS ONE CARRIES AN AMOUNT, AND THE MODULE HEADER FORBIDS THAT ────────────
+ *
+ * The prohibition above is about a **measurable** concession: a quote's discount is a fact in
+ * `quote_lines`, so accepting a figure would be accepting a claim about rows the server can read
+ * for itself. A write-off is not measurable — *"the customer settled for half"* exists nowhere in
+ * the database until somebody records it — and a route that could only forgive the *whole* balance
+ * would answer the wrong half of the owner's requirement, since the part-settlement is the common
+ * case.
+ *
+ * So the amount is named and the **bound is the server's**: `0 < amount ≤
+ * order_outstanding_thb_minor(orderId)`, checked in `WriteOffService.request` inside the
+ * transaction that inserts the row, again by `approvals_write_off_within_balance` at the database,
+ * and a third time at the decision because the balance moves in between. See
+ * `write-off.service.ts`.
+ *
+ * ⚠️ `orderId` is **not** in this body. It is the path, because the resource being written off is
+ * the order: a body that could name a different order from the URL is a body somebody eventually
+ * points at the wrong one.
+ */
+export const requestWriteOffSchema = z.strictObject({
+  /**
+   * How much of the balance to forgive, in THB minor units.
+   *
+   * `min(1)` after the regex, so `'0'` is a validation failure with a sentence rather than a
+   * 23514 from `approvals_concession_positive` — a write-off of nothing is a request nobody can
+   * answer, not a boundary case.
+   */
+  amountThbMinor: minorSchema.refine((value) => value !== '0', 'ยอดที่ขอตัดทิ้งต้องมากกว่าศูนย์'),
+  /**
+   * Why. **The only field a human wrote, and the whole audit trail for money the company chose
+   * not to collect** — `reason_th` is NOT NULL for this reason and there is no default.
+   */
+  reasonTh: z.string().trim().min(1).max(1000),
+});
+
+export type RequestWriteOffWire = z.infer<typeof requestWriteOffSchema>;
 
 export const requestApprovalSchema = z.strictObject({
   orderId: z.uuid(),
@@ -149,6 +190,20 @@ export interface ApprovalWire {
    */
   readonly quoteRevision: string;
   readonly dimension: 'margin' | 'cashflow';
+  /**
+   * ⭐ WHAT THIS APPROVAL IS, and the field a client must branch on before printing the figure.
+   *
+   *   `quote_concession`  money the customer will not be **charged** — measured from the quote.
+   *   `write_off`         money the company will not be **paid** — ขออนุมัติตัดยอดค้างทิ้ง, and the
+   *                       only kind that `order_outstanding_thb_minor()` subtracts.
+   *
+   * ⚠️ It is not derivable from `dimension`. A write-off is `cashflow` because it draws on the
+   * cashflow ceiling, and so is a quote's `gate_below_floor` concession — one column, two
+   * mechanisms, which is exactly why `APPROVAL_KINDS` exists. A screen that read
+   * `dimension === 'cashflow'` as "a write-off" would label an approved deposit schedule as a
+   * forgiven debt.
+   */
+  readonly kind: 'quote_concession' | 'write_off';
   readonly status: 'pending' | 'approved' | 'rejected';
   readonly concessionThbMinor: string;
   readonly reasonTh: string;
@@ -178,9 +233,15 @@ export interface ApprovalRightsWire {
   readonly mayApprove: boolean;
   readonly mayRefuse: boolean;
   /**
-   * `may_decide` · `not_an_approver` · `already_decided` · `own_request` · `no_ceiling` ·
-   * `above_ceiling`. The first lock that stops this caller, in the order the decision endpoint
-   * would hit them.
+   * `may_decide` · `not_an_approver` · `not_a_write_off_approver` · `already_decided` ·
+   * `own_request` · `no_ceiling` · `above_ceiling` · `above_balance`. The first lock that stops
+   * this caller, in the order the decision endpoint would hit them.
+   *
+   * ⭐ The two added with write-offs: `not_a_write_off_approver` is a caller holding
+   * `quotes.approve` but not `payments.write_off` — it blocks a **refusal** as well, because this
+   * is not a ceiling but whether the person has any standing in the decision — and
+   * `above_balance` is a request the customer has since part-paid, which nobody may approve and
+   * anybody may reject.
    */
   readonly because: string;
   /** The caller's own ceiling in this request's dimension. Always consulted, so always `known`. */
@@ -268,8 +329,35 @@ export interface ApprovalDetailWire {
    * When it differs from `approval.quoteRevision`, approving this request grants nothing at
    * all: the decision names a quote that no longer exists, and `judge` will not match it. The
    * screen has to say that before the button is pressed, not after.
+   *
+   * ⚠️ It is meaningless for a `write_off` and the screen must not warn on it. Editing a quote
+   * line does not un-forgive a debt, and nothing in `decide` matches a write-off to a revision —
+   * see `writeOff` below, which is that row's equivalent warning and a sharper one.
    */
   readonly quoteRevisionNow: string;
+  /**
+   * ⭐ PRESENT EXACTLY WHEN `approval.kind === 'write_off'`, and `null` otherwise.
+   *
+   * `liveConcession` is the wrong reading for a write-off in both dimensions: `margin` is about a
+   * discount nobody asked about, and `cashflow` measures the quote's `gate_below_floor` — a
+   * deposit schedule, which has nothing to do with the debt being forgiven. An inbox that showed
+   * "ลดอยู่จริงตอนนี้ ฿0.00" beside a ฿20,000 write-off would be telling the approver the request
+   * had evaporated.
+   *
+   * What a write-off's approver needs instead is the **balance**, now:
+   *
+   *   `outstandingThbMinor`  `order_outstanding_thb_minor()`, this instant. Already net of any
+   *                          write-off already approved on this order, so two part write-offs read
+   *                          correctly.
+   *   `stillCovered`         `concessionThbMinor <= outstandingThbMinor`. `false` means the
+   *                          customer has paid something since the request was raised and
+   *                          `decide` will refuse the approval — the screen says so before the
+   *                          button, and the correct answer is a rejection with a note.
+   */
+  readonly writeOff: {
+    readonly outstandingThbMinor: string;
+    readonly stillCovered: boolean;
+  } | null;
 }
 
 export interface AuthorityLimitWire {

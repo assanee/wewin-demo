@@ -139,6 +139,21 @@ export interface PaymentInstructions {
    */
   readonly nextDueThbMinor: bigint;
   /**
+   * ⭐ HOW MUCH OF THIS BALANCE THE COMPANY FORGAVE — `order_written_off_thb_minor()`, the sum of
+   * every approved ตัดยอดค้างทิ้ง on this order.
+   *
+   * Read for one reason: `outstandingThbMinor <= 0` stopped being enough to say *"ออเดอร์นี้ชำระครบ
+   * แล้ว"*. Since 0048 that figure is `grand_total − settled − written_off`, so a forgiven remainder
+   * drives it to ฿0.00 on an order the customer never finished paying — and printing *paid in full*
+   * at the person who did not pay is a falsehood told to the one reader who knows better.
+   *
+   * ⛔ `outstandingThbMinor` is already net of this. Do not subtract it again.
+   *
+   * ⚠️ `0n` on almost every order and `0n` is a real answer — *nothing was forgiven*.
+   * `describePaymentPanel` is the only reader, and it branches on `> 0n`.
+   */
+  readonly writtenOffThbMinor: bigint;
+  /**
    * ⭐ Whether this order is still a commitment somebody owes on — the server's answer, not a
    * status this bundle would have to interpret.
    *
@@ -193,6 +208,13 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
    */
   const nextDueThbMinor = satang(body['nextDueThbMinor']);
   /*
+   * ⚠️ Required, not defaulted to `0n`, and the direction matters: a missing value read as "nothing
+   * was forgiven" is exactly how this screen goes back to telling a written-off customer they paid
+   * in full — silently, on any deployment whose API is a version behind. A refusal to render is
+   * loud. The same argument as the two fields around it.
+   */
+  const writtenOffThbMinor = satang(body['writtenOffThbMinor']);
+  /*
    * ⚠️ Required, and required for the same reason as the figure above it — a *boolean* has
    * two ways to be wrong when it is missing, and both ship a defect:
    *
@@ -214,6 +236,7 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     grandTotalThbMinor === null ||
     outstandingThbMinor === null ||
     nextDueThbMinor === null ||
+    writtenOffThbMinor === null ||
     typeof orderIsLive !== 'boolean' ||
     !Array.isArray(rawAccounts)
   ) {
@@ -231,6 +254,7 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     grandTotalThbMinor,
     outstandingThbMinor,
     nextDueThbMinor,
+    writtenOffThbMinor,
     orderIsLive,
     accounts,
   };

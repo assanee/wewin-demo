@@ -123,6 +123,8 @@ describe('⭐ the payment-instructions decoder refuses a payload it cannot trust
     grandTotalThbMinor: { unit: 'THB.satang', digits: '1479168' },
     outstandingThbMinor: { unit: 'THB.satang', digits: '1035418' },
     nextDueThbMinor: { unit: 'THB.satang', digits: '443750' },
+    /* Nothing forgiven — the state of every order except the handful somebody has written off. */
+    writtenOffThbMinor: { unit: 'THB.satang', digits: '0' },
     orderIsLive: true,
     accounts: [],
   } as const;
@@ -159,6 +161,7 @@ describe('⭐ the payment-instructions decoder refuses a payload it cannot trust
     /* Distinct on a 30/70 order: what is still owed, and what to pay now. */
     expect(result.data.outstandingThbMinor).toBe(1_035_418n);
     expect(result.data.nextDueThbMinor).toBe(443_750n);
+    expect(result.data.writtenOffThbMinor).toBe(0n);
     expect(result.data.orderIsLive).toBe(true);
   });
 
@@ -170,6 +173,12 @@ describe('⭐ the payment-instructions decoder refuses a payload it cannot trust
     'grandTotalThbMinor',
     'outstandingThbMinor',
     'nextDueThbMinor',
+    /*
+     * ⭐ Required, and the direction of the default it refuses is the point: a missing write-off
+     * figure read as `0n` would put *"ออเดอร์นี้ชำระครบแล้ว"* back on a forgiven order's screen,
+     * silently, on any deployment whose API is a version behind this bundle.
+     */
+    'writtenOffThbMinor',
     /*
      * ⚠️ `acceptsPayment` was a fifth entry here until `0046_slips_after_delivery.sql` made it
      * answer identically to `orderIsLive` on every status and the wire dropped it. It is not

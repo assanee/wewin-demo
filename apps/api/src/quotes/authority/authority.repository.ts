@@ -15,6 +15,7 @@ import {
   APPROVAL_STATUSES,
   VAT_TREATMENTS,
   type ApprovalDimension,
+  type ApprovalKind,
   type OrderStatus,
 } from '@wewin/db/schema';
 
@@ -83,6 +84,15 @@ export interface ApprovalRow {
   /** ⭐ The subject: the quote this decision was measured against. See `AuthorityService.judge`. */
   readonly quoteRevision: string;
   readonly dimension: ApprovalDimension;
+  /**
+   * ⭐ `quote_concession` or `write_off` — see `APPROVAL_KINDS` in `packages/db`.
+   *
+   * The distinction is not cosmetic anywhere it is read: `judge` must not let a forgiven debt
+   * cover a quote-time cashflow concession, `decide` demands a second permission for a write-off
+   * and re-checks the balance, and `order_written_off_thb_minor()` folds this column into the
+   * outstanding figure.
+   */
+  readonly kind: ApprovalKind;
   readonly status: ApprovalStatus;
   readonly concessionThbMinor: bigint;
   readonly reasonTh: string;
@@ -642,6 +652,7 @@ export class AuthorityRepository {
       documentRevision: orderDocuments.revision,
       quoteRevision: approvals.quoteRevision,
       dimension: approvals.dimension,
+      kind: approvals.kind,
       status: approvals.status,
       concessionThbMinor: approvals.concessionThbMinor,
       reasonTh: approvals.reasonTh,
@@ -755,6 +766,16 @@ export class AuthorityRepository {
       readonly orderDocumentId: string | null;
       readonly quoteRevision: string;
       readonly dimension: ApprovalDimension;
+      /**
+       * ⭐ Required, with no default in this signature even though the column has one.
+       *
+       * `kind` decides whether the row this writes will be **subtracted from a customer's
+       * balance**. A parameter that could be left out would put that decision in a column
+       * default, where a future caller inherits it by silence — and the direction of the silence
+       * would be right today and wrong the moment somebody copies the write-off path. Omitting it
+       * is `TS2345`, which is the whole reason it is here.
+       */
+      readonly kind: ApprovalKind;
       readonly concessionThbMinor: bigint;
       readonly reasonTh: string;
       readonly requestedByUserId: string;
@@ -767,6 +788,7 @@ export class AuthorityRepository {
         orderDocumentId: input.orderDocumentId,
         quoteRevision: input.quoteRevision,
         dimension: input.dimension,
+        kind: input.kind,
         concessionThbMinor: input.concessionThbMinor,
         reasonTh: input.reasonTh,
         requestedByUserId: input.requestedByUserId,
@@ -775,6 +797,57 @@ export class AuthorityRepository {
 
     if (row === undefined) throw new Error('approvals insert returned nothing');
     return row.id;
+  }
+
+  /**
+   * ⭐ What this order still owes — `order_outstanding_thb_minor()`, and nothing else.
+   *
+   * ⛔ Postgres computes it. Since 0048 it is `grand_total − settled − written_off`, and the third
+   * term is the fold over this very table's approved write-offs — so a TypeScript reimplementation
+   * would have to re-derive a sum over rows it is in the middle of writing. `coalesce` because the
+   * function returns NULL for an order id that matches nothing, and a NULL balance must read as
+   * "nothing to forgive" rather than as `NaN`.
+   *
+   * `tx` matters here more than usual: a write-off request measures the balance and inserts
+   * against it, and a measurement taken on another connection is a measurement of a balance this
+   * transaction cannot see.
+   */
+  async outstandingThbMinor(orderId: string, tx?: AuthorityTx): Promise<bigint> {
+    const folded = await this.outstandingByOrder([orderId], tx);
+    const value = folded.get(orderId);
+    /*
+     * Every caller already holds the order — locked, in most cases — so a missing row means the
+     * order was deleted underneath this transaction. That is not a balance of ฿0.00 to write off
+     * against; it is an alarm, and answering zero would let a write-off be *refused* for the wrong
+     * reason instead of investigated.
+     */
+    if (value === undefined) throw new Error(`order ${orderId} has no outstanding fold to read`);
+    return value;
+  }
+
+  /**
+   * The same fold for several orders at once — the queue's read.
+   *
+   * One statement rather than one per row, because `queue()` scans up to
+   * `APPROVAL_QUEUE_SCAN_MAX` pending requests and a per-row read would turn one screen into two
+   * hundred. Only the orders that actually carry a write-off request are asked about; a queue of
+   * ordinary quote concessions issues no extra statement at all.
+   */
+  async outstandingByOrder(
+    orderIds: readonly string[],
+    tx?: AuthorityTx,
+  ): Promise<ReadonlyMap<string, bigint>> {
+    if (orderIds.length === 0) return new Map();
+
+    const rows = await this.executor(tx)
+      .select({
+        id: orders.id,
+        outstanding: sql<string>`coalesce(order_outstanding_thb_minor(${orders.id}), 0)::text`,
+      })
+      .from(orders)
+      .where(inArray(orders.id, [...orderIds]));
+
+    return new Map(rows.map((row) => [row.id, BigInt(row.outstanding)]));
   }
 
   /**
