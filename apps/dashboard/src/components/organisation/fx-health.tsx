@@ -75,23 +75,25 @@ import {
  * and it now holds exactly one.** The half of that sentence that stands is that nothing here is
  * *settable*: the two thresholds are constants in `apps/api/src/fx/staleness.ts`, and the rate is
  * changed by an administrator editing a *destination* in the tax-country table below, which is
- * still why this card sits directly above that table rather than at the top of the page. What
- * changed is that there is now one thing here that is *doable* — ซิงก์เดี๋ยวนี้ — and it sets no
+ * still why that table sits directly beneath this section. The clause after it — *"rather than at
+ * the top of the page"* — has expired: this **is** the top of the page now, and the adjacency was
+ * kept by promoting the tax table along with it rather than by holding this one down. What changed
+ * besides is that there is now one thing here that is *doable* — ซิงก์เดี๋ยวนี้ — and it sets no
  * value: it asks the provider for the number 01:00 would have asked for. See `SyncNowPanel`.
  *
  * ── ⭐ AND IT NOW SHOWS THE NUMBERS, NOT ONLY THE HEALTH ─────────────────────────
  *
- * The card reported how *old* the rate was and never what it *was*, which meant the one thing a
+ * The section reported how *old* the rate was and never what it *was*, which meant the one thing a
  * person actually opens this screen to do — check the system's rate against the one they know —
  * was the one thing it could not help with. `configuredRates` on the payload is that gap closed,
  * and the whole of the design is in two rules that `configured-rates.ts` argues server-side and
  * this file renders:
  *
- *   1. **Only the currencies that matter.** The feed carries ~170; the ones on this card are the
+ *   1. **Only the currencies that matter.** The feed carries ~170; the ones shown here are the
  *      ones configured on a destination in `tax_countries`, which is a list of two.
  *   2. **⭐ The provider's number is never presented as the rate.** `rates['SGD'] = 1.35` means
  *      1.35 Singapore dollars per US dollar; the figure staff need is ~27 baht per Singapore
- *      dollar. A reciprocal, a cross-rate and a spread separate them. Every rate on this card is
+ *      dollar. A reciprocal, a cross-rate and a spread separate them. Every rate here is
  *      rendered with its unit welded into the string (`27.037037 บาท ต่อ 1 SGD`), and every raw
  *      provider figure as a full equation naming the base (`1 USD = 1.35 SGD`), in muted text,
  *      under a label that says it is not what prices anything. A person comparing against Google
@@ -105,7 +107,7 @@ import {
  *   - **`ok`** — nothing wrong. Says so in one line and gets out of the way.
  *   - **`warn`** — the rate is getting old and **quotations still work**. This is the state most
  *     at risk of being mis-worded into a panic: the whole content of `warn` is *"you have time"*,
- *     and a card that reads like a refusal here trains staff to ignore the one that is a refusal.
+ *     and wording that reads like a refusal here trains staff to ignore the one that is a refusal.
  *     Every `warn` sentence below says out loud that nothing is being refused yet, and names the
  *     hour count at which that changes.
  *   - **`blocked` with a rate** — foreign-currency quotations are being **refused right now**,
@@ -123,7 +125,7 @@ import {
  * `fetchedAt` of minutes ago beside an `observedAt` of three weeks ago is a provider whose feed
  * has frozen while its HTTP endpoint stays perfectly healthy — the one failure invisible to any
  * check built on fetch time, and the reason `staleness.ts` measures age on the first clock. It is
- * legible only when a reader can see both, so both are on the card with labels saying which is
+ * legible only when a reader can see both, so both are on screen with labels saying which is
  * which, and `fxFrozenFeedTh` states the diagnosis outright when the gap is wide enough that
  * nothing else explains it.
  *
@@ -134,7 +136,7 @@ import {
  * routing is by permission and not by a configured list because `organisation.write` is exactly
  * what can type `อัตราแลกเปลี่ยนกำหนดเอง` and end the outage.
  *
- * Zero is the condition this card exists to surface, and it is **orthogonal to `status`**: a feed
+ * Zero is the condition this section exists to surface, and it is **orthogonal to `status`**: a feed
  * that is green right now with nobody to warn is a trap already armed — when the rate does go
  * stale, the mail goes to the shared sales queue and the people who could fix it are never told,
  * so the first anybody hears of it is a foreign-currency submit being refused. So
@@ -144,7 +146,7 @@ import {
  * late.
  *
  * ⚠️ It deliberately leaves the badge alone. The badge is a verdict on the *rate*, and the
- * header's promise — that this card cannot read green while quotations are refused — is about
+ * header's promise — that this screen cannot read green while quotations are refused — is about
  * that. Turning the badge red over a working feed would trade one mis-signal for its inverse.
  *
  * ── ⚠️ Every threshold in every sentence comes from the response ─────────────────
@@ -155,8 +157,8 @@ import {
  *
  * ── ⭐ Pure functions, exported, tested — and now next door ─────────────────────
  *
- * Every derived sentence this card prints is a named `…Th` function of the wire row and nothing
- * else, so what the card *says* is asserted directly in `fx-health.test.ts` without a DOM, per
+ * Every derived sentence this section prints is a named `…Th` function of the wire row and nothing
+ * else, so what it *says* is asserted directly in `fx-health.test.ts` without a DOM, per
  * `vitest.config.ts`'s own stance that a component test here would be a test of those functions
  * spelled expensively. `quote-alerts.tsx` set that precedent.
  *
@@ -504,7 +506,7 @@ function SyncNowPanel({
   const [problem, setProblem] = useState<string | null>(null);
   const [result, setResult] = useState<FxManualSyncResultWire | null>(null);
 
-  /* The freshest budget known: the one the last sync answered with, or the one the card loaded
+  /* The freshest budget known: the one the last sync answered with, or the one the section loaded
      with. Never a locally decremented copy — see `syncNow`'s note on re-reading it. */
   const budget = result?.manualSync ?? initial;
   const blocked = fxSyncBlockedTh(budget);
@@ -516,7 +518,7 @@ function SyncNowPanel({
       const outcome = await postFxManualSync();
       setResult(outcome);
       /* Redraw the figures and the two clocks. Awaited inside `busy` so the button stays
-         disabled until the card is showing what the sync actually did. */
+         disabled until the figures are showing what the sync actually did. */
       await onSynced();
     } catch (cause) {
       setProblem(failureMessage(cause));

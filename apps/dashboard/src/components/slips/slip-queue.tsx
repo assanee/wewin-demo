@@ -118,71 +118,69 @@ export function SlipQueue() {
        * the duplication this pass exists to remove.
        */}
       {state.entries.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="type-caption h-8">ออเดอร์</TableHead>
-                <TableHead className="type-caption h-8 text-right">ยอดบนสลิป</TableHead>
-                <TableHead className="type-caption h-8">ผู้โอน</TableHead>
-                <TableHead className="type-caption h-8">ลูกค้าแจ้งว่าโอนเมื่อ</TableHead>
-                <TableHead className="type-caption h-8">ภาพ</TableHead>
-                {/* `w-full` on the last column so `table-layout: auto` gives the slack to the
-                    controls instead of spreading the order number, the amount and the payer
-                    apart across a 1440px screen. Same call `order-list.tsx` explains. */}
-                <TableHead className="type-caption h-8 w-full" />
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="type-caption h-8">ออเดอร์</TableHead>
+              <TableHead className="type-caption h-8 text-right">ยอดบนสลิป</TableHead>
+              <TableHead className="type-caption h-8">ผู้โอน</TableHead>
+              <TableHead className="type-caption h-8">ลูกค้าแจ้งว่าโอนเมื่อ</TableHead>
+              <TableHead className="type-caption h-8">ภาพ</TableHead>
+              {/* `w-full` on the last column so `table-layout: auto` gives the slack to the
+                  controls instead of spreading the order number, the amount and the payer
+                  apart across a 1440px screen. Same call `order-list.tsx` explains. */}
+              <TableHead className="type-caption h-8 w-full" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {state.entries.map(({ slip, orderNo }) => (
+              <TableRow key={slip.id}>
+                <TableCell className="type-body px-2 py-1.5 font-mono">
+                  {orderNo ?? `ร่าง ${slip.orderId.slice(0, 8)}`}
+                </TableCell>
+                <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
+                  {formatBaht(slip.amountThbMinor)}
+                </TableCell>
+                <TableCell className="type-body px-2 py-1.5">
+                  {slip.payerName ?? <span className="text-muted-foreground">ไม่ได้ระบุ</span>}
+                  {/*
+                   * ⚠️ The name the *customer typed*, until somebody reads it off the image.
+                   *
+                   * 5b red team RT-2: `payer_name` arrives on the customer's own create-slip
+                   * body and nothing compares it to the picture or to anything a bank said. A
+                   * mule account named on the slip and then named again on the refund request
+                   * reads as "the original account" — so the queue flags the gap rather than
+                   * printing the claim as though it were checked.
+                   */}
+                  {slip.payerName !== null && !slip.payerVerified && (
+                    <span className="text-muted-foreground type-caption ml-2 inline-flex items-center gap-1">
+                      <ShieldAlert className="size-3" />
+                      ยังไม่มีใครตรวจกับภาพ
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
+                  {at(slip.transferredAt)}
+                </TableCell>
+                <TableCell className="px-2 py-1.5">
+                  {slip.hasImage ? (
+                    <span className="type-body">มี</span>
+                  ) : (
+                    <span className="text-muted-foreground type-body inline-flex items-center gap-1">
+                      <ImageOff className="size-3.5" />
+                      ไม่มี
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="px-2 py-1.5 text-right">
+                  <Button size="sm" onClick={() => setReviewing(slip.id)}>
+                    ตรวจ
+                  </Button>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {state.entries.map(({ slip, orderNo }) => (
-                <TableRow key={slip.id}>
-                  <TableCell className="type-body px-2 py-1.5 font-mono">
-                    {orderNo ?? `ร่าง ${slip.orderId.slice(0, 8)}`}
-                  </TableCell>
-                  <TableCell className="type-body px-2 py-1.5 text-right font-medium tabular-nums">
-                    {formatBaht(slip.amountThbMinor)}
-                  </TableCell>
-                  <TableCell className="type-body px-2 py-1.5">
-                    {slip.payerName ?? <span className="text-muted-foreground">ไม่ได้ระบุ</span>}
-                    {/*
-                     * ⚠️ The name the *customer typed*, until somebody reads it off the image.
-                     *
-                     * 5b red team RT-2: `payer_name` arrives on the customer's own create-slip
-                     * body and nothing compares it to the picture or to anything a bank said. A
-                     * mule account named on the slip and then named again on the refund request
-                     * reads as "the original account" — so the queue flags the gap rather than
-                     * printing the claim as though it were checked.
-                     */}
-                    {slip.payerName !== null && !slip.payerVerified && (
-                      <span className="text-muted-foreground type-caption ml-2 inline-flex items-center gap-1">
-                        <ShieldAlert className="size-3" />
-                        ยังไม่มีใครตรวจกับภาพ
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
-                    {at(slip.transferredAt)}
-                  </TableCell>
-                  <TableCell className="px-2 py-1.5">
-                    {slip.hasImage ? (
-                      <span className="type-body">มี</span>
-                    ) : (
-                      <span className="text-muted-foreground type-body inline-flex items-center gap-1">
-                        <ImageOff className="size-3.5" />
-                        ไม่มี
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-2 py-1.5 text-right">
-                    <Button size="sm" onClick={() => setReviewing(slip.id)}>
-                      ตรวจ
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {reviewing !== null && (
