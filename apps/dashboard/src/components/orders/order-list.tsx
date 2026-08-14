@@ -9,12 +9,14 @@ import { AlertTriangle, Lock } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { failureMessage } from '@/lib/api/errors';
 import { listOrders, type OrderSummary } from './order-api';
 import { statusLabel, statusTone, type OrderStatus } from './order-language';
 import { outstandingDisplay, readOutstanding } from './order-outstanding';
+import { describeOwingFilter } from './owing-filter';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -94,6 +96,14 @@ const LIMIT = 100;
 
 export function OrderList() {
   const [chosen, setChosen] = useState<OrderStatus | null>(null);
+  /*
+   * ⚠️ Separate state from `chosen`, because they are separate axes. The status buttons are
+   * radio-like — picking one replaces the last — and owing is a toggle that composes with
+   * whichever is picked. `?status=in_production&payment=outstanding` is the question a
+   * production manager asks, and the server ANDs the two; folding owing into `chosen` would
+   * have made it one more alternative in the same OR and that question unaskable.
+   */
+  const [owingOnly, setOwingOnly] = useState(false);
   const [state, setState] = useState<State>({ status: 'loading' });
 
   useEffect(() => {
@@ -102,7 +112,12 @@ export function OrderList() {
 
     void (async () => {
       try {
-        const orders = await listOrders({ status: chosen ?? undefined, limit: LIMIT });
+        const orders = await listOrders({
+          status: chosen ?? undefined,
+          /* Absent rather than `'all'` — see the note on `listOrders`. */
+          ...(owingOnly ? { payment: 'outstanding' as const } : {}),
+          limit: LIMIT,
+        });
         if (live) setState({ status: 'ready', orders });
       } catch (error) {
         if (live) setState({ status: 'failed', problem: failureMessage(error) });
@@ -112,7 +127,14 @@ export function OrderList() {
     return () => {
       live = false;
     };
-  }, [chosen]);
+  }, [chosen, owingOnly]);
+
+  const notice = describeOwingFilter({
+    owingOnly,
+    shown: state.status === 'ready' ? state.orders.length : 0,
+    limit: LIMIT,
+    statusLabelTh: chosen === null ? null : statusLabel(chosen),
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -129,7 +151,25 @@ export function OrderList() {
             {statusLabel(status)}
           </FilterButton>
         ))}
+
+        {/*
+          Set apart by a divider rather than sitting in the run of status buttons: beside them it
+          would read as a ninth status and as mutually exclusive with them, which is the opposite
+          of what it is. `aria-pressed` because this one is a toggle and the others are a choice.
+        */}
+        <Separator orientation="vertical" className="mx-1 h-5" />
+        <FilterButton
+          active={owingOnly}
+          aria-pressed={owingOnly}
+          onClick={() => setOwingOnly((on) => !on)}
+        >
+          ค้างชำระ
+        </FilterButton>
       </div>
+
+      {notice.summaryTh !== null && (
+        <p className="text-muted-foreground type-caption">{notice.summaryTh}</p>
+      )}
 
       {state.status === 'loading' && <Skeleton className="h-64 w-full" />}
 
@@ -143,9 +183,7 @@ export function OrderList() {
 
       {state.status === 'ready' && state.orders.length === 0 && (
         /* Nothing to separate from anything, so nothing to draw a border around. */
-        <p className="text-muted-foreground type-body py-10 text-center">
-          {chosen === null ? 'ยังไม่มีออเดอร์ในระบบ' : `ไม่มีออเดอร์ในสถานะ “${statusLabel(chosen)}”`}
-        </p>
+        <p className="text-muted-foreground type-body py-10 text-center">{notice.emptyTh}</p>
       )}
 
       {state.status === 'ready' && state.orders.length > 0 && (
