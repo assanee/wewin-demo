@@ -244,6 +244,49 @@ describe('⭐ ⓸ an order whose balance was written off', () => {
     expect(outstandingDisplay(reading).textTh).toBe(SETTLED_TH);
   });
 
+  it('⭐ says NOTHING rather than ชำระครบแล้ว when no write-off figure was stated', () => {
+    /*
+     * ⚠️ THE ARM THIS BLOCK IS ABOUT, ONE VERSION SKEW LATER.
+     *
+     * A balance of ฿0.00 and no write-off figure beside it is what an API a release behind sends:
+     * the key does not exist, so this bundle has *no* opinion about whether the money arrived. The
+     * old reading was `writtenOffThbMinor ?? 0n`, which turns that silence into the positive claim
+     * "nothing was forgiven" and puts the settled sentence on the screen — the one falsehood the
+     * whole round exists to stop. Fail-closed here is the dash.
+     *
+     * ⚠️ `not.toBe(SETTLED_TH)` is the assertion that would have failed; `toBe(NO_FIGURE_TH)` pins
+     * which of the two quiet answers it is instead, so a future `writtenOff` sentence with no
+     * figure to name cannot pass this either.
+     */
+    const reading = readOutstanding({
+      outstandingThbMinor: 0n,
+      nextDueThbMinor: 0n,
+      writtenOffThbMinor: null,
+    });
+
+    expect(reading).toEqual({ kind: 'noFigure' });
+    expect(outstandingDisplay(reading).textTh).toBe(NO_FIGURE_TH);
+    expect(outstandingDisplay(reading).textTh).not.toBe(SETTLED_TH);
+    expect(outstandingDisplay(reading).emphasis).toBe('quiet');
+  });
+
+  it('⚠️ but a LIVE debt with no write-off figure is still a debt, at a debt’s weight', () => {
+    /*
+     * The other half of the same skew, and the direction that must not move: the dash above is a
+     * refusal to claim *settled*, not a refusal to show money. ฿9,940 is owed whatever the write-off
+     * field says, and a reading that answered `noFigure` on a missing figure regardless of the
+     * balance would empty the ค้างชำระ column on every row against an older API.
+     */
+    const reading = readOutstanding({
+      outstandingThbMinor: 994_000n,
+      nextDueThbMinor: 994_000n,
+      writtenOffThbMinor: null,
+    });
+
+    expect(reading.kind).toBe('owing');
+    expect(outstandingDisplay(reading)).toEqual({ textTh: '฿9,940', emphasis: 'debt' });
+  });
+
   it('⚠️ a cancelled order that was written off still shows the dash, not the sentence', () => {
     /*
      * `noFigure` wins: the API withholds every money figure on a cancelled or superseded order, so

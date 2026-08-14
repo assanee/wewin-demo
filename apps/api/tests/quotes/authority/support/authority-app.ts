@@ -7,22 +7,25 @@ import { AppModule } from '../../../../src/app.module';
 import { parseOAuthConfig } from '../../../../src/auth/oauth/oauth.config';
 import { AllExceptionsFilter } from '../../../../src/common/errors/all-exceptions.filter';
 import { parseEnv, type Env } from '../../../../src/config/env';
-/* The file, not the directory: `src/quotes/authority.ts` shadows `authority/index.ts`. */
-import { AuthorityModule } from '../../../../src/quotes/authority/authority.module';
 import { testSessionConfig , testMfaSecretKey } from '../../../support/app';
 
 /**
- * The real application graph, **plus** `AuthorityModule`, because nothing has wired it yet.
+ * The real application graph, and **only** the real application graph.
  *
- * `AppModule.forRoot` is not this agent's file, so naming the module here is the same position
- * `RefundsModule` was in for one phase: the suite proves the feature works while
- * `tests/rbac/route-audit.test.ts` remains the alarm for the wiring itself. When somebody adds
- * it to the application's import list, this line becomes redundant — and harmlessly so, since
- * `AuthorityModule` is a static module and Nest deduplicates those by class reference. (A
- * `forRoot()` module would not be safe to name twice; that is the trap `payments-app.ts`
- * records, and it is the reason this module deliberately takes no options.)
+ * ⚠️ This file used to name `AuthorityModule` in the imports beside `AppModule.forRoot(…)`, with a
+ * paragraph explaining that nothing had wired it yet. That has not been true since the module was
+ * added to `AppModule.forRoot`'s import list (`app.module.ts`, beside `QuotesModule`, with the
+ * note about that omission having been "the largest finding of the round"). The claim is deleted
+ * rather than left as harmless decoration, because it was neither harmless nor decoration: a
+ * harness that imports the module itself **cannot fail** when the application stops importing it,
+ * and this suite is the one that exercises every authority and write-off route over real HTTP. It
+ * would have gone on passing against an assembled application serving 404s — which is precisely
+ * the outage the comment was describing as historical.
  *
- * Everything else is the real thing: the same middleware, the same global guard, the same
+ * `tests/rbac/route-audit.test.ts` and `tests/rbac/controller-reachability.test.ts` are the
+ * dedicated alarms; this file is now simply one more caller that would go red with them.
+ *
+ * Everything here is the real thing: the same middleware, the same global guard, the same
  * boot-time route audit. An authority route added without an access policy fails this suite at
  * `listen`, before a single assertion runs.
  */
@@ -63,7 +66,6 @@ export async function bootAuthorityApp(env: Env): Promise<AuthorityApp> {
         mfaSecretKey: testMfaSecretKey(),
         oauth: parseOAuthConfig({}),
       }),
-      AuthorityModule,
     ],
   }).compile();
 

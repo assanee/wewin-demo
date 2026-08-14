@@ -820,6 +820,121 @@ describeWithPg('⭐ write-offs — forgiving a balance the customer owes', () =>
       expect(asked.status).toBe(400);
     });
 
+    it('⭐ refuses a write-off on a CANCELLED order, and the database refuses it too', async () => {
+      /*
+       * ⭐ THE PRECONDITION 0048 LEFT OUT. `order_outstanding_thb_minor()` answers about an order in
+       * any status — deliberately, because a refund is priced from exactly that number — so a
+       * cancelled order that never paid folds to its **whole grand total** and passed every test the
+       * ask made: there is a contract, the outstanding is positive, the amount is within it. What it
+       * would have recorded is a forgiveness of a debt the cancellation already disposed of through
+       * `forfeit_policy_rules` and the refund module, paid for out of the approver's cashflow
+       * ceiling, on an order whose wire states no money at all (`encodeOrderSummary` nulls all four
+       * fields on a non-live order) — so nobody would ever have seen the figure.
+       *
+       * ⚠️ Asserted at **both** layers in one test, because they are two different claims:
+       *
+       *   the 409       `WriteOffService.request` reading `isLiveOrder` — a sentence staff can act on
+       *   the throw     `approvals_write_off_order_is_live` (0049) against a writer that is not the
+       *                 service at all, which is the only reason the rule is in Postgres
+       *
+       * ⚠️ And the balance is asserted to be positive *after* the cancellation, so this test cannot
+       * pass for the wrong reason: if the fold ever started answering ฿0.00 on a cancelled order the
+       * refusal would come from "ไม่มียอดคงค้าง" instead and prove nothing about the status rule.
+       */
+      const order = await quote('cancelled');
+
+      const cancelled = await call('POST', `/orders/${order.id}/transitions/cancelled`, {
+        token: customer.token,
+        body: { reason: 'เปลี่ยนใจ ยังไม่พร้อมติดตั้ง' },
+      });
+      expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+
+      const after = await folds(order.id);
+      expect(after.outstanding).toBeGreaterThan(0n);
+
+      const asked = await call('POST', `/orders/${order.id}/write-offs`, {
+        token: clerk.token,
+        body: { amountThbMinor: after.outstanding.toString(), reasonTh: 'ออเดอร์ที่ยกเลิกแล้ว' },
+      });
+      expect(asked.status, JSON.stringify(asked.body)).toBe(409);
+
+      /* Nothing was written: a refused ask is not a queue item somebody has to clear. */
+      const rows = await db.select({ id: approvals.id }).from(approvals).where(eq(approvals.orderId, order.id));
+      expect(rows).toHaveLength(0);
+
+      /* ⭐ And the same row written straight into the table, bypassing the service entirely. */
+      await expect(
+        db.insert(approvals).values({
+          orderId: order.id,
+          dimension: 'cashflow',
+          kind: 'write_off',
+          concessionThbMinor: 100_000n,
+          reasonTh: 'เขียนตรงเข้าตารางบนออเดอร์ที่ยกเลิก',
+          requestedByUserId: clerk.userId,
+          quoteRevision: '0123456789abcdef',
+        }),
+      ).rejects.toThrow();
+
+      /* ⚠️ A quote concession on the same cancelled order is still perfectly legal. */
+      await expect(
+        db.insert(approvals).values({
+          orderId: order.id,
+          dimension: 'margin',
+          kind: 'quote_concession',
+          concessionThbMinor: 100_000n,
+          reasonTh: 'ส่วนลดที่บันทึกไว้ตามปกติ',
+          requestedByUserId: clerk.userId,
+          quoteRevision: '0123456789abcdef',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('⭐ refuses the YES when the order was cancelled after the request was raised', async () => {
+      /*
+       * ⚠️ THE OTHER MOMENT, and it needs its own test for the same reason 0048's balance guard does:
+       * the ask was honest on Monday and the *order* moved underneath it. A pending write-off does
+       * not stop anybody cancelling, so this is reachable by two ordinary acts in the wrong order.
+       *
+       * The refusal is `AuthorityService.decide`'s, so the approver reads a Thai sentence rather than
+       * the trigger's `check_violation` — and the trigger behind it is what makes the refusal true
+       * against a writer that is not the service.
+       *
+       * ⚠️ REJECTING it stays available, which is why refusing to approve is acceptable at all: the
+       * pending row holds this order's one cashflow slot until somebody answers it.
+       */
+      const order = await quote('cancelledlater');
+      await grantCashflowCeiling(approverGroupId, '99999999');
+      const before = await folds(order.id);
+
+      const asked = await call('POST', `/orders/${order.id}/write-offs`, {
+        token: clerk.token,
+        body: { amountThbMinor: before.outstanding.toString(), reasonTh: 'ขอตัดยอดตอนที่ยังไม่ยกเลิก' },
+      });
+      expect(asked.status).toBe(201);
+      const approvalId = (asked.body as { readonly id: string }).id;
+
+      const cancelled = await call('POST', `/orders/${order.id}/transitions/cancelled`, {
+        token: customer.token,
+        body: { reason: 'ยกเลิกหลังยื่นคำขอแล้ว' },
+      });
+      expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+
+      const refused = await call('POST', `/quotes/approvals/${approvalId}/decision`, {
+        token: approver.token,
+        body: { decision: 'approved' },
+      });
+      expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+
+      /* Nothing forgiven — the fold has not moved. */
+      expect((await folds(order.id)).writtenOff).toBe(0n);
+
+      const rejected = await call('POST', `/quotes/approvals/${approvalId}/decision`, {
+        token: approver.token,
+        body: { decision: 'rejected', noteTh: 'ออเดอร์ถูกยกเลิกแล้ว ไม่ต้องตัดยอด' },
+      });
+      expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
+    });
+
     it('⚠️ `kind` cannot be edited while the request is pending', async () => {
       /*
        * `approvals_guard_write()` froze four columns and 0048 makes it five. Turning a pending

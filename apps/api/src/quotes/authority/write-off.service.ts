@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
 import { AppError } from '../../common/errors/app-error';
+/*
+ * ⭐ The *definition* of a live obligation, imported as the pure function it is — not
+ * `OrdersModule`, and not a fourth list of statuses written here. `authority.module.ts`'s rule
+ * ("this module deliberately does not import `OrdersModule` or `ScheduleModule`") is about the
+ * domain modules and their verbs; `live-order.ts` has no Nest in it, reaches no repository and
+ * moves nothing, exactly like `cashflowConcessionMinor`, which that same note names as the
+ * precedent for importing a pure function directly.
+ */
+import { isLiveOrder } from '../../orders/live-order';
 import type { Scope } from '../../rbac';
 import { AuthorityRepository, type ApprovalRow } from './authority.repository';
 
@@ -74,6 +83,10 @@ export class WriteOffService {
    * the inbox empty on a database with no authority rows, which is every database on day one.
    * What is *not* permitted is asking for more than is owed; that is a request no approver could
    * ever grant, so it is a trap in a queue rather than a queue item.
+   *
+   * ⭐ Nor is asking about an order whose remainder is **not a debt at all** — a cart, a
+   * cancellation, or an order that has been superseded. Three refusals, two sentences (a cart's
+   * own, and one for the two finished contracts), all 409, and all before a row exists.
    */
   async request(
     scope: Scope,
@@ -102,6 +115,37 @@ export class WriteOffService {
        */
       if (order.grandTotalThbMinor === null) {
         throw AppError.conflict('ออเดอร์นี้ยังไม่มีสัญญา จึงยังไม่มียอดคงค้างให้ตัดทิ้ง');
+      }
+
+      /*
+       * ⭐ AND THE ORDER HAS TO BE SOMEBODY'S LIVE OBLIGATION.
+       *
+       * `order_outstanding_thb_minor()` answers about an order in **any** status — that is the right
+       * question for the function and the wrong one to forgive against. A cancelled order that never
+       * paid still folds to its whole grand total, so the two tests around this one both pass and the
+       * ask used to be accepted: a request to forgive ฿14,791.68 of a debt the *cancellation* already
+       * disposed of, through `forfeit_policy_rules` and the refund module. Approving it would spend
+       * the role's `cashflow` ceiling on nothing and record a forgiven figure that no order wire ever
+       * shows, because `encodeOrderSummary` nulls all four money fields on a non-live order. A
+       * superseded order is the same statement twice: its remainder was *carried* to the order that
+       * replaced it, so forgiving it here forgives money that is still owed over there.
+       *
+       * ⛔ `isLiveOrder` — the one list, in `src/orders/live-order.ts`. There were four readers of
+       * that sentence before this line and every one of them takes it from that file; a fifth copy
+       * written out here is how the ค้างชำระ column and this refusal come to disagree about
+       * `delivered`, which is live and is exactly the order a write-off is most often asked about.
+       *
+       * ⚠️ After the no-contract test above, so a **cart** — also non-live — keeps the sentence that
+       * is true about it ("ยังไม่มีสัญญา") rather than this one.
+       *
+       * ⚠️ Enforced again by `approvals_write_off_order_is_live` (0049), because this service is not
+       * the only writer. See that migration for what the trigger does and does not cover.
+       */
+      if (!isLiveOrder(order.status)) {
+        throw AppError.conflict(
+          'ออเดอร์นี้ถูกยกเลิกหรือถูกแทนที่แล้ว ยอดคงค้างจึงไม่ใช่หนี้ที่ต้องตัดทิ้ง',
+          { status: order.status },
+        );
       }
 
       /* ⛔ Postgres's fold, read through the repository. See `AuthorityRepository`. */

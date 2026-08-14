@@ -30,7 +30,7 @@
 -- meant this morning. Nothing about cash, held money or the ledger moves either: a write-off
 -- posts no ledger entry, because no money changes hands.
 --
--- ⚠️ THE FOLD HAS SEVEN READERS AND THEY ALL CHANGE AT ONCE. That is the intent, and every one
+-- ⚠️ THE FOLD HAS EIGHT READERS AND THEY ALL CHANGE AT ONCE. That is the intent, and every one
 -- was verified rather than assumed:
 --
 --     GET /orders                       `scoped-order.ts` OUTSTANDING_FOLD — the ค้างชำระ column
@@ -43,6 +43,19 @@
 --                                       which filter `> 0`, so the order drops out of both
 --     order_payment_queue_bucket()      returns 'settled' once nothing is left owing
 --     the transition-balance notice     `transition-balance.ts`, from the same wire field
+--     GET /payments/slips/:id           ⭐ THE EIGHTH, and it said SEVEN here while this one was
+--                                       already reading the fold: `slips.repository.ts`
+--                                       `orderMoney()` → `SlipReviewWire.money.outstandingThbMinor`,
+--                                       the reviewer's right-hand column. Nothing in that module
+--                                       branches on the figure — acceptance is gated by
+--                                       `order_gate_is_open()` and allocated per instalment, and
+--                                       neither consults a write-off — so this reader was never
+--                                       *wrong*, only silent: ฿0.00-because-forgiven and
+--                                       ฿0.00-because-paid read identically on it. It now carries
+--                                       `writtenOffThbMinor` beside the balance for the same reason
+--                                       `OrderSummaryWire` and `PaymentInstructionsWire` do. That is
+--                                       consistency across the three wires that state a balance, and
+--                                       not a defect being closed.
 --
 -- ── ⚠️ WHY `dimension = 'cashflow'` IS NOT ENOUGH ON ITS OWN ─────────────────
 --
@@ -67,11 +80,24 @@
 -- ค้างชำระ. That is a defect whichever number the reader believes.
 --
 -- The fix is a cap and deliberately **not** an allocation. Nothing in the data says which
--- instalment a write-off forgives — the request names an amount and a reason, not a `seq` —
--- so spreading it across the schedule would be inventing an allocation, and one that
--- `order_settled_through()` would then read as a settled prefix and open a production gate on.
--- What is knowable is the bound: **nobody may be asked for more than the whole remaining
--- debt.** `least(…, outstanding)` says exactly that and nothing more.
+-- instalment a write-off forgives — the request names an amount and a reason, not a `seq` — so
+-- spreading it across the schedule would be **inventing** an allocation: a `seq` nobody named,
+-- and with it a `order_settled_through()` frontier that no accepted slip and no allocation row
+-- supports. That figure is read as an audit answer to *"how far through the schedule is this
+-- order?"*, and a forgiveness silently answering it would be this migration's ✗ arm again — one
+-- number meaning both *money credited to instalments* and *money nobody will ever pay*.
+--
+-- Nothing is stranded by declining to allocate: the cap already guarantees no screen asks for
+-- more than the whole remaining debt, and a fully written-off order asks for ฿0.00.
+--
+-- ⚠️ An earlier draft of this paragraph justified the cap by saying an invented allocation would
+-- "open a production gate". That is **wrong about this code** and is corrected rather than
+-- quietly deleted, because it is the kind of claim a later reader would build on:
+-- `POST /orders/:id/transitions/:to` never consults `order_gate_is_open()` at all — it was
+-- driven against a fully written-off order and answered 200 — and the gate is asked about in
+-- exactly one place, slip acceptance (`SlipsService.gateDecision`). A write-off writes no slip
+-- and no allocation, so it cannot reach that path whatever `order_settled_through()` says. The
+-- reason to refuse the allocation is the unsupported figure above, not a gate.
 --
 -- ⚠️ It also changes one case that has nothing to do with write-offs, stated rather than
 -- hidden: a reviewer who allocates a slip to instalment 2 while instalment 1 is unpaid leaves

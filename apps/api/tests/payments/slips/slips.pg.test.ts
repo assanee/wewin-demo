@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
+import { approvals } from '@wewin/db/schema';
 import { sql } from '@wewin/db/sql';
 import { toBigInt } from '@wewin/contract/exact';
 import { encodeThb } from '@wewin/contract/order';
@@ -412,6 +413,75 @@ describeWithPg('payment slips — upload, review, acceptance, rejection', () => 
     expect((review.body as SlipReviewWire).slip.status).toBe('submitted');
     expect(await ledgerKinds(db, order.id)).toEqual([]);
     expect((await folds(db, order.id)).cash).toBe(0n);
+  }, 60_000);
+
+  it('⭐ tells the reviewer ฿0.00-because-forgiven from ฿0.00-because-paid', async () => {
+    /*
+     * ⭐ THE EIGHTH READER OF THE OUTSTANDING FOLD — `slips.repository.ts orderMoney()`, which
+     * `0048_write_off_approval.sql` did not list when it counted the readers that change together.
+     *
+     * Since 0048 `order_outstanding_thb_minor()` is `grand_total − settled − written_off`, so this
+     * screen's ค้างชำระ figure reaches ฿0.00 on an order **nobody paid** the moment a write-off is
+     * approved. Nothing in the slips module branches on that — acceptance is gated by
+     * `order_gate_is_open()` and allocated per instalment, and neither consults a write-off — so
+     * this is not a guard that was missing. It is a reviewer who could not tell the two ฿0.00s
+     * apart while deciding what to do with a photograph of a transfer, which is the same argument
+     * that put `writtenOffThbMinor` on `OrderSummaryWire` and `PaymentInstructionsWire`.
+     *
+     * ⚠️ The approval is written **directly**, and this is the one place in this suite where that is
+     * the right thing to do: `POST /orders/:id/write-offs` and the approval inbox belong to
+     * `AuthorityModule`, whose ceilings, two permissions and four-eyes rule are exercised at length
+     * in `tests/quotes/authority/write-off.pg.test.ts`. What is under test here is that *this* wire
+     * carries the figure — so the row is written the way the guards insist (`kind`, `dimension`, a
+     * decider who is not the requester, a pinned ceiling, a hex revision) and nothing more.
+     *
+     * ⚠️ `paid`, `held` and `settled` are asserted to be **zero** in the same breath. A write-off is
+     * not money that arrived, and a fold that folded it into `settled` would satisfy the outstanding
+     * assertion below and be the exact defect 0048's ✗ arm rejects.
+     */
+    const order = await orderOf('forgiven');
+    if (order.money === null) throw new Error('a submitted order has money');
+
+    const grand = minor(order.money.grandTotalThbMinor);
+    await writeThirtySeventy(db, app, order.id, grand);
+
+    /* A slip in the queue, so there is a review screen to read at all. */
+    const slip = await createSlip(order.id, grand);
+
+    const before = await call('GET', `/payments/slips/${slip.id}`, { token: reviewer.token });
+    const beforeMoney = (before.body as SlipReviewWire).money;
+    expect(minor(beforeMoney.outstandingThbMinor)).toBe(grand);
+    /* ⭐ Stated before anything is forgiven, and ฿0.00 here is a real answer: nothing was. */
+    expect(minor(beforeMoney.writtenOffThbMinor)).toBe(0n);
+
+    await db.insert(approvals).values({
+      orderId: order.id,
+      dimension: 'cashflow',
+      kind: 'write_off',
+      status: 'approved',
+      concessionThbMinor: grand,
+      reasonTh: 'ลูกค้าไม่ยอมชำระ ตัดยอดค้างทิ้งทั้งจำนวน',
+      requestedByUserId: clerk.userId,
+      decidedByUserId: reviewer.userId,
+      decidedAt: new Date(),
+      decidedCeilingThbMinor: grand,
+      quoteRevision: '0123456789abcdef',
+    });
+
+    const after = await call('GET', `/payments/slips/${slip.id}`, { token: reviewer.token });
+    expect(after.status, JSON.stringify(after.body)).toBe(200);
+    const money = (after.body as SlipReviewWire).money;
+
+    /* Nothing is owed… */
+    expect(minor(money.outstandingThbMinor)).toBe(0n);
+    /* …and this is why, which is the whole point of the field. */
+    expect(minor(money.writtenOffThbMinor)).toBe(grand);
+
+    /* ⭐ And no money arrived. Three folds that a forgiveness must not touch. */
+    expect(minor(money.paidThbMinor)).toBe(0n);
+    expect(minor(money.heldThbMinor)).toBe(0n);
+    expect(minor(money.settledThbMinor)).toBe(0n);
+    expect((await folds(db, order.id)).settled).toBe(0n);
   }, 60_000);
 
   it('refuses to pile a whole payment onto the first instalment', async () => {

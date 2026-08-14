@@ -35,6 +35,11 @@ import { formatBaht } from '@wewin/core/format';
  *   `uncontracted`: a cancelled order was very much contracted, and a branch named for drafts
  *   is a branch somebody will one day "fix" by printing the total.
  *
+ *     ⓷ ⭐ and a **third**, which is this state being used as a refusal rather than as news: a
+ *        balance of ฿0.00 with **no write-off figure stated beside it**. Nothing is owed and this
+ *        screen cannot tell whether that is because the money arrived or because the company
+ *        forgave it, so it claims neither. See `readOutstanding`.
+ *
  *   **writtenOff** — ⭐ nothing owed, and the reason is that the company **forgave** it: an
  *   approved ขออนุมัติตัดยอดค้างทิ้ง (`order_written_off_thb_minor()`, 0048) drove the outstanding
  *   to ฿0.00. `SETTLED_TH` — *"ชำระครบแล้ว"* — is a false sentence about such an order and it is
@@ -79,6 +84,11 @@ export interface OwedFigures {
    * ⭐ `order_written_off_thb_minor()` — how much of this balance was forgiven rather than paid.
    *
    * ⛔ `outstandingThbMinor` is already net of it. Nothing here subtracts anything.
+   *
+   * ⚠️ `null` means **the figure was not stated**, and it is not a zero. On the API's own wire it
+   * arrives null on exactly the fact that nulls the balance beside it (no contract, or a cancelled
+   * order), so the two travel together; a null here with a *stated* balance is a shape the wire
+   * cannot produce, and `readOutstanding` answers it with a dash rather than with "ชำระครบแล้ว".
    */
   readonly writtenOffThbMinor: bigint | null;
 }
@@ -122,7 +132,7 @@ export const NO_FIGURE_TH = '—';
 
 export function readOutstanding(order: OwedFigures): OutstandingReading {
   const outstanding = order.outstandingThbMinor;
-  const writtenOff = order.writtenOffThbMinor ?? 0n;
+  const writtenOff = order.writtenOffThbMinor;
 
   /* Both reasons the API withholds a figure, and the same dash for each — see the header. */
   if (outstanding === null) return { kind: 'noFigure' };
@@ -134,18 +144,29 @@ export function readOutstanding(order: OwedFigures): OutstandingReading {
    * not a sentence anybody should be shown on a queue.
    */
   /*
-   * ⭐ Forgiven, not paid. Before the settled test, because a written-off order satisfies that test
-   * too and whichever runs first is the word a member of staff reads.
+   * ⭐ Nothing is owed. Which of the three sentences that is depends entirely on the write-off
+   * figure, so this is the one place the two ฿0.00s are told apart — and the order of the three
+   * arms is the order of how much the screen is entitled to claim.
    *
-   * ⚠️ `?? 0n` on a missing figure is the fail-closed direction: an API that did not send the fold
-   * says nothing about a write-off rather than claiming one. And both terms are required — a partial
-   * write-off falls through to `owing` below, with the weight a live debt earns.
+   * ⚠️ A **missing** write-off figure beside a stated balance says *nothing*, not "paid".
+   *
+   * It used to read `writtenOffThbMinor ?? 0n`, called that the fail-closed direction, and it was
+   * not: ฿0.00 forgiven is a positive claim — *the customer paid this off* — assembled out of a
+   * field the API never sent, and it is exactly the sentence 0048 exists to stop printing. The
+   * dash is the fail-closed answer here, the same one a cancelled order gets: this screen does not
+   * know, and "—" is how it says so. `order-api.ts` now refuses the decode outright when the key
+   * is absent (`asStatedSatangOrNull`), so on a matched API this arm is unreachable; it is kept
+   * because `OwedFigures` is a structural type that anything on this screen may satisfy, and the
+   * cost of being wrong here is a lie about somebody's money.
+   *
+   * ⚠️ And both terms are still required on the arm below — a *partial* write-off leaves a real
+   * balance and falls through to `owing`, with the weight a live debt earns.
    */
-  if (outstanding <= 0n && writtenOff > 0n) {
-    return { kind: 'writtenOff', writtenOffThbMinor: writtenOff };
+  if (outstanding <= 0n) {
+    if (writtenOff === null) return { kind: 'noFigure' };
+    if (writtenOff > 0n) return { kind: 'writtenOff', writtenOffThbMinor: writtenOff };
+    return { kind: 'settled' };
   }
-
-  if (outstanding <= 0n) return { kind: 'settled' };
 
   /*
    * ⚠️ A missing next-due on an order that owes money is half a contract — the API sends both

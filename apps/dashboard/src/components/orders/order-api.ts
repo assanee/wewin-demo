@@ -201,6 +201,42 @@ const asSatang = (value: unknown, what: string): bigint => {
 const asSatangOrNull = (value: unknown, what: string): bigint | null =>
   value === null || value === undefined ? null : asSatang(value, what);
 
+/**
+ * ⭐ A money field the wire must **state**, as a figure or as an explicit `null`.
+ *
+ * The same three-line function as `asSatangOrNull` with one difference: an *absent* key is a
+ * `TypeError` rather than a null. `null` still decodes as null, because the contract really does
+ * send one (`OrderSummaryWire` nulls every money figure on a cart and on a cancelled order).
+ *
+ * ── ⚠️ Why one field is held to this and the other three are not ─────────────────
+ *
+ * This file's bargain is leniency about *which* fields an older API sends. That bargain is only
+ * payable while an absent field degrades to a **quieter** screen: a missing `grandTotalThbMinor`
+ * or `outstandingThbMinor` becomes `noFigure`, which renders as a dash, and a missing
+ * `nextDueThbMinor` degrades to the whole outstanding, which can only overstate what is due.
+ * None of them makes the screen *assert* something false.
+ *
+ * `writtenOffThbMinor` does. Read as "nothing was forgiven", an absent figure sends a
+ * written-off order down `readOutstanding`'s settled branch and prints **ชำระครบแล้ว** at the one
+ * reader who knows the customer never paid — the exact sentence 0048 exists to stop saying. So
+ * for this field, and only this field, silence is not a smaller answer; it is the wrong answer.
+ * Failing the decode is loud and recoverable ("เปิดออเดอร์นี้ไม่ได้" plus a retry); the sentence
+ * is neither.
+ *
+ * ⚠️ `apps/web/src/lib/payment/api.ts` made the same call on the same field for the same reason
+ * (`satang(body['writtenOffThbMinor'])` with a hard `return null` beside it) — the two halves of
+ * this round now agree. The shapes differ only where the contracts differ:
+ * `PaymentInstructionsWire.writtenOffThbMinor` is non-nullable, so over there *any* absence of a
+ * figure fails; here the contract permits an explicit null, so absence of the **key** is what
+ * fails. Same rule, stated against two different wires.
+ */
+const asStatedSatangOrNull = (value: unknown, what: string): bigint | null => {
+  if (value === undefined) {
+    throw new TypeError(`${what}: expected THB.satang or null, and the field was absent`);
+  }
+  return asSatangOrNull(value, what);
+};
+
 const decodeSummary = (raw: unknown): OrderSummary => {
   const order = asRecord(raw, 'ออเดอร์');
 
@@ -221,7 +257,15 @@ const decodeSummary = (raw: unknown): OrderSummary => {
      */
     outstandingThbMinor: asSatangOrNull(order['outstandingThbMinor'], 'order.outstandingThbMinor'),
     nextDueThbMinor: asSatangOrNull(order['nextDueThbMinor'], 'order.nextDueThbMinor'),
-    writtenOffThbMinor: asSatangOrNull(order['writtenOffThbMinor'], 'order.writtenOffThbMinor'),
+    /*
+     * ⭐ `asStatedSatangOrNull` and NOT the lenient reader the three fields above use — see that
+     * function for the whole argument. An API a version behind sends no such key, and reading the
+     * silence as ฿0.00 forgiven is how "ชำระครบแล้ว" gets printed on a written-off order.
+     */
+    writtenOffThbMinor: asStatedSatangOrNull(
+      order['writtenOffThbMinor'],
+      'order.writtenOffThbMinor',
+    ),
     updatedAt: asText(order['updatedAt'], 'order.updatedAt'),
   };
 };

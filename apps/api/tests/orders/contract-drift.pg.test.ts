@@ -18,6 +18,7 @@ import {
   POST_FREEZE_STATUSES_WIRE,
 } from '@wewin/contract/order';
 
+import { isLiveOrder, NON_LIVE_ORDER_STATUSES } from '../../src/orders/live-order';
 import { payloadSchemaFor } from '../../src/orders/transitions';
 
 /**
@@ -51,6 +52,13 @@ const describeWithPg = url === undefined ? describe.skip : describe;
 interface PostFreezeRow {
   readonly status: string;
   readonly post_freeze: boolean;
+  readonly [column: string]: unknown;
+}
+
+/** The same shape for `order_status_is_live()` — see the live-obligation test below. */
+interface LiveRow {
+  readonly status: string;
+  readonly is_live: boolean;
   readonly [column: string]: unknown;
 }
 
@@ -112,6 +120,55 @@ describeWithPg('the closed sets agree across the three places they are declared'
 
     /* `cancelled` and `superseded` are on neither side, which is why `frozen_at` is a column. */
     expect(rows.filter((row) => row.post_freeze)).toHaveLength(5);
+  });
+
+  it('⭐ agrees with the database about which statuses are somebody’s live obligation', async () => {
+    /*
+     * ⭐ THE SECOND MIRROR, AND IT IS NEW.
+     *
+     * `NON_LIVE_ORDER_STATUSES` (`src/orders/live-order.ts`) used to be the *only* statement of
+     * "whose debt is a debt" — its header said so, and said there was no database function to
+     * drift from. `0049_write_off_live_order.sql` added `order_status_is_live()`, because a
+     * write-off may not be recorded against a cancelled or superseded order and that guard belongs
+     * in the database as well as in the service. The list is therefore a mirror now, and this is
+     * what keeps it honest.
+     *
+     * The stake is not abstract. `isLiveOrder` decides whether `GET /orders` prints a ค้างชำระ
+     * figure at all, `NON_LIVE_ORDER_STATUSES_SQL` decides which rows the ?payment=outstanding
+     * filter and the overview's money card count, and the trigger decides which orders a debt may
+     * be forgiven on. Two of those readers disagreeing means a balance a screen shows and the
+     * database refuses to let anybody write off — or worse, the reverse.
+     *
+     * ⚠️ All nine statuses, not the three non-live ones: a mirror that *gained* a member would
+     * otherwise pass. `delivered` is the member that matters most — live, and the status a
+     * write-off is most often asked about — so it is also asserted by name below.
+     */
+    const answer = await db.execute<LiveRow>(sql`
+      select status, order_status_is_live(status) as is_live
+        from unnest(${sql.raw(`array['${ORDER_STATUSES.join("','")}']::text[]`)}) as status
+    `);
+
+    const rows = [...answer.rows];
+    expect(rows).toHaveLength(ORDER_STATUSES.length);
+
+    for (const row of rows) {
+      expect(
+        isLiveOrder(row.status as (typeof ORDER_STATUSES)[number]),
+        `${row.status}: isLiveOrder says ${String(
+          isLiveOrder(row.status as (typeof ORDER_STATUSES)[number]),
+        )}, Postgres says ${String(row.is_live)}`,
+      ).toBe(row.is_live);
+    }
+
+    /* Three, and which three: `draft`, `cancelled`, `superseded`. Named, so a widened list fails. */
+    expect(rows.filter((row) => !row.is_live).map((row) => row.status).sort()).toEqual([
+      'cancelled',
+      'draft',
+      'superseded',
+    ]);
+    expect([...NON_LIVE_ORDER_STATUSES].sort()).toEqual(['cancelled', 'draft', 'superseded']);
+    /* ⚠️ `delivered` is live in both, which is the one `attachable.ts` and 0046 argue about. */
+    expect(rows.find((row) => row.status === 'delivered')?.is_live).toBe(true);
   });
 });
 

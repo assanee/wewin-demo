@@ -4,6 +4,8 @@ import { APPROVAL_DIMENSIONS, type ApprovalDimension } from '@wewin/db/schema';
 
 import { AppError } from '../../common/errors/app-error';
 import { DEFAULT_VAT_RULE } from '../../orders/defaults';
+/* The one definition of a live obligation, as the pure function it is — see `write-off.service.ts`. */
+import { isLiveOrder } from '../../orders/live-order';
 import { GATE_COVERAGE_BP_DEFAULT } from '../../payments/schedule';
 import { scopeHolds, type Scope } from '../../rbac';
 import { approvalRights, WRITE_OFF_PERMISSION, type ApprovalRights } from './approval-rights';
@@ -722,6 +724,40 @@ export class AuthorityService {
          * the middle of writing.
          */
         if (row.kind === 'write_off') {
+          /*
+           * ⭐ AND THE ORDER IS STILL SOMEBODY'S LIVE OBLIGATION — the balance is not the only
+           * thing that moves while a request sits in the inbox. The order can be **cancelled**,
+           * and then its remainder stops being a debt: the cancellation disposes of it through
+           * `forfeit_policy_rules` and the refund module, and a superseded order's remainder was
+           * carried to the order that replaced it. Approving here would spend this role's cashflow
+           * ceiling on a debt somebody else already dealt with, and record the forgiven figure on
+           * an order whose wire states no money at all.
+           *
+           * `WriteOffService.request` refuses the same thing at the ask, and
+           * `approvals_write_off_order_is_live` (0049) refuses it at the row — this check exists so
+           * that an approver pressing the button reads a Thai sentence instead of the trigger's
+           * `check_violation`.
+           *
+           * ⛔ `isLiveOrder`, the one list (`src/orders/live-order.ts`). Not a status comparison
+           * written here.
+           *
+           * ⚠️ Read without a lock, deliberately: the row that decides the outcome is the trigger's
+           * read at write time, and taking `for update` on `orders` here would add a second lock
+           * order (approval → order) against `WriteOffService.request`'s (order → approval).
+           *
+           * ⚠️ Only the **approval** is refused. Rejecting a write-off on a cancelled order stays
+           * available — this whole branch is inside `if (input.decision === 'approved')` — because
+           * a pending request holds the order's one cashflow slot until somebody answers it.
+           */
+          const order = await this.repository.readOrder(row.orderId, tx);
+          if (order === undefined) throw AppError.notFound('ไม่พบออเดอร์นี้');
+          if (!isLiveOrder(order.status)) {
+            throw AppError.conflict(
+              'ออเดอร์นี้ถูกยกเลิกหรือถูกแทนที่แล้ว ยอดคงค้างจึงไม่ใช่หนี้ที่ต้องตัดทิ้ง — ให้ไม่อนุมัติคำขอนี้',
+              { status: order.status },
+            );
+          }
+
           const balance = await this.repository.outstandingThbMinor(row.orderId, tx);
           if (row.concessionThbMinor > balance) {
             throw AppError.conflict(
