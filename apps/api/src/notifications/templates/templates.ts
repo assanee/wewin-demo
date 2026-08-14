@@ -1,6 +1,13 @@
+import { describeOwedFigures, type OwedLabelKey } from '@wewin/core/owed-figures';
 import { formatMoney } from '@wewin/i18n/format';
 
 import { SUPPORTED_LOCALES, type SupportedLocale } from '../../i18n';
+
+/**
+ * ⭐ The one template whose content is a **number**, named once so that the worker, the
+ * suppression rule and the catalogue below cannot disagree about which key that is.
+ */
+export const BALANCE_REMINDER_TEMPLATE_KEY = 'order.balance_reminded.customer';
 
 /**
  * The messages, one per `notification_rules.template_key`.
@@ -111,8 +118,40 @@ export interface TemplateContext {
    * the type with `0n` — which is a *sentence about a customer's balance* assembled to make a
    * compiler stop complaining. Absent means "nobody told me", and that is a different fact
    * from ฿0.00.
+   *
+   * ⛔ **And ฿0.00 is not a figure this message may carry either.** `balanceReminder` refuses a
+   * value that is not strictly positive, not merely an absent one — an order can be settled
+   * between the ask and the send, and a "you still owe ฿0.00" (or, on an overpayment,
+   * `-฿150.00`) is the single worst thing this feature can produce. The refusal is the last
+   * line: the worker suppresses the row before rendering, and this catches anything that ever
+   * reaches the renderer another way.
    */
   readonly outstandingThbMinor?: bigint | undefined;
+  /**
+   * ⭐ What the customer is being asked for **now** — `order_next_due_thb_minor()`, in satang.
+   *
+   * The remainder of the first unsettled instalment: the deposit on a 30/70, the whole amount
+   * on a pay-in-full schedule, and equal to the outstanding once the deposit has been accepted.
+   *
+   * ── ⚠️ WHY THE MESSAGE CARRIES TWO FIGURES AND NOT ONE ──────────────────────
+   *
+   * Because the screen one click away asks for this one. The email used to name the outstanding
+   * alone — "ยอดคงค้างทั้งหมด ฿14,791.68" — and then link to a payment page whose amount field
+   * opened on ฿4,437.50, which is a customer reading two different answers to *"what do I owe"*
+   * within one click and no way to tell which is right.
+   *
+   * ⛔ **This is not a new decision, and this file does not get to make one.** The owner already
+   * answered it — *"ที่ต้องจ่ายตอนนี้ + ค้างทั้งหมด"* — and `@wewin/core/owed-figures` is that
+   * answer: which figures, which labels, in which order, and when the two collapse to one line
+   * because they are the same number. `MyQuotations` and `PaymentIsland` render it, and this
+   * message is the third surface to *call the same function* rather than the fourth convention.
+   *
+   * ⚠️ Same shape as `outstandingThbMinor`: satang as a `bigint`, printed by the locale's own
+   * formatter, never written into a translated sentence, and **absent is a refusal to render**
+   * rather than a figure invented to fill a hole. A reminder that quietly fell back to one line
+   * because a caller forgot this field is precisely the defect above, silently reintroduced.
+   */
+  readonly nextDueThbMinor?: bigint | undefined;
 }
 
 export interface RenderedTemplate {
@@ -276,8 +315,8 @@ const TH: Readonly<Record<string, Renderer>> = {
  * entry here that takes an amount, because a translator who could write a sentence with a
  * baht figure in it could write one that rounds, or that puts the satang the other side of the
  * separator, or that spells `฿` as `THB` — and eight catalogues each doing that their own way
- * is eight answers to "what do I owe" and no way to tell which is right. `amountLabel` is a
- * *label*; the digits beside it come from `formatMoney`, which is `@wewin/i18n`'s and is the
+ * is eight answers to "what do I owe" and no way to tell which is right. `amountLabels` are
+ * *labels*; the digits beside them come from `formatMoney`, which is `@wewin/i18n`'s and is the
  * same function that draws the price on the storefront. Identical arrangement to
  * `payment.outstandingAmount` in `apps/web`, whose whole catalogue entry is `f.bahtExact(...)`.
  *
@@ -285,11 +324,12 @@ const TH: Readonly<Record<string, Renderer>> = {
  * a quantity, and it has no locale-dependent rendering to get wrong (`Formatters.code` exists
  * for exactly that distinction).
  *
- * ⚠️ Vocabulary is **borrowed, not invented**. `amountLabel` is `payment.outstanding` from
- * `apps/web`'s catalogue of the same locale, verbatim, so the figure a customer is chased for
- * carries the same words as the figure on the payment page they are being sent to; the Thai
- * subject is `payment.heading` (`แจ้งชำระเงิน`) and the closing line is the storefront's own
- * ติดต่อทีมขาย sentence. Two surfaces, one wording.
+ * ⚠️ Vocabulary is **borrowed, not invented**. `amountLabels` are `payment.outstanding` and
+ * `payment.dueNow` from `apps/web`'s catalogue of the same locale, **verbatim** — so the two
+ * figures a customer is chased for carry the same words, in the same distinction, as the two on
+ * the payment page they are being sent to. The Thai subject is `payment.heading`
+ * (`แจ้งชำระเงิน`) and the closing line is the storefront's own ติดต่อทีมขาย sentence. Two
+ * surfaces, one wording; and `@wewin/core/owed-figures` decides which of the two labels appears.
  */
 interface ReminderCopy {
   /** `Payment reminder — order no. 25-000123`. Never carries the amount; see above. */
@@ -299,8 +339,16 @@ interface ReminderCopy {
   /** How this locale names the order — with a number when there is one, and without when not. */
   readonly orderRef: (orderNo: string | null) => string;
   readonly lead: (orderRef: string) => string;
-  /** The label the amount is printed under, on its own line. `payment.outstanding`, verbatim. */
-  readonly amountLabel: string;
+  /**
+   * The label each figure is printed under, on its own line — keyed by the catalogue key
+   * `describeOwedFigures` names, so the mapping cannot pair a figure with the other one's words.
+   *
+   * ⚠️ Both entries are `apps/web`'s catalogue strings for this locale, character for character.
+   * `payment.outstanding` deliberately says *the whole* ("ทั้งหมด", "in total", 总, कुल, Tổng,
+   * Gesamt, ທັງໝົດ, စုစုပေါင်း) — beside `payment.dueNow` the qualifier is the only thing that
+   * tells a customer whether the smaller figure sits *inside* the larger one or comes after it.
+   */
+  readonly amountLabels: Readonly<Record<OwedLabelKey, string>>;
   readonly linkInvitation: string;
   readonly contact: string;
   readonly signOff: string;
@@ -318,7 +366,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? 'เรียน ลูกค้าผู้มีอุปการคุณ' : `เรียน คุณ${name}`),
     orderRef: (orderNo) => (orderNo === null ? 'ใบเสนอราคาของท่าน' : `ใบสั่งซื้อเลขที่ ${orderNo}`),
     lead: (ref) => `${ref} ยังมียอดค้างชำระอยู่`,
-    amountLabel: 'ยอดคงค้างทั้งหมด',
+    amountLabels: {
+      'payment.outstanding': 'ยอดคงค้างทั้งหมด',
+      'payment.dueNow': 'ยอดที่ต้องชำระตอนนี้',
+    },
     linkInvitation: 'ดูรายละเอียดและช่องทางชำระเงินได้ที่ลิงก์นี้',
     contact: 'หากท่านชำระเรียบร้อยแล้ว หรือมีข้อสงสัยเรื่องยอดเงิน กรุณาติดต่อทีมขาย',
     signOff: 'ขอแสดงความนับถือ\nWewin',
@@ -328,7 +379,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? 'Dear customer,' : `Dear ${name},`),
     orderRef: (orderNo) => (orderNo === null ? 'your quotation' : `order no. ${orderNo}`),
     lead: (ref) => `There is still an amount outstanding on ${ref}.`,
-    amountLabel: 'Still owing in total',
+    amountLabels: {
+      'payment.outstanding': 'Still owing in total',
+      'payment.dueNow': 'To pay now',
+    },
     linkInvitation: 'You can see the details and how to pay here:',
     contact:
       'If you have already paid, or if you have a question about the amount, please contact our sales team.',
@@ -340,7 +394,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
       name === null ? 'Sehr geehrte Kundin, sehr geehrter Kunde,' : `Guten Tag ${name},`,
     orderRef: (orderNo) => (orderNo === null ? 'Ihr Angebot' : `Bestellung Nr. ${orderNo}`),
     lead: (ref) => `Für ${ref} ist noch ein Betrag offen.`,
-    amountLabel: 'Noch offener Gesamtbetrag',
+    amountLabels: {
+      'payment.outstanding': 'Noch offener Gesamtbetrag',
+      'payment.dueNow': 'Jetzt zu zahlen',
+    },
     linkInvitation: 'Details und Zahlungsmöglichkeiten finden Sie hier:',
     contact:
       'Wenn Sie bereits bezahlt haben oder Fragen zum Betrag haben, wenden Sie sich bitte an unser Vertriebsteam.',
@@ -351,7 +408,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? 'प्रिय ग्राहक,' : `प्रिय ${name} जी,`),
     orderRef: (orderNo) => (orderNo === null ? 'आपका कोटेशन' : `ऑर्डर सं. ${orderNo}`),
     lead: (ref) => `${ref} पर अभी भी राशि बकाया है।`,
-    amountLabel: 'कुल बकाया राशि',
+    amountLabels: {
+      'payment.outstanding': 'कुल बकाया राशि',
+      'payment.dueNow': 'अभी देय राशि',
+    },
     linkInvitation: 'विवरण और भुगतान का तरीका यहाँ देखिए:',
     contact:
       'यदि आपने भुगतान कर दिया है, या राशि के बारे में कोई सवाल हो, तो कृपया सेल्स टीम से संपर्क कीजिए।',
@@ -362,7 +422,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? 'ຮຽນ ລູກຄ້າທີ່ນັບຖື,' : `ຮຽນ ທ່ານ${name},`),
     orderRef: (orderNo) => (orderNo === null ? 'ໃບສະເໜີລາຄາຂອງທ່ານ' : `ອໍເດີເລກທີ ${orderNo}`),
     lead: (ref) => `${ref} ຍັງມີຍອດຄ້າງຈ່າຍຢູ່.`,
-    amountLabel: 'ຍອດຄ້າງຈ່າຍທັງໝົດ',
+    amountLabels: {
+      'payment.outstanding': 'ຍອດຄ້າງຈ່າຍທັງໝົດ',
+      'payment.dueNow': 'ຍອດທີ່ຕ້ອງຈ່າຍຕອນນີ້',
+    },
     linkInvitation: 'ເບິ່ງລາຍລະອຽດ ແລະ ຊ່ອງທາງຊຳລະເງິນໄດ້ທີ່ລິ້ງນີ້:',
     contact: 'ຫາກທ່ານຊຳລະແລ້ວ ຫຼື ມີຂໍ້ສົງໄສກ່ຽວກັບຍອດເງິນ ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
     signOff: 'ດ້ວຍຄວາມນັບຖື,\nWewin',
@@ -372,7 +435,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? 'လေးစားရပါသော ဖောက်သည်,' : `လေးစားရပါသော ${name},`),
     orderRef: (orderNo) => (orderNo === null ? 'သင်၏ စျေးနှုန်းကမ်းလှမ်းချက်' : `အော်ဒါ အမှတ် ${orderNo}`),
     lead: (ref) => `${ref} တွင် ပေးရန်ကျန်ရှိနေသေးသော ပမာဏ ရှိပါသည်။`,
-    amountLabel: 'ကျန်ရှိနေသေးသော စုစုပေါင်းပမာဏ',
+    amountLabels: {
+      'payment.outstanding': 'ကျန်ရှိနေသေးသော စုစုပေါင်းပမာဏ',
+      'payment.dueNow': 'ယခုပေးရမည့်ပမာဏ',
+    },
     linkInvitation: 'အသေးစိတ်နှင့် ငွေပေးချေနည်းကို ဤလင့်ခ်တွင် ကြည့်ပါ:',
     contact:
       'ငွေပေးချေပြီးပါက သို့မဟုတ် ပမာဏနှင့်ပတ်သက်၍ မေးစရာရှိပါက အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
@@ -383,7 +449,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? 'Kính gửi Quý khách,' : `Kính gửi ${name},`),
     orderRef: (orderNo) => (orderNo === null ? 'báo giá của Quý khách' : `đơn hàng số ${orderNo}`),
     lead: (ref) => `${ref} vẫn còn số tiền chưa thanh toán.`,
-    amountLabel: 'Tổng số tiền còn thiếu',
+    amountLabels: {
+      'payment.outstanding': 'Tổng số tiền còn thiếu',
+      'payment.dueNow': 'Cần thanh toán bây giờ',
+    },
     linkInvitation: 'Xem chi tiết và cách thanh toán tại đây:',
     contact:
       'Nếu Quý khách đã thanh toán, hoặc có thắc mắc về số tiền, vui lòng liên hệ bộ phận kinh doanh.',
@@ -394,7 +463,10 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
     greeting: (name) => (name === null ? '尊敬的客户：' : `${name} 您好：`),
     orderRef: (orderNo) => (orderNo === null ? '您的报价单' : `订单编号 ${orderNo}`),
     lead: (ref) => `${ref} 仍有款项尚未结清。`,
-    amountLabel: '尚欠总额',
+    amountLabels: {
+      'payment.outstanding': '尚欠总额',
+      'payment.dueNow': '现在应付',
+    },
     linkInvitation: '可在此查看明细与付款方式：',
     contact: '如您已付款，或对金额有疑问，请联系销售团队。',
     signOff: '此致\nWewin',
@@ -402,9 +474,9 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
 };
 
 /**
- * ⭐ The reminder, in one language, assembled so that the amount is never inside a sentence.
+ * ⭐ The reminder, in one language, assembled so that no amount is ever inside a sentence.
  *
- * The body is a list of paragraphs joined by a blank line, and the amount is its **own**
+ * The body is a list of paragraphs joined by a blank line, and **each** amount is its own
  * paragraph: a label the translator wrote, then the digits `formatMoney` wrote, on the next
  * line. That layout is not a style preference — it is what makes the promise above mechanical.
  * A sentence with a hole in it invites the hole to be moved, pluralised or agreed with; a line
@@ -414,7 +486,38 @@ const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
  * app, and `formatBaht`'s whole-baht rounding would ask them for a different number from the
  * one the payment page shows. Same call `apps/web`'s `bahtExact` makes.
  *
- * ⚠️ Refuses — returns `undefined` — when the context carries no amount. See `TemplateContext`.
+ * ── ⚠️ WHICH FIGURES, AND IT IS NOT THIS FILE THAT DECIDES ──────────────────
+ *
+ * `describeOwedFigures` does — `@wewin/core/owed-figures`, the same call `MyQuotations` and
+ * `PaymentIsland` make. It answers with the figures **in reading order**, so the one being
+ * asked for now leads and the whole debt supports it, and it collapses to a single line when
+ * the two are the same number (a pay-in-full order, or a 30/70 whose deposit has been
+ * accepted) — because two labels side by side assert a distinction, and a reader who sees the
+ * same amount under both concludes they misread one of them.
+ *
+ * ⛔ Called, not restated. The email is the third surface to state these two figures and it
+ * must not be the fourth convention: the whole defect it exists to close is a customer reading
+ * ฿14,791.68 in an inbox and ฿4,437.50 in the field of the page that email linked to.
+ *
+ * ⚠️ `emphasis` is deliberately ignored. It is a *role*, and this medium has no typography to
+ * spend on it — plain text, no HTML (see the top of this file). Reading order is the whole of
+ * the emphasis available here, and it is the part `describeOwedFigures` already decided.
+ *
+ * ── The two refusals ────────────────────────────────────────────────────────
+ *
+ * ⚠️ **No figure → no message.** Either amount absent means a caller built a context the claim
+ * query is supposed to fill, and the worker turns that into a permanent dead row an engineer
+ * reads rather than an email with a hole where the money should be.
+ *
+ * ⛔ **Nothing owed → no message**, and this one is about a customer rather than an engineer.
+ * An order can be settled — by a slip, or by an approved write-off — between the button being
+ * pressed and the worker draining, and "ยอดคงค้างทั้งหมด ฿0.00" (or `-฿150.00` on an
+ * overpayment) chases somebody who has already paid, which is the worst thing this feature can
+ * do. In the ordinary run nothing reaches this line: `sendSuppression` below takes the row out
+ * of the queue before it is rendered, because a customer who paid promptly is not a delivery
+ * failure. This is the backstop for every other path into the renderer, and it is why the test
+ * for it asserts `undefined` and not a string.
+ *
  * ⚠️ Survives `documentUrl` being absent, like every other renderer here: an unset
  * `NOTIFY_WEB_BASE_URL` is a configuration mistake and is not a reason to withhold the message,
  * so the link paragraph is dropped whole rather than rendered empty or as a broken invitation.
@@ -423,8 +526,10 @@ const balanceReminder = (locale: SupportedLocale): Renderer => {
   const copy = REMINDER_COPY[locale];
 
   return (context) => {
-    const minor = context.outstandingThbMinor;
-    if (minor === undefined) return undefined;
+    const outstanding = context.outstandingThbMinor;
+    const nextDue = context.nextDueThbMinor;
+    if (outstanding === undefined || nextDue === undefined) return undefined;
+    if (outstanding <= 0n) return undefined;
 
     const reference = copy.orderRef(context.orderNo);
     const link =
@@ -435,8 +540,11 @@ const balanceReminder = (locale: SupportedLocale): Renderer => {
     const paragraphs = [
       copy.greeting(named(context.contactName)),
       copy.lead(reference),
-      /* ⛔ Label, newline, digits. The two never share a sentence. */
-      `${copy.amountLabel}\n${formatMoney(locale, minor, 'THB', 'exact')}`,
+      /* ⛔ Label, newline, digits — per figure. Words and amount never share a line. */
+      ...describeOwedFigures(outstanding, nextDue).map(
+        (figure) =>
+          `${copy.amountLabels[figure.labelKey]}\n${formatMoney(locale, figure.amountMinor, 'THB', 'exact')}`,
+      ),
       link,
       copy.contact,
       copy.signOff,
@@ -448,6 +556,58 @@ const balanceReminder = (locale: SupportedLocale): Renderer => {
     };
   };
 };
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ WHY A QUEUED MESSAGE MUST NOT BE SENT — and why that is not a failure.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Answers a suppression reason (`notifications.suppressed_reason`) or `undefined` for "send it".
+ * The worker asks this **before** rendering, on the context it is about to render with.
+ *
+ * ── The one case, today ──────────────────────────────────────────────────────
+ *
+ * The balance reminder on an order that no longer owes anything. The window is real and not
+ * contrived: the outbox retries five times with backoff, a worker can be down, a queue can be
+ * backlogged — and an accepted slip or an approved write-off moves a balance to zero in one
+ * statement. The figure is read at send time precisely because it moves; this is what happens
+ * when it has moved all the way.
+ *
+ * ── ⚠️ WHY `suppressed` AND NOT `dead` ───────────────────────────────────────
+ *
+ * The renderer refuses either way, and a refusal alone would produce a **dead** row. That is
+ * the wrong record, and the wrongness is operational rather than cosmetic:
+ *
+ *   ⓵ `dead` is the queue plan 10.5(3) built the whole outbox around — *"the company believes
+ *     the customer was told and they were not"*. The worker logs it at `error` with "Nobody has
+ *     been told", which is the line an alert keys on. A customer who paid before we got round
+ *     to chasing them is not that. Filing it there teaches whoever reads that queue that some
+ *     of it is noise, and a dead queue nobody trusts is the failure the plan names.
+ *   ⓶ the dead queue has a ส่งซ้ำ button, and pressing it here re-renders, re-refuses and
+ *     re-deads. A row whose only offered action cannot work should not be in that list.
+ *   ⓷ `suppressed` already means exactly this: terminal, undelivered, **not** a failure, and
+ *     nothing anybody presses will change it. `suppressed_reason` is what says which kind, and
+ *     `balance_settled` is a fact a person can act on — or, far more often, be satisfied by.
+ *
+ * ⚠️ The cost, stated rather than hidden: `notifications_addressed_unless_suppressed` requires
+ * a suppressed row to have no `recipient_key`, so suppressing drops the address off the row.
+ * That is the same trade `0009_user_erasure.sql` makes and it is acceptable for the same
+ * reason — the address was never used, the order still has it, and the next ask writes a new
+ * event and a new outbox row.
+ *
+ * ⛔ An **absent** amount is deliberately not suppressed. That is a caller that failed to build
+ * the context, it is a bug, and it belongs in the dead queue where bugs are read. Only a figure
+ * that is present and settled is a non-event.
+ */
+export function sendSuppression(templateKey: string, context: TemplateContext): string | undefined {
+  if (templateKey !== BALANCE_REMINDER_TEMPLATE_KEY) return undefined;
+
+  const outstanding = context.outstandingThbMinor;
+  if (outstanding === undefined) return undefined;
+
+  /* `<= 0n` and not `=== 0n`: an overpayment is a modelled state and has nothing to chase. */
+  return outstanding <= 0n ? 'balance_settled' : undefined;
+}
 
 /**
  * One catalogue per language: thirteen messages in Thai, and the reminder in all eight.
@@ -476,7 +636,7 @@ const CATALOGUE: Readonly<Record<SupportedLocale, Readonly<Record<string, Render
       locale,
       {
         ...(locale === 'th' ? TH : {}),
-        'order.balance_reminded.customer': balanceReminder(locale),
+        [BALANCE_REMINDER_TEMPLATE_KEY]: balanceReminder(locale),
       },
     ]),
   ) as Record<SupportedLocale, Readonly<Record<string, Renderer>>>;

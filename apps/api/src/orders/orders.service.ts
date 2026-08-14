@@ -1,6 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { OrderStatus } from '@wewin/db/schema';
 import { encodeThb } from '@wewin/contract/order';
+/*
+ * ⚠️ The formatter, not a hand-rolled `toLocaleString`. `formatDateTime` defaults to
+ * `BUSINESS_TIME_ZONE` (Asia/Bangkok) and to the locale's own calendar, which is how every
+ * other date a member of staff reads is drawn — see the cooldown refusal in `remindBalance`.
+ */
+import { formatDateTime } from '@wewin/i18n/format';
 import {
   type BalanceReminderWire,
   type CancellationPreviewWire,
@@ -59,6 +65,7 @@ import {
   encodeEvent,
   encodeOrder,
   encodeOrderSummary,
+  iso,
   type EventAudience,
 } from './encode';
 import {
@@ -1467,11 +1474,43 @@ export class OrdersService {
       );
 
       if (cooldown.blocked) {
+        /*
+         * ─────────────────────────────────────────────────────────────────────
+         * ⚠️ TWO SPELLINGS OF ONE INSTANT, AND EACH READER GETS THE RIGHT ONE.
+         * ─────────────────────────────────────────────────────────────────────
+         *
+         * This sentence used to interpolate the column as Postgres printed it —
+         * `2026-08-15 19:05:21.28587+00`. Microseconds, a space instead of a `T`, and **UTC**,
+         * shown to staff who read Asia/Bangkok: the time on the screen was seven hours before
+         * the moment they could actually press the button again, which is a refusal that lies
+         * about its own condition. The dashboard's `remindedRecently` branch had been rendering
+         * the same fact correctly all along; the API path was the one that had not.
+         *
+         *   **the sentence** — `formatDateTime`, Thai, `Asia/Bangkok`, Buddhist calendar and a
+         *   short time. `@wewin/i18n`'s formatter, defaulting to `BUSINESS_TIME_ZONE`, so this
+         *   reads the way every other date a member of staff sees does — and it is formatted
+         *   *here* rather than left to the client because this sentence is what the dashboard
+         *   shows verbatim (`failureMessage(error)`), and a curl or a log gets it too.
+         *
+         *   **`details`** — ISO 8601 through `iso()`, the same call every other timestamp on
+         *   this API's wire goes through. A client that would rather render for itself now can:
+         *   before this, `details.nextAllowedAt` was the one field in the envelope that
+         *   `new Date()` could not be trusted with.
+         *
+         * ⛔ `nextAllowedAt` cannot be null here — `blocked` is true only when Postgres compared
+         * a real timestamp against its own `now()` — but it is typed nullable, so the fallback
+         * drops the *whole clause* rather than the value inside it. A trailing "หลัง" with
+         * nothing after it would be the same defect in a smaller font.
+         */
+        const when = cooldown.nextAllowedAt;
+        const retryClause =
+          when === null ? '' : ` — แจ้งซ้ำได้อีกครั้งหลัง ${formatDateTime('th', when)}`;
+
         throw AppError.conflict(
-          `เพิ่งแจ้งเตือนยอดค้างชำระของออเดอร์นี้ไปแล้ว — แจ้งซ้ำได้อีกครั้งหลัง ${cooldown.nextAllowedAt ?? ''}`,
+          `เพิ่งแจ้งเตือนยอดค้างชำระของออเดอร์นี้ไปแล้ว${retryClause}`,
           {
-            lastRemindedAt: cooldown.lastAt,
-            nextAllowedAt: cooldown.nextAllowedAt,
+            lastRemindedAt: iso(cooldown.lastAt),
+            nextAllowedAt: iso(when),
             cooldownHours: BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT,
           },
         );

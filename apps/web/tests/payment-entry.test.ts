@@ -537,7 +537,16 @@ describe('⭐ the field opens on what the quotation promised', () => {
     expect(island).toContain('nextDueMinor: data.nextDueThbMinor');
     expect(island).toContain('t(figure.labelKey)');
 
-    const owedFigures = read('../src/lib/payment/owedFigures.ts');
+    /*
+     * ⚠️ The rule itself now lives in `@wewin/core/owed-figures`, and this reads it there.
+     *
+     * It moved when the **reminder email** became the third surface to state these two figures:
+     * `apps/api` cannot import `apps/web`, and a rule restated in a second file is a rule that
+     * has already begun to drift — which is the defect `owedFigures.ts` was extracted to close.
+     * `src/lib/payment/owedFigures.ts` is now the re-export that proves both label keys are real
+     * `UiKey`s, which is the half of the check this package can make and core cannot.
+     */
+    const owedFigures = read('../../../packages/core/src/owedFigures.ts');
     expect(owedFigures).toContain("labelKey: 'payment.outstanding'");
     expect(owedFigures).toContain("labelKey: 'payment.dueNow'");
   });

@@ -54,7 +54,16 @@ function isFrozen(row: ScopedOrder): boolean {
   return frozen;
 }
 
-const iso = (value: Date | null): string | null => (value === null ? null : value.toISOString());
+/**
+ * The one spelling of an instant this API puts on the wire: ISO 8601, UTC, `Z`.
+ *
+ * ⚠️ Exported, because `details` on an error envelope is wire too. The cooldown refusal used to
+ * hand back Postgres's own `2026-08-15 19:05:21.28587+00` there — the only timestamp this API
+ * emitted that a client could not `new Date()` the way it does every other one. Every timestamp
+ * leaves through here now, whether it leaves in a body or in an error.
+ */
+export const iso = (value: Date | null): string | null =>
+  value === null ? null : value.toISOString();
 
 export function encodeOrderSummary(row: ScopedOrder): OrderSummaryWire {
   /*

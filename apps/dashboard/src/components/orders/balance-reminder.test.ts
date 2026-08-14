@@ -4,6 +4,7 @@ import {
   BALANCE_REMINDER_COOLDOWN_HOURS,
   lastBalanceReminderAt,
   reminderAvailability,
+  reminderButtonLabelTh,
   reminderOutcome,
 } from './balance-reminder';
 
@@ -189,5 +190,47 @@ describe('⭐ what the toast says afterwards', () => {
 
     expect(outcome.delivered).toBe(false);
     expect(outcome.detailTh).toContain('line_not_linked');
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ ⓸ THE BUTTON QUOTES THE FIGURE IT IS ABOUT TO SEND.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The control has no confirmation dialog, and the stated reason is that it *names the figure it
+ * is about to quote* so the press is informed. It was naming a different one: `formatBaht`
+ * rounds to the whole baht, so the button read ฿14,792 while the email it sends and the timeline
+ * row it writes both say ฿14,791.68. A clerk reading the button aloud on the phone gave a number
+ * that appears nowhere else — including in that customer's inbox.
+ *
+ * ⚠️ ฿14,791.68 is the review's own figure, kept, because it is the amount whose two spellings
+ * differ: a test written against a round number would pass against either formatter.
+ */
+describe('⭐ the label on the button', () => {
+  const OWED_EXACT = 1_479_168n; // ฿14,791.68
+
+  it('⛔ states the satang, matching the email and the timeline rather than the money card', () => {
+    /*
+     * The mutation this exists to catch is one character wide — `formatBaht` for `baht` — and it
+     * is invisible on every round number in every fixture. `not.toContain('฿14,792')` is the half
+     * that fails when somebody rounds it back, because ฿14,792 is a figure no other surface in
+     * this system ever prints for this order.
+     */
+    expect(reminderButtonLabelTh(OWED_EXACT)).toBe('แจ้งเตือนยอดค้างชำระ ฿14,791.68');
+    expect(reminderButtonLabelTh(OWED_EXACT)).not.toContain('฿14,792');
+  });
+
+  it('says what the button does, not only what the number is', () => {
+    /* The figure is an argument for pressing it; the verb is what makes it a control. */
+    expect(reminderButtonLabelTh(OWED_EXACT)).toContain('แจ้งเตือนยอดค้างชำระ');
+  });
+
+  it('drops the satang when there are none, so a whole-baht balance reads as one', () => {
+    /*
+     * `baht` prints decimals only when they exist — ฿5,000 and not ฿5,000.00 — which is why the
+     * exact formatter costs nothing on the orders where the rounded one was indistinguishable.
+     */
+    expect(reminderButtonLabelTh(500_000n)).toBe('แจ้งเตือนยอดค้างชำระ ฿5,000');
   });
 });

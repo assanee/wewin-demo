@@ -4,13 +4,16 @@ import { useState } from 'react';
 import { BellRing } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { formatBaht } from '@wewin/core/format';
-
 import { Button } from '@/components/ui/button';
 import { useSession } from '@/lib/auth/session';
 import { failureMessage } from '@/lib/api/errors';
 import { sendBalanceReminder } from './order-api';
-import { reminderAvailability, reminderOutcome, type SpineEvent } from './balance-reminder';
+import {
+  reminderAvailability,
+  reminderButtonLabelTh,
+  reminderOutcome,
+  type SpineEvent,
+} from './balance-reminder';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -123,8 +126,13 @@ export function BalanceReminderButton({
       onClick={() => void send()}
     >
       <BellRing data-icon="inline-start" />
-      {/* The figure it is about to quote, so the press is informed without a dialog to confirm it. */}
-      แจ้งเตือนยอดค้างชำระ {formatBaht(availability.outstandingThbMinor)}
+      {/*
+       * ⚠️ The figure it is about to quote, **to the satang**, so the press is informed without a
+       * dialog to confirm it — and so a clerk reading it aloud says the number that is in the
+       * customer's inbox. The label is built in `balance-reminder.ts`, where a test can reach the
+       * rounding decision; see `reminderButtonLabelTh` for why exact beats matching the card.
+       */}
+      {reminderButtonLabelTh(availability.outstandingThbMinor)}
     </Button>
   );
 }

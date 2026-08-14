@@ -11,7 +11,13 @@ import {
 
 import { formatMoney } from '@wewin/i18n/format';
 
-import { hasTemplate, renderTemplate, templateKeys } from '../../src/notifications/templates/templates';
+import {
+  BALANCE_REMINDER_TEMPLATE_KEY,
+  hasTemplate,
+  renderTemplate,
+  sendSuppression,
+  templateKeys,
+} from '../../src/notifications/templates/templates';
 
 /** Any key that exists in Thai. The resolution is per template, so it needs a real one. */
 const KEY = 'order.delivered.customer';
@@ -43,6 +49,18 @@ const CONTEXT = {
   contactName: 'สมชาย',
   coalescedCount: 0,
   outstandingThbMinor: 552_960n,
+  /*
+   * ⚠️ And `nextDueThbMinor`, for the same reason and with the same consequence: the reminder
+   * states **both** figures — what is payable now and what is owed in total — because the screen
+   * it links to opens its amount field on the first of them. A context carrying only the total
+   * is refused, exactly like one carrying no money at all.
+   *
+   * Equal to the outstanding here on purpose. That is the commonest real shape — a pay-in-full
+   * order, or a 30/70 whose deposit has already been accepted — and `describeOwedFigures`
+   * collapses it to a single line, so every assertion below that expects one amount still
+   * describes the message a customer actually receives. The 30/70 case has its own block.
+   */
+  nextDueThbMinor: 552_960n,
 } as const;
 
 describe('notification templates', () => {
@@ -383,10 +401,228 @@ describe('⭐ the balance reminder', () => {
       contactName: '   ',
       coalescedCount: 0,
       outstandingThbMinor: OWED,
+      /* Both figures, or it refuses — and this test is about the greeting, not the money. */
+      nextDueThbMinor: OWED,
     });
 
     expect(rendered?.body).toContain('Dear customer,');
     expect(rendered?.body).not.toContain('null');
     expect(rendered?.subject).toContain('your quotation');
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ ⓶ THE EMAIL AND THE SCREEN IT LINKS TO NAME THE SAME NUMBERS.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The defect these close, exactly as it was found: on a 30/70 order with nothing paid the
+ * message said **"ยอดคงค้างทั้งหมด ฿14,791.68"** and the link under it opened a screen whose
+ * amount field was prefilled with `nextDueThbMinor` — **฿4,437.50**. One customer, one click,
+ * two answers to "what do I owe", and nothing on either surface to say which was which.
+ *
+ * ⚠️ **The convention is not invented here and must not be.** The owner already chose
+ * *"ที่ต้องจ่ายตอนนี้ + ค้างทั้งหมด"*, and `@wewin/core/owed-figures` is that choice: the
+ * actionable figure leads, the total supports it, and the two collapse to one line when they
+ * are the same number. `MyQuotations` and `PaymentIsland` render it; this is the third surface
+ * calling the same function, which is why these tests assert the *shape* — order, labels, one
+ * line or two — rather than a sentence somebody could satisfy by writing a new one.
+ */
+
+/** WW-1002's 30/70: nothing paid, so the deposit is due and the whole debt sits behind it. */
+const OWED_30_70 = 1_479_168n; // ฿14,791.68
+const DUE_30_70 = 443_750n; // ฿4,437.50
+
+/** The line a figure was printed on, and the label line directly above it. */
+const figureLines = (body: string, amount: string): { index: number; label: string } => {
+  const lines = body.split('\n');
+  const index = lines.indexOf(amount);
+  return { index, label: index <= 0 ? '' : (lines[index - 1] ?? '') };
+};
+
+describe('⭐ the reminder states both figures, in the order the payment screen does', () => {
+  it('names what is payable now FIRST and the whole debt after it, in all eight', () => {
+    for (const locale of SUPPORTED_LOCALES) {
+      const body =
+        renderTemplate(locale, REMINDER, {
+          ...CONTEXT,
+          outstandingThbMinor: OWED_30_70,
+          nextDueThbMinor: DUE_30_70,
+        })?.body ?? '';
+
+      const dueNow = figureLines(body, formatMoney(locale, DUE_30_70, 'THB', 'exact'));
+      const outstanding = figureLines(body, formatMoney(locale, OWED_30_70, 'THB', 'exact'));
+
+      /*
+       * ⛔ THE ASSERTION THE DEFECT TURNS ON. Both figures present — an email naming only the
+       * total is the bug as found, and one naming only the instalment is the mirror of it,
+       * where a customer concludes the order costs ฿4,437.50.
+       */
+      expect(dueNow.index, `${locale}: the payable figure is missing`).toBeGreaterThanOrEqual(0);
+      expect(outstanding.index, `${locale}: the outstanding is missing`).toBeGreaterThanOrEqual(0);
+
+      /* Reading order is the whole of the emphasis available in plain text. */
+      expect(dueNow.index, locale).toBeLessThan(outstanding.index);
+
+      /*
+       * Each under its own label, and the two labels are different words. Identical labels
+       * would print two numbers as if they answered the same question, which is the confusion
+       * being removed rather than a smaller version of it.
+       */
+      expect(dueNow.label.length, locale).toBeGreaterThan(0);
+      expect(outstanding.label.length, locale).toBeGreaterThan(0);
+      expect(dueNow.label, locale).not.toBe(outstanding.label);
+
+      /* ⚠️ Still label-then-digits, never a sentence with a hole: the amount is the whole line. */
+      expect(body.split('\n')[dueNow.index], locale).toBe(
+        formatMoney(locale, DUE_30_70, 'THB', 'exact'),
+      );
+    }
+  });
+
+  it('⚠️ borrows the storefront’s own words, so the email and the page agree', () => {
+    /*
+     * Verbatim `payment.dueNow` and `payment.outstanding` from `apps/web`'s Thai catalogue. A
+     * customer who clicks the link reads the same two labels on the page they land on, and the
+     * qualifier "ทั้งหมด" is what tells them the smaller figure sits *inside* the larger one
+     * rather than coming after it.
+     */
+    const body =
+      renderTemplate('th', REMINDER, {
+        ...CONTEXT,
+        outstandingThbMinor: OWED_30_70,
+        nextDueThbMinor: DUE_30_70,
+      })?.body ?? '';
+
+    expect(body).toContain('ยอดที่ต้องชำระตอนนี้\n฿4,437.50');
+    expect(body).toContain('ยอดคงค้างทั้งหมด\n฿14,791.68');
+  });
+
+  it('⭐ prints the number ONCE when the two figures agree, and never the “pay now” label', () => {
+    /*
+     * A pay-in-full order, and a 30/70 whose deposit has been accepted: the balance is both the
+     * whole remaining debt and the next instalment. Two labels side by side assert a
+     * distinction, so printing one number under both manufactures the confusion this exists to
+     * remove — `owedFigures.ts` states that reasoning and this is it, one surface further out.
+     */
+    for (const locale of SUPPORTED_LOCALES) {
+      const body =
+        renderTemplate(locale, REMINDER, {
+          ...CONTEXT,
+          outstandingThbMinor: OWED_30_70,
+          nextDueThbMinor: OWED_30_70,
+        })?.body ?? '';
+
+      const amount = formatMoney(locale, OWED_30_70, 'THB', 'exact');
+      const dueNowLabel = figureLines(
+        renderTemplate(locale, REMINDER, {
+          ...CONTEXT,
+          outstandingThbMinor: OWED_30_70,
+          nextDueThbMinor: DUE_30_70,
+        })?.body ?? '',
+        formatMoney(locale, DUE_30_70, 'THB', 'exact'),
+      ).label;
+
+      expect(body.split('\n').filter((line) => line === amount), locale).toHaveLength(1);
+      expect(body, locale).not.toContain(dueNowLabel);
+    }
+  });
+
+  it('refuses when it was told the total and not what is payable now', () => {
+    /*
+     * ⚠️ Not a silent fall back to one figure. A caller that stopped filling `nextDueThbMinor`
+     * would otherwise reintroduce the original defect invisibly — an email naming the total,
+     * linking to a screen asking for something else — and the whole point of a refusal is that
+     * the failure is a row an engineer reads rather than a message a customer misreads.
+     */
+    for (const locale of SUPPORTED_LOCALES) {
+      expect(
+        renderTemplate(locale, REMINDER, {
+          orderNo: '25-000123',
+          contactName: null,
+          coalescedCount: 0,
+          outstandingThbMinor: OWED_30_70,
+        }),
+        locale,
+      ).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ ⓵ IT MUST NOT CHASE SOMEBODY WHO HAS ALREADY PAID.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The service refuses `outstanding <= 0` **at the ask**, and then correctly re-reads the figure
+ * at send time — where nothing tested it again. So an order settled between the button and the
+ * drain produced *"ยอดคงค้างทั้งหมด / ฿0.00"* in a customer's inbox, and an overpaid one produced
+ * `-฿150.00`. The window is not theoretical: five retries with backoff, a worker that can be
+ * down, a queue that can be backlogged, and an approved write-off that moves a balance to zero
+ * as readily as a slip does.
+ *
+ * Two mechanisms, and they answer different questions:
+ *
+ *   `sendSuppression`  — *should this queued message go out at all?* Answered before rendering,
+ *     so the outbox row is closed as **suppressed**: terminal, undelivered, and not a failure.
+ *   the renderer       — *may this message exist?* Answered last, so that any other path into
+ *     it produces no message rather than a false one.
+ */
+describe('⭐ a settled balance is never chased', () => {
+  it.each([
+    ['settled exactly', 0n],
+    ['overpaid', -15_000n],
+  ])('refuses to render on an order that is %s, in all eight', (_name, owed) => {
+    for (const locale of SUPPORTED_LOCALES) {
+      expect(
+        renderTemplate(locale, REMINDER, {
+          ...CONTEXT,
+          outstandingThbMinor: owed,
+          nextDueThbMinor: 0n,
+        }),
+        locale,
+      ).toBeUndefined();
+    }
+  });
+
+  it('⛔ takes the message out of the queue instead of failing it', () => {
+    /*
+     * `balance_settled`, not a dead row. A dead row is the queue whose sentence is "nobody has
+     * been told" — it logs at `error`, it is what an alert keys on, and its one offered action
+     * (ส่งซ้ำ) would re-render and re-refuse. A customer who paid promptly is not a delivery
+     * failure and must not train anybody to ignore that list.
+     */
+    expect(sendSuppression(REMINDER, { ...CONTEXT, outstandingThbMinor: 0n })).toBe('balance_settled');
+    expect(sendSuppression(REMINDER, { ...CONTEXT, outstandingThbMinor: -15_000n })).toBe(
+      'balance_settled',
+    );
+  });
+
+  it('lets a real balance through, and says nothing about any other message', () => {
+    expect(sendSuppression(REMINDER, { ...CONTEXT, outstandingThbMinor: 1n })).toBeUndefined();
+
+    /*
+     * ⚠️ Thirteen other templates share this worker and none of them is about money. A
+     * suppression rule that answered on template key alone — or on the amount alone — would
+     * silently stop delivering order confirmations for settled orders, which is every order
+     * that has been paid for.
+     */
+    expect(sendSuppression('order.delivered.customer', { ...CONTEXT, outstandingThbMinor: 0n })).toBeUndefined();
+    expect(sendSuppression('order.payment_confirmed.customer', { ...CONTEXT, outstandingThbMinor: 0n })).toBeUndefined();
+
+    /*
+     * ⛔ And an **absent** figure is deliberately not suppressed. That is a caller that failed
+     * to build the context — a bug — and it belongs in the dead queue where bugs are read. Only
+     * a figure that is present and settled is a non-event.
+     */
+    expect(
+      sendSuppression(REMINDER, { orderNo: null, contactName: null, coalescedCount: 0 }),
+    ).toBeUndefined();
+  });
+
+  it('names the one template whose content is a number, once', () => {
+    /* The worker, the suppression rule and the catalogue read the same constant. */
+    expect(BALANCE_REMINDER_TEMPLATE_KEY).toBe(REMINDER);
+    expect(hasTemplate('th', BALANCE_REMINDER_TEMPLATE_KEY)).toBe(true);
   });
 });

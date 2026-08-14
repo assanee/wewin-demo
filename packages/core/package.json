@@ -33,6 +33,7 @@
     "./vat": "./dist/vat.js",
     "./fx": "./dist/fx.js",
     "./quotation": "./dist/quotation.js",
+    "./owed-figures": "./dist/owedFigures.js",
     "./phone": "./dist/phone.js",
     "./promptpay": "./dist/promptpay.js"
   },

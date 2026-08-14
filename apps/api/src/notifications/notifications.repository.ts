@@ -70,6 +70,24 @@ export interface ClaimedNotification {
    * that is already fetching the order.
    */
   readonly outstandingThbMinor: bigint;
+  /**
+   * ⭐ What this order is being asked for **now**, at claim time — `order_next_due_thb_minor()`,
+   * satang. The remainder of the first instalment not yet settled by accepted slips.
+   *
+   * ⛔ Postgres's fold, in the same claim statement, on the same row, at the same instant as the
+   * outstanding beside it. That the two are read together is the point: they are compared
+   * (`describeOwedFigures`) to decide whether the message prints one figure or two, and two
+   * folds taken at two moments could disagree about an order nothing had happened to.
+   *
+   * ── ⚠️ Why the message carries this at all ─────────────────────────────────────
+   *
+   * Because the payment screen the message links to opens its amount field on **this** figure,
+   * not on the outstanding. An email naming ฿14,791.68 that links to a page asking for ฿4,437.50
+   * is one customer reading two answers to "what do I owe" within a single click, and
+   * `@wewin/core/owed-figures` is the one place that decides how the pair is stated — on the
+   * list, on the payment screen and now in the inbox.
+   */
+  readonly nextDueThbMinor: bigint;
 }
 
 export interface AttemptRecord {
@@ -182,7 +200,11 @@ export class NotificationsRepository {
         -- int8 anyway, so the cast makes the string deliberate; coalesce mirrors scoped-order.ts,
         -- where the fold is NULL only for an order id naming no row and the join above makes that
         -- impossible.
-        coalesce(order_outstanding_thb_minor(n.order_id), 0)::text as outstanding_thb_minor
+        coalesce(order_outstanding_thb_minor(n.order_id), 0)::text as outstanding_thb_minor,
+        -- Beside it, from the same row at the same instant, for the same reason: the message
+        -- states both figures and describeOwedFigures compares them, so two folds read at two
+        -- moments could disagree about an order nothing had happened to.
+        coalesce(order_next_due_thb_minor(n.order_id), 0)::text as next_due_thb_minor
     `);
 
     return rowsOf(result).flatMap((row) => {
@@ -268,6 +290,50 @@ export class NotificationsRepository {
          where id = ${attempt.notificationId}
       `);
     });
+  }
+
+  /**
+   * ⭐ Close a claimed row **without sending it, and without calling that a failure**.
+   *
+   * ── What this is for ─────────────────────────────────────────────────────────
+   *
+   * One case today: a balance reminder for an order that was settled between the ask and the
+   * drain. The message is queued, correct at the time, and by the moment a worker reaches it
+   * there is nothing to chase — see `sendSuppression` in `templates/templates.ts` for the whole
+   * argument, including why this is `suppressed` and not `dead`.
+   *
+   * ── ⚠️ Why no `notification_attempts` row ───────────────────────────────────
+   *
+   * Because nothing was attempted. That table is evidence of contact with a provider — it is
+   * what a dispute reads — and an entry saying we tried and did not would be a false line in the
+   * one log that must not contain any. The fact that the row was not sent, and why, lives in
+   * `status` and `suppressed_reason`, which is where every other never-sent message keeps it.
+   *
+   * ── ⚠️ `recipient_key = null`, which is a loss and is not an accident ────────
+   *
+   * `notifications_addressed_unless_suppressed` and the `suppressed` arm of
+   * `notifications_status_shape` both require it: a suppressed row has no address, because the
+   * status means "there was nowhere to send this". Same statement `0009_user_erasure.sql`
+   * writes, for the same constraint. The address is not lost to the business — it is on the
+   * order — and the next ask writes a new event with a new outbox row of its own.
+   *
+   * `and status = 'sending'` so this can only ever close a row **this** worker holds the claim
+   * on. A row another process took back under the lease is left alone rather than suppressed
+   * out from underneath it, and the caller learns nothing happened.
+   */
+  async suppress(notificationId: string, reason: string): Promise<boolean> {
+    const result = await this.db.execute(sql`
+      update notifications
+         set status = 'suppressed',
+             suppressed_reason = ${reason},
+             recipient_key = null,
+             updated_at = now()
+       where id = ${notificationId}
+         and status = 'sending'
+      returning id
+    `);
+
+    return rowsOf(result).length > 0;
   }
 
   /**
@@ -512,9 +578,11 @@ function toClaimed(row: unknown): ClaimedNotification | undefined {
   const templateKey = stringOf(record['template_key']);
   const contactLocale = stringOf(record['contact_locale']);
   const outstandingThbMinor = satangOf(record['outstanding_thb_minor']);
+  const nextDueThbMinor = satangOf(record['next_due_thb_minor']);
 
   if (
     outstandingThbMinor === undefined ||
+    nextDueThbMinor === undefined ||
     id === undefined ||
     orderId === undefined ||
     eventId === undefined ||
@@ -543,6 +611,7 @@ function toClaimed(row: unknown): ClaimedNotification | undefined {
     contactName: nullableStringOf(record['contact_name']),
     contactLocale,
     outstandingThbMinor,
+    nextDueThbMinor,
   };
 }
 

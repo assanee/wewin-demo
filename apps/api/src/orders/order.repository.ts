@@ -133,15 +133,26 @@ const EVENT_COLUMNS = {
 /**
  * Whether a reminder may go out on this order yet, as Postgres answered it.
  *
- * Timestamps as **strings**, not `Date`s, and deliberately: they exist to be put in an error
- * message and on the wire, and every conversion through a JavaScript `Date` is a chance for a
- * timezone to be applied by a process whose clock is not the one that wrote the row. The only
- * consumer that needs them is a sentence.
+ * ── ⚠️ `Date`s, and the reason the previous shape was wrong ──────────────────
+ *
+ * These were `::text` off the column — `2026-08-15 19:05:21.28587+00` — and were then put
+ * straight into a Thai sentence and onto the wire. Both were defects. Staff in Bangkok read a
+ * UTC timestamp as a local one and conclude they may retry seven hours before they actually
+ * may; and no other timestamp this API emits is spelled that way, so a client parsing
+ * `details` had one field it could not `new Date()` the way it does every other.
+ *
+ * So the boundary carries `Date` and each consumer says what it means: `orders.service.ts`
+ * renders the *sentence* through `formatDateTime`, in `Asia/Bangkok` and Thai, and `encode.ts`'s
+ * `iso()` renders the *wire*. The timezone is never absent from either — which is precisely
+ * what a bare `::text` made it.
+ *
+ * ⚠️ Nothing is computed here. `blocked` is still Postgres's own comparison against its own
+ * `now()`; converting a timestamptz to a `Date` is a change of spelling, not of instant.
  */
 export interface BalanceReminderCooldown {
-  /** ISO-ish text of the last `balance_reminded` on this order, or `null` if it never was. */
-  readonly lastAt: string | null;
-  readonly nextAllowedAt: string | null;
+  /** When this order was last reminded, or `null` if it never was. */
+  readonly lastAt: Date | null;
+  readonly nextAllowedAt: Date | null;
   /** Postgres's own `> now()`. See `balanceReminderCooldown` for why it is not computed here. */
   readonly blocked: boolean;
 }
@@ -472,13 +483,18 @@ export class OrderRepository {
     orderId: string,
     cooldownHours: number,
   ): Promise<BalanceReminderCooldown> {
+    /*
+     * ⚠️ No `::text`. The columns come back as `timestamptz` and node-postgres parses them into
+     * `Date`s — an instant, with no spelling attached — because the two consumers spell them
+     * differently and neither wants Postgres's. See `BalanceReminderCooldown`.
+     */
     const result = await tx.execute<{
-      last_at: string | null;
-      next_allowed_at: string | null;
+      last_at: Date | null;
+      next_allowed_at: Date | null;
       blocked: boolean;
     }>(sql`
-      select max(created_at)::text as last_at,
-             (max(created_at) + make_interval(hours => ${cooldownHours}))::text as next_allowed_at,
+      select max(created_at) as last_at,
+             max(created_at) + make_interval(hours => ${cooldownHours}) as next_allowed_at,
              coalesce(max(created_at) + make_interval(hours => ${cooldownHours}) > now(), false) as blocked
         from order_events
        where order_id = ${orderId}::uuid
@@ -487,8 +503,8 @@ export class OrderRepository {
 
     const row = result.rows[0];
     return {
-      lastAt: row?.last_at ?? null,
-      nextAllowedAt: row?.next_allowed_at ?? null,
+      lastAt: instantOf(row?.last_at),
+      nextAllowedAt: instantOf(row?.next_allowed_at),
       blocked: row?.blocked === true,
     };
   }
@@ -917,4 +933,24 @@ function decodeDocumentRow(row: RawDocumentRow): OrderDocumentRow {
     createdByEventId: row.createdByEventId,
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * A `timestamptz` off a raw `execute`, as an instant — or `null`.
+ *
+ * node-postgres parses `timestamptz` into a `Date` already, so on every real row this is the
+ * identity. It is written out because `execute`'s row type is an *assertion* and not a parse:
+ * a driver setting, a `::text` somebody adds back, or a column that turns out to be null all
+ * arrive here as something other than a `Date`, and a wrong instant in a sentence about when
+ * staff may next chase a customer is precisely the class of bug this round is fixing.
+ *
+ * ⚠️ An unparseable value is `null` — "we cannot say" — and never `new Date(NaN)`, which
+ * formats as "Invalid Date" in a Thai sentence and as `null` on the wire only by accident.
+ */
+function instantOf(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value !== 'string') return null;
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

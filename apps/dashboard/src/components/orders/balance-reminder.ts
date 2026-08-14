@@ -1,3 +1,5 @@
+import { baht } from '@/components/quotes/amounts';
+
 /**
  * ─────────────────────────────────────────────────────────────────────────────
  * ⭐ แจ้งเตือนยอดค้างชำระ — whether to offer the button, and what to say afterwards.
@@ -123,6 +125,42 @@ export function reminderAvailability(facts: {
   }
 
   return { kind: 'available', outstandingThbMinor: outstanding };
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE BUTTON QUOTES THE FIGURE IT IS ABOUT TO SEND — TO THE SATANG.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `แจ้งเตือนยอดค้างชำระ ฿14,791.68`. The button's whole justification for having no confirmation
+ * dialog is that it *states the figure it is about to quote*, so the press is informed — and it
+ * was stating a different one. `formatBaht` rounds to the whole baht (`divRoundHalfUp`), so the
+ * control read ฿14,792 while the email it sends says ฿14,791.68 and the timeline row it writes
+ * says ฿14,791.68. A clerk reading the button to a customer on the phone gave a number that
+ * appeared nowhere else, including in that customer's inbox.
+ *
+ * ── ⚠️ The trade, and which way it goes ─────────────────────────────────────
+ *
+ * The money card above the button rounds — `order-outstanding.ts` prints ค้างชำระ through
+ * `formatBaht`, because a quotation is never issued in satang and a column of whole baht is
+ * what staff scan. Matching that column is a real reason to round, and it is the reason the
+ * button did.
+ *
+ * It loses anyway. **A figure that matches the card but not the message is a figure that
+ * contradicts the customer**, and this control's own text is a promise about the message: it
+ * says what is about to be sent, not what is displayed above it. Two baht of visual mismatch
+ * inside one screen costs a glance; two baht between a phone call and an inbox costs a
+ * reconciliation. So `baht` — the exact formatter `order-timeline.ts` already reads
+ * `outstanding_thb_minor` with, and the same figure `formatMoney(locale, …, 'exact')` writes
+ * into the email.
+ *
+ * ⚠️ It lives here and not in the `.tsx` because `apps/dashboard`'s vitest is
+ * `environment: 'node'` and a `.test.tsx` is **silently never collected** — a rounding decision
+ * left in the markup is a rounding decision no test in this repository can reach, which is
+ * exactly how the wrong one shipped.
+ */
+export function reminderButtonLabelTh(outstandingThbMinor: bigint): string {
+  return `แจ้งเตือนยอดค้างชำระ ${baht(outstandingThbMinor)}`;
 }
 
 /**

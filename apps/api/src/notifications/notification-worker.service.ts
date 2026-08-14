@@ -13,7 +13,7 @@ import type { NotificationsConfig } from './notifications.config';
 import { DocumentLinkService, documentLinkUrl } from '../orders/document-link';
 import { NotificationsRepository, type ClaimedNotification } from './notifications.repository';
 import { NOTIFICATIONS_CONFIG, NOTIFICATION_CHANNEL_ADAPTERS } from './notifications.tokens';
-import { hasTemplate, renderTemplate } from './templates/templates';
+import { hasTemplate, renderTemplate, sendSuppression, type TemplateContext } from './templates/templates';
 
 /**
  * The consumer half of plan 10.1: `order_events` produces, this delivers.
@@ -174,22 +174,48 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
      */
     const locale = resolveRenderLocale(preferred, notification.templateKey);
 
-    const rendered = renderTemplate(locale.rendered, notification.templateKey, {
+    const context: TemplateContext = {
       orderNo: notification.orderNo,
       contactName: notification.contactName,
       coalescedCount: notification.coalescedCount,
       documentUrl: this.documentUrl(notification, locale.rendered),
       /*
-       * ⭐ The balance, as Postgres computed it in the claim statement — see
-       * `ClaimedNotification.outstandingThbMinor` for why it is read at claim time and not
-       * snapshotted when the event was written.
+       * ⭐ The two balances, as Postgres computed them in the claim statement — see
+       * `ClaimedNotification.outstandingThbMinor` for why they are read at claim time and not
+       * snapshotted when the event was written, and `nextDueThbMinor` for why the message
+       * carries the instalment beside the total.
        *
        * ⛔ Handed over as satang, untouched. The renderer picked for `locale.rendered` formats
-       * it with that locale's own formatter; this file never turns it into a string, because a
-       * string formatted here would be one locale's typography imposed on all eight.
+       * them with that locale's own formatter; this file never turns either into a string,
+       * because a string formatted here would be one locale's typography imposed on all eight.
        */
       outstandingThbMinor: notification.outstandingThbMinor,
-    });
+      nextDueThbMinor: notification.nextDueThbMinor,
+    };
+
+    /*
+     * ⭐ **The message is still queued, and it must no longer be sent.**
+     *
+     * Asked before rendering and answered from the facts read at claim time: today, a balance
+     * reminder for an order that has been settled since the button was pressed. `templates.ts`
+     * carries the whole argument, including why this is `suppressed` rather than a dead row —
+     * in one line, because a customer who paid promptly is not a delivery failure and must not
+     * arrive in the queue whose sentence is "nobody has been told".
+     *
+     * ⚠️ No attempt is recorded, because nothing was attempted. The renderer refuses the same
+     * case independently; that refusal is the backstop for any path that does not come through
+     * here, and this is the one that keeps the outbox honest about what happened.
+     */
+    const suppression = sendSuppression(notification.templateKey, context);
+    if (suppression !== undefined) {
+      await this.repository.suppress(notification.id, suppression);
+      this.logger.debug(
+        `Notification ${notification.id} (${notification.templateKey}) was not sent: ${suppression}`,
+      );
+      return;
+    }
+
+    const rendered = renderTemplate(locale.rendered, notification.templateKey, context);
 
     if (rendered === undefined) {
       /*
