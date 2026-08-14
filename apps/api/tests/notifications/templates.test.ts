@@ -9,6 +9,8 @@ import {
   type SupportedLocale,
 } from '../../src/notifications/locale';
 
+import { formatMoney } from '@wewin/i18n/format';
+
 import { hasTemplate, renderTemplate, templateKeys } from '../../src/notifications/templates/templates';
 
 /** Any key that exists in Thai. The resolution is per template, so it needs a real one. */
@@ -24,7 +26,24 @@ const KEY = 'order.delivered.customer';
  * what it was asked for.
  */
 
-const CONTEXT = { orderNo: '25-000123', contactName: 'สมชาย', coalescedCount: 0 } as const;
+/**
+ * ⚠️ Carries `outstandingThbMinor`, and that is not decoration.
+ *
+ * `order.balance_reminded.customer` **refuses to render** without it — see `TemplateContext` —
+ * so a shared context that omitted it would make the first test below fail for the right
+ * reason in the wrong place. Every other renderer ignores the field entirely, which is the
+ * point of it being optional.
+ *
+ * ฿5,529.60 rather than a round number: a figure whose satang are non-zero is the only one that
+ * can catch a formatter that dropped them, and it is the amount every other money test in this
+ * repository uses for exactly that reason.
+ */
+const CONTEXT = {
+  orderNo: '25-000123',
+  contactName: 'สมชาย',
+  coalescedCount: 0,
+  outstandingThbMinor: 552_960n,
+} as const;
 
 describe('notification templates', () => {
   it('renders every key it claims to have, with a subject and a body', () => {
@@ -239,5 +258,135 @@ describe('⭐ the quotation messages carry the quotation', () => {
         WITH_LINK.documentUrl,
       );
     }
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ แจ้งเตือนยอดค้างชำระ — THE ONE MESSAGE WHOSE CONTENT IS A NUMBER.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Everything else in this catalogue describes something that happened. This one exists to say
+ * *how much*, which makes it the first template with two properties nothing here had to check
+ * before:
+ *
+ *   ⓵ it must **refuse** rather than render when it has no figure. An email that says "you owe"
+ *     with nothing after it is worse than a dead row an engineer reads.
+ *   ⓶ the figure must be the **locale's** rendering of the value and must never have been
+ *     written into a translated string. Eight catalogues each carrying their own copy of a
+ *     total is eight chances for one of them to round differently, and nobody finds out until
+ *     a customer asks.
+ *
+ * `formatMoney` is imported here and used as the *expectation* deliberately: the assertion is
+ * that the renderer called the same function `apps/web` draws prices with, not that it produced
+ * one particular string — a string literal here would pass just as well against a template that
+ * had hard-coded Thai digits into all eight languages, which is the failure being guarded.
+ */
+
+const REMINDER = 'order.balance_reminded.customer';
+const OWED = 552_960n;
+
+describe('⭐ the balance reminder', () => {
+  it('renders in all eight languages, and names the amount in each', () => {
+    for (const locale of SUPPORTED_LOCALES) {
+      const rendered = renderTemplate(locale, REMINDER, { ...CONTEXT, outstandingThbMinor: OWED });
+
+      expect(rendered, locale).toBeDefined();
+      expect(rendered?.subject.length, locale).toBeGreaterThan(0);
+      /* The locale's own formatter — Burmese digits, German's trailing symbol, Hindi's lakhs. */
+      expect(rendered?.body, locale).toContain(formatMoney(locale, OWED, 'THB', 'exact'));
+      expect(rendered?.body, locale).not.toContain('undefined');
+      expect(rendered?.body, locale).not.toContain('${');
+      expect(rendered?.body, locale).toContain('25-000123');
+    }
+  });
+
+  it('⚠️ states the satang, because that is the figure the customer will type into a bank app', () => {
+    /*
+     * `formatBaht`'s whole-baht rounding turns ฿5,529.60 into ฿5,530 — a different number from
+     * the one the payment page shows, asked for by a company that then cannot reconcile the
+     * transfer. `'exact'` is what `apps/web`'s `bahtExact` uses on the same figure.
+     */
+    const body = renderTemplate('th', REMINDER, { ...CONTEXT, outstandingThbMinor: OWED })?.body;
+
+    expect(body).toContain(formatMoney('th', OWED, 'THB', 'exact'));
+    expect(body).not.toContain(formatMoney('th', OWED, 'THB', 'whole'));
+  });
+
+  it('⭐ refuses to render at all when it was given no amount', () => {
+    /*
+     * The property this template's optionality rests on. The worker turns `undefined` into a
+     * **permanent** failure with a sentence naming which of the two `undefined`s it was, so this
+     * lands in the dead queue rather than in an inbox with a hole where the money should be.
+     */
+    for (const locale of SUPPORTED_LOCALES) {
+      expect(
+        renderTemplate(locale, REMINDER, { orderNo: '25-000123', contactName: null, coalescedCount: 0 }),
+        locale,
+      ).toBeUndefined();
+    }
+
+    /* And it is a refusal by the *renderer*, not a template that is missing: the key exists. */
+    expect(hasTemplate('my', REMINDER)).toBe(true);
+  });
+
+  it('⚠️ keeps the amount out of every translated sentence, on its own line under a label', () => {
+    /*
+     * The mechanical half of the "no number in a translated string" rule. If the figure were
+     * ever interpolated into prose, the line it lands on would carry words as well as digits.
+     * Asserted in all eight, because the rule is about the seven a reviewer here cannot read.
+     */
+    for (const locale of SUPPORTED_LOCALES) {
+      const rendered = renderTemplate(locale, REMINDER, { ...CONTEXT, outstandingThbMinor: OWED });
+      const amount = formatMoney(locale, OWED, 'THB', 'exact');
+      const line = (rendered?.body ?? '').split('\n').find((candidate) => candidate.includes(amount));
+
+      expect(line, locale).toBe(amount);
+      /* …and never in the subject, which is prose in every language. */
+      expect(rendered?.subject, locale).not.toContain(amount);
+    }
+  });
+
+  it('carries the link when there is one, and survives its absence', () => {
+    const withLink = renderTemplate('th', REMINDER, {
+      ...CONTEXT,
+      outstandingThbMinor: OWED,
+      documentUrl: WITH_LINK.documentUrl,
+    });
+    const without = renderTemplate('th', REMINDER, { ...CONTEXT, outstandingThbMinor: OWED });
+
+    expect(withLink?.body).toContain(WITH_LINK.documentUrl);
+    /* `NOTIFY_WEB_BASE_URL` unset is a configuration mistake and not a reason to withhold a bill. */
+    expect(without?.body).not.toContain('http');
+    expect(without?.body).not.toContain('undefined');
+    expect(without?.body).toContain(formatMoney('th', OWED, 'THB', 'exact'));
+  });
+
+  it('⚠️ says it in words this application already uses', () => {
+    /*
+     * No new Thai for money. `ยอดคงค้าง` is what the API, the dashboard's filter heading and the
+     * approval inbox call a balance; `แจ้งชำระเงิน` is `payment.heading` on the storefront the
+     * link points at; `ติดต่อทีมขาย` is that same catalogue's closing sentence. A customer who
+     * clicks through from this email should read the same words on the page they land on.
+     */
+    const rendered = renderTemplate('th', REMINDER, { ...CONTEXT, outstandingThbMinor: OWED });
+
+    expect(rendered?.subject).toContain('แจ้งชำระเงิน');
+    expect(rendered?.body).toContain('ยอดคงค้าง');
+    expect(rendered?.body).toContain('ค้างชำระ');
+    expect(rendered?.body).toContain('ติดต่อทีมขาย');
+  });
+
+  it('greets a customer whose name and order number we never got', () => {
+    const rendered = renderTemplate('en', REMINDER, {
+      orderNo: null,
+      contactName: '   ',
+      coalescedCount: 0,
+      outstandingThbMinor: OWED,
+    });
+
+    expect(rendered?.body).toContain('Dear customer,');
+    expect(rendered?.body).not.toContain('null');
+    expect(rendered?.subject).toContain('your quotation');
   });
 });

@@ -215,6 +215,27 @@ describe('⭐ a payload read as Thai sentences', () => {
     expect(lines.find((line) => line.key === 'slip_id')?.valueText).toBe('14cea633');
   });
 
+  it('⭐ reads the balance a reminder recorded, and labels it as the moment it was true', () => {
+    /*
+     * `balance_reminded`'s whole content — the third key in `SATANG_READERS`, and the first one
+     * on an event that moves no status.
+     *
+     * ⚠️ The label says **ณ ตอนแจ้ง**, and that is load-bearing rather than decorative: this
+     * figure is what was owed when a member of staff pressed the button, and the ค้างชำระ on the
+     * money card above the rail is what is owed now. They differ by every slip accepted in
+     * between, and a reader who could not tell which was which would conclude one of the two
+     * screens was wrong.
+     *
+     * ⚠️ It is a *bare digit string* like every other payload amount, so the `_thb_minor` suffix
+     * is the entire contract and a hundredfold error is what a missing table entry looks like.
+     */
+    const line = payloadLines({ outstanding_thb_minor: '552960' })[0];
+
+    expect(line?.labelTh).toBe('ยอดคงค้าง ณ ตอนแจ้ง');
+    expect(line?.valueText).toBe('฿5,529.60');
+    expect(line?.known).toBe(true);
+  });
+
   it('shortens a hash to something recognisable rather than pretending it is readable', () => {
     const lines = payloadLines({ line_count: 1, document_hash: HASH });
 
@@ -359,7 +380,9 @@ describe('who did it and where it came from', () => {
      * The same guard `statusLabel` gets, for the same reason: the old spine rendered the machine
      * string `submitted_for_payment` as its heading on a Thai-only screen.
      */
-    expect(ORDER_EVENT_TYPES).toHaveLength(13);
+    /* Fourteen since 0050 added `balance_reminded`, the fourth event that moves no status. */
+    expect(ORDER_EVENT_TYPES).toHaveLength(14);
+    expect(ORDER_EVENT_TYPES).toContain('balance_reminded');
 
     for (const type of ORDER_EVENT_TYPES) {
       const label = eventLabelTh(type);

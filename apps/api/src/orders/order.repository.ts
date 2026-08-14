@@ -8,6 +8,7 @@ import {
   ORDER_ACTOR_KINDS,
   ORDER_EVENT_TYPES,
   guests,
+  notifications,
   orderChangeRequests,
   orderDocumentProductVersions,
   orderDocuments,
@@ -108,6 +109,56 @@ export interface AppendEventInput {
   readonly payload: Record<string, unknown>;
 }
 
+/**
+ * The columns an event is read with — one shape, two readers.
+ *
+ * `listEvents` renders the whole spine and `findEvent` reads back the single row a write just
+ * appended. Written twice they would be two chances for a field to be present on one screen and
+ * absent on the other, which is the shape `scoped-order.ts`'s `ORDER_COLUMNS` exists to prevent
+ * one layer up. `OrderEventRow` is exactly this projection, so the two cannot drift.
+ */
+const EVENT_COLUMNS = {
+  id: orderEvents.id,
+  seq: orderEvents.seq,
+  eventType: orderEvents.eventType,
+  fromStatus: orderEvents.fromStatus,
+  toStatus: orderEvents.toStatus,
+  actorKind: orderEvents.actorKind,
+  actorUserId: orderEvents.actorUserId,
+  payload: orderEvents.payload,
+  writeTxid: orderEvents.writeTxid,
+  createdAt: orderEvents.createdAt,
+} as const;
+
+/**
+ * Whether a reminder may go out on this order yet, as Postgres answered it.
+ *
+ * Timestamps as **strings**, not `Date`s, and deliberately: they exist to be put in an error
+ * message and on the wire, and every conversion through a JavaScript `Date` is a chance for a
+ * timezone to be applied by a process whose clock is not the one that wrote the row. The only
+ * consumer that needs them is a sentence.
+ */
+export interface BalanceReminderCooldown {
+  /** ISO-ish text of the last `balance_reminded` on this order, or `null` if it never was. */
+  readonly lastAt: string | null;
+  readonly nextAllowedAt: string | null;
+  /** Postgres's own `> now()`. See `balanceReminderCooldown` for why it is not computed here. */
+  readonly blocked: boolean;
+}
+
+/**
+ * One outbox row's outcome, and deliberately nothing else off that table.
+ *
+ * Not the recipient key, not the template, not the attempt count: this exists to answer *"did
+ * the fan-out find somewhere to send it"* for the person who pressed the button, and a wider
+ * projection would be this module growing a second view of another module's queue.
+ * `/admin/notifications` is the screen that reads the outbox properly.
+ */
+export interface FanOutRow {
+  readonly status: string;
+  readonly suppressedReason: string | null;
+}
+
 @Injectable()
 export class OrderRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -151,18 +202,7 @@ export class OrderRepository {
 
   async listEvents(orderId: string, tx?: Tx): Promise<OrderEventRow[]> {
     return this.executor(tx)
-      .select({
-        id: orderEvents.id,
-        seq: orderEvents.seq,
-        eventType: orderEvents.eventType,
-        fromStatus: orderEvents.fromStatus,
-        toStatus: orderEvents.toStatus,
-        actorKind: orderEvents.actorKind,
-        actorUserId: orderEvents.actorUserId,
-        payload: orderEvents.payload,
-        writeTxid: orderEvents.writeTxid,
-        createdAt: orderEvents.createdAt,
-      })
+      .select(EVENT_COLUMNS)
       .from(orderEvents)
       .where(eq(orderEvents.orderId, orderId))
       .orderBy(asc(orderEvents.seq));
@@ -398,6 +438,112 @@ export class OrderRepository {
 
     if (!row) throw new Error('orders: could not append to the spine');
     return row.id;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ แจ้งเตือนยอดค้างชำระ — asking the customer for the balance
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Whether this order may be reminded again yet, **decided in Postgres**.
+   *
+   * ── Where the facts come from ────────────────────────────────────────────────
+   *
+   * The last reminder is read from the **spine** rather than from a `last_reminded_at` column
+   * on `orders`, for the reason the spine exists at all: such a column would be a second record
+   * of a thing `order_events` already records, kept in step by a service and updatable — where
+   * an event row is append-only by trigger and carries who asked, when, and what was owed.
+   *
+   * ── ⚠️ Why the comparison is SQL and not TypeScript ─────────────────────────
+   *
+   * Because `now()` is the database's, and so is the timestamp it is being compared against.
+   * `order_events.created_at` defaults to Postgres's clock; a container whose clock has drifted
+   * ten minutes would let this process decide a 24-hour cooldown had elapsed after 23h50 — or
+   * refuse one that had. `notifications.repository.ts` states the same rule for the outbox in as
+   * many words: *"time comes from the database, never from this process"*. The only value this
+   * process supplies is the **interval**, which is clock-independent by construction.
+   *
+   * ⚠️ Takes the transaction, and callers hold the order's row lock before asking: the read and
+   * the insert that follows it must not straddle another request doing the same thing, or two
+   * clerks pressing at once both see "never reminded" and the customer gets two emails.
+   */
+  async balanceReminderCooldown(
+    tx: Tx,
+    orderId: string,
+    cooldownHours: number,
+  ): Promise<BalanceReminderCooldown> {
+    const result = await tx.execute<{
+      last_at: string | null;
+      next_allowed_at: string | null;
+      blocked: boolean;
+    }>(sql`
+      select max(created_at)::text as last_at,
+             (max(created_at) + make_interval(hours => ${cooldownHours}))::text as next_allowed_at,
+             coalesce(max(created_at) + make_interval(hours => ${cooldownHours}) > now(), false) as blocked
+        from order_events
+       where order_id = ${orderId}::uuid
+         and event_type = 'balance_reminded'
+    `);
+
+    const row = result.rows[0];
+    return {
+      lastAt: row?.last_at ?? null,
+      nextAllowedAt: row?.next_allowed_at ?? null,
+      blocked: row?.blocked === true,
+    };
+  }
+
+  /**
+   * The spine row this transaction just wrote, read back for the response.
+   *
+   * `appendEvent` returns an id because that is all any other caller has ever needed — the
+   * transition handlers hand back the whole order, which is re-read anyway. A reminder changes
+   * nothing about the order, so the *event* is the answer, and the answer needs its `seq` and
+   * its `created_at`: both are assigned by the database (`order_events_guard_insert()` and a
+   * column default), so neither can be known before the insert and neither may be guessed here.
+   */
+  async findEvent(tx: Tx, orderId: string, eventId: string): Promise<OrderEventRow | undefined> {
+    const [row] = await tx
+      .select(EVENT_COLUMNS)
+      .from(orderEvents)
+      .where(and(eq(orderEvents.orderId, orderId), eq(orderEvents.id, eventId)))
+      .limit(1);
+
+    return row;
+  }
+
+  /**
+   * ⭐ What the fan-out did with an event — **read only, and after the fact**.
+   *
+   * ── ⚠️ WHY READING `notifications` FROM THIS FILE IS NOT THE THING PLAN 10.1 FORBIDS ──
+   *
+   * `notifications.module.ts` exports nothing, on purpose, and states why in as many words:
+   * *"the only way an order module can cause a notification is to append an `order_events`
+   * row"*. That rule is about **causation** — no service here may queue, send, suppress or
+   * retry a message, and none can: `notifications_guard_insert()` refuses any row that did not
+   * come from the fan-out trigger, so this repository could not write one if it tried.
+   *
+   * This is a `select`. It cannot cause, prevent or alter a delivery. What it buys is the one
+   * thing the spine row genuinely cannot tell the person who pressed the button: whether the
+   * fan-out found somewhere to send the message. A customer who has only ever given a
+   * telephone number produces a `suppressed` row with `no_contact_channel` on it — a correct
+   * outcome, and indistinguishable from a queued one on every screen in this application.
+   * Answering "recorded, but nothing was sent, and here is why" is worth a read; the
+   * alternative is a member of staff believing a chase is on its way for the rest of the week.
+   *
+   * ⚠️ Called **after** the transaction commits, never inside it. The fan-out is a
+   * `DEFERRABLE INITIALLY DEFERRED` constraint trigger — it runs at COMMIT — so a read in the
+   * same transaction is guaranteed to find nothing and would report every reminder as
+   * suppressed for no reason.
+   */
+  async fanOutFor(eventId: string): Promise<readonly FanOutRow[]> {
+    return this.db
+      .select({
+        status: notifications.status,
+        suppressedReason: notifications.suppressedReason,
+      })
+      .from(notifications)
+      .where(eq(notifications.eventId, eventId));
   }
 
   /**

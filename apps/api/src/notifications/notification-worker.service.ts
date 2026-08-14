@@ -13,7 +13,7 @@ import type { NotificationsConfig } from './notifications.config';
 import { DocumentLinkService, documentLinkUrl } from '../orders/document-link';
 import { NotificationsRepository, type ClaimedNotification } from './notifications.repository';
 import { NOTIFICATIONS_CONFIG, NOTIFICATION_CHANNEL_ADAPTERS } from './notifications.tokens';
-import { renderTemplate } from './templates/templates';
+import { hasTemplate, renderTemplate } from './templates/templates';
 
 /**
  * The consumer half of plan 10.1: `order_events` produces, this delivers.
@@ -179,19 +179,44 @@ export class NotificationWorker implements OnApplicationBootstrap, OnApplication
       contactName: notification.contactName,
       coalescedCount: notification.coalescedCount,
       documentUrl: this.documentUrl(notification, locale.rendered),
+      /*
+       * ⭐ The balance, as Postgres computed it in the claim statement — see
+       * `ClaimedNotification.outstandingThbMinor` for why it is read at claim time and not
+       * snapshotted when the event was written.
+       *
+       * ⛔ Handed over as satang, untouched. The renderer picked for `locale.rendered` formats
+       * it with that locale's own formatter; this file never turns it into a string, because a
+       * string formatted here would be one locale's typography imposed on all eight.
+       */
+      outstandingThbMinor: notification.outstandingThbMinor,
     });
 
     if (rendered === undefined) {
       /*
-       * A rule names a template this build cannot render. That is a deployment mismatch —
-       * a migration ahead of the code — and it will not fix itself on the fifth attempt, so
-       * it goes to the dead queue immediately with the key that is missing. What it must
-       * never do is send a placeholder: "order.delivered.customer" in a customer's inbox is
-       * worse than a row in a queue an engineer reads.
+       * Two different failures wearing one `undefined`, and the dead row has to say which,
+       * because they are fixed by different people:
+       *
+       *   **no template for this key in this locale** — a deployment mismatch, a migration
+       *   ahead of the code. Fixed by deploying.
+       *
+       *   **the renderer refused** — the template exists and declined to produce a message
+       *   because the context was missing something it requires. Today that is the balance
+       *   reminder with no `outstandingThbMinor`, which means a caller built a context the
+       *   claim query is supposed to fill. Fixed by fixing the caller.
+       *
+       * Both are permanent: neither fixes itself on the fifth attempt, and four more tries
+       * delay the dead queue by a quarter of an hour during which the company believes the
+       * customer was told (plan 10.5(3)). What neither may do is send a placeholder —
+       * "order.delivered.customer" in a customer's inbox, or a reminder with no figure in it,
+       * are both worse than a row in a queue an engineer reads.
        */
+      const error = hasTemplate(locale.rendered, notification.templateKey)
+        ? `template '${notification.templateKey}' for locale '${locale.rendered}' refused to render: the notification did not carry a fact the message requires`
+        : `no template '${notification.templateKey}' for locale '${locale.rendered}'`;
+
       await this.record(notification, locale.rendered, '(no template)', {
         ok: false,
-        error: `no template '${notification.templateKey}' for locale '${locale.rendered}'`,
+        error,
         retryable: false,
       });
       return;

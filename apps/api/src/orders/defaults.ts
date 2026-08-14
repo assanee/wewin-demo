@@ -81,6 +81,43 @@ export const BP_DENOMINATOR = 10_000n;
 export const MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT = 10;
 
 /**
+ * ⭐ How long after one แจ้งเตือนยอดค้างชำระ before the same order may send another — plan 13,
+ * and **not in it**, exactly like `MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT` above.
+ *
+ * ── What this is NOT ─────────────────────────────────────────────────────────────
+ *
+ * ⛔ It is **not a schedule**, and it does not cause a reminder to be sent. Nothing in this
+ * system fires a reminder: a member of staff presses a button. Asked when the business
+ * collects the balance, the owner answered *"แล้วแต่งาน ไม่ตายตัว"* — it varies by job — and
+ * there is no due-date column anywhere in this schema for anything to be late against. A cron
+ * would therefore be inventing both the rule and the data it fired from.
+ *
+ * ── What it is ───────────────────────────────────────────────────────────────────
+ *
+ * A floor under a control that is one click and has a customer on the other end of it. Without
+ * one, a button beside a debt can send five identical emails in five seconds — a double-click
+ * on a slow connection, or two clerks working the same list — and the customer learns that our
+ * messages are noise, which is precisely the harm the reminder exists to avoid.
+ *
+ * **Twenty-four hours**, and the reasoning for the number rather than a smaller one:
+ *
+ *   ⓵ it is unambiguously longer than any accident. A double-press, a retried request, two
+ *     people on the same queue in the same morning: all minutes apart, all caught.
+ *   ⓶ it is shorter than any chase cadence a person would actually choose. Collections happen
+ *     in days and weeks, so a clerk who genuinely wants to chase again tomorrow is never
+ *     blocked — and one who wants to chase again in an hour is doing something the customer
+ *     will read as harassment.
+ *   ⓷ it needs no configuration to be safe, and it is a *refusal with a sentence* rather than
+ *     a silence: the service answers 409 naming when the next one may go, so the person who
+ *     pressed knows what happened. A coalescing window would have accepted the press and
+ *     quietly sent nothing, which is the same outcome with the feedback removed.
+ *
+ * ⚠️ Whether the business wants a cooldown at all, and how long, is theirs to answer — the
+ * same posture as the change-request cap. This is what happens until they do.
+ */
+export const BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT = 24;
+
+/**
  * The language a document is pinned in when the customer has expressed no preference.
  *
  * Plan 10.6 splits this from the notification language on purpose: a *notification* goes out

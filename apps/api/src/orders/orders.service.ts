@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { OrderStatus } from '@wewin/db/schema';
 import { encodeThb } from '@wewin/contract/order';
 import {
+  type BalanceReminderWire,
   type CancellationPreviewWire,
   type ChangeRequestWire,
   type CreateChangeRequestWire,
@@ -45,8 +46,13 @@ import { guestScope, systemScope, type GuestCookie, type Scope } from '../rbac';
  * order names no destination — one fallback, in the place that owns the question, rather than
  * a second copy of it inside the submit.
  */
-import { DEFAULT_LOCALE, MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT } from './defaults';
 import {
+  BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT,
+  DEFAULT_LOCALE,
+  MAX_CHANGE_REQUESTS_PER_ORDER_DEFAULT,
+} from './defaults';
+import {
+  encodeBalanceReminder,
   encodeCancellationPreview,
   encodeChangeRequest,
   encodeDocumentResponse,
@@ -1366,6 +1372,149 @@ export class OrdersService {
       const row = await this.orders.findChangeRequest(tx, order.id, changeRequestId);
       if (!row) throw new Error('orders: the change request could not be read back');
       return encodeChangeRequest(row);
+    });
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * ⭐ แจ้งเตือนยอดค้างชำระ — ask the customer for the outstanding balance.
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   * Five rounds made the balance payable, visible, recordable and forgivable. This is the one
+   * that opens the software's mouth.
+   *
+   * ── ⚠️ WHO FIRES IT: A PERSON, AND ONLY A PERSON ───────────────────────────
+   *
+   * Asked when their business collects the balance, the owner answered *"แล้วแต่งาน ไม่ตายตัว"*.
+   * There is also **no due-date column anywhere in this schema**, so nothing is ever overdue and
+   * a scheduler would have nothing to fire from. Both halves point the same way: the person who
+   * knows what was agreed for *this* job decides when to ask, from the order screen where
+   * ค้างชำระ already is. A reminder that fired on a rule nobody agreed to is how a customer
+   * learns to ignore the messages that matter.
+   *
+   * `actorKind: 'staff'` is therefore checked here **and** by `order_events_guard_insert()`,
+   * which refuses a `balance_reminded` row written by anybody else. Two enforcements because
+   * this service is not the only writer — and the database's is the one that would stop a
+   * future cron, which would arrive as `system` and be refused.
+   *
+   * ── The four refusals, and why each is a 409 rather than a silent no-op ────
+   *
+   *   **not staff** → 403. The company asks for its money; an order cannot ask itself.
+   *   **not a live obligation** → 409. A cart has agreed to nothing, and a cancelled or
+   *     superseded order's remainder is a refund or a carry-forward — `isLiveOrder` is the one
+   *     definition of that and it is mirrored by `order_status_is_live()`.
+   *   **nothing outstanding** → 409. Chasing a customer who has paid is the worst thing this
+   *     feature can do, and it is the case a stale screen produces: the button was rendered
+   *     against a balance a slip settled thirty seconds ago. Hence the lock, then the read.
+   *   **too soon** → 409, naming when the next one may go. See
+   *     `BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT` for why there is a cooldown at all and why it
+   *     is a refusal a person can read rather than a coalescing window that swallows the press.
+   *
+   * ── ⛔ Money ───────────────────────────────────────────────────────────────
+   *
+   * `order.outstandingThbMinor` is `order_outstanding_thb_minor()` computed by Postgres on the
+   * row `lockOrFail` locked, inside this transaction. Nothing here adds, subtracts or compares
+   * anything to arrive at a second figure; the only arithmetic in this method is `> 0n`.
+   *
+   * ── What sends the message ─────────────────────────────────────────────────
+   *
+   * Not this method. It appends one row to `order_events`; `order_events_fan_out_notifications()`
+   * turns that into an outbox row in the same transaction, and the worker delivers it. That is
+   * plan 10.1's rule and it is why the amount in the *message* is read again at send time — the
+   * balance can move between the ask and the delivery, and the customer must be quoted the
+   * figure the payment page will show them.
+   */
+  async remindBalance(scope: Scope, orderId: string): Promise<BalanceReminderWire> {
+    const asked = await this.orders.transaction(async (tx) => {
+      const actor = requireActor(scope);
+      const order = await this.scoped.lockOrFail(tx, scope, orderId, 'act');
+
+      if (actor.actorKind !== 'staff') {
+        throw new AppError(
+          'FORBIDDEN',
+          403,
+          'การแจ้งเตือนยอดค้างชำระเป็นสิทธิ์ของเจ้าหน้าที่',
+          { actorKind: actor.actorKind },
+        );
+      }
+
+      /*
+       * A cart, a cancellation and a supersession, in one sentence each — the same three the
+       * write-off refuses, for the same reason, through the same predicate.
+       */
+      if (!isLiveOrder(order.status)) {
+        throw AppError.conflict('ออเดอร์นี้ไม่มียอดที่ลูกค้าต้องชำระแล้ว จึงแจ้งเตือนไม่ได้', {
+          status: order.status,
+        });
+      }
+
+      const outstandingThbMinor = order.outstandingThbMinor;
+      if (outstandingThbMinor <= 0n) {
+        throw AppError.conflict('ออเดอร์นี้ไม่มียอดค้างชำระ จึงไม่ต้องแจ้งเตือน', {
+          status: order.status,
+        });
+      }
+
+      /*
+       * ⚠️ Read under the row lock taken two lines above, so two clerks pressing at the same
+       * moment serialise: the second one sees the first one's event and is refused, rather than
+       * both reading "never reminded" and the customer receiving two identical emails.
+       */
+      const cooldown = await this.orders.balanceReminderCooldown(
+        tx,
+        order.id,
+        BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT,
+      );
+
+      if (cooldown.blocked) {
+        throw AppError.conflict(
+          `เพิ่งแจ้งเตือนยอดค้างชำระของออเดอร์นี้ไปแล้ว — แจ้งซ้ำได้อีกครั้งหลัง ${cooldown.nextAllowedAt ?? ''}`,
+          {
+            lastRemindedAt: cooldown.lastAt,
+            nextAllowedAt: cooldown.nextAllowedAt,
+            cooldownHours: BALANCE_REMINDER_COOLDOWN_HOURS_DEFAULT,
+          },
+        );
+      }
+
+      const eventId = await this.orders.appendEvent(tx, {
+        orderId: order.id,
+        eventType: 'balance_reminded',
+        /* Not a status change: the order stays exactly where it is and the ask is the fact. */
+        fromStatus: null,
+        toStatus: null,
+        actorKind: actor.actorKind,
+        actorUserId: actor.actorUserId,
+        actorGuestId: actor.actorGuestId,
+        /*
+         * ⭐ What was owed **when we asked**, stored so it can be read next year.
+         *
+         * A bare digit string in satang, named `_thb_minor` — the convention every payload
+         * amount on this spine follows (`slip_amount_thb_minor`), where the unit is carried by
+         * the field name and the dashboard's `SATANG_READERS` is the single place that decides
+         * a payload number is money. `order_events_guard_insert()` requires this key, so a
+         * reminder with no figure on it is a failed INSERT rather than an unauditable row.
+         */
+        payload: { outstanding_thb_minor: outstandingThbMinor.toString() },
+      });
+
+      const event = await this.orders.findEvent(tx, order.id, eventId);
+      if (!event) throw new Error('orders: the reminder event could not be read back');
+
+      return { event, outstandingThbMinor };
+    });
+
+    /*
+     * ⚠️ After the commit, never inside it. `order_events_fan_out_notifications()` is a
+     * DEFERRABLE INITIALLY DEFERRED constraint trigger — it runs at COMMIT — so a read taken
+     * inside the transaction above would find nothing and report every reminder as suppressed.
+     */
+    const fanOut = await this.orders.fanOutFor(asked.event.id);
+
+    return encodeBalanceReminder({
+      event: asked.event,
+      outstandingThbMinor: asked.outstandingThbMinor,
+      fanOut,
     });
   }
 

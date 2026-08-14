@@ -2,6 +2,7 @@ import {
   POST_FREEZE_STATUSES_WIRE,
   encodeThb,
   type AvailableTransitionWire,
+  type BalanceReminderWire,
   type CancellationPreviewWire,
   type ChangeRequestWire,
   type OrderDocumentResponseWire,
@@ -310,6 +311,50 @@ export const encodeChangeRequest = (row: ChangeRequestRow): ChangeRequestWire =>
   resolution: row.resolution as ChangeRequestWire['resolution'],
   resolvedAt: iso(row.resolvedAt),
 });
+
+/**
+ * ⭐ แจ้งเตือนยอดค้างชำระ — the ask, and what became of it.
+ *
+ * Two facts from two places, and the split is the point:
+ *
+ *   **the event** — id, `seq`, `created_at` — is the row this transaction wrote to the spine.
+ *   Every field of it is the database's: `seq` is assigned by `order_events_guard_insert()` and
+ *   `created_at` by a column default, so none of it could be known before the insert.
+ *
+ *   **the fan-out** — how many outbox rows were queued, and why none was — is read *after* the
+ *   commit, because the trigger that writes those rows is `DEFERRABLE INITIALLY DEFERRED`.
+ *
+ * ⛔ `outstandingThbMinor` is `order_outstanding_thb_minor()`'s answer inside the transaction,
+ * carried here from the event's own payload rather than recomputed: the response and the audit
+ * row must state the same figure, and re-reading the fold to build a response is how they come
+ * to differ by one accepted slip.
+ *
+ * ⚠️ `suppressedReason` is the database's own string, unchanged and untranslated. It is
+ * `no_contact_channel` / `recipient_erased` — machine words the dashboard maps to a Thai
+ * sentence — and translating it here would put the vocabulary of the outbox in two places.
+ */
+export const encodeBalanceReminder = (input: {
+  readonly event: OrderEventRow;
+  readonly outstandingThbMinor: bigint;
+  readonly fanOut: readonly { readonly status: string; readonly suppressedReason: string | null }[];
+}): BalanceReminderWire => {
+  const queued = input.fanOut.filter((row) => row.status !== 'suppressed').length;
+
+  return {
+    eventId: input.event.id,
+    seq: input.event.seq,
+    remindedAt: input.event.createdAt.toISOString(),
+    outstandingThbMinor: encodeThb(input.outstandingThbMinor),
+    queued,
+    /*
+     * The reason only when there is nothing on its way. A partially-suppressed fan-out is not a
+     * shape one rule can produce today — there is one customer rule for this event — but if a
+     * second recipient is ever added, "some of it went" must not read as "none of it did".
+     */
+    suppressedReason:
+      queued > 0 ? null : (input.fanOut.find((row) => row.suppressedReason !== null)?.suppressedReason ?? null),
+  };
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);

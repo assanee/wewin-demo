@@ -45,6 +45,31 @@ export interface ClaimedNotification {
   readonly orderNo: string | null;
   readonly contactName: string | null;
   readonly contactLocale: string;
+  /**
+   * ⭐ What this order still owes, **at claim time** — `order_outstanding_thb_minor()`, satang.
+   *
+   * ⛔ Computed by Postgres, in the claim statement, on the row being claimed. Nothing in this
+   * process sums, subtracts or coalesces its way to a second answer.
+   *
+   * ── ⚠️ Why *claim* time and not the time the event was written ──────────────────
+   *
+   * Because the message is read after it arrives, not when it was queued, and a figure is only
+   * useful if it is the one the payment page will show. The outbox is asynchronous by design —
+   * a ten-minute coalescing window, a five-second poll, five retries with backoff — so an
+   * amount snapshotted when a member of staff pressed the button could be a day old and a slip
+   * out of date by the time it lands in an inbox. Chasing somebody for money they have already
+   * paid is the single worst thing this feature can do.
+   *
+   * The ask's own figure is not lost: it is in the `balance_reminded` event's payload
+   * (`outstanding_thb_minor`), which is the audit record of what was owed *when we asked*. Two
+   * facts, two homes, neither derived from the other.
+   *
+   * ⚠️ Selected for **every** claimed row, not only for the reminder. One claim statement, one
+   * shape — a second, wider select used for one template key would be a second place for the
+   * ownership join to go missing from, and the fold costs one function call per row on a batch
+   * that is already fetching the order.
+   */
+  readonly outstandingThbMinor: bigint;
 }
 
 export interface AttemptRecord {
@@ -151,7 +176,13 @@ export class NotificationsRepository {
         n.id, n.order_id, n.event_id, n.latest_event_id,
         n.recipient_kind, n.recipient_key, n.channel, n.template_key,
         n.attempt_count, n.coalesced_count,
-        o.order_no, o.contact_name, o.contact_locale
+        o.order_no, o.contact_name, o.contact_locale,
+        -- The balance, computed here and nowhere else. See ClaimedNotification.outstandingThbMinor
+        -- for why it is read at claim time. ::text because node-postgres hands back a string for
+        -- int8 anyway, so the cast makes the string deliberate; coalesce mirrors scoped-order.ts,
+        -- where the fold is NULL only for an order id naming no row and the join above makes that
+        -- impossible.
+        coalesce(order_outstanding_thb_minor(n.order_id), 0)::text as outstanding_thb_minor
     `);
 
     return rowsOf(result).flatMap((row) => {
@@ -452,6 +483,21 @@ function nullableStringOf(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+/**
+ * Satang off the wire, or `undefined` when the value is not a canonical integer.
+ *
+ * ⚠️ `BigInt()` and a regexp, never `Number()`. `Number('')` is 0, `Number(' ')` is 0 and
+ * `Number('1e3')` is 1000 — three ways for a column that did not arrive to become a plausible
+ * amount in a message about somebody's debt. `undefined` drops the row out of the claim (the
+ * same fate `toClaimed` gives a missing `contact_locale`), which is a message that is retried
+ * rather than one that is sent with a wrong figure in it.
+ */
+function satangOf(value: unknown): bigint | undefined {
+  const text = typeof value === 'string' ? value : typeof value === 'number' ? String(value) : undefined;
+  if (text === undefined || !/^-?\d+$/u.test(text)) return undefined;
+  return BigInt(text);
+}
+
 function toClaimed(row: unknown): ClaimedNotification | undefined {
   if (typeof row !== 'object' || row === null) return undefined;
   const record = row as Record<string, unknown>;
@@ -465,8 +511,10 @@ function toClaimed(row: unknown): ClaimedNotification | undefined {
   const channel = stringOf(record['channel']);
   const templateKey = stringOf(record['template_key']);
   const contactLocale = stringOf(record['contact_locale']);
+  const outstandingThbMinor = satangOf(record['outstanding_thb_minor']);
 
   if (
+    outstandingThbMinor === undefined ||
     id === undefined ||
     orderId === undefined ||
     eventId === undefined ||
@@ -494,6 +542,7 @@ function toClaimed(row: unknown): ClaimedNotification | undefined {
     orderNo: nullableStringOf(record['order_no']),
     contactName: nullableStringOf(record['contact_name']),
     contactLocale,
+    outstandingThbMinor,
   };
 }
 

@@ -351,6 +351,13 @@
       "when": 1786400000020,
       "tag": "0049_write_off_live_order",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786400000021,
+      "tag": "0050_balance_reminder",
+      "breakpoints": true
     }
   ]
 }

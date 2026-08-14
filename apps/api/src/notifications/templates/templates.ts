@@ -1,3 +1,5 @@
+import { formatMoney } from '@wewin/i18n/format';
+
 import { SUPPORTED_LOCALES, type SupportedLocale } from '../../i18n';
 
 /**
@@ -12,26 +14,47 @@ import { SUPPORTED_LOCALES, type SupportedLocale } from '../../i18n';
  * `tests/notifications/rules-coverage.pg.test.ts` reads the live rules table and fails if
  * any enabled rule names a key that is missing here, in every supported locale.
  *
- * ── ⚠️ WHAT IS DELIBERATELY NOT HERE: i18n ───────────────────────────────────
+ * ── ⚠️ i18n: THIRTEEN MESSAGES IN THAI, ONE IN ALL EIGHT ─────────────────────
  *
- * Thai only. Plan 10.6 sizes the real job at ~12 events × 8 languages ≈ 96 messages and
- * names it a translator bottleneck shared with plan 13's content row — it is phase 6 work
- * and no amount of English written by this round would be the translation that ships. The
- * *seam* is here and is exercised: a template is keyed by locale, `resolveRenderLocale`
- * decides which one is reachable, and `notification_attempts.locale` records the language
- * actually used, so the day English arrives nothing else has to move.
+ * Thai only, still, for everything that was here before `order.balance_reminded.customer`.
+ * Plan 10.6 sizes the real job at ~12 events × 8 languages ≈ 96 messages and names it a
+ * translator bottleneck shared with plan 13's content row; no amount of English written by
+ * one round would be the translation that ships. The *seam* is exercised: a template is
+ * keyed by locale, `resolveRenderLocale` asks **per template** whether a language exists,
+ * and `notification_attempts.locale` records the language actually used.
  *
- * ── Plain text, and no money ─────────────────────────────────────────────────
+ * ⭐ The reminder is written in all eight, and that is not the bottleneck being ignored — it
+ * is the one message whose content is a **number**, and a number is the thing a fallback
+ * cannot carry gracefully. A customer who reads only Burmese can act on "฿5,529.60" beside a
+ * label they recognise; the same customer receiving eleven lines of Thai about money they owe
+ * is the message that gets deleted. The per-template resolution is exactly what lets this
+ * ship on its own: an `en` recipient gets this message in English and everything else in Thai,
+ * and `RenderLocale.degraded` records which was which, per message.
+ *
+ * ── Plain text, and money in exactly one place ───────────────────────────────
  *
  * No HTML. A notification here says what happened and where to look; the numbers live in
  * the quotation document, which is pinned (plan 7.13) and is the thing a customer is
  * entitled to rely on. Restating a total in an email is a second answer to "what do I owe"
  * that nobody pins and nobody reprints.
  *
- * SEAM 5b: the amount due, the instalment that is now payable, and the slip-rejected notice
- * are payment facts. They arrive as new `notification_rules` rows with new template keys and
- * a context field for the amount — not as a number formatted into one of the strings below,
- * which would need a rounding decision this phase has no right to make.
+ * ⭐ **The one exception, and it is the exception this file predicted.** An invoice reminder
+ * that names no amount is not a reminder — so `order.balance_reminded.customer` states the
+ * balance, and states it the way SEAM 5b below said a payment fact must arrive: as **a
+ * context field, formatted by the locale's own formatter**, and never as a number written
+ * into a translated string. The same arrangement `apps/web`'s `payment.outstandingAmount`
+ * uses, where the figure is the *whole* catalogue entry and never a hole in a sentence: a
+ * translator here writes the *label*, and the digits are `@wewin/i18n`'s. Eight translations
+ * each carrying their own copy of a total is eight chances for one of them to round
+ * differently, and nobody finds out until a customer asks.
+ *
+ * ⛔ And it is not computed here or anywhere in this process:
+ * `order_outstanding_thb_minor()` answers it, in Postgres, in the claim query that fetched
+ * the row — at **send** time, because the balance moves between the ask and the delivery.
+ *
+ * SEAM 5b: the *instalment* that is now payable and the slip-rejected notice are the payment
+ * facts still owed. They arrive as new `notification_rules` rows with new template keys and
+ * their own context fields, on the pattern `outstandingThbMinor` now sets.
  *
  * SEAM 5c: `order.quote_revised.customer` is plan 10.4's red line — a quote the customer
  * already agreed to has changed, and the message must carry **the diff and a way to object**,
@@ -67,6 +90,29 @@ export interface TemplateContext {
    * `orders/document-link.ts` for why nothing is stored.
    */
   readonly documentUrl?: string | undefined;
+  /**
+   * ⭐ What the customer still owes — `order_outstanding_thb_minor()`, in satang.
+   *
+   * ⛔ **Minor units as a `bigint`, never a formatted string and never a `number`.** The whole
+   * point of carrying it as a value is that the locale decides how it is written: Burmese
+   * digits, German's trailing `฿`, Hindi's lakh grouping. A pre-formatted string handed to
+   * eight catalogues is one locale's typography imposed on the other seven, and a `number` is
+   * a rounding decision taken by JavaScript at 2^53.
+   *
+   * ⚠️ **Optional, and only one renderer reads it.** Thirteen of the fourteen messages here are
+   * about a status and have no business naming a figure — see the "money in exactly one place"
+   * note above. The one that does treats an absent amount as a **refusal to render** rather
+   * than as a message with a gap in it: `renderTemplate` returns `undefined`, the worker fails
+   * the row permanently, and it lands in the dead queue naming the notification. An email
+   * reading *"you owe"* with nothing after it is worse than a row an engineer reads.
+   *
+   * ⚠️ It is deliberately not `outstandingThbMinor: bigint` (required). Making it required
+   * would put a money field on every future template's context and invite somebody to satisfy
+   * the type with `0n` — which is a *sentence about a customer's balance* assembled to make a
+   * compiler stop complaining. Absent means "nobody told me", and that is a different fact
+   * from ฿0.00.
+   */
+  readonly outstandingThbMinor?: bigint | undefined;
 }
 
 export interface RenderedTemplate {
@@ -74,7 +120,21 @@ export interface RenderedTemplate {
   readonly body: string;
 }
 
-type Renderer = (context: TemplateContext) => RenderedTemplate;
+/**
+ * ⚠️ A renderer may **refuse**, and that is why this returns `RenderedTemplate | undefined`.
+ *
+ * It used to be total, which was honest while every message was assembled out of facts the
+ * outbox row always carries (an order number, a name, a count — all nullable, all with a
+ * written answer for the null). A message whose *content is a number* is the first one with a
+ * precondition it cannot degrade around, so the type carries the possibility rather than
+ * leaving one renderer to invent a figure.
+ *
+ * The two `undefined`s that reach `renderTemplate`'s caller are different facts and the worker
+ * says which: **no template for this key in this locale** is a deployment mismatch (a migration
+ * ahead of a deploy), while **a renderer that refused** is a caller that built a context
+ * missing something. Both are permanent failures with a readable dead row; neither is a send.
+ */
+type Renderer = (context: TemplateContext) => RenderedTemplate | undefined;
 
 /** `คุณสมชาย` when we know the name, a neutral form when we do not. Never an empty greeting. */
 const greeting = (context: TemplateContext): string =>
@@ -205,24 +265,220 @@ const TH: Readonly<Record<string, Renderer>> = {
   ),
 };
 
+/* ------------------------------------------------------------------ *
+ * ⭐ แจ้งเตือนยอดค้างชำระ — the one message written in all eight languages
+ * ------------------------------------------------------------------ */
+
 /**
- * One catalogue per language, seven of them empty.
+ * The words of the reminder, per language — **and not the number.**
+ *
+ * ⚠️⚠️ **THE FIGURE IS NOT A FIELD OF THIS TABLE AND MUST NEVER BECOME ONE.** There is no
+ * entry here that takes an amount, because a translator who could write a sentence with a
+ * baht figure in it could write one that rounds, or that puts the satang the other side of the
+ * separator, or that spells `฿` as `THB` — and eight catalogues each doing that their own way
+ * is eight answers to "what do I owe" and no way to tell which is right. `amountLabel` is a
+ * *label*; the digits beside it come from `formatMoney`, which is `@wewin/i18n`'s and is the
+ * same function that draws the price on the storefront. Identical arrangement to
+ * `payment.outstandingAmount` in `apps/web`, whose whole catalogue entry is `f.bahtExact(...)`.
+ *
+ * The order number *is* interpolated, and that is a different thing: it is an identifier, not
+ * a quantity, and it has no locale-dependent rendering to get wrong (`Formatters.code` exists
+ * for exactly that distinction).
+ *
+ * ⚠️ Vocabulary is **borrowed, not invented**. `amountLabel` is `payment.outstanding` from
+ * `apps/web`'s catalogue of the same locale, verbatim, so the figure a customer is chased for
+ * carries the same words as the figure on the payment page they are being sent to; the Thai
+ * subject is `payment.heading` (`แจ้งชำระเงิน`) and the closing line is the storefront's own
+ * ติดต่อทีมขาย sentence. Two surfaces, one wording.
+ */
+interface ReminderCopy {
+  /** `Payment reminder — order no. 25-000123`. Never carries the amount; see above. */
+  readonly subject: (orderRef: string) => string;
+  /** ⚠️ Receives a name already trimmed to `null` when blank — see `named`. */
+  readonly greeting: (contactName: string | null) => string;
+  /** How this locale names the order — with a number when there is one, and without when not. */
+  readonly orderRef: (orderNo: string | null) => string;
+  readonly lead: (orderRef: string) => string;
+  /** The label the amount is printed under, on its own line. `payment.outstanding`, verbatim. */
+  readonly amountLabel: string;
+  readonly linkInvitation: string;
+  readonly contact: string;
+  readonly signOff: string;
+}
+
+/** `null`/blank name → the neutral form. Never `Dear ,` and never the word "null". */
+const named = (contactName: string | null): string | null => {
+  const trimmed = contactName?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
+};
+
+const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
+  th: {
+    subject: (ref) => `แจ้งชำระเงิน — ${ref}`,
+    greeting: (name) => (name === null ? 'เรียน ลูกค้าผู้มีอุปการคุณ' : `เรียน คุณ${name}`),
+    orderRef: (orderNo) => (orderNo === null ? 'ใบเสนอราคาของท่าน' : `ใบสั่งซื้อเลขที่ ${orderNo}`),
+    lead: (ref) => `${ref} ยังมียอดค้างชำระอยู่`,
+    amountLabel: 'ยอดคงค้างทั้งหมด',
+    linkInvitation: 'ดูรายละเอียดและช่องทางชำระเงินได้ที่ลิงก์นี้',
+    contact: 'หากท่านชำระเรียบร้อยแล้ว หรือมีข้อสงสัยเรื่องยอดเงิน กรุณาติดต่อทีมขาย',
+    signOff: 'ขอแสดงความนับถือ\nWewin',
+  },
+  en: {
+    subject: (ref) => `Payment reminder — ${ref}`,
+    greeting: (name) => (name === null ? 'Dear customer,' : `Dear ${name},`),
+    orderRef: (orderNo) => (orderNo === null ? 'your quotation' : `order no. ${orderNo}`),
+    lead: (ref) => `There is still an amount outstanding on ${ref}.`,
+    amountLabel: 'Still owing in total',
+    linkInvitation: 'You can see the details and how to pay here:',
+    contact:
+      'If you have already paid, or if you have a question about the amount, please contact our sales team.',
+    signOff: 'Kind regards,\nWewin',
+  },
+  de: {
+    subject: (ref) => `Zahlungserinnerung — ${ref}`,
+    greeting: (name) =>
+      name === null ? 'Sehr geehrte Kundin, sehr geehrter Kunde,' : `Guten Tag ${name},`,
+    orderRef: (orderNo) => (orderNo === null ? 'Ihr Angebot' : `Bestellung Nr. ${orderNo}`),
+    lead: (ref) => `Für ${ref} ist noch ein Betrag offen.`,
+    amountLabel: 'Noch offener Gesamtbetrag',
+    linkInvitation: 'Details und Zahlungsmöglichkeiten finden Sie hier:',
+    contact:
+      'Wenn Sie bereits bezahlt haben oder Fragen zum Betrag haben, wenden Sie sich bitte an unser Vertriebsteam.',
+    signOff: 'Mit freundlichen Grüßen\nWewin',
+  },
+  hi: {
+    subject: (ref) => `भुगतान अनुस्मारक — ${ref}`,
+    greeting: (name) => (name === null ? 'प्रिय ग्राहक,' : `प्रिय ${name} जी,`),
+    orderRef: (orderNo) => (orderNo === null ? 'आपका कोटेशन' : `ऑर्डर सं. ${orderNo}`),
+    lead: (ref) => `${ref} पर अभी भी राशि बकाया है।`,
+    amountLabel: 'कुल बकाया राशि',
+    linkInvitation: 'विवरण और भुगतान का तरीका यहाँ देखिए:',
+    contact:
+      'यदि आपने भुगतान कर दिया है, या राशि के बारे में कोई सवाल हो, तो कृपया सेल्स टीम से संपर्क कीजिए।',
+    signOff: 'सादर,\nWewin',
+  },
+  la: {
+    subject: (ref) => `ແຈ້ງການຊຳລະເງິນ — ${ref}`,
+    greeting: (name) => (name === null ? 'ຮຽນ ລູກຄ້າທີ່ນັບຖື,' : `ຮຽນ ທ່ານ${name},`),
+    orderRef: (orderNo) => (orderNo === null ? 'ໃບສະເໜີລາຄາຂອງທ່ານ' : `ອໍເດີເລກທີ ${orderNo}`),
+    lead: (ref) => `${ref} ຍັງມີຍອດຄ້າງຈ່າຍຢູ່.`,
+    amountLabel: 'ຍອດຄ້າງຈ່າຍທັງໝົດ',
+    linkInvitation: 'ເບິ່ງລາຍລະອຽດ ແລະ ຊ່ອງທາງຊຳລະເງິນໄດ້ທີ່ລິ້ງນີ້:',
+    contact: 'ຫາກທ່ານຊຳລະແລ້ວ ຫຼື ມີຂໍ້ສົງໄສກ່ຽວກັບຍອດເງິນ ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
+    signOff: 'ດ້ວຍຄວາມນັບຖື,\nWewin',
+  },
+  my: {
+    subject: (ref) => `ငွေပေးချေမှု သတိပေးချက် — ${ref}`,
+    greeting: (name) => (name === null ? 'လေးစားရပါသော ဖောက်သည်,' : `လေးစားရပါသော ${name},`),
+    orderRef: (orderNo) => (orderNo === null ? 'သင်၏ စျေးနှုန်းကမ်းလှမ်းချက်' : `အော်ဒါ အမှတ် ${orderNo}`),
+    lead: (ref) => `${ref} တွင် ပေးရန်ကျန်ရှိနေသေးသော ပမာဏ ရှိပါသည်။`,
+    amountLabel: 'ကျန်ရှိနေသေးသော စုစုပေါင်းပမာဏ',
+    linkInvitation: 'အသေးစိတ်နှင့် ငွေပေးချေနည်းကို ဤလင့်ခ်တွင် ကြည့်ပါ:',
+    contact:
+      'ငွေပေးချေပြီးပါက သို့မဟုတ် ပမာဏနှင့်ပတ်သက်၍ မေးစရာရှိပါက အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
+    signOff: 'လေးစားစွာဖြင့်,\nWewin',
+  },
+  vi: {
+    subject: (ref) => `Nhắc thanh toán — ${ref}`,
+    greeting: (name) => (name === null ? 'Kính gửi Quý khách,' : `Kính gửi ${name},`),
+    orderRef: (orderNo) => (orderNo === null ? 'báo giá của Quý khách' : `đơn hàng số ${orderNo}`),
+    lead: (ref) => `${ref} vẫn còn số tiền chưa thanh toán.`,
+    amountLabel: 'Tổng số tiền còn thiếu',
+    linkInvitation: 'Xem chi tiết và cách thanh toán tại đây:',
+    contact:
+      'Nếu Quý khách đã thanh toán, hoặc có thắc mắc về số tiền, vui lòng liên hệ bộ phận kinh doanh.',
+    signOff: 'Trân trọng,\nWewin',
+  },
+  zh: {
+    subject: (ref) => `付款提醒 — ${ref}`,
+    greeting: (name) => (name === null ? '尊敬的客户：' : `${name} 您好：`),
+    orderRef: (orderNo) => (orderNo === null ? '您的报价单' : `订单编号 ${orderNo}`),
+    lead: (ref) => `${ref} 仍有款项尚未结清。`,
+    amountLabel: '尚欠总额',
+    linkInvitation: '可在此查看明细与付款方式：',
+    contact: '如您已付款，或对金额有疑问，请联系销售团队。',
+    signOff: '此致\nWewin',
+  },
+};
+
+/**
+ * ⭐ The reminder, in one language, assembled so that the amount is never inside a sentence.
+ *
+ * The body is a list of paragraphs joined by a blank line, and the amount is its **own**
+ * paragraph: a label the translator wrote, then the digits `formatMoney` wrote, on the next
+ * line. That layout is not a style preference — it is what makes the promise above mechanical.
+ * A sentence with a hole in it invites the hole to be moved, pluralised or agreed with; a line
+ * under a label cannot be.
+ *
+ * `'exact'` and not `'whole'`: this is the figure a customer is going to type into a banking
+ * app, and `formatBaht`'s whole-baht rounding would ask them for a different number from the
+ * one the payment page shows. Same call `apps/web`'s `bahtExact` makes.
+ *
+ * ⚠️ Refuses — returns `undefined` — when the context carries no amount. See `TemplateContext`.
+ * ⚠️ Survives `documentUrl` being absent, like every other renderer here: an unset
+ * `NOTIFY_WEB_BASE_URL` is a configuration mistake and is not a reason to withhold the message,
+ * so the link paragraph is dropped whole rather than rendered empty or as a broken invitation.
+ */
+const balanceReminder = (locale: SupportedLocale): Renderer => {
+  const copy = REMINDER_COPY[locale];
+
+  return (context) => {
+    const minor = context.outstandingThbMinor;
+    if (minor === undefined) return undefined;
+
+    const reference = copy.orderRef(context.orderNo);
+    const link =
+      context.documentUrl === undefined || context.documentUrl === ''
+        ? null
+        : `${copy.linkInvitation}\n${context.documentUrl}`;
+
+    const paragraphs = [
+      copy.greeting(named(context.contactName)),
+      copy.lead(reference),
+      /* ⛔ Label, newline, digits. The two never share a sentence. */
+      `${copy.amountLabel}\n${formatMoney(locale, minor, 'THB', 'exact')}`,
+      link,
+      copy.contact,
+      copy.signOff,
+    ];
+
+    return {
+      subject: copy.subject(reference),
+      body: paragraphs.filter((paragraph) => paragraph !== null).join('\n\n'),
+    };
+  };
+};
+
+/**
+ * One catalogue per language: thirteen messages in Thai, and the reminder in all eight.
  *
  * A `Record` over all eight and not `{ th: TH }`, because 6a widened `SUPPORTED_LOCALES`
  * from one to eight and a lookup of `CATALOGUE['my']` on the old shape was `undefined` —
  * which would have thrown inside `renderTemplate` rather than returning `undefined`, and a
  * throw in the worker is a retried delivery rather than a dead row somebody reads.
  *
- * Empty and not machine-translated. Plan 10.6 sizes this at ~12 events × 8 languages ≈ 96
- * messages and names it the same translator bottleneck as plan 13's product content. What
- * this shape buys is that adding a language is adding entries to one object, and
- * `resolveRenderLocale` starts using them the moment they exist.
+ * ⚠️ **The seven non-Thai catalogues are no longer one shared `EMPTY` object.** They were, and
+ * that was safe only while they stayed empty: `hasTemplate` reads them with `Object.hasOwn`, so
+ * a single shared object would have made `order.balance_reminded.customer` appear to exist in a
+ * language it had not been written in the moment anything wrote to it. Each locale now builds
+ * its own object from its own `REMINDER_COPY` entry, which is also what makes the next
+ * translation an entry rather than a refactor.
+ *
+ * The rest stays untranslated on purpose. Plan 10.6 sizes it at ~12 events × 8 languages ≈ 96
+ * messages and names the same translator bottleneck as plan 13's product content;
+ * `resolveRenderLocale` asks per template, so an `en` customer already receives this message in
+ * English and the other thirteen in Thai — which is the arrangement that lets a translation ship
+ * the day it is written instead of the day the last of the 96 is.
  */
-const EMPTY: Readonly<Record<string, Renderer>> = {};
-
 const CATALOGUE: Readonly<Record<SupportedLocale, Readonly<Record<string, Renderer>>>> =
   Object.fromEntries(
-    SUPPORTED_LOCALES.map((locale) => [locale, locale === 'th' ? TH : EMPTY]),
+    SUPPORTED_LOCALES.map((locale): [SupportedLocale, Readonly<Record<string, Renderer>>] => [
+      locale,
+      {
+        ...(locale === 'th' ? TH : {}),
+        'order.balance_reminded.customer': balanceReminder(locale),
+      },
+    ]),
   ) as Record<SupportedLocale, Readonly<Record<string, Renderer>>>;
 
 /** Every key this build can render. Sorted, so a diff of the coverage test reads cleanly. */

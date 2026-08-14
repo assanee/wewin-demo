@@ -516,6 +516,17 @@ describe('boot-time route audit', () => {
       'POST /me/account/password [authenticated]',
       'POST /me/account/sessions/revocation [authenticated]',
       'POST /orders [anonymous]',
+      /*
+       * ⭐ แจ้งเตือนยอดค้างชำระ — and it is `[permissions]` where its eight neighbours are
+       * `[principal]`, which is the one thing worth reading off this line.
+       *
+       * Every other `/orders/:orderId/*` route is something the *owner* of the order may do:
+       * look at it, object to it, send a slip. This one is the company asking the customer for
+       * money, so a principal is not enough — `orders.read` + `orders.write` + `payments.read`,
+       * and `remindBalance` refuses a non-staff actor underneath that even if the codes were
+       * ever granted to one.
+       */
+      'POST /orders/:orderId/balance-reminders [permissions]',
       'POST /orders/:orderId/change-requests [principal]',
       'POST /orders/:orderId/change-requests/:changeRequestId/resolution [principal]',
       'POST /orders/:orderId/payment-slips [principal]',

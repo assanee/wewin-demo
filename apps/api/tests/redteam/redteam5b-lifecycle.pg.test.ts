@@ -355,6 +355,14 @@ describeWithPg('RED TEAM 5a round two', () => {
      * somebody else has to answer under `quotes.approve` + `payments.write_off`. Same shape as
      * `customer-link`: a route whose policy is deliberately the *opposite* of the nine this
      * finding is about, so including it would flip the assertion for the wrong reason.
+     *
+     * ⚠️ And `balance-reminders` (0050) is excluded on identically those terms, which is now the
+     * third of them. `POST /orders/:orderId/balance-reminders` is the **company asking the
+     * customer for money** and states `orders.read` + `orders.write` + `payments.read`; a
+     * `principal` there would let a signed-in customer send themselves an invoice reminder from
+     * the company's own address. It moves no status — the event it writes carries a null
+     * `(from_status, to_status)` pair by design — so it is not one of the nine, and folding it in
+     * would flip this assertion on a route whose policy this finding would *approve* of.
      */
     const orderRoutes = registry
       .records()
@@ -363,7 +371,8 @@ describeWithPg('RED TEAM 5a round two', () => {
           /\s\/orders\b/.test(record.key) &&
           !record.key.includes('/quote/') &&
           !record.key.includes('/customer-link') &&
-          !record.key.includes('/write-offs'),
+          !record.key.includes('/write-offs') &&
+          !record.key.includes('/balance-reminders'),
       );
 
     expect(

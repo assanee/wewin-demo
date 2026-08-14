@@ -78,6 +78,16 @@ export const POST_FREEZE_STATUSES_WIRE = [
   'redesign',
 ] as const;
 
+/**
+ * ⚠️ Restated from `@wewin/db`'s `ORDER_EVENT_TYPES`, in the same order, and pinned by
+ * `apps/api/tests/orders/contract-drift.pg.test.ts` — a browser cannot import a Drizzle
+ * schema, so the duplication is unavoidable and the drift test is what makes it safe.
+ *
+ * ⭐ `balance_reminded` (0050) is the fourth member with **no status pair**: staff asked the
+ * customer for the outstanding balance and the order did not move. A client rendering a
+ * timeline must not assume `toStatus` is present — `apps/dashboard`'s spine reads
+ * `eventLabelTh` for exactly these rows.
+ */
 export const ORDER_EVENT_TYPES_WIRE = [
   'created',
   'quote_revised',
@@ -92,6 +102,7 @@ export const ORDER_EVENT_TYPES_WIRE = [
   'superseded',
   'change_requested',
   'change_resolved',
+  'balance_reminded',
 ] as const;
 
 export type OrderEventTypeWire = (typeof ORDER_EVENT_TYPES_WIRE)[number];
@@ -722,6 +733,49 @@ export interface ChangeRequestWire {
 }
 
 /**
+ * ⭐ แจ้งเตือนยอดค้างชำระ — what came of pressing the button.
+ *
+ * `POST /orders/:orderId/balance-reminders` answers with this. It is deliberately *not* an
+ * `OrderWire`: nothing about the order changed — no status, no money, no available transition —
+ * and returning the order would invite a screen to diff it and find nothing, which reads as a
+ * button that did nothing.
+ *
+ * ── ⚠️ WHY `queued` AND `suppressedReason` ARE ON IT ─────────────────────────────
+ *
+ * Because *"I pressed it, did it go?"* is the whole question, and the spine row alone cannot
+ * answer it. `order_events_fan_out_notifications()` runs in this transaction and writes either a
+ * `pending` row or a **`suppressed`** one — the latter when the customer has no email address
+ * (`no_contact_channel`) or the account was erased (`recipient_erased`). Both are correct
+ * outcomes and they look identical from the order screen, so the API states which happened
+ * rather than leaving a member of staff to believe a message is on its way to somebody who has
+ * only ever given a telephone number.
+ *
+ * ⚠️ `queued` is **not** `sent`. The worker polls, renders and talks to an SMTP server minutes
+ * later, and `notification_attempts` is where "it went" is recorded. A field called `sent` here
+ * would be a lie in the ordinary case, which is why the dashboard's toast says คิว and not ส่งแล้ว.
+ */
+export interface BalanceReminderWire {
+  /** The `order_events` row this ask wrote — citable, and the row the timeline renders. */
+  readonly eventId: string;
+  /** Its position on the spine, so a client can find it without re-reading the whole history. */
+  readonly seq: number;
+  readonly remindedAt: string;
+  /**
+   * ⛔ `order_outstanding_thb_minor()` at the moment of the ask, computed in Postgres inside the
+   * transaction that wrote the event, and stored verbatim in its payload. Never arithmetic done
+   * by a caller, and never re-derivable later — the balance moves.
+   */
+  readonly outstandingThbMinor: MoneyWire<'THB'>;
+  /** How many outbox rows the fan-out wrote for this event with somewhere to send them. */
+  readonly queued: number;
+  /**
+   * Why nothing was queued, when nothing was — `notifications.suppressed_reason`, verbatim
+   * (`no_contact_channel`, `recipient_erased`). `null` when a message is on its way.
+   */
+  readonly suppressedReason: string | null;
+}
+
+/**
  * What cancelling this order *right now* would cost — priced, not estimated.
  *
  * ── Why this is a response and not something a client computes ────────────────────
@@ -1021,6 +1075,24 @@ export const changeRequestWireSchema: z.ZodType<ChangeRequestWire> = z.object({
   openedAt: z.iso.datetime(),
   resolution: z.literal(CHANGE_REQUEST_RESOLUTIONS_WIRE).nullable(),
   resolvedAt: z.iso.datetime().nullable(),
+});
+
+/**
+ * ⭐ The reminder's answer, as a schema — for the API's own tests and for any client that wants
+ * to refuse a shape rather than read past it.
+ *
+ * `suppressedReason` is `z.string().nullable()` and not a literal union on purpose: the reasons
+ * come from `order_events_fan_out_notifications()`, a plpgsql function that a migration may add
+ * to without this package being rebuilt, and a client that threw on an unrecognised reason would
+ * turn a *more informative* server into a broken screen.
+ */
+export const balanceReminderWireSchema: z.ZodType<BalanceReminderWire> = z.object({
+  eventId: z.uuid(),
+  seq: z.int().min(1),
+  remindedAt: z.iso.datetime(),
+  outstandingThbMinor: thb,
+  queued: z.int().min(0),
+  suppressedReason: z.string().nullable(),
 });
 
 export const cancellationPreviewWireSchema: z.ZodType<CancellationPreviewWire> = z.object({

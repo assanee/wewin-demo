@@ -133,9 +133,22 @@ export const TERMINAL_ORDER_STATUSES = ['delivered', 'cancelled', 'superseded'] 
  * `event_type` (plan 10.3 is a table of event → recipient), so an event type that drifted
  * from the transition it recorded would send the wrong message about the right change.
  *
- * Three of these are not status changes at all — `quote_revised`, `change_requested`,
- * `change_resolved`. They are on the spine because plan 10.3 has to notify about them and
- * plan 10.1 makes notifications a consumer of this table and of nothing else.
+ * **Four** of these are not status changes at all — `quote_revised`, `change_requested`,
+ * `change_resolved` and `balance_reminded`. They are on the spine because plan 10.3 has to
+ * notify about them and plan 10.1 makes notifications a consumer of this table and of
+ * nothing else. All four carry a null `(from_status, to_status)` pair, which
+ * `order_events_status_pair_shape` has permitted by construction since 0007, and none of
+ * them has — or may have — a row in `order_status_transitions`, which is keyed on that pair.
+ *
+ * ⭐ `balance_reminded` (0050) is the newest and the first that is about **money rather than
+ * the quotation**: a member of staff asked the customer for the outstanding balance. Its
+ * two rules — staff-only, and a payload carrying `outstanding_thb_minor` — are enforced by
+ * `order_events_guard_insert()`, because the transition row that would normally carry
+ * `allowed_actor_kinds` and `required_payload_keys` cannot exist for an event with no pair.
+ *
+ * ⚠️ It is named for the **ask**, not for the send. Whether a message left the building is
+ * `notifications` / `notification_attempts`' fact, knowable minutes later and false for an
+ * order with no contact channel; the spine records what a person did, in their transaction.
  *
  * SEAM 5b: `slip_received`, `slip_rejected`, `refund_requested`, `refund_disbursed` are
  * added here by migration, with rows in `notification_rules` beside them. None of them is
@@ -155,6 +168,7 @@ export const ORDER_EVENT_TYPES = [
   'superseded',
   'change_requested',
   'change_resolved',
+  'balance_reminded',
 ] as const;
 
 /**
