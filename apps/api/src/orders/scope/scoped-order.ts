@@ -1,8 +1,9 @@
 import { orders } from '@wewin/db/schema';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
-import { sql } from '@wewin/db/sql';
+import { sql, type SQL } from '@wewin/db/sql';
 import type { OrderStatus } from '@wewin/db/schema';
 
+import { NON_LIVE_ORDER_STATUSES_SQL } from '../live-order';
 import type { OrderIntent, OrderReach } from './order-reach';
 
 /**
@@ -147,6 +148,68 @@ export interface ScopedOrder {
   readonly intent: OrderIntent;
 }
 
+/**
+ * ⭐ What this order still owes — the expression, as one object with three readers.
+ *
+ * It is selected as a column (below), filtered on, and sorted by, and those are exactly the
+ * three places `overview.repository.ts` had to type `order_outstanding_thb_minor(o.id)` three
+ * times inside one statement. Written out three times here it would be three chances for a
+ * `coalesce` to appear in the column and not in the predicate — at which point a row whose fold
+ * is NULL is *listed* as ฿0.00 and *filtered* as unknown, which is a row that appears in the
+ * queue and vanishes from the filter for no reason a reader could see.
+ *
+ * ⚠️ No `::text` here. The cast belongs to the column, which has to hand node-postgres a string
+ * (see the note on `outstandingThbMinor`); a WHERE clause and an ORDER BY want the `int8` so
+ * that `> 0` is an integer comparison and the sort is numeric rather than lexicographic —
+ * `'900' > '1000'` as text, which would put ฿9.00 above ฿10.00 at the top of a debt list.
+ *
+ * ⚠️ And no alias, unlike the overview's `LIVE_ORDERS`. `orders.id` is a Drizzle column object
+ * and serialises as `"orders"."id"`, so this composes into any statement selecting `from orders`
+ * unaliased — which is every statement in `scoped-order.repository.ts`. A statement that aliased
+ * the table would not compile against it, and that is the honest failure.
+ */
+const OUTSTANDING_FOLD: SQL = sql`coalesce(order_outstanding_thb_minor(${orders.id}), 0)`;
+
+/**
+ * ⭐ An order that still owes money — in Postgres, on the same statement, and with the same
+ * definition of "live" as everywhere else.
+ *
+ * Two terms, and the second is the one a reader would forget:
+ *
+ *   ⓵ **The fold is above zero.** `> 0` and not `>= 0`, exactly as
+ *     `overview.repository.ts` writes it: an order that owes nothing is not a debt, and the
+ *     fold goes *negative* on an overpaid order (`0011_payment_guards.sql`), which is a
+ *     modelled state and equally not a debt. This is the term the owner asked for.
+ *
+ *   ⓶ **The order is somebody's live obligation.** `NON_LIVE_ORDER_STATUSES_SQL` — the list in
+ *     `orders/live-order.ts`, which is the definition — and not a fourth copy of it. Without
+ *     this term the filter would answer with every cancelled order in the company, because the
+ *     fold is total and a cancelled contract still has a remainder. Worse, it would answer with
+ *     rows whose `outstandingThbMinor` the encoder then nulls (`isLiveOrder`), so the ค้างชำระ
+ *     filter would return a page of em dashes — a filter listing the orders it is asking about
+ *     and refusing to state the figure for any of them.
+ *
+ * The two terms come from the two places that already own them, which is what makes this the
+ * same question `GET /overview`'s money card answers, uncapped.
+ */
+export const OWING_ORDERS: SQL = sql`${orders.status} not in (${NON_LIVE_ORDER_STATUSES_SQL}) and ${OUTSTANDING_FOLD} > 0`;
+
+/**
+ * Biggest debt first — the ordering the owner asked for, spelled the way the overview spells it.
+ *
+ * `order by fold desc, submitted_at asc nulls last, id` is character-for-character the intent of
+ * the breakdown query in `overview.repository.ts`, and that is deliberate rather than tidy: the
+ * money card shows the top eight by *this* ordering, and this filter is meant to be the uncapped
+ * continuation of that list. Ordered differently, page one of the filter would not contain the
+ * eight rows the card just showed, and a reader clicking through from one to the other would
+ * conclude that one of the two screens is wrong.
+ *
+ * `nulls last` on `submitted_at` is defensive rather than reachable — `draft` is a non-live
+ * status, so every row this predicate admits is post-submit — and `id` last makes the order
+ * total, so two renders of the same page cannot disagree.
+ */
+export const BIGGEST_DEBT_FIRST: SQL = sql`${OUTSTANDING_FOLD} desc, ${orders.submittedAt} asc nulls last, ${orders.id}`;
+
 /** The columns a scoped select asks for. One shape, so every load returns the same row. */
 export const ORDER_COLUMNS = {
   id: orders.id,
@@ -178,8 +241,13 @@ export const ORDER_COLUMNS = {
    * `bigint` where the row is built. `coalesce` mirrors `ledger.repository.ts`'s own call: the
    * fold is NULL only for an order id that names no row, which cannot happen when the id comes
    * off the row being selected — and a NULL that slipped through would reach `encodeThb`.
+   *
+   * ⚠️ The outstanding one is `OUTSTANDING_FOLD` above rather than the same call typed again,
+   * because `OWING_ORDERS` and `BIGGEST_DEBT_FIRST` read it too. Same SQL as before; one
+   * definition instead of three. `nextDueThbMinor` keeps its own — nothing filters or sorts on
+   * it, so there is one reader and nothing to drift from.
    */
-  outstandingThbMinor: sql`coalesce(order_outstanding_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
+  outstandingThbMinor: sql`${OUTSTANDING_FOLD}::text`.mapWith(BigInt),
   nextDueThbMinor: sql`coalesce(order_next_due_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
   createdAt: orders.createdAt,
   updatedAt: orders.updatedAt,

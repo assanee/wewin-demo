@@ -305,10 +305,20 @@ const decodeEvent = (raw: unknown): OrderEvent => {
  */
 export const listOrders = (filter: {
   readonly status?: OrderStatus | undefined;
+  /**
+   * `'outstanding'` asks only for the orders that still owe money — a different axis from
+   * `status`, and ANDed with it by the server rather than folded into it.
+   *
+   * ⚠️ Absent, not `'all'`, when the caller does not care: `?payment=all` is the API's default
+   * and sending it would put a term in every URL that means "no restriction". The API's own
+   * reasoning for why owing is not a ninth `status` value is in `orders.controller.ts`.
+   */
+  readonly payment?: 'outstanding' | undefined;
   readonly limit?: number | undefined;
 }): Promise<readonly OrderSummary[]> => {
   const query = new URLSearchParams();
   if (filter.status !== undefined) query.set('status', filter.status);
+  if (filter.payment !== undefined) query.set('payment', filter.payment);
   query.set('limit', String(filter.limit ?? 100));
 
   return apiJson(`/orders?${query.toString()}`, (body) =>

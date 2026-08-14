@@ -107,11 +107,21 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
   let staff: Actor;
   let line: OrderLineRequestWire;
 
-  const listFor = async (who: Actor): Promise<readonly OrderSummaryWire[]> => {
-    const answer = await call('GET', '/orders', { token: who.token });
-    expect(answer.status).toBe(200);
+  /**
+   * The list as one actor sees it, optionally with a query.
+   *
+   * `query` is appended verbatim rather than assembled from an object, because half of what the
+   * filter section below is testing *is* the query string — a repeatable `status` and a
+   * single-valued `payment` beside it — and a helper that took `{status, payment}` would decide
+   * the encoding the tests are meant to be checking.
+   */
+  const listFor = async (who: Actor, query = ''): Promise<readonly OrderSummaryWire[]> => {
+    const answer = await call('GET', `/orders${query}`, { token: who.token });
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
     return (answer.body as OrderListWire).orders;
   };
+
+  const idsOf = (rows: readonly OrderSummaryWire[]): readonly string[] => rows.map((row) => row.id);
 
   const summaryOf = async (who: Actor, orderId: string): Promise<OrderSummaryWire> => {
     const found = (await listFor(who)).find((order) => order.id === orderId);
@@ -393,6 +403,129 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
     const asStaff = await summaryOf(staff, order.id);
     expect(asStaff.outstandingThbMinor).toStrictEqual(mine.outstandingThbMinor);
     expect(asStaff.nextDueThbMinor).toStrictEqual(mine.nextDueThbMinor);
+  });
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ `?payment=outstanding` — which orders come back
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The figures above were covered before this filter existed; the filter itself was not. A
+   * predicate that compiles and a suite that passes prove only that nothing else broke — the
+   * one question worth asking of a filter is *which rows it returns*, and none of the eight
+   * tests above asks it.
+   *
+   * ⚠️ The filter shares its expression with the column: `OWING_ORDERS` and the row's
+   * `outstandingThbMinor` are both built from `OUTSTANDING_FOLD` in `scoped-order.ts`. That is
+   * what makes "the list says ค้างชำระ ฿0 on a row the ค้างชำระ filter returned" unrepresentable
+   * rather than merely unlikely, and these tests are what would catch the two being pulled apart.
+   */
+  describe('the outstanding filter', () => {
+    it('⭐ returns the orders that owe money, and only those', async () => {
+      /*
+       * Four orders, one per way of not owing, all owned by the same customer so the ownership
+       * term cannot be what separates them:
+       *
+       *   owing        submitted, nothing paid — the only one that should come back
+       *   settled      paid in full
+       *   cancelled    a real balance, and a dead contract; `isLiveOrder` excludes it
+       *   cart         never submitted, so both figures are null rather than zero
+       */
+      const owing = await submittedOrder(call, customerA, line, contactFor('filter-owing'));
+      const settled = await submittedOrder(call, customerA, line, contactFor('filter-settled'));
+      const cancelled = await submittedOrder(call, customerA, line, contactFor('filter-cancelled'));
+
+      await giveOrderHeldMoney(db, {
+        orderId: settled.id,
+        grandTotalThbMinor: toBigInt(settled.grandTotalThbMinor ?? never('a submitted order has a grand total')),
+        paidThbMinor: toBigInt(settled.grandTotalThbMinor ?? never('a submitted order has a grand total')),
+        payerName: `payer ${tag}`,
+        payerAccountLast4: '2255',
+        reviewerUserId: staff.userId,
+      });
+
+      const killed = await call('POST', `/orders/${cancelled.id}/transitions/cancelled`, {
+        token: customerA.token,
+        body: { reason: 'ยกเลิกเพื่อทดสอบตัวกรอง' },
+      });
+      expect(killed.status, JSON.stringify(killed.body)).toBe(200);
+
+      const returned = idsOf(await listFor(customerA, '?payment=outstanding&limit=100'));
+
+      expect(returned).toContain(owing.id);
+      expect(returned).not.toContain(settled.id);
+      expect(returned).not.toContain(cancelled.id);
+
+      /* And every row that did come back really is owing — no false positives, whoever they are. */
+      const rows = await listFor(customerA, '?payment=outstanding&limit=100');
+      for (const row of rows) {
+        expect(row.outstandingThbMinor, `order ${row.id} was returned as owing`).not.toBeNull();
+        expect(
+          toBigInt(row.outstandingThbMinor ?? never('a returned row has an outstanding')),
+          `order ${row.id} was returned as owing`,
+        ).toBeGreaterThan(0n);
+      }
+    });
+
+    it('⭐ narrows the status filter rather than widening it — the two are ANDed', async () => {
+      /*
+       * THE ASSERTION THE PARAMETER'S SHAPE TURNS ON, and the whole reason owing is not a ninth
+       * `status` value. `status` is repeatable and its values are alternatives, so an `owing`
+       * member would have made "in production **and** owing" — the question a production manager
+       * actually asks — unaskable. Two parameters compose; one parameter cannot.
+       */
+      const owing = await submittedOrder(call, customerA, line, contactFor('filter-and'));
+
+      const both = idsOf(await listFor(customerA, '?status=awaiting_payment&payment=outstanding&limit=100'));
+      expect(both).toContain(owing.id);
+
+      /*
+       * The same order, asked for under a status it does not hold. If the terms were ORed this
+       * would still return it — which is exactly the bug this test exists to make impossible.
+       */
+      const wrongStatus = idsOf(await listFor(customerA, '?status=delivered&payment=outstanding&limit=100'));
+      expect(wrongStatus).not.toContain(owing.id);
+    });
+
+    it('puts the biggest debt first, so the money is reachable rather than merely present', async () => {
+      /*
+       * The owner's reason for wanting the filter at all was to chase what is owed. A page of
+       * owing orders in arrival order buries the ฿90,000 behind forty rows of ฿400.
+       *
+       * Two orders of the same product differ only by quantity, so the larger is deterministically
+       * the larger debt — no fixture arithmetic here, and nothing to keep in step with pricing.
+       */
+      const small = await submittedOrder(call, customerB, line, contactFor('filter-small'));
+      const large = await submittedOrder(
+        call,
+        customerB,
+        { ...line, qty: 5 },
+        contactFor('filter-large'),
+      );
+
+      const smallOwed = toBigInt(small.grandTotalThbMinor ?? never('a submitted order has a grand total'));
+      const largeOwed = toBigInt(large.grandTotalThbMinor ?? never('a submitted order has a grand total'));
+      expect(largeOwed).toBeGreaterThan(smallOwed);
+
+      const returned = idsOf(await listFor(customerB, '?payment=outstanding&limit=100'));
+      expect(returned.indexOf(large.id)).toBeLessThan(returned.indexOf(small.id));
+    });
+
+    it("cannot reach another customer's debt, filter or no filter", async () => {
+      /*
+       * The filter is one more `and` term inside a query whose `where` already carries the
+       * ownership term, so it can only ever narrow what that term admitted. Asserted rather than
+       * argued, because "a new filter widened the scope" is the shape of defect that reads as a
+       * feature working.
+       */
+      const theirs = await submittedOrder(call, customerA, line, contactFor('filter-not-yours'));
+
+      const asOwner = idsOf(await listFor(customerA, '?payment=outstanding&limit=100'));
+      expect(asOwner).toContain(theirs.id);
+
+      const asStranger = idsOf(await listFor(customerB, '?payment=outstanding&limit=100'));
+      expect(asStranger).not.toContain(theirs.id);
+    });
   });
 });
 

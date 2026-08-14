@@ -124,11 +124,55 @@ const GUEST_COOKIE_MAX_AGE_SECONDS = 180 * 24 * 60 * 60;
  */
 const toStatusSchema = z.literal(ORDER_STATUSES_WIRE);
 
+/**
+ * `GET /orders`'s query — two filters on two axes, and a ceiling.
+ *
+ * ── ⭐ Why `payment` is its own parameter and not a ninth `status` ────────────────
+ *
+ * "Which orders still owe money" reads like a status and is not one. Three reasons, in the
+ * order they bite:
+ *
+ *   ⓵ **`status`'s values are `ORDER_STATUSES_WIRE`, and that list is pinned.** It is the
+ *     contract's copy of the Postgres enum, and `tests/orders/contract-drift.pg.test.ts`
+ *     fails if the two disagree. A pseudo-value `owing` in this parameter would mean widening
+ *     `z.literal(ORDER_STATUSES_WIRE)` to a list that is no longer that list — a second
+ *     vocabulary inside the parameter whose whole virtue is having one.
+ *
+ *   ⓶ **They compose, and a repeatable parameter makes its values alternatives.**
+ *     `?status=in_production&status=delivered` means *either*. "In production **and** owing" is
+ *     the question a production manager actually asks, and it is unaskable if owing is one more
+ *     value in the same OR. Two parameters are ANDed by the repository, so
+ *     `?status=in_production&payment=outstanding` is a sentence.
+ *
+ *   ⓷ **They are answered by different things.** A status is a column; owing is a fold over
+ *     `payment_slips` and `order_instalments`. Nothing about the money question is in
+ *     `orders.status`, and putting it there in the URL is how it ends up there in the query.
+ *
+ * So: the *shape* is the status filter's, exactly as the brief requires — a named parameter of
+ * declared values, absent (here: `all`) meaning no restriction, parsed by this schema, carried
+ * as an option, turned into one more `and` term in the same single statement. What is not
+ * borrowed is repeatability, which this axis has no use for.
+ *
+ * ── ⚠️ Named values, not a boolean ───────────────────────────────────────────────
+ *
+ * `?payment=outstanding`, never `?owing=true`. `slips.contract.ts` has the argument in full and
+ * it was learned here: `z.coerce.boolean()` turns the *string* `"false"` into `true`, so a
+ * boolean in a query string is the one flag that reliably means the opposite of what was typed.
+ * Two named values cannot do that, and they leave room for the value nobody has asked for yet
+ * (`settled`) without a second parameter appearing beside this one.
+ */
 const listQuerySchema = z.object({
   /** Repeatable: `?status=draft&status=awaiting_payment`. Absent means every status. */
   status: z
     .union([z.literal(ORDER_STATUSES_WIRE), z.array(z.literal(ORDER_STATUSES_WIRE))])
     .optional(),
+  /**
+   * `outstanding` keeps only the orders that still owe money — live, and folding above zero.
+   *
+   * Ordering comes with it rather than from a `sort` parameter: the answer arrives biggest debt
+   * first. `ScopedOrderRepository.list` argues that out, and `OWING_ORDERS` defines "owes".
+   */
+  payment: z.enum(['all', 'outstanding']).default('all'),
   /** A ceiling rather than a page, until somebody needs a cursor. */
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -209,6 +253,12 @@ export class OrdersController {
     const statuses = query.status === undefined ? undefined : [query.status].flat();
     return this.orders.listOrders(scope, {
       ...(statuses === undefined ? {} : { statuses: statuses as readonly OrderStatus[] }),
+      /*
+       * Spread-when-present, the same way `statuses` above is, because
+       * `exactOptionalPropertyTypes` makes `owing: undefined` a different thing from an absent
+       * key — and because the repository reads absence as "the caller did not ask".
+       */
+      ...(query.payment === 'outstanding' ? { owing: true } : {}),
       limit: query.limit,
     });
   }

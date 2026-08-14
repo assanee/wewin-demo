@@ -258,10 +258,23 @@ export class OrdersService {
    * and which rows are returned was already decided by `ownershipFilter(reach)` inside that
    * same query — a customer's list is `customer_user_id = me`, so there is no row on which a
    * stranger's balance could be evaluated in the first place.
+   *
+   * ── ⚠️ `owing` filters in the query, and this method is the proof of that ────────
+   *
+   * The whole of the money filter is one term appended to that query's WHERE (`OWING_ORDERS`).
+   * Nothing here reads `outstandingThbMinor` and nothing here drops a row: this body is a
+   * pass-through and a `map`, and it must stay that way. A `.filter()` on `rows` would be the
+   * exact bug the constraint names — it would compute nothing, but it would make `limit` mean
+   * "up to N rows, of which an unknown number owe", so a company with 200 unpaid orders would
+   * see a page whose size depended on how many *settled* orders happened to sort above them.
    */
   async listOrders(
     scope: Scope,
-    filter: { readonly statuses?: readonly OrderStatus[]; readonly limit: number },
+    filter: {
+      readonly statuses?: readonly OrderStatus[];
+      readonly owing?: boolean;
+      readonly limit: number;
+    },
   ): Promise<OrderListWire> {
     const rows = await this.scoped.list(scope, filter);
     return { orders: rows.map(encodeOrderSummary) };
