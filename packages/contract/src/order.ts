@@ -565,6 +565,55 @@ export interface OrderSummaryWire {
   readonly frozenAt: string | null;
   readonly submittedAt: string | null;
   readonly grandTotalThbMinor: MoneyWire<'THB'> | null;
+  /**
+   * What is still owed on this order — `order_outstanding_thb_minor()`, the function in
+   * `packages/db/drizzle/0011_payment_guards.sql`, read as a column on the same select that
+   * fetched the row.
+   *
+   * It is here so that nobody has to arrive at it twice. `grandTotal` minus a sum of slips is
+   * a *different number* the moment a slip carries `unallocated_thb_minor` or the order has
+   * more than one instalment, and `schedule.ts` refuses to ship an outstanding field beside
+   * the instalments for exactly that reason — a total beside the parts invites a client to
+   * fold the parts and disagree. This is the opposite move and not a reversal of it: what
+   * travels is the database's own answer, so there is nothing here for a second
+   * implementation to be wrong about.
+   *
+   * ⚠️ Null before submit, on the same fact as `grandTotalThbMinor` above and never on its
+   * own. The fold answers ฿0.00 for a cart — true, and unreadable on a queue, where "ค้างชำระ
+   * ฿0.00" is how a screen says *settled*, and a cart that was never priced has settled
+   * nothing. One order carries one answer to "is there a contract here yet", and all three
+   * money fields give it together (`encodeOrderSummary`).
+   *
+   * ⚠️ **And null on a `cancelled` or `superseded` order, where `grandTotalThbMinor` is not.**
+   * The fold is total and answers the whole unpaid remainder there too — the right answer to
+   * the question the function asks, and a bill nobody owes. Money still held on a cancelled
+   * order is a refund (`POST /payments/refunds`); money on a superseded one was carried to the
+   * order that replaced it and is already counted there. So the wire states neither "owing"
+   * nor "settled" for those two, because neither is true, and a client renders the same
+   * nothing it renders for a cart. The membership is `NON_LIVE_ORDER_STATUSES` in
+   * `apps/api/src/orders/live-order.ts`, which is the same list `GET /overview`'s money card
+   * filters on — one definition, so the row and the total cannot disagree.
+   */
+  readonly outstandingThbMinor: MoneyWire<'THB'> | null;
+  /**
+   * What to pay *now* — `order_next_due_thb_minor()`
+   * (`packages/db/drizzle/0042_next_instalment_due.sql`): the remainder of the first
+   * instalment no accepted slip has settled yet.
+   *
+   * Beside `outstandingThbMinor` rather than instead of it, because the owner's ruling is
+   * about this one and not that one: *"ถ้าเป็นเคสที่ระบุว่าต้องมัดจำ จึงจะมัดจำ ถ้าไม่ได้ระบุให้ใช้ยอด
+   * เต็มเลย"*. The two are equal on a pay-in-full order and differ by the balance on every
+   * 30/70, so a screen with one field has to pick — and picking the outstanding where the
+   * quotation promised a deposit asks the customer for the whole contract. Neither is
+   * derivable from the other, which is why both are sent.
+   *
+   * ฿0.00 when nothing is due, which is settled-in-full and not "no schedule": the fold is
+   * total by construction (0042 says so at length) and never makes a caller handle a third
+   * case. Null before submit — and null on a `cancelled` or `superseded` order — on the same
+   * terms as the field above, and always together with it: a client that has one of these two
+   * has both, and a client that has neither must ask for no money at all.
+   */
+  readonly nextDueThbMinor: MoneyWire<'THB'> | null;
   readonly updatedAt: string;
 }
 
@@ -959,6 +1008,9 @@ export const orderSummaryWireSchema: z.ZodType<OrderSummaryWire> = z.object({
   frozenAt: z.iso.datetime().nullable(),
   submittedAt: z.iso.datetime().nullable(),
   grandTotalThbMinor: thb.nullable(),
+  /* Nullable on the same fact as the total above, never independently — see `OrderSummaryWire`. */
+  outstandingThbMinor: thb.nullable(),
+  nextDueThbMinor: thb.nullable(),
   updatedAt: z.iso.datetime(),
 });
 

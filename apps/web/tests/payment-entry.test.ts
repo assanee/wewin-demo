@@ -90,8 +90,14 @@ describe('⭐ the storefront rule is the server rule, and cannot drift from it q
      *
      * Parsed out of the API's source rather than imported because `apps/web` does not depend
      * on `apps/api` and must not start.
+     *
+     * ⚠️ The constant moved out of `slips.service.ts` into `attachable.ts` when the payment
+     * screen's own gate started reading it: `OrdersService.paymentInstructions` answers
+     * `acceptsPayment` on the wire from this list, so it had to be importable without
+     * importing `SlipsService`. Same list, same declaration, one file across — and this
+     * regex is the reason that file's header says its shape is load-bearing.
      */
-    const service = read('../../api/src/payments/slips/slips.service.ts');
+    const service = read('../../api/src/payments/slips/attachable.ts');
     const block = /SLIP_ATTACHABLE_STATUSES: readonly OrderStatus\[\] = \[([^\]]*)\]/u.exec(service);
 
     expect(block, 'the API constant should still be findable by this shape').not.toBeNull();
@@ -130,6 +136,21 @@ describe('⭐ both doors are gated, and by the same rule', () => {
     expect(myQuotations).toContain('acceptsPayment(row.status)');
   });
 
+  it('⭐ …and the account list now also refuses an order that owes nothing', () => {
+    /*
+     * The gap `payable.ts` used to document, closed by the two folds landing on
+     * `OrderSummaryWire`. `acceptsPayment` answers from the status alone, and a fully paid
+     * order still `in_production` is a payable status — the customer was offered "ชำระเงิน"
+     * on a settled bill and found out only on the screen behind it.
+     *
+     * ⚠️ Asserted on the source rather than through `describeRowMoney`, because the unit
+     * tests beside that module already pin `owes` and cannot see whether the markup reads it.
+     * The two conditions keep their own owners: the status half stays a character-for-character
+     * mirror of the server's list (above), the money half is `quotationRowMoney.ts`.
+     */
+    expect(myQuotations).toContain('acceptsPayment(row.status) && money.owes');
+  });
+
   it('neither reimplements the status list beside the call', () => {
     /*
      * A second literal list in a component is how the two doors would come to disagree —
@@ -140,6 +161,104 @@ describe('⭐ both doors are gated, and by the same rule', () => {
       expect(source).not.toContain("'cancelled'");
       expect(source).not.toContain("'awaiting_payment'");
     }
+  });
+});
+
+describe('⭐ the payment screen gates on the server’s answer, not on a list of its own', () => {
+  /*
+   * ─────────────────────────────────────────────────────────────────────────────
+   * The defect: both doors above were gated and the screen behind them was not.
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   * `/payment?order=<id>` is a stable, bookmarkable URL. Executed against the real database,
+   * a cancelled order answered `payment-instructions` with `outstandingThbMinor 1035418`
+   * while `GET /orders` answered `null` for the same order at the same moment, and
+   * `PaymentIsland` — whose only test was `outstandingThbMinor <= 0n` — printed
+   * "ยอดคงค้างทั้งหมด ฿10,354.18" in `text-lead text-lime` with the upload form beneath it. The
+   * upload would have been refused 409; the bill would not.
+   *
+   * The fix is a server-computed boolean on `PaymentInstructionsWire`, from the same list
+   * that raises that 409. These assert the wiring — that the screen reads it, that the
+   * decoder refuses a response without it, and that the screen did *not* grow a fourth copy
+   * of the status list on the way.
+   */
+  const island = read('../src/components/payment/PaymentIsland.tsx');
+  const paymentApi = read('../src/lib/payment/api.ts');
+
+  it('reads `acceptsPayment` off the wire and hands it to the render decision', () => {
+    expect(island).toContain('acceptsPayment: data.acceptsPayment');
+    expect(island).toContain('describePaymentPanel({');
+    /*
+     * ⚠️ And the figures are the panel's, not a second call beside it. Rendering
+     * `describeOwedFigures(data.…)` again here would leave every other assertion in this file
+     * green and put the ฿10,354.18 straight back onto the cancelled order.
+     */
+    expect(island).toContain('panel.figures.map(');
+    expect(island).not.toContain('describeOwedFigures(');
+  });
+
+  it('⭐ refuses a response with no `acceptsPayment` rather than assuming one', () => {
+    /*
+     * ⚠️ Both defaults ship a defect: `true` bills a cancelled order (the bug itself), `false`
+     * tells every paying customer the screen is closed. A decode failure is a sentence with a
+     * "try again" behind it, which is the only one of the three that is not a wrong statement
+     * about somebody's money.
+     */
+    const apiCode = paymentApi.replaceAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
+
+    expect(apiCode).toMatch(/const acceptsPayment = body\['acceptsPayment'\];\s*\n/u);
+    expect(apiCode).toContain("typeof acceptsPayment !== 'boolean'");
+    /* And no `?? true` / `?? false` tacked onto the read, which is the silent version. */
+    expect(apiCode).not.toMatch(/acceptsPayment\s*(\?\?|\|\|)/u);
+  });
+
+  it('does not gate the screen on `payable.ts`, which is the list-only mirror', () => {
+    /*
+     * The status list in `lib/payment/payable.ts` stays for `MyQuotations` and
+     * `QuotationIsland`, which render `GET /orders` rows and a quotation and have no
+     * instructions wire to read. Using it *here* would put a fourth copy of the server's list
+     * on the one screen that can simply be told the answer — and the copy would be the one
+     * deciding whether a customer is shown a bill.
+     */
+    expect(island).not.toContain('payment/payable');
+    for (const literal of ["'delivered'", "'cancelled'", "'superseded'", "'awaiting_payment'"]) {
+      expect(island, `the payment screen must not restate ${literal}`).not.toContain(literal);
+    }
+  });
+
+  it('says one clear thing on a closed order, and it is not `payment.settled`', () => {
+    /*
+     * `payment.settled` means *paid in full*, which is false and cruel on a cancelled order
+     * the customer is owed a deposit on. The distinct key is `payment.closed`; which of the
+     * two a given order gets is `paymentPanel.ts`'s decision and is tested beside it.
+     */
+    const panel = read('../src/components/payment/paymentPanel.ts');
+
+    expect(panel).toContain("noteKey: 'payment.closed'");
+    expect(island).toContain('t(panel.noteKey)');
+  });
+
+  it('⭐ keeps the slip history outside every gate', () => {
+    /*
+     * A customer whose order was cancelled after they paid a deposit needs to see that the
+     * deposit is recorded — hiding it with the form would make a closed order look like one
+     * nothing had ever been sent against, which is worse than the bug being fixed.
+     *
+     * ⚠️ Asserted by *position*, and the first draft of this test is why: a
+     * `toMatch(/\) : null\}[\s\S]*<SlipHistory/)` passed happily with the history moved inside
+     * the gate, because an earlier `) : null}` (the note's) sat above it. What has to be true
+     * is that the history comes after the form branch **closes**, which is the one arrangement
+     * that renders it on an order with no form at all.
+     */
+    const gateOpens = island.indexOf('panel.showsForm ? (');
+    const gateCloses = island.indexOf(') : null}', gateOpens);
+    const history = island.indexOf('<SlipHistory slips={slips} t={t} />');
+
+    expect(gateOpens).toBeGreaterThan(-1);
+    expect(gateCloses).toBeGreaterThan(gateOpens);
+    expect(history, 'the slip history must not sit inside the form gate').toBeGreaterThan(
+      gateCloses,
+    );
   });
 });
 
@@ -196,6 +315,9 @@ describe('⭐ the order id does not leak out of the browser', () => {
 });
 
 describe('the label promises a screen and not a figure', () => {
+  /** Arabic digits and Thai/Devanagari/Burmese/Lao numerals alike. */
+  const NUMERAL = /[\d๐-๙०-९၀-၉໐-໙]/u;
+
   it('carries no amount, in any of the eight catalogues', () => {
     /*
      * ⚠️ The failure this wording exists to avoid. The quotation shows a pinned grand total
@@ -214,8 +336,99 @@ describe('the label promises a screen and not a figure', () => {
 
       const label = entry?.[1] ?? '';
       expect(label.trim().length, `${locale} must not be empty`).toBeGreaterThan(0);
-      /* Arabic digits and Thai/Devanagari/Burmese/Lao numerals alike. */
-      expect(label, `${locale} must not name an amount`).not.toMatch(/[\d๐-๙०-९၀-၉໐-໙]/u);
+      expect(label, `${locale} must not name an amount`).not.toMatch(NUMERAL);
+      expect(label, `${locale} must not name a currency`).not.toMatch(/[฿$€]|THB/u);
+    }
+  });
+
+  it('⭐ and neither does `payment.dueNow`, which labels a figure it must not contain', () => {
+    /*
+     * The account list's prominent figure — `nextDueThbMinor`, the remainder of the first
+     * unsettled instalment. The label says *which* figure; `quotationRowMoney.ts` picks it and
+     * `f.bahtExact` writes it, so a digit welded into any of the eight would be a second,
+     * unformatted, un-updatable amount beside the real one.
+     *
+     * ⚠️ Present in all eight, which is this repo's convention rather than a nicety:
+     * `catalogue.test.ts` asserts `coverageOf(locale) === 1` for every locale.
+     */
+    for (const locale of ['th', 'en', 'zh', 'vi', 'my', 'la', 'hi', 'de'] as const) {
+      const source = read(`../src/i18n/catalogues/${locale}.ts`);
+      const entry = /'payment\.dueNow': '([^']*)'/u.exec(source);
+
+      expect(entry, `${locale} should define payment.dueNow`).not.toBeNull();
+
+      const label = entry?.[1] ?? '';
+      expect(label.trim().length, `${locale} must not be empty`).toBeGreaterThan(0);
+      expect(label, `${locale} must not name an amount`).not.toMatch(NUMERAL);
+      expect(label, `${locale} must not name a currency`).not.toMatch(/[฿$€]|THB/u);
+    }
+  });
+
+  it('⭐ the list and the payment screen choose their figures with one module, not two', () => {
+    /*
+     * One number, one vocabulary, one click apart — and, since fix round 2, one *decision*.
+     *
+     * The labels were shared from the start; the rule that picks between them was not, and
+     * that is precisely how the list came to lead each row with the next instalment while the
+     * payment screen still led with the outstanding. A customer read ฿4,320.00, clicked, and
+     * the headline became ฿14,400.00. Both files now ask `describeOwedFigures`, so neither can
+     * re-order the pair alone.
+     */
+    const rowMoney = read('../src/components/account/quotationRowMoney.ts');
+    const island = read('../src/components/payment/PaymentIsland.tsx');
+    /*
+     * ⚠️ The payment screen now asks through `paymentPanel.ts`, which added the *third*
+     * decision (whether there is anything to ask for at all) above the two this test was
+     * written about. It is one more module and not one more rule: the panel passes both
+     * figures straight to `describeOwedFigures`, so the ordering is still decided once for
+     * both screens — which is what these two assertions are actually protecting.
+     */
+    const panel = read('../src/components/payment/paymentPanel.ts');
+
+    expect(rowMoney).toContain('describeOwedFigures(outstandingMinor, nextDueMinor)');
+    expect(panel).toContain('describeOwedFigures(outstandingMinor, nextDueMinor)');
+    expect(island).toContain('outstandingMinor: data.outstandingThbMinor');
+    expect(island).toContain('nextDueMinor: data.nextDueThbMinor');
+
+    /* And neither hard-codes a label the other does not have. */
+    for (const source of [rowMoney, island, panel]) {
+      expect(source).not.toContain("labelKey: 'payment.outstanding'");
+      expect(source).not.toContain("t('payment.outstanding')");
+    }
+  });
+
+  it('⭐ the outstanding label says *the whole*, in every locale — fix round 2', () => {
+    /*
+     * ⚠️ THE ASSERTION DEFECT 1 TURNS ON. `payment.dueNow` and `payment.outstanding` sit one
+     * above the other on a 30/70 row, and a bare "ยอดคงค้าง" does not say whether the ฿4,320.00
+     * is inside the ฿14,400.00 or comes after it — the customer resolves it by noticing which
+     * number is bigger, which is the arithmetic showing both figures was meant to remove.
+     *
+     * Each locale is checked against the qualifier its own catalogue already uses for a total
+     * (`price.grandTotal`, `quotation.total`), rather than against a word invented here.
+     */
+    const qualifier: Readonly<Record<string, string>> = {
+      th: 'ทั้งหมด',
+      en: 'in total',
+      zh: '总',
+      vi: 'Tổng',
+      my: 'စုစုပေါင်း',
+      la: 'ທັງໝົດ',
+      hi: 'कुल',
+      de: 'Gesamt',
+    };
+
+    for (const [locale, marker] of Object.entries(qualifier)) {
+      const source = read(`../src/i18n/catalogues/${locale}.ts`);
+      const entry = /'payment\.outstanding': '([^']*)'/u.exec(source);
+
+      expect(entry, `${locale} should define payment.outstanding`).not.toBeNull();
+
+      const label = entry?.[1] ?? '';
+      expect(label, `${locale} must mark the figure as the whole, not the leftover`).toContain(
+        marker,
+      );
+      expect(label, `${locale} must not name an amount`).not.toMatch(NUMERAL);
       expect(label, `${locale} must not name a currency`).not.toMatch(/[฿$€]|THB/u);
     }
   });
@@ -278,14 +491,25 @@ describe('⭐ the field opens on what the quotation promised', () => {
     expect(apiCode).toContain('nextDueThbMinor === null');
   });
 
-  it('⭐ still states the outstanding, because it answers a different question', () => {
+  it('⭐ states both figures — the one it asks for, and the one still owed', () => {
     /*
      * Next-due is what the field opens on; outstanding is what the customer still owes in
      * total. Dropping the second would leave somebody paying a ฿4,320 deposit with no way to
-     * see the ฿14,400 the order comes to.
+     * see the ฿14,400 the order comes to — and, until fix round 2, the *first* was the one
+     * missing: the screen led with the outstanding and named the due-now nowhere at all,
+     * silently prefilling it into a field labelled "จำนวนเงินที่โอน", which asks what the
+     * customer transferred rather than what they owe.
+     *
+     * Both amounts now go into `describeOwedFigures`, and whichever labels it returns are
+     * rendered — so this asserts the wiring and `owedFigures.test.ts` asserts the choice.
      */
-    expect(island).toContain("t('payment.outstanding')");
-    expect(island).toContain('data.outstandingThbMinor');
+    expect(island).toContain('outstandingMinor: data.outstandingThbMinor');
+    expect(island).toContain('nextDueMinor: data.nextDueThbMinor');
+    expect(island).toContain('t(figure.labelKey)');
+
+    const owedFigures = read('../src/lib/payment/owedFigures.ts');
+    expect(owedFigures).toContain("labelKey: 'payment.outstanding'");
+    expect(owedFigures).toContain("labelKey: 'payment.dueNow'");
   });
 
   it('⭐ the quotation states a deposit at every destination, not only foreign ones', () => {

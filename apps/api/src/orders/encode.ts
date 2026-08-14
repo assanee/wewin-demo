@@ -13,6 +13,7 @@ import {
 import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 import type { OrderStatus } from '@wewin/db/schema';
 
+import { isLiveOrder } from './live-order';
 import type { ChangeRequestRow, OrderEventRow } from './order.repository';
 import type { ScopedOrder } from './scope';
 import type { TransitionRow } from './transitions';
@@ -55,6 +56,58 @@ function isFrozen(row: ScopedOrder): boolean {
 const iso = (value: Date | null): string | null => (value === null ? null : value.toISOString());
 
 export function encodeOrderSummary(row: ScopedOrder): OrderSummaryWire {
+  /*
+   * ⚠️ One question asked once, for all three money fields.
+   *
+   * `orders_money_shape` is "three columns or none", so a null grand total *is* "this order has
+   * no contract yet" — and the two folds beside it are total: they answer ฿0.00 for a cart, which
+   * is arithmetically right and reads on a queue as *settled*. Deciding each field separately
+   * would be three chances to disagree about the same fact; deciding it here, once, is the same
+   * arrangement `encodeOrder`'s `money` block already uses one line down.
+   *
+   * Note what is *not* happening: no number is being computed, chosen between, or adjusted. The
+   * figures are Postgres's, unaltered — this only says whether there is yet an order for them to
+   * be about.
+   */
+  const contracted = row.grandTotalThbMinor !== null;
+
+  /*
+   * ⚠️ AND ONE MORE QUESTION, ASKED IN THE SAME PLACE AND FOR THE SAME REASON.
+   *
+   * `order_outstanding_thb_minor()` is total: it answers about any order in any status, and on
+   * a `cancelled` or `superseded` one it answers with the whole unpaid remainder. That is the
+   * correct answer to the question the function asks and the wrong number to put in a
+   * ค้างชำระ column — a cancelled order owes nobody anything, and its residue is a refund
+   * question belonging to `src/payments/refunds`, not a debt. Before this line the list
+   * printed ฿14,791.68 against an order the customer had cancelled, on a screen whose own
+   * money card (which filters with the overview's `LIVE_ORDERS`) said ฿0.
+   *
+   * ── Why *here* and not in the query, and not in each client ──────────────────
+   *
+   * `ORDER_COLUMNS` is the one shape every scoped load returns, and the row is deliberately
+   * the whole order rather than a projection — the write path reads these two figures inside
+   * its transaction, and a refund is priced from the very residue this hides. Teaching the
+   * select to null them would take the number away from callers who need it in order to fix a
+   * screen. Teaching each client to check the status would put the definition of "live" in
+   * three bundles at once. The encoder is where "does this order have a figure to state?" is
+   * already decided once per row, one line above, so it is where the second half of that
+   * question belongs.
+   *
+   * ── Why null, and not 0 ─────────────────────────────────────────────────────
+   *
+   * The same argument the line above makes about a cart, and it is the whole reason these
+   * fields are nullable at all: ฿0.00 in a ค้างชำระ column is how a screen says **settled**,
+   * and a cancelled order has not settled — it has stopped. Neither "owing" nor "settled" is
+   * true of it, so the wire states neither and the clients render a dash. `isLiveOrder` reads
+   * the one list `overview.repository.ts`'s `LIVE_ORDERS` is built from, so the total on the
+   * money card and the figure on the row cannot come to disagree about which orders count.
+   *
+   * `contracted` is kept as its own term rather than folded in: `orders_money_shape` is why
+   * all three fields go null together on a cart, and `isLiveOrder` is a different fact about a
+   * different set of orders. Two reasons, stated as two.
+   */
+  const owesLive = contracted && isLiveOrder(row.status);
+
   return {
     id: row.id,
     orderNo: row.orderNo,
@@ -63,6 +116,8 @@ export function encodeOrderSummary(row: ScopedOrder): OrderSummaryWire {
     frozenAt: iso(row.frozenAt),
     submittedAt: iso(row.submittedAt),
     grandTotalThbMinor: row.grandTotalThbMinor === null ? null : encodeThb(row.grandTotalThbMinor),
+    outstandingThbMinor: owesLive ? encodeThb(row.outstandingThbMinor) : null,
+    nextDueThbMinor: owesLive ? encodeThb(row.nextDueThbMinor) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }

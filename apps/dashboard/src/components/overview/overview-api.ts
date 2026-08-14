@@ -1,6 +1,7 @@
 import "client-only";
 
 import { apiJson } from "@/lib/api/client";
+import type { OrderStatus } from "@/components/orders/order-language";
 
 /**
  * `GET /overview`, decoded.
@@ -32,11 +33,39 @@ export interface OrdersOverview {
   readonly redesign: number;
 }
 
+/**
+ * One order that owes money — the aggregate below, itemised so somebody can telephone about it.
+ *
+ * ⚠️ **Inside the money card, not beside it.** The API puts it there so that `payments.read`
+ * gates the breakdown by exactly the same key it gates the total with: an itemised debt is more
+ * disclosive than its total, never less. This file therefore decodes it inside `card(body,
+ * 'money', …)` and nowhere else — a top-level key would be a second place for that gate to be
+ * got right, on the side of the wire that cannot enforce it.
+ */
+export interface OutstandingOrder {
+  readonly id: string;
+  /** Unreachable-null; typed as the wire types it rather than claiming a non-null the column does not give. */
+  readonly orderNo: string | null;
+  readonly status: OrderStatus;
+  /** Satang, and never null — only orders that owe are in this list. */
+  readonly outstandingThbMinor: bigint;
+}
+
 export interface MoneyOverview {
   /** Satang. Face value of slips accepted this Thai month — see the API's contract. */
   readonly receivedThisMonth: bigint;
   /** Satang. `order_outstanding_thb_minor()` folded over live orders. */
   readonly outstanding: bigint;
+  /**
+   * The biggest debts making up `outstanding` — **capped by the API, so this does not add up to
+   * it.** `outstanding-breakdown.ts` is where that is said out loud on the screen.
+   *
+   * ⚠️ Defaults to `[]` when the key is absent, which is this file's standing bargain: lenient
+   * about which fields an older API sends, strict about what is in the ones that arrive. An
+   * older API sending the total and no rows is a real deployment, and the breakdown module has
+   * a branch for exactly that pairing rather than printing "nothing is owed" under a figure.
+   */
+  readonly outstandingOrders: readonly OutstandingOrder[];
 }
 
 export interface Overview {
@@ -95,6 +124,18 @@ const asSatang = (value: unknown, what: string): bigint => {
   return BigInt(digits);
 };
 
+const asText = (value: unknown, what: string): string => {
+  if (typeof value !== "string") throw new TypeError(`${what}: expected a string`);
+  return value;
+};
+
+/** `[]` for an absent key — see `MoneyOverview.outstandingOrders`. A present non-array is still an error. */
+const asRows = (value: unknown, what: string): readonly unknown[] => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new TypeError(`${what}: expected an array`);
+  return value;
+};
+
 /** Present only when the key is, so an absent card stays absent all the way to the screen. */
 const card = <T>(
   body: Record<string, unknown>,
@@ -137,6 +178,30 @@ export const fetchOverview = (): Promise<Overview> =>
           "money.receivedThisMonth",
         ),
         outstanding: asSatang(raw["outstanding"], "money.outstanding"),
+        outstandingOrders: asRows(
+          raw["outstandingOrders"],
+          "money.outstandingOrders",
+        ).map((entry, index) => {
+          const order = asRecord(entry, `money.outstandingOrders[${String(index)}]`);
+          return {
+            id: asText(order["id"], "outstandingOrder.id"),
+            orderNo:
+              order["orderNo"] === null || order["orderNo"] === undefined
+                ? null
+                : asText(order["orderNo"], "outstandingOrder.orderNo"),
+            /*
+             * Cast, not validated, and deliberately: `statusLabel` renders an unrecognised code
+             * as itself — "ugly, obviously wrong, reportable" — which is a better outcome on a
+             * landing page than a `TypeError` that blanks a card because the API shipped a tenth
+             * status first. The same bargain `order-api.ts`'s `decodeSummary` makes.
+             */
+            status: asText(order["status"], "outstandingOrder.status") as OrderStatus,
+            outstandingThbMinor: asSatang(
+              order["outstandingThbMinor"],
+              "outstandingOrder.outstandingThbMinor",
+            ),
+          };
+        }),
       })),
       ...card(body, "quotes", (raw) => ({
         approvalsPending: asCount(

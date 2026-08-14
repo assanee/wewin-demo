@@ -101,7 +101,7 @@ export const zh: PartialUiCatalogue = {
   'home.pricing.formula.title': '计算公式',
   'home.pricing.formula.body': '价格 = 每平方米单价 × 计费面积 + 选配项',
   'home.pricing.formula.note':
-    '选配项包括型材颜色、玻璃颜色与厚度，以及您加装的五金件。每一项都在价格页面上单独列出。',
+    '选配项包括型材颜色、框内镶嵌的材料（玻璃、百叶片或纱网），以及您加装的五金件。每一项都在价格页面上单独列出。',
   'home.pricing.floor.title': '最低计费面积',
   'home.pricing.floor.body': '小于最低面积的扇，按最低面积计费。',
   'home.pricing.floor.range': (p, f) =>
@@ -238,7 +238,7 @@ export const zh: PartialUiCatalogue = {
     '多数定制类工程会先要电话号码才肯报价，只想了解个大概预算的人也不得不接受随之而来的电话。这一步我们去掉了。',
   'about.stance.itemised.title': '价格应当说明它是怎么来的',
   'about.stance.itemised.body':
-    '价格页面列出构成总额的每一项——面积、颜色、玻璃与五金。数字变了，您能看出是什么变了。',
+    '价格页面列出构成总额的每一项——面积、颜色、框内材料与五金。数字变了，您能看出是什么变了。',
   'about.stance.limits.title': '限制事先说明，而不是事后才提',
   'about.stance.limits.body':
     '最低计费面积、我们做不了的尺寸，以及价格不含哪些内容，都在您输入尺寸之前写在网站上，而不是在交谈过程中才冒出来。',
@@ -296,7 +296,7 @@ export const zh: PartialUiCatalogue = {
   'review.form.heading': '写评价',
   'review.form.for': (p) => `评价 ${p.name}`,
   'review.form.intro':
-    '铝合金要经过一个雨季才看得出好坏，而不是装完三天——您什么时候准备好都可以写。此入口不会关闭。',
+    '定制类工程要经过一个雨季才看得出好坏，而不是装完三天——您什么时候准备好都可以写。此入口不会关闭。',
   'review.form.rating.legend': '打几颗星',
   'review.form.rating.option': (p, f) => `${f.integer(p.stars)} 星`,
   'review.form.rating.required': '发送前请先选择星级',
@@ -439,9 +439,9 @@ export const zh: PartialUiCatalogue = {
   'orderActions.cancel.title': '取消此订单',
   'orderActions.cancel.body': '取消后无法恢复。如需重新订购，需要另开一份报价单。',
   'orderActions.cancel.start': '申请取消订单',
-  'orderActions.cancel.preFreezeNote': '此订单尚未进入生产，铝材还没有开始切割。',
+  'orderActions.cancel.preFreezeNote': '此订单尚未进入生产，还没有任何东西按您的设计做出来。',
   'orderActions.cancel.postFreezeNote':
-    '⚠️ 此订单已进入生产 — 铝材已按您的设计切割。现在取消将按签约时约定的政策扣除款项。',
+    '⚠️ 此订单已进入生产 — 工厂已按您的设计开始制作。现在取消将按签约时约定的政策扣除款项。',
   'orderActions.cancel.pricing': '正在计算金额…',
   'orderActions.cancel.held': ({ heldMinor }, f) => `我们代为保管的款项为 ${f.bahtExact(heldMinor)}`,
   'orderActions.cancel.forfeit': ({ forfeitMinor }, f) => `将扣除 ${f.bahtExact(forfeitMinor)}`,
@@ -516,9 +516,12 @@ export const zh: PartialUiCatalogue = {
   'payment.meta.title': '通知一笔付款',
   'payment.heading': '通知一笔付款',
   'payment.loading': '正在打开付款信息…',
-  'payment.outstanding': '尚欠金额',
+  'payment.outstanding': '尚欠总额',
+  'payment.dueNow': '现在应付',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': '此订单已付清',
+  'payment.closed': '此订单已停止接受付款通知。如对金额有疑问，请联系销售团队。',
+  'payment.closedOwing': '仍有未付金额，但此处已无法提交付款通知。请联系销售团队结清余款。',
   'payment.account.legend': '转账至以下任一账户',
   'payment.account.copy': (p) => `复制账号 ${p.accountDigits}`,
   'payment.account.copied': '账号已复制',

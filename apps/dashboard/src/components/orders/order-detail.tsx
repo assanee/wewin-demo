@@ -35,6 +35,7 @@ import {
 } from './order-api';
 import { orderFocus } from './order-focus';
 import { statusLabel, transitionForm } from './order-language';
+import { outstandingDisplay, readOutstanding } from './order-outstanding';
 import { OrderTimeline } from './order-spine';
 
 /**
@@ -83,6 +84,21 @@ import { OrderTimeline } from './order-spine';
  * ⚠️ **ผู้ติดต่อ and ยอดเงิน moved below the spine.** Both keep their Cards — contact details
  * and an amounts breakdown are exactly the self-contained reference a border is for — but
  * reference is not what the screen is for, so it no longer opens with it.
+ *
+ * ── ⚠️ What is still owed goes in ยอดเงิน, and nowhere else on this screen ────
+ *
+ * `outstandingThbMinor` is the most *actionable* number on an `awaiting_payment` order, and it
+ * still does not go at the top. Two reasons, and the second is the binding one:
+ *
+ *   It is only legible against the figures it sits with. ค้างชำระ ฿9,940 means "the deposit
+ *   landed" **because** ยอดรวม ฿14,200 and มัดจำตามสัญญา ฿4,260 are on the same four lines.
+ *   Lifted out on its own it is a number with no scale, and the reader comes down here anyway.
+ *
+ *   `README.md`: *ถ้าตัวเลขหรือประโยคนั้นมีอยู่แล้วที่อื่นบนหน้าจอเดียวกัน มันไม่ใช่จุดเด่น*. Printing it
+ *   here **and** beside the status is exactly the ยอดรวมสุทธิ mistake phase 1 made on the quote
+ *   screen — the same figure under the same label, 400px apart. One place, and this is it.
+ *   The focal statement stays what somebody opened the order to learn: where it is, and whether
+ *   it can move.
  */
 
 /*
@@ -141,6 +157,9 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
   const { order, events } = state;
 
   const focus = orderFocus(order.availableTransitions);
+  const owed = readOutstanding(order);
+  /* Same three states, same wording, as the ค้างชำระ column on the list — one module decides. */
+  const owedDisplay = outstandingDisplay(owed);
 
   return (
     <div className="flex flex-col gap-8">
@@ -344,6 +363,50 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                    */}
                   <span className="text-muted-foreground type-caption ml-2">ตรึงไว้ตั้งแต่ตอนส่ง</span>
                 </dd>
+
+                {/*
+                 * ⭐ The two figures this card was missing, both read straight off the order.
+                 *
+                 * ⛔ Neither is arrived at here. `order_outstanding_thb_minor()` and
+                 * `order_next_due_thb_minor()` are Postgres's, carried as columns on the read
+                 * that fetched this order — so this card and the customer's payment screen are
+                 * one function called twice rather than two derivations that can disagree.
+                 * `ยอดรวม` minus `มัดจำตามสัญญา` is **not** either of them and never was: a slip
+                 * can carry money no instalment claimed, and the schedule can hold more than
+                 * two rows.
+                 */}
+                <dt className="font-medium">ค้างชำระ</dt>
+                <dd
+                  className={
+                    owedDisplay.emphasis === 'debt'
+                      ? 'tabular-nums font-semibold'
+                      : 'text-muted-foreground'
+                  }
+                >
+                  {owedDisplay.textTh}
+                </dd>
+
+                {/*
+                 * ⚠️ Present only when it says something the line above does not.
+                 *
+                 * The two folds are **equal on a pay-in-full order** and differ by the balance on
+                 * a 30/70. When they are equal, a งวดถัดไปต้องการ row would print the same baht
+                 * figure a centimetre under ค้างชำระ with a different label on it — which does not
+                 * read as one debt stated twice, it reads as two debts. `README.md`'s rule, and
+                 * `order-outstanding.ts` is where the comparison is decided and tested.
+                 */}
+                {owed.kind === 'owing' && !owed.nextDueIsWholeDebt && (
+                  <>
+                    {/*
+                     * `งวดถัดไปต้องการ`, spelled exactly as `slip-review-dialog.tsx` spells it —
+                     * the screen where staff decide what a slip pays off. One concept, one Thai
+                     * phrase across the two screens that both talk about it, and no new wording
+                     * invented for a thing this app already has a word for.
+                     */}
+                    <dt className="text-muted-foreground">งวดถัดไปต้องการ</dt>
+                    <dd className="tabular-nums">{formatBaht(owed.nextDueThbMinor)}</dd>
+                  </>
+                )}
               </dl>
             </CardContent>
           )}

@@ -17,11 +17,13 @@ import {
   type PaymentProblem,
   type PaymentSlip,
 } from '../../lib/payment/api';
+import type { Emphasis } from '../../lib/payment/owedFigures';
 import { useLocale } from '../../state/localeContext';
 import type { Translate } from '../../i18n/translate';
 import { AccountForm } from '../account/AccountForm';
 import { AccountGate } from '../account/AccountGate';
 import { AccountPicker } from './AccountPicker';
+import { describePaymentPanel } from './paymentPanel';
 import { SlipForm, type Phase } from './SlipForm';
 
 /**
@@ -49,6 +51,26 @@ import { SlipForm, type Phase } from './SlipForm';
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/**
+ * ⭐ The two roles `describeOwedFigures` hands back, in this screen's tokens.
+ *
+ * `lead` keeps the styling this screen has always given its headline figure — the amount in
+ * `text-lead text-lime`, its label in body text — so the *prominence* is unchanged and only
+ * which figure gets it has moved. `quiet` is the supporting line, the same weight the rest
+ * of this screen gives context (`notFound.body`, the slip history) and the same *role*
+ * `MyQuotations` paints with its own `AMOUNT_CLASS`.
+ *
+ * ⚠️ Whole strings rather than a template with a hole in it: `scripts/check-tokens.mjs`
+ * reads the literals out of any `const` whose name contains `class`, and a utility spliced
+ * together at runtime is one it cannot see.
+ */
+const FIGURE_CLASS: Readonly<
+  Record<Emphasis, { readonly line: string; readonly amount: string }>
+> = {
+  lead: { line: 'text-body text-chalk', amount: 'numeric text-lead text-lime' },
+  quiet: { line: 'text-small text-chalk-2', amount: 'numeric text-small text-chalk-2' },
+};
 
 function orderIdFromSearch(search: string): string | null {
   const id = new URLSearchParams(search).get('order') ?? '';
@@ -336,7 +358,23 @@ function PaymentForOrder({
   }
 
   const data = instructions.instructions;
-  const settled = data.outstandingThbMinor <= 0n;
+  /*
+   * ⭐ WHAT THIS SCREEN SAYS, AND WHETHER IT ASKS FOR ANYTHING — one call, one module.
+   *
+   * This used to be `const settled = data.outstandingThbMinor <= 0n` and nothing else, which
+   * is *false* on a cancelled order carrying an unpaid balance: the screen printed
+   * "ยอดคงค้างทั้งหมด ฿10,354.18" over the upload form on an order the customer had cancelled and
+   * on which the company owed them their deposit back. `acceptsPayment` is the server's own
+   * answer, from the same list that would refuse the upload with a 409, and `paymentPanel.ts`
+   * holds the decision so it can be tested — a `.test.tsx` is never collected here.
+   */
+  const panel = describePaymentPanel({
+    acceptsPayment: data.acceptsPayment,
+    orderIsLive: data.orderIsLive,
+    outstandingMinor: data.outstandingThbMinor,
+    nextDueMinor: data.nextDueThbMinor,
+    accountCount: data.accounts.length,
+  });
   const parsedAmount = readSatang(amountText);
   const amountForQr = parsedAmount.ok ? parsedAmount.value : null;
 
@@ -344,25 +382,61 @@ function PaymentForOrder({
     <div className="flex flex-col gap-4">
       <h1 className="text-title text-chalk">{t('payment.heading')}</h1>
 
-      <p className="text-body text-chalk">
-        {t('payment.outstanding')}{' '}
-        <span className="numeric text-lead text-lime">
-          {t('payment.outstandingAmount', { owedMinor: data.outstandingThbMinor })}
-        </span>
-      </p>
+      {/*
+        ⭐ THE SCREEN NAMES THE NUMBER IT IS ASKING FOR — fix round 2.
 
-      {settled ? (
-        <p className="border border-line bg-panel-2 p-3 text-small text-chalk">{t('payment.settled')}</p>
-      ) : data.accounts.length === 0 ? (
-        /*
-         * ⚠️ No accounts, no picker, no form. `0027_organisation.sql` seeds no bank accounts
-         * at all, so a fresh database reaches this on every order — a legend over an empty
-         * box, explaining nothing, was what shipped before this. `SlipForm` (and its submit
-         * button) is not rendered at all in this branch: there is nowhere for the money to
-         * go, so the control that would send it is unreachable rather than merely disabled.
-         */
-        <p className="border border-line bg-panel-2 p-3 text-small text-chalk">{t('payment.account.none')}</p>
-      ) : (
+        This block used to be one line: `payment.outstanding` in `text-lead text-lime`, and
+        nothing at all about the next instalment. The amount field below it already opened on
+        `nextDueThbMinor` (see the ⭐ note at the prefill, which is the owner's rule and is not
+        in question) — so on a 30/70 order the headline said ฿14,400.00 while the field the
+        customer was about to submit said ฿4,320.00, and the only place that figure was named
+        was `จำนวนเงินที่โอน`, which asks what they *transferred*, not what they owe.
+
+        `MyQuotations` had by then started leading each row with ฿4,320.00. A customer read
+        ฿4,320.00, clicked, and the headline became ฿14,400.00.
+
+        ⚠️ The order of the two figures is `describeOwedFigures`', not this file's, and the
+        list asks the same module the same question — which is what stops the two screens from
+        drifting apart again. On a pay-in-full order, and on a 30/70 whose deposit has been
+        accepted, it answers with one figure and this renders exactly the single outstanding
+        line that was here before.
+
+        ⭐ …and on an order that can no longer be paid it answers with **none**, which is the
+        round after this one. `panel.figures` is empty on a cancelled, superseded, delivered or
+        draft order — the residue is real but it is a refund question or a phone call, not a
+        bill, and a figure under "ยอดคงค้างทั้งหมด" is a bill whatever its value.
+
+        ⚠️ `payment.outstandingAmount` is this app's only money template and is a bare
+        `f.bahtExact` in all eight locales, so it formats the due-now the same way — to the
+        satang, in the locale's own numerals. The figure never enters a translator's sentence.
+      */}
+      <div className="flex flex-col gap-1">
+        {panel.figures.map((figure) => (
+          <p key={figure.labelKey} className={FIGURE_CLASS[figure.emphasis].line}>
+            {t(figure.labelKey)}{' '}
+            <span className={FIGURE_CLASS[figure.emphasis].amount}>
+              {t('payment.outstandingAmount', { owedMinor: figure.amountMinor })}
+            </span>
+          </p>
+        ))}
+      </div>
+
+      {/*
+        One sentence in place of a demand — `payment.closed` when this order can no longer
+        receive a payment, `payment.settled` when it can and owes nothing, `payment.account.none`
+        when there is nowhere for the money to go (`0027_organisation.sql` seeds no bank
+        accounts, so a fresh database reaches that on every order). Which of the three, and
+        whether the form exists at all, is `paymentPanel.ts`'s decision and is tested there.
+
+        ⚠️ `SlipForm` and its submit button are not rendered *disabled* in any of the three:
+        there is nothing to send, or nowhere to send it, so the control that would send it is
+        unreachable rather than merely refused on press.
+      */}
+      {panel.noteKey !== null ? (
+        <p className="border border-line bg-panel-2 p-3 text-small text-chalk">{t(panel.noteKey)}</p>
+      ) : null}
+
+      {panel.showsForm ? (
         <>
           <AccountPicker
             accounts={data.accounts}
@@ -395,8 +469,17 @@ function PaymentForOrder({
             />
           )}
         </>
-      )}
+      ) : null}
 
+      {/*
+        ⚠️ OUTSIDE EVERY GATE, AND DELIBERATELY SO.
+
+        A customer whose order was cancelled after they paid a deposit needs to see that the
+        deposit is *recorded* — that is the one thing this screen can still tell them, and the
+        refund conversation starts from it. Hiding the history along with the form would make
+        a closed order look like an order nothing had ever been sent against, which is worse
+        than the bug this round fixes.
+      */}
       <SlipHistory slips={slips} t={t} />
     </div>
   );

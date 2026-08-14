@@ -50,6 +50,14 @@ const WIRE: OrderWire = {
   frozenAt: null,
   submittedAt: '2026-08-08T03:00:00.000Z',
   grandTotalThbMinor: encodeThb(1843200n),
+  /*
+   * The deposit has been accepted on this one, which is why the two differ: `outstanding` is
+   * what is still owed on the contract and `nextDue` is the remainder of the first unsettled
+   * instalment. Both are the API's, from `order_outstanding_thb_minor()` and
+   * `order_next_due_thb_minor()`; this fixture only has to carry the shape.
+   */
+  outstandingThbMinor: encodeThb(1290240n),
+  nextDueThbMinor: encodeThb(1290240n),
   updatedAt: '2026-08-09T09:09:09.000Z',
   createdAt: '2026-08-08T02:00:00.000Z',
   contact: {
@@ -132,5 +140,70 @@ describe('an order carrying a customer objection', () => {
     const plain: OrderWire = { ...WIRE, openChangeRequest: null };
 
     expect(decodeDetail(plain).openChangeRequest).toBeNull();
+  });
+});
+
+/**
+ * The two figures the ค้างชำระ column and the ยอดเงิน card read.
+ *
+ * ⭐ Same seam, same class of bug. `openedAt`/`createdAt` was a field name that did not match
+ * the wire, and the only reason it reached production is that nothing decoded the branch. These
+ * two are decoded by the same file, are `asSatangOrNull` (so a missing key is a silent `null`
+ * rather than a throw), and a `null` here renders as "no contract yet" — an order that owes
+ * ฿12,902 would quietly read as a cart. The annotated `OrderWire` fixture is what makes a
+ * misspelling a compile error; these assert that the right one is picked up at runtime.
+ */
+describe('what an order still owes', () => {
+  it('carries both folds through under the names the wire uses', () => {
+    const detail = decodeDetail(WIRE);
+
+    expect(detail.outstandingThbMinor).toBe(1290240n);
+    expect(detail.nextDueThbMinor).toBe(1290240n);
+  });
+
+  it('does not read one fold for the other on a 30/70', () => {
+    /*
+     * ⚠️ The fixture above has the two equal, which is the honest shape of a pay-in-full order
+     * and is also the one shape that cannot catch a decoder reading `outstandingThbMinor` twice.
+     * They differ by the balance the moment a deposit is scheduled, so this is the case that
+     * pins each to its own key — and the order detail drops the งวดถัดไปต้องการ row entirely
+     * when they are equal, so a swap here is invisible on the screen as well.
+     */
+    const thirtySeventy: OrderWire = {
+      ...WIRE,
+      outstandingThbMinor: encodeThb(1843200n),
+      nextDueThbMinor: encodeThb(552960n),
+    };
+
+    const detail = decodeDetail(thirtySeventy);
+
+    expect(detail.outstandingThbMinor).toBe(1843200n);
+    expect(detail.nextDueThbMinor).toBe(552960n);
+  });
+
+  it('keeps a cart null on all three money fields rather than zero', () => {
+    /*
+     * `orders_money_shape` is "three columns or none", and the API nulls the two folds on the
+     * same fact as the grand total. ฿0.00 here would read as *settled* on a queue, which is the
+     * one thing a cart is not — `order-outstanding.ts` is where that distinction is kept, and it
+     * can only keep it if the decoder hands it a null.
+     */
+    const cart: OrderWire = {
+      ...WIRE,
+      status: 'draft',
+      orderNo: null,
+      submittedAt: null,
+      grandTotalThbMinor: null,
+      outstandingThbMinor: null,
+      nextDueThbMinor: null,
+      money: null,
+      openChangeRequest: null,
+    };
+
+    const detail = decodeDetail(cart);
+
+    expect(detail.grandTotalThbMinor).toBeNull();
+    expect(detail.outstandingThbMinor).toBeNull();
+    expect(detail.nextDueThbMinor).toBeNull();
   });
 });

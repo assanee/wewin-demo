@@ -115,7 +115,7 @@ export const de: PartialUiCatalogue = {
   'home.pricing.formula.title': 'Die Formel',
   'home.pricing.formula.body': 'Preis = Preis pro m² × berechnete Fläche + Optionen',
   'home.pricing.formula.note':
-    'Zu den Optionen gehören die Profilfarbe, Farbe und Stärke des Glases sowie zusätzliche Beschläge. Jede einzelne davon wird auf der Preisseite gesondert aufgeführt.',
+    'Zu den Optionen gehören die Profilfarbe, die Füllung des Elements — Glas, Lamellen oder Gewebe — sowie zusätzliche Beschläge. Jede einzelne davon wird auf der Preisseite gesondert aufgeführt.',
   'home.pricing.floor.title': 'Mindestberechnungsfläche',
   'home.pricing.floor.body':
     'Ein Element unterhalb des Mindestmaßes wird mit der Mindestfläche berechnet.',
@@ -275,7 +275,7 @@ export const de: PartialUiCatalogue = {
     'Bei Maßanfertigungen wird meist die Telefonnummer verlangt, bevor eine Zahl genannt wird — wer nur ein grobes Budget sucht, muss den Anruf danach in Kauf nehmen. Diesen Schritt haben wir gestrichen.',
   'about.stance.itemised.title': 'Ein Preis sollte zeigen, woher er kommt',
   'about.stance.itemised.body':
-    'Die Preisseite führt jede Position auf, aus der sich die Summe zusammensetzt — Fläche, Farbe, Glas und Beschläge. Ändert sich die Zahl, sehen Sie, wodurch.',
+    'Die Preisseite führt jede Position auf, aus der sich die Summe zusammensetzt — Fläche, Farbe, Füllung und Beschläge. Ändert sich die Zahl, sehen Sie, wodurch.',
   'about.stance.limits.title': 'Grenzen vorher nennen, nicht hinterher',
   'about.stance.limits.body':
     'Die Mindestberechnungsfläche, die Maße, die wir nicht fertigen können, und das, was der Preis nicht enthält, stehen auf der Website, bevor Sie ein Maß eingeben — statt im Gespräch aufzutauchen.',
@@ -349,7 +349,7 @@ export const de: PartialUiCatalogue = {
   'review.form.heading': 'Bewertung schreiben',
   'review.form.for': (p) => `Bewertung zu ${p.name}`,
   'review.form.intro':
-    'Aluminium beurteilt man nach einer Regenzeit, nicht drei Tage nach dem Einbau — schreiben Sie, wann immer Sie so weit sind. Diese Möglichkeit läuft nicht ab.',
+    'Eine Maßanfertigung beurteilt man nach einer Regenzeit, nicht drei Tage nach dem Einbau — schreiben Sie, wann immer Sie so weit sind. Diese Möglichkeit läuft nicht ab.',
   'review.form.rating.legend': 'Wie viele Sterne',
   'review.form.rating.option': (p, f) =>
     `${f.integer(p.stars)} ${count(p.stars, 'Stern', 'Sterne')}`,
@@ -522,9 +522,9 @@ export const de: PartialUiCatalogue = {
   'orderActions.cancel.body':
     'Eine Storierung lässt sich nicht rückgängig machen. Für eine neue Bestellung braucht es ein neues Angebot.',
   'orderActions.cancel.start': 'Bestellung stornieren',
-  'orderActions.cancel.preFreezeNote': 'Diese Bestellung ist nicht in Produktion. Es wurde noch kein Aluminium geschnitten.',
+  'orderActions.cancel.preFreezeNote': 'Diese Bestellung ist nicht in Produktion. Es wurde noch nichts nach Ihrem Entwurf gefertigt.',
   'orderActions.cancel.postFreezeNote':
-    '⚠️ Diese Bestellung ist bereits in Produktion — das Aluminium wurde nach Ihrem Entwurf geschnitten. Eine Storierung jetzt bedeutet, dass gemäß der bei Vertragsabschluss vereinbarten Regelung ein Betrag einbehalten wird.',
+    '⚠️ Diese Bestellung ist bereits in Produktion — das Werk hat mit der Fertigung nach Ihrem Entwurf begonnen. Eine Storierung jetzt bedeutet, dass gemäß der bei Vertragsabschluss vereinbarten Regelung ein Betrag einbehalten wird.',
   'orderActions.cancel.pricing': 'Betrag wird ermittelt…',
   'orderActions.cancel.held': ({ heldMinor }, f) => `Wir halten ${f.bahtExact(heldMinor)}`,
   'orderActions.cancel.forfeit': ({ forfeitMinor }, f) => `${f.bahtExact(forfeitMinor)} würden einbehalten`,
@@ -604,9 +604,14 @@ export const de: PartialUiCatalogue = {
   'payment.meta.title': 'Zahlung mitteilen',
   'payment.heading': 'Zahlung mitteilen',
   'payment.loading': 'Ihre Zahlungsdetails werden geöffnet…',
-  'payment.outstanding': 'Noch offener Betrag',
+  'payment.outstanding': 'Noch offener Gesamtbetrag',
+  'payment.dueNow': 'Jetzt zu zahlen',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'Diese Bestellung ist vollständig bezahlt',
+  'payment.closed':
+    'Für diese Bestellung werden keine Zahlungen mehr angenommen. Bei Fragen zum Betrag wenden Sie sich bitte an unser Vertriebsteam.',
+  'payment.closedOwing':
+    'Es ist noch ein Betrag offen, Zahlungen können hier aber nicht mehr eingereicht werden. Wenden Sie sich zur Begleichung bitte an unser Vertriebsteam.',
   'payment.account.legend': 'Überweisen Sie auf eines dieser Konten',
   'payment.account.copy': (p) => `Kontonummer ${p.accountDigits} kopieren`,
   'payment.account.copied': 'Kontonummer kopiert',

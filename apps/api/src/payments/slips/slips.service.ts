@@ -19,6 +19,7 @@ import {
 } from '../../orders/scope';
 import { scopeHolds, type Scope } from '../../rbac';
 import { planAllocations, suggestAllocations, thbMinor } from './allocations';
+import { SLIP_ATTACHABLE_STATUSES } from './attachable';
 import { encodeInstalment, encodeMoney, encodeSlip, type SlipAudience } from './encode';
 import {
   mintImageGrant,
@@ -102,28 +103,16 @@ import type {
  * not frozen, with a crash window in between.
  */
 
-/**
- * The statuses a slip may be attached to — a **mirror** of the trigger in
- * `0011_payment_guards.sql`, and the migration is the definition.
- *
- * 0007 predicted this list would be `'{awaiting_payment}'` and the prediction is wrong the
- * moment there is a deposit: the balance slip is transferred while the order is already in
- * production. What must be refused is a slip against a *finished* contract — `delivered`,
- * `cancelled`, `superseded` — because money arriving on one of those is a reconciliation
- * exception and not a payment.
- *
- * Duplicated here rather than read from the database because this check happens *before*
- * the bytes are uploaded, where there is no row to trigger on yet. `slips.pg.test.ts`
- * asserts the database refuses what this list refuses, by inserting directly and expecting
- * the trigger — so the mirror cannot drift silently.
+/*
+ * ⚠️ `SLIP_ATTACHABLE_STATUSES` used to be declared here. It has moved to `./attachable`,
+ * unchanged, because it acquired a second reader that is not a slip route:
+ * `OrdersService.paymentInstructions` answers `acceptsPayment` on the wire the customer's
+ * payment screen renders from, and a screen offering an upload this service would refuse
+ * with a 409 is the defect that move exists to make impossible. Read that file's header for
+ * why it is a file rather than an export from this one (the require cycle `src/orders`
+ * cannot take), and `slips.pg.test.ts` for the assertion that the database refuses what the
+ * list refuses.
  */
-const SLIP_ATTACHABLE_STATUSES: readonly OrderStatus[] = [
-  'awaiting_payment',
-  'production_confirmed',
-  'in_production',
-  'awaiting_installation',
-  'redesign',
-];
 
 /** The freeze point. Plan 7.5(ข): the deposit changed the condition, not the place. */
 const FREEZE_STATUS: OrderStatus = 'production_confirmed';

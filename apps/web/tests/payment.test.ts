@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_SLIP_BYTES, createSlip, describeUploadProblem, toInstant } from '../src/lib/payment/api';
+import {
+  MAX_SLIP_BYTES,
+  createSlip,
+  describeUploadProblem,
+  fetchPaymentInstructions,
+  toInstant,
+} from '../src/lib/payment/api';
 
 describe('an oversize image is refused before it is sent', () => {
   it('names the size, and does not claim the server is unreachable', () => {
@@ -88,5 +94,104 @@ describe('createSlip always names which account received the transfer — fix ro
     // the one new field while breaking everything beside it silently.
     expect(sentBody['imageHandle']).toBe('handle-1');
     expect(sentBody['amountThbMinor']).toEqual({ unit: 'THB.satang', digits: '10000' });
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE INSTRUCTIONS DECODER HAD NO TEST AT ALL, AND IT IS THE SCREEN'S DOOR.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `decodeInstructions` is module-private and nothing reached it: this file covers `createSlip`,
+ * `describeUploadProblem` and `toInstant`, and adding a *required* field to the decoder broke
+ * none of them. Its own comments make three claims about behaviour on a missing field — that
+ * `nextDueThbMinor` must not fall back to the outstanding, and that neither boolean may default,
+ * because every default ships a defect — and nothing was checking any of them.
+ *
+ * That matters most on version skew, which is the only way these fields go missing in
+ * production: an API a deploy behind omits one, and the intended answer is a loud "try again"
+ * rather than a screen that quietly bills the wrong number. Softening any of these to `?? …`
+ * would have left the whole suite green.
+ *
+ * Driven through `fetchPaymentInstructions` rather than by exporting the decoder — the boundary
+ * worth testing is the one the screen actually calls.
+ */
+describe('⭐ the payment-instructions decoder refuses a payload it cannot trust', () => {
+  const originalBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  const complete = {
+    grandTotalThbMinor: { unit: 'THB.satang', digits: '1479168' },
+    outstandingThbMinor: { unit: 'THB.satang', digits: '1035418' },
+    nextDueThbMinor: { unit: 'THB.satang', digits: '443750' },
+    acceptsPayment: true,
+    orderIsLive: true,
+    accounts: [],
+  } as const;
+
+  const answer = (body: unknown): void => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+  };
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalBase === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    else process.env.NEXT_PUBLIC_API_BASE_URL = originalBase;
+  });
+
+  it('accepts a complete payload, and keeps the two figures apart', async () => {
+    answer(complete);
+
+    const result = await fetchPaymentInstructions('order-1', 'token-1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    /* Distinct on a 30/70 order: what is still owed, and what to pay now. */
+    expect(result.data.outstandingThbMinor).toBe(1_035_418n);
+    expect(result.data.nextDueThbMinor).toBe(443_750n);
+    expect(result.data.acceptsPayment).toBe(true);
+    expect(result.data.orderIsLive).toBe(true);
+  });
+
+  /*
+   * One case per field the decoder declares required. `malformed` and not a silent default: the
+   * problem code is what puts a "try again" on screen instead of a wrong number.
+   */
+  for (const missing of [
+    'grandTotalThbMinor',
+    'outstandingThbMinor',
+    'nextDueThbMinor',
+    'acceptsPayment',
+    'orderIsLive',
+  ] as const) {
+    it(`refuses the whole payload when ${missing} is absent`, async () => {
+      const { [missing]: _dropped, ...partial } = complete;
+      answer(partial);
+
+      const result = await fetchPaymentInstructions('order-1', 'token-1');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.problem).toBe('malformed');
+    });
+  }
+
+  it('refuses a boolean sent as a string, which is how a JSON encoder loses a type', async () => {
+    answer({ ...complete, orderIsLive: 'true' });
+
+    const result = await fetchPaymentInstructions('order-1', 'token-1');
+
+    expect(result.ok).toBe(false);
   });
 });

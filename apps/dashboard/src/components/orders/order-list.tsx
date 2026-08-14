@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { failureMessage } from '@/lib/api/errors';
 import { listOrders, type OrderSummary } from './order-api';
 import { statusLabel, statusTone, type OrderStatus } from './order-language';
+import { outstandingDisplay, readOutstanding } from './order-outstanding';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -42,6 +43,27 @@ import { statusLabel, statusTone, type OrderStatus } from './order-language';
  *
  * The filter row is deliberately quieter than the table it filters — `type-caption` labels on
  * ghost buttons — for the same reason. It is how you get to the answer, not the answer.
+ *
+ * ── ⚠️ ค้างชำระ is a column, and it is the one with weight ────────────────────
+ *
+ * "Which order owes money" was not answerable from this screen at all: ยอดรวม is what an order
+ * is worth, which is the same number on the day it is quoted and the day it is paid off. The
+ * debt now sits beside it, from `order_outstanding_thb_minor()` — a column on the same select,
+ * so a hundred rows are still one query and nothing on this side subtracts anything.
+ *
+ * The two are **not** a duplicate pair even though they read alike on an unpaid order, where
+ * the debt *is* the total. They diverge the moment a deposit is accepted, and the divergence is
+ * the information: ค้างชำระ ฿9,940 next to ยอดรวม ฿14,200 says the deposit landed, without a
+ * third column saying so in words. That is why there is no "partly paid" label here — the two
+ * numbers already say it, and `README.md`'s rule is that a fact already on the screen does not
+ * get a second place on it.
+ *
+ * ⚠️ **An order that owes nothing must not read as money.** `฿0` at the debt's weight, forty
+ * times down a list, is forty false hits for an eye that is scanning for money — so settled
+ * becomes a muted word and only a live debt gets `font-semibold`. `order-outstanding.ts` makes
+ * that call, and it is also what keeps a paid-off order (ชำระครบแล้ว) apart from a cart that was
+ * never priced (the same em dash ยอดรวม uses) — the API sends null for one and ฿0.00 for the
+ * other, and a cell that printed both as ฿0 would lose the difference.
  */
 
 const TONE: Record<ReturnType<typeof statusTone>, 'default' | 'secondary' | 'outline'> = {
@@ -135,6 +157,9 @@ export function OrderList() {
                 <TableHead className="h-8 type-caption">สถานะ</TableHead>
                 <TableHead className="h-8 type-caption">เริ่มผลิตแล้ว</TableHead>
                 <TableHead className="h-8 type-caption text-right">ยอดรวม</TableHead>
+                {/* Immediately after ยอดรวม, because the pair is read as a pair — the gap between
+                    them is what says how much has been paid. */}
+                <TableHead className="h-8 type-caption text-right">ค้างชำระ</TableHead>
                 {/* `w-full` on the last column: with `table-layout: auto` the slack would otherwise be
                     shared out between the first three, pushing related facts about one order apart
                     across a 1440px screen. Giving it all to the least important column keeps the
@@ -180,6 +205,7 @@ export function OrderList() {
                       formatBaht(order.grandTotalThbMinor)
                     )}
                   </TableCell>
+                  <OwedCell order={order} />
                   <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
                     {new Date(order.updatedAt).toLocaleString('th-TH', {
                       timeZone: 'Asia/Bangkok',
@@ -207,6 +233,33 @@ export function OrderList() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What this order still owes.
+ *
+ * ⚠️ The weight is the whole point of the cell, so it is worth stating what the three states
+ * look like from across a desk: a live debt is `font-semibold` and reads as money; a settled
+ * order is a muted word at `type-caption` and reads as *done*; a draft is the same em dash the
+ * ยอดรวม cell beside it already uses for "no contract yet", so the row does not claim a cart
+ * has paid anything.
+ *
+ * `font-semibold` here against `font-medium` on ยอดรวม is one notch, deliberately. The debt is
+ * what somebody is scanning for; the total is the context they read it against, and turning the
+ * context down further would make an ordinary order look like a problem.
+ */
+function OwedCell({ order }: { readonly order: OrderSummary }) {
+  const owed = outstandingDisplay(readOutstanding(order));
+
+  return (
+    <TableCell className="px-2 py-1.5 text-right">
+      {owed.emphasis === 'debt' ? (
+        <span className="type-body font-semibold tabular-nums">{owed.textTh}</span>
+      ) : (
+        <span className="text-muted-foreground type-caption">{owed.textTh}</span>
+      )}
+    </TableCell>
   );
 }
 

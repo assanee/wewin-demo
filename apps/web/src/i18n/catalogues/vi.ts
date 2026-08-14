@@ -105,7 +105,7 @@ export const vi: PartialUiCatalogue = {
   'home.pricing.formula.title': 'Công thức',
   'home.pricing.formula.body': 'Giá = đơn giá mỗi m² × diện tích tính tiền + tuỳ chọn',
   'home.pricing.formula.note':
-    'Tuỳ chọn gồm màu nhôm, màu và độ dày kính, cùng phụ kiện bạn thêm vào. Từng khoản đều được liệt kê riêng trên trang giá.',
+    'Tuỳ chọn gồm màu nhôm, phần lấp trong khung — kính, lá chớp hoặc lưới — cùng phụ kiện bạn thêm vào. Từng khoản đều được liệt kê riêng trên trang giá.',
   'home.pricing.floor.title': 'Diện tích tính tiền tối thiểu',
   'home.pricing.floor.body':
     'Cánh nhỏ hơn mức tối thiểu sẽ được tính theo diện tích tối thiểu.',
@@ -253,7 +253,7 @@ export const vi: PartialUiCatalogue = {
     'Phần lớn hàng đặt theo kích thước đòi số điện thoại trước khi đưa ra con số, nghĩa là ai chỉ muốn biết ngân sách sơ bộ cũng phải chấp nhận cuộc gọi sau đó. Chúng tôi đã bỏ bước ấy.',
   'about.stance.itemised.title': 'Một mức giá nên cho thấy nó từ đâu ra',
   'about.stance.itemised.body':
-    'Trang giá liệt kê từng khoản cấu thành tổng — diện tích, màu, kính và phụ kiện. Khi con số thay đổi, bạn thấy được điều gì đã làm nó thay đổi.',
+    'Trang giá liệt kê từng khoản cấu thành tổng — diện tích, màu, phần lấp trong khung và phụ kiện. Khi con số thay đổi, bạn thấy được điều gì đã làm nó thay đổi.',
   'about.stance.limits.title': 'Nêu giới hạn từ đầu, không phải về sau',
   'about.stance.limits.body':
     'Diện tích tính tiền tối thiểu, những kích thước chúng tôi không làm được, và những gì giá chưa bao gồm đều nằm trên trang trước khi bạn nhập kích thước, thay vì xuất hiện giữa cuộc trò chuyện.',
@@ -315,7 +315,7 @@ export const vi: PartialUiCatalogue = {
   'review.form.heading': 'Viết đánh giá',
   'review.form.for': (p) => `Đánh giá ${p.name}`,
   'review.form.intro':
-    'Nhôm được đánh giá sau một mùa mưa, chứ không phải ba ngày sau khi lắp — bạn viết lúc nào cũng được. Mục này không đóng lại.',
+    'Hàng đặt làm riêng được đánh giá sau một mùa mưa, chứ không phải ba ngày sau khi lắp — bạn viết lúc nào cũng được. Mục này không đóng lại.',
   'review.form.rating.legend': 'Mấy sao',
   'review.form.rating.option': (p, f) => `${f.integer(p.stars)} sao`,
   'review.form.rating.required': 'Hãy chọn số sao trước khi gửi',
@@ -480,9 +480,9 @@ export const vi: PartialUiCatalogue = {
   'orderActions.cancel.title': 'Huỷ đơn hàng này',
   'orderActions.cancel.body': 'Việc huỷ không thể hoàn tác. Muốn đặt lại thì phải mở một báo giá mới.',
   'orderActions.cancel.start': 'Yêu cầu huỷ đơn hàng',
-  'orderActions.cancel.preFreezeNote': 'Đơn hàng này chưa vào sản xuất. Nhôm chưa được cắt.',
+  'orderActions.cancel.preFreezeNote': 'Đơn hàng này chưa vào sản xuất. Chưa có gì được làm theo thiết kế của bạn.',
   'orderActions.cancel.postFreezeNote':
-    '⚠️ Đơn hàng này đã vào sản xuất — nhôm đã được cắt theo thiết kế của bạn. Huỷ lúc này sẽ bị giữ lại một khoản, theo chính sách đã thống nhất khi ký hợp đồng.',
+    '⚠️ Đơn hàng này đã vào sản xuất — xưởng đã bắt đầu làm theo thiết kế của bạn. Huỷ lúc này sẽ bị giữ lại một khoản, theo chính sách đã thống nhất khi ký hợp đồng.',
   'orderActions.cancel.pricing': 'Đang tính số tiền…',
   'orderActions.cancel.held': ({ heldMinor }, f) => `Chúng tôi đang giữ ${f.bahtExact(heldMinor)}`,
   'orderActions.cancel.forfeit': ({ forfeitMinor }, f) => `Sẽ bị giữ lại ${f.bahtExact(forfeitMinor)}`,
@@ -561,9 +561,14 @@ export const vi: PartialUiCatalogue = {
   'payment.meta.title': 'Báo cho chúng tôi biết bạn đã thanh toán',
   'payment.heading': 'Báo cho chúng tôi biết bạn đã thanh toán',
   'payment.loading': 'Đang mở thông tin thanh toán của bạn…',
-  'payment.outstanding': 'Số tiền còn thiếu',
+  'payment.outstanding': 'Tổng số tiền còn thiếu',
+  'payment.dueNow': 'Cần thanh toán bây giờ',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'Đơn hàng này đã thanh toán đủ',
+  'payment.closed':
+    'Đơn hàng này không còn nhận thanh toán nữa. Nếu bạn có thắc mắc về số tiền, vui lòng liên hệ bộ phận kinh doanh.',
+  'payment.closedOwing':
+    'Vẫn còn số tiền chưa thanh toán, nhưng bạn không thể gửi thanh toán tại đây nữa. Vui lòng liên hệ bộ phận kinh doanh để thanh toán phần còn lại.',
   'payment.account.legend': 'Chuyển vào một trong các tài khoản sau',
   'payment.account.copy': (p) => `Sao chép số tài khoản ${p.accountDigits}`,
   'payment.account.copied': 'Đã sao chép số tài khoản',
