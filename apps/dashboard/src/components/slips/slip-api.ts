@@ -73,6 +73,49 @@ export interface Slip {
    * says so rather than leaving the row blank, because an older slip genuinely does not know.
    */
   readonly receivedBankAccount: { readonly bankCode: string; readonly accountName: string } | null;
+  /**
+   * ⭐ Why this payment has no image — `0047_slip_without_evidence.sql`.
+   *
+   * `null` on every customer slip, including one whose picture was erased for PDPA
+   * (`imageErasedAt` is what says so). Non-null is the definition of "recorded without
+   * evidence" on every screen, so no screen derives it from `hasImage` being false — a slip
+   * that was photographed and later erased has no image either, and reads completely
+   * differently to a reviewer.
+   */
+  /**
+   * Who entered this slip — staff audience only, `null` in a customer's copy and `null` for a
+   * guest's upload. The review dialog compares it to the signed-in user to decide whether it is
+   * about to ask for a declared bypass; see `selfReviewState`, and its note on why that
+   * comparison is presentation and never the control.
+   */
+  readonly submittedByUserId: string | null;
+  readonly noSlipReasonTh: string | null;
+  /**
+   * 🔒 Why the reviewer was also the submitter. `null` on every slip two people handled, and
+   * `null` in a customer's copy whatever the row says — this is an internal control note.
+   */
+  readonly selfReviewReasonTh: string | null;
+}
+
+/** One row of the audit list — `GET /payments/slips/recorded`. */
+export interface RecordedActor {
+  readonly userId: string;
+  readonly name: string | null;
+}
+
+export interface RecordedEntry {
+  readonly slip: Slip;
+  readonly orderId: string;
+  readonly orderNo: string | null;
+  readonly orderStatus: string;
+  readonly recordedBy: RecordedActor | null;
+  readonly reviewedBy: RecordedActor | null;
+  /**
+   * ⚠️ Computed server-side by `slip_submitter_user_ids()`, never here by comparing the two
+   * actors above. That comparison misses the guest cart later signed into an account, and an
+   * audit marker that under-reports is worse than none because somebody looked at it.
+   */
+  readonly selfReviewed: boolean;
 }
 
 export interface QueueEntry {
@@ -161,6 +204,18 @@ const decodeSlip = (raw: unknown): Slip => {
     unallocatedThbMinor: asSatang(slip['unallocatedThbMinor'], 'slip.unallocatedThbMinor'),
     createdAt: asText(slip['createdAt'], 'slip.createdAt'),
     receivedBankAccount: decodeReceivedBankAccount(slip['receivedBankAccount']),
+    submittedByUserId: asTextOrNull(slip['submittedByUserId'], 'slip.submittedByUserId'),
+    noSlipReasonTh: asTextOrNull(slip['noSlipReasonTh'], 'slip.noSlipReasonTh'),
+    selfReviewReasonTh: asTextOrNull(slip['selfReviewReasonTh'], 'slip.selfReviewReasonTh'),
+  };
+};
+
+const decodeActor = (value: unknown, what: string): RecordedActor | null => {
+  if (value === null || value === undefined) return null;
+  const actor = asRecord(value, what);
+  return {
+    userId: asText(actor['userId'], `${what}.userId`),
+    name: asTextOrNull(actor['name'], `${what}.name`),
   };
 };
 
@@ -173,6 +228,30 @@ export const listQueue = (limit = 200): Promise<readonly QueueEntry[]> =>
         orderNo: asTextOrNull(entry['orderNo'], 'entry.orderNo'),
         orderStatus: asText(entry['orderStatus'], 'entry.orderStatus'),
         queueBucket: asText(entry['queueBucket'], 'entry.queueBucket'),
+      };
+    }),
+  );
+
+/**
+ * ⭐ Every payment recorded with no slip — the audit surface the owner accepted this feature on.
+ *
+ * `only=self_reviewed` narrows it to the entries one person handled both halves of.
+ */
+export const listRecorded = (
+  only: 'all' | 'self_reviewed' = 'all',
+  limit = 200,
+): Promise<readonly RecordedEntry[]> =>
+  apiJson(`/payments/slips/recorded?limit=${String(limit)}&only=${only}`, (body) =>
+    asArray(asRecord(body, 'รายการที่บันทึกโดยไม่มีสลิป')['entries'] ?? [], 'entries').map((raw) => {
+      const entry = asRecord(raw, 'entry');
+      return {
+        slip: decodeSlip(entry['slip']),
+        orderId: asText(entry['orderId'], 'entry.orderId'),
+        orderNo: asTextOrNull(entry['orderNo'], 'entry.orderNo'),
+        orderStatus: asText(entry['orderStatus'], 'entry.orderStatus'),
+        recordedBy: decodeActor(entry['recordedBy'], 'entry.recordedBy'),
+        reviewedBy: decodeActor(entry['reviewedBy'], 'entry.reviewedBy'),
+        selfReviewed: entry['selfReviewed'] === true,
       };
     }),
   );
@@ -265,12 +344,46 @@ export const mintImageUrl = async (slipId: string): Promise<string> => {
   return asText(grant['path'], 'grant.path');
 };
 
+/**
+ * ⭐ Record a payment that arrived with no slip.
+ *
+ * ⚠️ **This does not accept anything.** It writes a `submitted` slip with no image and a stated
+ * reason, which then goes through the ordinary review — same queue, same two-column comparison,
+ * same allocations. There is no second path for money in this application and this is not one.
+ */
+export interface RecordedPayment {
+  readonly orderId: string;
+  readonly amountThbMinor: { readonly unit: 'THB.satang'; readonly digits: string };
+  readonly transferredAt: string;
+  readonly noSlipReasonTh: string;
+  readonly bankReference?: string;
+  readonly payerName?: string;
+  readonly payerAccountLast4?: string;
+}
+
+export const recordPayment = async (body: RecordedPayment): Promise<Slip> => {
+  const response = await apiFetch('/payments/slips/recorded', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return decodeSlip(await response.json());
+};
+
 export interface Acceptance {
   readonly allocations: readonly AllocationRequest[];
   readonly noteTh?: string;
   /** Read off the image by a person. Omitted leaves the payer unverified — which fails closed. */
   readonly payer?: { readonly name: string; readonly accountLast4: string };
   readonly acknowledgeOverpaymentThbMinor?: { readonly unit: 'THB.satang'; readonly digits: string };
+  /**
+   * 🔒 The declared bypass of the two-person rule. Sent only when the reviewer is the person who
+   * entered the slip, and only when they hold `payments.self_review_slip` — the API refuses both
+   * halves separately and the screen says which one is missing before it lets the button fire.
+   */
+  readonly selfReviewReasonTh?: string;
 }
 
 export const acceptSlip = async (slipId: string, body: Acceptance): Promise<void> => {
@@ -283,11 +396,19 @@ export const acceptSlip = async (slipId: string, body: Acceptance): Promise<void
   if (!response.ok) throw await apiErrorFromResponse(response);
 };
 
-export const rejectSlip = async (slipId: string, reasonTh: string): Promise<void> => {
+export const rejectSlip = async (
+  slipId: string,
+  reasonTh: string,
+  selfReviewReasonTh?: string,
+): Promise<void> => {
   const response = await apiFetch(`/payments/slips/${slipId}/rejection`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ reasonTh: reasonTh.trim() }),
+    body: JSON.stringify({
+      reasonTh: reasonTh.trim(),
+      /* The rule covers rejection too: clearing your own mistake off the queue is the same control failing quietly. */
+      ...(selfReviewReasonTh === undefined ? {} : { selfReviewReasonTh }),
+    }),
   });
 
   if (!response.ok) throw await apiErrorFromResponse(response);

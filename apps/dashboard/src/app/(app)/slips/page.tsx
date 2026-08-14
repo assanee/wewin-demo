@@ -1,4 +1,5 @@
 import { PageHeader } from '@/components/page-header';
+import { RecordedWithoutSlipList } from '@/components/slips/recorded-list';
 import { SlipQueue } from '@/components/slips/slip-queue';
 
 /**
@@ -21,6 +22,20 @@ export default function SlipsPage() {
       />
 
       <SlipQueue />
+
+      {/*
+       * ⭐ The audit surface, below the queue and not beside it.
+       *
+       * The queue is what somebody opened this screen to work through; this is what an auditor
+       * opens it to read, which is a rarer visit and a lower rank. Its own `type-section` heading
+       * makes it a second region rather than more of the table above — the queue is สลิปรอตรวจ and
+       * this is every evidence-free entry whatever became of it, including the rejected ones.
+       *
+       * ⚠️ Not permission-gated in this file. It needs `payments.read` + `orders.read`, which is
+       * exactly what the route this page sits behind already requires — an extra `can()` here would
+       * be a second gate that can disagree with the first.
+       */}
+      <RecordedWithoutSlipList />
     </div>
   );
 }

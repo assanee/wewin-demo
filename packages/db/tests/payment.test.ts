@@ -284,6 +284,12 @@ const uploadSlip = async (orderId: string, amount: bigint): Promise<string> => {
       amountThbMinor: amount,
       transferredAt: new Date(),
       bankReference: `REF-${tag}-${randomUUID().slice(0, 6)}`,
+      /*
+       * ⚠️ `payment_slips_evidence_exists` (0047): a slip carries an image, an image that was
+       * erased, or a stated reason. "Upload" is the customer's act, so this fixture carries a
+       * key — and the block below is where the *absence* of all three is asserted to be refused.
+       */
+      storageKey: `test/slip-${randomUUID()}.png`,
     })
     .returning({ id: paymentSlips.id });
   if (!slip) throw new Error('could not upload a slip');
@@ -1186,12 +1192,145 @@ describeDb('an accepted slip settles exactly the money it is evidence of', () =>
     await submit(order);
     await thirtySeventy(order.orderId);
 
+    /*
+     * ⚠️ `storage_key` is present, and that is not decoration. `payment_slips_evidence_exists`
+     * (0047) also raises 23514, so a row with no image *and* no reason would fail this assertion
+     * for the wrong constraint and go on passing after somebody deleted the two-person CHECK.
+     * The mutation that proves it: drop `payment_slips_reviewer_is_not_submitter` and this test
+     * goes red only because the evidence arm is satisfied here.
+     */
     await expectViolation(
       db.execute(sql`
         insert into payment_slips
           (order_id, amount_thb_minor, transferred_at, submitted_by_user_id,
-           reviewed_by_user_id, reviewed_at, status)
-        values (${order.orderId}, ${DEPOSIT}, now(), ${staffA}, ${staffA}, now(), 'accepted')
+           reviewed_by_user_id, reviewed_at, status, storage_key)
+        values (${order.orderId}, ${DEPOSIT}, now(), ${staffA}, ${staffA}, now(), 'accepted',
+                ${`test/self-${randomUUID()}.png`})
+      `),
+      PG.checkViolation,
+    );
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────── *
+   * ⭐ 0047 — a payment recorded with no slip, and the declared bypass
+   * ────────────────────────────────────────────────────────────────────────── */
+
+  it('refuses a slip with no image, no erasure and no reason, and admits each of the three', async () => {
+    const order = await createDraft();
+    await submit(order);
+    await thirtySeventy(order.orderId);
+
+    /*
+     * ⭐ The invariant `0047_slip_without_evidence.sql` exists for: **evidence exists in one of
+     * three forms**. The owner's *"แต่ต้องระบุเหตุผล"* is not a form-validation rule that a second
+     * writer can skip — it is a CHECK, so a script, a migration or a future service cannot record
+     * a payment nobody can ever explain.
+     */
+    await expectViolation(
+      db.execute(sql`
+        insert into payment_slips (order_id, amount_thb_minor, transferred_at)
+        values (${order.orderId}, ${DEPOSIT}, now())
+      `),
+      PG.checkViolation,
+    );
+
+    /* ① an image. ② an image that was erased — the PDPA row, which MUST stay legal. ③ a reason. */
+    await db.execute(sql`
+      insert into payment_slips (order_id, amount_thb_minor, transferred_at, storage_key)
+      values (${order.orderId}, 100, now(), ${`test/e1-${randomUUID()}.png`})
+    `);
+    await db.execute(sql`
+      insert into payment_slips (order_id, amount_thb_minor, transferred_at, storage_key_erased_at)
+      values (${order.orderId}, 100, now(), now())
+    `);
+    await db.execute(sql`
+      insert into payment_slips (order_id, amount_thb_minor, transferred_at, no_slip_reason_th)
+      values (${order.orderId}, 100, now(), 'ลูกค้าโอนแล้วแจ้งทางโทรศัพท์ ไม่ได้แนบสลิป')
+    `);
+
+    /* And a reason made of spaces is the absence of a reason wearing a value. */
+    await expectViolation(
+      db.execute(sql`
+        insert into payment_slips (order_id, amount_thb_minor, transferred_at, no_slip_reason_th)
+        values (${order.orderId}, 100, now(), '    ')
+      `),
+      PG.checkViolation,
+    );
+  });
+
+  it('lets one person review their own entry only when the row says why, in both enforcement points', async () => {
+    const order = await createDraft();
+    await submit(order);
+    await thirtySeventy(order.orderId);
+
+    /*
+     * 🔒 THE BYPASS THE OWNER CHOSE, AND ITS PRICE.
+     *
+     * The database cannot see permissions — `payments.self_review_slip` is checked in the
+     * application — so what these two statements pin is the half the database *can* guarantee:
+     * self-review is never SILENT. The first is refused; the second, identical but for a written
+     * reason, is admitted.
+     *
+     * ⚠️ It exercises the CHECK **and** the trigger, which is the whole reason both had to move
+     * in one migration: `payment_slips_reviewer_is_not_submitter` sees `submitted_by_user_id`,
+     * `payment_slips_guard_write()` calls `slip_submitter_user_ids()`. Amend one and the other
+     * still refuses — a feature that passes in isolation and fails on the first real order.
+     *
+     * ⚠️ `rejected` and not `accepted`, and it is not laziness: an accepted slip must foot to its
+     * allocations at COMMIT (`payment_slips_allocations_foot`), which would make this test about
+     * that assertion instead. The rule under test covers *review*, not acceptance — a person who
+     * could refuse their own entry could clear their own mistake off the queue before anybody saw
+     * it, which is the same control failing in the quieter direction.
+     */
+    const silent = sql`
+      insert into payment_slips
+        (order_id, amount_thb_minor, transferred_at, submitted_by_user_id,
+         reviewed_by_user_id, reviewed_at, status, rejected_reason_th, no_slip_reason_th)
+      values (${order.orderId}, ${DEPOSIT}, now(), ${staffA}, ${staffA}, now(), 'rejected',
+              'คีย์ผิดออร์เดอร์', 'ลูกค้าโอนแล้วแต่ไม่ได้แนบสลิป')
+    `;
+    await expectViolation(db.execute(silent), PG.checkViolation);
+
+    const declared = await db.execute<{ id: string }>(sql`
+      insert into payment_slips
+        (order_id, amount_thb_minor, transferred_at, submitted_by_user_id,
+         reviewed_by_user_id, reviewed_at, status, rejected_reason_th, no_slip_reason_th,
+         self_review_reason_th)
+      values (${order.orderId}, ${DEPOSIT}, now(), ${staffA}, ${staffA}, now(), 'rejected',
+              'คีย์ผิดออร์เดอร์', 'ลูกค้าโอนแล้วแต่ไม่ได้แนบสลิป',
+              'อยู่เวรคนเดียว ไม่มีใครตรวจให้ได้')
+      returning id
+    `);
+    const slipId = declared.rows[0]?.id;
+    expect(slipId, 'a declared self-review is admitted').toBeDefined();
+
+    /*
+     * ⭐ …and the declaration is FROZEN, which is the whole of "ตรวจสอบย้อนหลังได้". A reason
+     * somebody can improve after the money landed is a draft, not a trail. Both new columns are
+     * in `payment_slips_guard_write()`'s frozen list; remove either and one of these goes green.
+     */
+    await expectViolation(
+      db
+        .update(paymentSlips)
+        .set({ selfReviewReasonTh: 'เขียนใหม่ทีหลัง' })
+        .where(eq(paymentSlips.id, slipId ?? '')),
+      PG.restrictViolation,
+    );
+    await expectViolation(
+      db
+        .update(paymentSlips)
+        .set({ noSlipReasonTh: 'เขียนใหม่ทีหลัง' })
+        .where(eq(paymentSlips.id, slipId ?? '')),
+      PG.restrictViolation,
+    );
+
+    /* A declaration with no review behind it is not a declaration — `..._self_review_shape`. */
+    await expectViolation(
+      db.execute(sql`
+        insert into payment_slips
+          (order_id, amount_thb_minor, transferred_at, no_slip_reason_th, self_review_reason_th)
+        values (${order.orderId}, 100, now(), 'ไม่มีสลิปเพราะลูกค้าไม่ได้ส่ง',
+                'เหตุผลที่ไม่มีการตรวจอยู่เบื้องหลัง')
       `),
       PG.checkViolation,
     );

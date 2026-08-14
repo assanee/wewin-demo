@@ -56,6 +56,11 @@ export type {
   CreateSlipRequestWire,
   InstalmentSummaryWire,
   OrderTransitionWire,
+  /* ⭐ The evidence-free payment and the audit list that makes it answerable — 0047. */
+  RecordSlipRequestWire,
+  RecordedSlipActorWire,
+  RecordedSlipEntryWire,
+  RecordedSlipListWire,
   RejectSlipRequestWire,
   RejectSlipResultWire,
   SlipAllocationWire,

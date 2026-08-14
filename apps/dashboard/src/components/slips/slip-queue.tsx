@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { failureMessage } from '@/lib/api/errors';
+import { evidenceLabelTh, slipEvidence } from './no-slip';
 import { listQueue, type QueueEntry } from './slip-api';
 import { slipQueueFocus } from './slip-focus';
 import { SlipReviewDialog } from './slip-review-dialog';
@@ -125,7 +126,8 @@ export function SlipQueue() {
               <TableHead className="type-caption h-8 text-right">ยอดบนสลิป</TableHead>
               <TableHead className="type-caption h-8">ผู้โอน</TableHead>
               <TableHead className="type-caption h-8">ลูกค้าแจ้งว่าโอนเมื่อ</TableHead>
-              <TableHead className="type-caption h-8">ภาพ</TableHead>
+              {/* ⭐ `หลักฐาน` and not `ภาพ`: three states, and only two of them are about a picture. */}
+              <TableHead className="type-caption h-8">หลักฐาน</TableHead>
               {/* `w-full` on the last column so `table-layout: auto` gives the slack to the
                   controls instead of spreading the order number, the amount and the payer
                   apart across a 1440px screen. Same call `order-list.tsx` explains. */}
@@ -162,13 +164,27 @@ export function SlipQueue() {
                 <TableCell className="text-muted-foreground type-caption px-2 py-1.5">
                   {at(slip.transferredAt)}
                 </TableCell>
+                {/*
+                 * ⭐ THREE STATES, NOT TWO — `no-slip.ts`, and 0047's `payment_slips_evidence_exists`.
+                 *
+                 * This cell used to be `hasImage ? 'มี' : 'ไม่มี'`, which now conflates two rows a
+                 * reviewer must never confuse: a customer's slip whose picture was erased for PDPA,
+                 * and a payment a staff member entered with no evidence at all. The second is the
+                 * one the owner accepted on the condition it can be audited, so the reason travels
+                 * with the marker — right here in the queue, before anybody opens the dialog.
+                 */}
                 <TableCell className="px-2 py-1.5">
-                  {slip.hasImage ? (
-                    <span className="type-body">มี</span>
+                  {slipEvidence(slip) === 'image' ? (
+                    <span className="type-body">มีสลิป</span>
                   ) : (
-                    <span className="text-muted-foreground type-body inline-flex items-center gap-1">
-                      <ImageOff className="size-3.5" />
-                      ไม่มี
+                    <span className="text-muted-foreground type-body inline-flex items-start gap-1">
+                      <ImageOff className="mt-0.5 size-3.5 shrink-0" />
+                      <span className="flex flex-col">
+                        <span>{evidenceLabelTh(slip)}</span>
+                        {slip.noSlipReasonTh !== null && (
+                          <span className="type-caption max-w-64">{slip.noSlipReasonTh}</span>
+                        )}
+                      </span>
                     </span>
                   )}
                 </TableCell>

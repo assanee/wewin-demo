@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
+import { RecordPaymentButton } from '@/components/slips/record-payment-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -343,7 +344,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
             )}
           </CardHeader>
           {order.money !== null && (
-            <CardContent>
+            <CardContent className="flex flex-col gap-4">
               <dl className="type-body grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2">
                 <dt className="text-muted-foreground">ก่อนภาษี</dt>
                 <dd className="tabular-nums">{formatBaht(order.money.netThbMinor)}</dd>
@@ -409,6 +410,27 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                   </>
                 )}
               </dl>
+
+              {/*
+               * ⭐ THE OWNER'S *"ปิดยอดการชำระได้โดยไม่มีการยืนยันสลิป"*, beside the figure it is
+               * about — `record-payment-dialog.tsx` argues at length why here and not on `/slips`.
+               *
+               * ⚠️ Under the ค้างชำระ row and inside this card on purpose. The act only makes
+               * sense against the amounts above it: the person keying a telephoned transfer is
+               * deciding whether ฿5,529.60 is the right figure, and that is a question about
+               * ยอดรวม and มัดจำตามสัญญา. It renders nothing at all for a caller who does not hold
+               * `payments.record_without_slip`, which at boot is everybody.
+               *
+               * ⚠️ It does not move ค้างชำระ. What it writes is a รายการรอตรวจ in คิวสลิป; the
+               * balance changes when somebody รับรอง it. The dialog says so above its own fields,
+               * because a button beside a debt that does not change the debt is a button somebody
+               * presses twice.
+               */}
+              <RecordPaymentButton
+                orderId={order.id}
+                outstandingThbMinor={order.outstandingThbMinor}
+                onRecorded={() => void reload()}
+              />
             </CardContent>
           )}
         </Card>

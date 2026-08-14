@@ -21,7 +21,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { apiUrl } from '@/lib/api/config';
 import { failureMessage } from '@/lib/api/errors';
+import { useSession } from '@/lib/auth/session';
 import { allocationPlan, readSatang, satangField } from './allocation-plan';
+import { MIN_REASON_LENGTH, selfReviewState } from './no-slip';
 import { acceptSlip, getReview, mintImageUrl, rejectSlip, type SlipReview } from './slip-api';
 
 /**
@@ -99,7 +101,9 @@ export function SlipReviewDialog({
   const [rejecting, setRejecting] = useState(false);
   const [reasonTh, setReasonTh] = useState('');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [selfReviewReasonTh, setSelfReviewReasonTh] = useState('');
   const [busy, setBusy] = useState(false);
+  const { state: session, can } = useSession();
 
   useEffect(() => {
     let live = true;
@@ -136,6 +140,23 @@ export function SlipReviewDialog({
   }, [slipId]);
 
   const review = state.status === 'ready' ? state.review : null;
+
+  /*
+   * 🔒 Whether this reviewer is about to do both halves — `no-slip.ts` decides, and it is
+   * presentation only. `SlipsService.accept` demands the permission *and* the reason, and
+   * `payment_slips_guard_write()` refuses the write when the column is null whatever this screen
+   * concluded. What it buys is that the person finds out before typing a whole allocation plan,
+   * and that the refusal names the remedy instead of arriving as a 403.
+   */
+  const selfReview = selfReviewState({
+    viewerUserId: session.status === 'signed-in' ? session.principal.userId : null,
+    submittedByUserId: review?.slip.submittedByUserId ?? null,
+    holdsBypass: can('payments.self_review_slip'),
+  });
+
+  const declarationMissing =
+    selfReview.kind === 'must_declare' && selfReviewReasonTh.trim().length < MIN_REASON_LENGTH;
+  const reviewBlocked = selfReview.kind === 'blocked';
 
   const drafts =
     review === null
@@ -260,7 +281,26 @@ export function SlipReviewDialog({
             {/* ── ⓶ The image ─────────────────────────────────────────────── */}
             <div className="flex flex-col gap-2">
               <p className="type-body font-medium">ภาพสลิป</p>
-              {!review.slip.hasImage ? (
+              {review.slip.noSlipReasonTh !== null ? (
+                /*
+                 * ⭐ THE FIRST OF THE TWO REASONS THAT MUST BE UNMISSABLE.
+                 *
+                 * An `Alert` and not a muted line, deliberately: this is the reviewer's *only*
+                 * evidence. On an ordinary slip they compare a photograph against a figure; here
+                 * there is no left-hand column, and the sentence a colleague typed is the whole
+                 * of what they are being asked to รับรอง.
+                 */
+                <Alert>
+                  <ShieldAlert />
+                  <AlertTitle>ไม่มีสลิป — เจ้าหน้าที่บันทึกรายการนี้</AlertTitle>
+                  <AlertDescription>
+                    <span className="text-foreground">{review.slip.noSlipReasonTh}</span>
+                    <span>
+                      ไม่มีภาพให้เทียบ — รับรองรายการนี้ก็ต่อเมื่อยืนยันได้จากทางอื่น เช่น รายการเดินบัญชีของธนาคาร
+                    </span>
+                  </AlertDescription>
+                </Alert>
+              ) : !review.slip.hasImage ? (
                 <p className="text-muted-foreground type-body">
                   ไม่มีภาพแนบมา
                   {review.slip.imageErasedAt === null
@@ -413,6 +453,51 @@ export function SlipReviewDialog({
               )}
             </div>
 
+            {/*
+             * ⭐ THE SECOND REASON THAT MUST BE UNMISSABLE — 🔒 the declared bypass.
+             *
+             * `blocked` is the ordinary answer and the one that keeps the two-person rule: this
+             * person entered the slip, holds no `payments.self_review_slip`, and the buttons below
+             * are disabled with the remedy named — *ต้องให้อีกคนรับรอง* — instead of a 403 after
+             * they have typed a whole allocation plan.
+             *
+             * `must_declare` is the owner's chosen exception. The box is required, the permanence
+             * is stated under it, and both the API and `payment_slips_guard_write()` refuse the
+             * write without it — so this is the screen catching up with the rule, never granting
+             * it.
+             */}
+            {selfReview.kind !== 'not_mine' && (
+              <Alert variant={reviewBlocked ? 'destructive' : 'default'}>
+                <ShieldAlert />
+                <AlertTitle>คุณเป็นผู้บันทึกรายการนี้เอง</AlertTitle>
+                <AlertDescription>{selfReview.messageTh}</AlertDescription>
+              </Alert>
+            )}
+
+            {selfReview.kind === 'must_declare' && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="self-review">เหตุผลที่รับรองรายการของตัวเอง</Label>
+                <Textarea
+                  id="self-review"
+                  rows={2}
+                  maxLength={2000}
+                  value={selfReviewReasonTh}
+                  placeholder="เช่น วันหยุดมีพนักงานคนเดียว ลูกค้าต้องการใบเสร็จวันนี้"
+                  onChange={(event) => setSelfReviewReasonTh(event.target.value)}
+                />
+                <span
+                  className={
+                    declarationMissing
+                      ? 'text-destructive type-caption'
+                      : 'text-muted-foreground type-caption'
+                  }
+                >
+                  จำเป็นต้องกรอก อย่างน้อย {MIN_REASON_LENGTH} ตัวอักษร —
+                  เหตุผลนี้จะถูกเก็บไว้ถาวรและปรากฏในรายการตรวจสอบย้อนหลัง
+                </span>
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="note">บันทึกของผู้ตรวจ (ไม่บังคับ)</Label>
               <Textarea
@@ -445,7 +530,13 @@ export function SlipReviewDialog({
         <DialogFooter className="gap-2 sm:justify-between">
           <Button
             variant="destructive"
-            disabled={busy || review === null || (rejecting && reasonTh.trim().length < 3)}
+            disabled={
+              busy ||
+              review === null ||
+              reviewBlocked ||
+              declarationMissing ||
+              (rejecting && reasonTh.trim().length < 3)
+            }
             onClick={() => {
               if (!rejecting) {
                 setRejecting(true);
@@ -454,7 +545,16 @@ export function SlipReviewDialog({
               setBusy(true);
               void (async () => {
                 try {
-                  await rejectSlip(slipId, reasonTh);
+                  /*
+                   * The rule covers rejection too: a person who could refuse their own entry could
+                   * clear their own mistake off the queue before anybody saw it, which is the same
+                   * control failing in the quieter direction.
+                   */
+                  await rejectSlip(
+                    slipId,
+                    reasonTh,
+                    selfReview.kind === 'must_declare' ? selfReviewReasonTh.trim() : undefined,
+                  );
                   toast.success('ปฏิเสธสลิปแล้ว');
                   onDone();
                 } catch (error) {
@@ -474,7 +574,13 @@ export function SlipReviewDialog({
             </Button>
             <Button
               disabled={
-                busy || plan === null || typo || rejecting || plan.state === 'short'
+                busy ||
+                plan === null ||
+                typo ||
+                rejecting ||
+                plan.state === 'short' ||
+                reviewBlocked ||
+                declarationMissing
               }
               onClick={() => {
                 if (plan === null) return;
@@ -504,6 +610,16 @@ export function SlipReviewDialog({
                               digits: plan.acknowledgement.toString(),
                             },
                           }),
+                      /*
+                       * 🔒 Sent only when this really is a self-review. The API drops a reason
+                       * supplied against somebody else's slip rather than writing it, because a
+                       * self-review marker on a slip two people handled correctly is the audit
+                       * lying in the direction nobody would think to check — but not sending it
+                       * at all is one fewer thing depending on that.
+                       */
+                      ...(selfReview.kind === 'must_declare'
+                        ? { selfReviewReasonTh: selfReviewReasonTh.trim() }
+                        : {}),
                     });
                     toast.success('รับสลิปแล้ว — เงินถูกตัดเข้างวดเรียบร้อย');
                     onDone();

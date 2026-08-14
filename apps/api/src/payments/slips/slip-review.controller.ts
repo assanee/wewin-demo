@@ -6,11 +6,16 @@ import { CurrentScope, RequirePermissions, RequirePrincipal, type Scope } from '
 import {
   acceptSlipRequestSchema,
   imageGrantRequestSchema,
+  recordSlipRequestSchema,
+  recordedSlipQuerySchema,
   rejectSlipRequestSchema,
   slipQueueQuerySchema,
   type AcceptSlipRequestWire,
   type AcceptSlipResultWire,
   type ImageGrantRequestWire,
+  type RecordSlipRequestWire,
+  type RecordedSlipListWire,
+  type RecordedSlipQuery,
   type RejectSlipRequestWire,
   type RejectSlipResultWire,
   type SlipImageGrantWire,
@@ -25,6 +30,8 @@ import { SlipsService } from './slips.service';
  * The review — the one control this payment model has.
  *
  *     GET    /payments/slips                       the queue, oldest transfer first
+ *     POST   /payments/slips/recorded              ⭐ a payment that arrived with no slip
+ *     GET    /payments/slips/recorded              ⭐ the audit list of exactly those
  *     GET    /payments/slips/:slipId               the two-column comparison
  *     POST   /payments/slips/:slipId/acceptance    the money lands, and sometimes the order moves
  *     POST   /payments/slips/:slipId/rejection     the order does not move. Ever.
@@ -80,6 +87,73 @@ export class SlipReviewController {
     @Query(new ZodBodyPipe(slipQueueQuerySchema)) query: SlipQueueQuery,
   ): Promise<SlipQueueWire> {
     return this.slips.queue(query.limit);
+  }
+
+  /**
+   * ⭐ Record a payment that arrived with no slip — the owner's *"ปิดยอดการชำระได้โดยไม่มีการ
+   * ยืนยันสลิป แต่ต้องระบุเหตุผล"*.
+   *
+   * 201, and what is created is a **`submitted` slip**, not a payment. It joins the queue above,
+   * is compared on the same screen and is accepted through `POST :slipId/acceptance` like every
+   * other slip — see `SlipsService.recordSlip` for why recording and accepting are two requests
+   * and not one, and `slips.contract.ts` for what that buys.
+   *
+   * ── ⚠️ THE PERMISSION SET, AND WHY IT IS THESE FOUR ──────────────────────────────
+   *
+   * `RequirePermissions` in this codebase means EVERY listed code, never any.
+   *
+   *   `payments.record_without_slip`  the new authority, and the only new one. Held by no group
+   *                                   at boot — see `src/rbac/permissions.ts`.
+   *   `payments.read`/`orders.read`   the same pair every route in this controller states, for
+   *                                   the same reason: the handler loads the order through
+   *                                   `ScopedOrderRepository`, and a caller without `orders.read`
+   *                                   reaches only their own orders and gets a 404 for every
+   *                                   order in the company.
+   *   `orders.write`                  the `act` reach. `recordSlip` takes `lockOrFail(…, 'act')`,
+   *                                   exactly as `createSlip` does, because writing a child row
+   *                                   against an order is acting on it.
+   *
+   * ⚠️ **`payments.verify` is deliberately absent.** Recording is not reviewing. A clerk who
+   * takes the telephone call may be given this and nothing else, and their entry then waits for
+   * somebody who does hold `payments.verify` — which is the two-person rule surviving this
+   * feature rather than being spent by it.
+   */
+  @Post('recorded')
+  @HttpCode(201)
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePermissions('payments.record_without_slip', 'payments.read', 'orders.read', 'orders.write')
+  async record(
+    @CurrentScope() scope: Scope,
+    @Body(new ZodBodyPipe(recordSlipRequestSchema)) body: RecordSlipRequestWire,
+  ): Promise<SlipWire> {
+    return this.slips.recordSlip(scope, body);
+  }
+
+  /**
+   * ⭐ THE AUDIT SURFACE — every payment recorded with no slip, and what happened to it.
+   *
+   * The owner accepted this feature on one condition: *"สิ่งสำคัญคือต้องสามารถตรวจสอบย้อนหลังได้
+   * ถ้าทำได้ก็โอเค"*. This route is that condition. `?only=self_reviewed` narrows it to the rows
+   * where one person did both halves.
+   *
+   * ⚠️ **Declared before `@Get(':slipId')`, and it has to be.** Nest matches in declaration
+   * order, so a `recorded` segment below the parameterised route would be swallowed by it — and
+   * swallowed *quietly*, answering 404 ("ไม่พบสลิปใบนี้") because `recorded` is not a uuid. That
+   * is a broken audit list that looks like an empty one.
+   *
+   * `payments.read` and `orders.read`, and no more. This list is a *read* of rows that already
+   * exist; requiring `payments.verify` to look at it would mean the person auditing the reviewers
+   * has to hold the reviewers' own authority, which is the control inspecting itself.
+   */
+  @Get('recorded')
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePermissions('payments.read', 'orders.read')
+  async recorded(
+    @Query(new ZodBodyPipe(recordedSlipQuerySchema)) query: RecordedSlipQuery,
+  ): Promise<RecordedSlipListWire> {
+    return this.slips.recordedWithoutSlip(query.limit, query.only);
   }
 
   /**

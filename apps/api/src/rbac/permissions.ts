@@ -53,6 +53,41 @@ export const PERMISSIONS = {
   'payments.verify': 'Accept or reject a payment slip.',
 
   /*
+   * ⭐ TWO CODES, NOT ONE. They are different powers and one person may reasonably hold one
+   * without the other — `0047_slip_without_evidence.sql`.
+   *
+   * The owner asked for *"เจ้าหน้าที่สามารถปิดยอดการชำระได้โดยไม่มีการยืนยันสลิป แต่ต้องระบุ
+   * เหตุผล"*, and separately chose that a high permission may bypass the two-person rule.
+   * Bundling those into one code would repeat plan 7.14(ข)3 exactly — a permission that quietly
+   * carried an authority nobody had agreed to, discovered afterwards by reading what its holder
+   * could actually reach:
+   *
+   *   the clerk who takes the telephone call and keys the transfer in holds the first and
+   *     **not** the second. Their entry still goes into the queue for somebody else to accept,
+   *     and the two-person rule is untouched.
+   *
+   *   the person the owner trusts to close a balance alone holds both, and every acceptance
+   *     they make of their own entry writes `self_review_reason_th` on the row for ever.
+   *
+   * ⚠️ Neither adds anything to `payments.verify`, and neither replaces it. Accepting an
+   * evidence-free slip is still an acceptance: `POST /payments/slips/:id/acceptance` requires
+   * `payments.verify`, `payments.read`, `orders.read` and `orders.write` exactly as it did
+   * before, because the money lands through the same path and may still freeze an order.
+   *
+   * ⚠️ GRANTED TO NO GROUP AT BOOT, exactly as `quotes.approve` and `users.erase` are, and for
+   * the identical reason. `permission-sync.service.ts` inserts the codes so a grant has
+   * something to reference; **who holds them is plan 13's unanswered
+   * *"บริษัทมีคนตรวจสลิป/อนุมัติกี่คนจริงๆ"*, and inventing a grant would be inventing the
+   * answer.** The owner grants them by hand. Until they do, recording without a slip is refused
+   * for want of a permission and self-review is refused by the rule it bypasses — which is the
+   * fail-closed direction in both cases.
+   */
+  'payments.record_without_slip':
+    'Record a payment with no slip image, stating why there is none. The entry still goes to the review queue.',
+  'payments.self_review_slip':
+    'Accept or reject a payment slip you entered yourself, stating why — the declared bypass of the two-person rule.',
+
+  /*
    * The company's own profile, the bank accounts it is paid into, and — since the tax-
    * country round — the destinations it sells to and the deposit percentage that prices
    * every schedule. Settings, not a customer-facing resource. Placed next to `payments.*`
