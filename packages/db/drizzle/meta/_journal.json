@@ -316,6 +316,13 @@
       "when": 1786400000015,
       "tag": "0044_transition_wording_no_cutting",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786400000016,
+      "tag": "0045_forfeit_note_no_cutting",
+      "breakpoints": true
     }
   ]
 }

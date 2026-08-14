@@ -1,0 +1,46 @@
+-- The last two seeded strings that explained a money rule by naming a cut.
+--
+-- `0043` fixed the transition description that started production, `0044` the three that
+-- described cancelling and bouncing around it. This is the same sentence one table over, and
+-- it was found by the review that checked 0044 rather than by the sweep that produced it —
+-- worth recording, because the sweep read the migration files and this table was not in the
+-- set it had been pointed at.
+--
+-- Both rows belong to `plan13_default` at `from_status = 'production_confirmed'`, one per
+-- fault, and both read:
+--
+--   ยังไม่มีอะไรถูกตัด — บังคับเป็น 0 ด้วย CHECK ไม่ใช่ค่าตั้งต้น
+--
+-- ── Why the wording is wrong, and it is not because it is false ──────────────────
+--
+-- Aluminium *is* cut for this catalogue. `KIT_GROUPS` puts `profileColorGroup` on all six
+-- kits, `KIT_SUMMARY.screen` reads `มุ้งกันแมลงกรอบอะลูมิเนียม` — an aluminium frame — and
+-- `screen-alu-single` is named `มุ้งจีบอลูมิเนียม`. Only the infill varies: glass, louvre
+-- blades, mesh. Anyone reading these notes as evidence that some product line is never cut
+-- would be reading something this repo does not claim.
+--
+-- The defect is the one 0043 named: the sentence explains a rule that governs *every* order by
+-- reaching for one operation out of the several that make up production. `production_confirmed`
+-- is the state after the commitment and before the work; what matters to the forfeit is that
+-- nothing has been *started*, not which tool would have been picked up first.
+--
+-- `ยังไม่ได้เริ่มทำ` is the phrase 0044 settled on for exactly this boundary, and reusing it
+-- keeps the staff dialog, the customer's cancel panel and this policy note saying one thing.
+--
+-- ── What is deliberately left alone ─────────────────────────────────────────────
+--
+-- The second clause. `บังคับเป็น 0 ด้วย CHECK ไม่ใช่ค่าตั้งต้น` is the load-bearing half: it
+-- records that the zero here is enforced by `forfeit_policy_rules_zero_before_freeze`, not
+-- chosen — so a future owner raising the rate cannot raise this cell by accident. Rewriting a
+-- note is not licence to soften what it documents.
+--
+-- Nothing in `apps/` reads `note_th` on this table; it is documentation for whoever opens the
+-- policy. That is why this is its own small migration rather than something worth holding
+-- 0044 open for.
+--
+-- Each `WHERE` pins the exact current value as well as the policy and the status, so re-running
+-- is a no-op and a row somebody has already reworded is left untouched.
+UPDATE "forfeit_policy_rules"
+SET "note_th" = 'ยังไม่ได้เริ่มทำ — บังคับเป็น 0 ด้วย CHECK ไม่ใช่ค่าตั้งต้น'
+WHERE "from_status" = 'production_confirmed'
+  AND "note_th" = 'ยังไม่มีอะไรถูกตัด — บังคับเป็น 0 ด้วย CHECK ไม่ใช่ค่าตั้งต้น';
