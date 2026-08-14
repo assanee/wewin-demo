@@ -10,7 +10,12 @@ export default function OrdersPage() {
        * *larger* than every section heading and card title on the screens it sat above.
        * `PageHeader` puts it at `type-body`, below the title rather than competing with it.
        */}
-      <PageHeader title="ออเดอร์" description="งานทั้งหมดในระบบ กรองตามสถานะได้" />
+      {/*
+        ⚠️ Two axes now, so the description names both. It said "กรองตามสถานะได้" while the
+        filter row had gained a ค้างชำระ toggle beside the statuses — a heading that undersells
+        what the screen does is how a feature nobody asked twice for goes unused.
+      */}
+      <PageHeader title="ออเดอร์" description="งานทั้งหมดในระบบ กรองตามสถานะและยอดค้างชำระได้" />
 
       <OrderList />
     </div>
