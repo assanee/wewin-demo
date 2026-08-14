@@ -13,8 +13,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/page-header';
 import { useSession } from '@/lib/auth/session';
 
-import { baht } from './amounts';
-import { thbMinorOf } from './quote-wire';
 import { AuthorityPanel } from './authority-panel';
 import { CustomerDocument } from './customer-document';
 import { LineTable } from './line-table';
@@ -154,28 +152,34 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
       />
 
       {/*
-       * ⭐ THE PRIMARY THING: the number the whole screen exists to arrive at.
+       * ─────────────────────────────────────────────────────────────────────────
+       * ⚠️ There is deliberately NO `type-focal` block on this screen. It had one; it is gone.
+       * ─────────────────────────────────────────────────────────────────────────
        *
-       * `TotalsCard` below is the *breakdown* — net, VAT, the deposit, each with its own
-       * override control — and a breakdown answers "how did we get here". This answers "what is
-       * it", which is the question somebody opens a quote with and the one they leave with.
+       * Phase 1 opened this screen with the grand total at 24px, and I flagged it in my own
+       * report as the weakest result of the five: on a one-line quote the same figure appeared
+       * twice inside a single viewport — here, and as `TotalsCard`'s headline row 400px below,
+       * under the identical label ยอดรวมสุทธิ (รวม VAT).
        *
-       * ⚠️ It reads the same `view` the breakdown does, so the two cannot disagree. That is the
-       * whole reason this is a second *rendering* of one figure rather than a second source for
-       * it — and it is a figure, not a gate: the sendability verdict is asserted by the banners
-       * and by ตรวจก่อนส่ง, and deliberately not repeated here. Two components asserting one gate
-       * is how they end up disagreeing after one of them is edited.
+       * Eleven more screens settled it. **Every focal statement that works in this app is a
+       * derived judgement that cannot be read anywhere else on its screen** — ภาพรวม's
+       * "13 รายการรอดำเนินการ", an order's "รอชำระเงิน · ทำต่อได้ 2 อย่าง", /account's identity
+       * and its ways-in count. The quote's total was the one exception: a raw figure repeated
+       * from a component whose entire job is to show it, with a *breakdown* underneath that the
+       * summary could not add anything to. That is duplication wearing a focal point's clothes.
+       *
+       * What replaces it is not nothing. **The primary thing on this screen is the line table** —
+       * it is what you opened the editor to change — and the precedent for that is already set
+       * on /orders, /quotes and /products: on a screen whose subject is a list, the list *is*
+       * the emphasis, and it earns that by being the first un-chromed thing under the header
+       * rather than by having a sentence announce it.
+       *
+       * The state that *is* a judgement still leads, in the header's `meta` badges above: the
+       * revision token, how many lines a human priced, how many need re-confirming, and an
+       * unrecognised destination. Those say things the table cannot. The verdict on whether the
+       * quote can be sent stays with the banners and ตรวจก่อนส่ง — one assertion of one gate,
+       * which is what this file's own comments have asked for from the start.
        */}
-      <div className="flex flex-col gap-1">
-        <p className="text-muted-foreground type-caption">ยอดรวมสุทธิ (รวม VAT)</p>
-        <p className="type-focal tabular-nums">
-          {baht(thbMinorOf(view.wire.money.grandTotalThbMinor))}
-        </p>
-        <p className="text-muted-foreground type-body">
-          {view.lines.length} บรรทัด
-          {overridden === 0 ? ' — ทุกยอดมาจากการคำนวณ' : ` · คนตั้งราคาเอง ${overridden} บรรทัด`}
-        </p>
-      </div>
 
       {editor.conflict === null ? null : (
         <ConflictBanner

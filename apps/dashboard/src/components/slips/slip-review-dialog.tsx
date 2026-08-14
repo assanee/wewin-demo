@@ -52,6 +52,22 @@ import { acceptSlip, getReview, mintImageUrl, rejectSlip, type SlipReview } from
  *
  *   ⓷ **Where does it go?** The allocations, seeded from the server's suggestion and edited
  *     freely. `allocation-plan.ts` holds the arithmetic and is tested without a browser.
+ *
+ * ── ⚠️ Two things about the type on this dialog ──────────────────────────────
+ *
+ * **The two amount figures came down from `text-2xl` to `text-xl`.** 24px *is* `type-focal`, and
+ * a figure at the focal size is the primary statement of whatever it is inside, whatever the
+ * layout intended — the same correction `overview-screen.tsx` made to its money. Here there were
+ * two of them, tying with each other for a rank only one thing can hold. They also lost the
+ * `rounded-lg border p-4` boxes around them: the comparison is made by putting the two numbers
+ * side by side, and a ring around each said they were separate subjects.
+ *
+ * **The four sub-headings are `type-body font-medium`, not `type-section`, and that is a
+ * compromise rather than a preference.** `DialogTitle` in `ui/dialog.tsx` is `text-base` — the
+ * 16px the scale otherwise abolished — so a `type-section` heading inside this dialog would come
+ * out *larger than the dialog's own title*. `ui/**` is not this pass's to change; it is the
+ * one-line lever the README leaves to the owner, exactly like `CardTitle`. Until it is pulled,
+ * these stay a named body size instead of an inverted hierarchy.
  */
 
 const at = (iso: string): string =>
@@ -173,13 +189,13 @@ export function SlipReviewDialog({
         {review !== null && plan !== null && (
           <div className="flex flex-col gap-6">
             {/* ── ⓵ The comparison the whole screen is named after ────────── */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="border-border rounded-lg border p-4">
-                <p className="text-muted-foreground text-xs">ลูกค้าโอนมา</p>
-                <p className="text-2xl font-semibold tabular-nums">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <p className="text-muted-foreground type-caption">ลูกค้าโอนมา</p>
+                <p className="text-xl leading-tight font-semibold tabular-nums">
                   {formatBaht(review.slip.amountThbMinor)}
                 </p>
-                <p className="text-muted-foreground mt-1 text-xs">
+                <p className="text-muted-foreground type-caption">
                   แจ้งว่าโอนเมื่อ {at(review.slip.transferredAt)}
                   {review.slip.bankReference === null ? '' : ` · อ้างอิง ${review.slip.bankReference}`}
                 </p>
@@ -190,7 +206,7 @@ export function SlipReviewDialog({
                  * `null` case (a slip from before the column, or an account since deleted) is
                  * said out loud rather than left blank — an older slip genuinely does not know.
                  */}
-                <p className="text-muted-foreground mt-1 text-xs">
+                <p className="text-muted-foreground type-caption">
                   เข้าบัญชี{' '}
                   {review.slip.receivedBankAccount === null
                     ? 'ไม่ทราบ — สลิปนี้บันทึกไว้ก่อนมีข้อมูลนี้'
@@ -198,14 +214,14 @@ export function SlipReviewDialog({
                 </p>
               </div>
 
-              <div className="border-border rounded-lg border p-4">
-                <p className="text-muted-foreground text-xs">งวดถัดไปต้องการ</p>
-                <p className="text-2xl font-semibold tabular-nums">
+              <div className="flex flex-col gap-1">
+                <p className="text-muted-foreground type-caption">งวดถัดไปต้องการ</p>
+                <p className="text-xl leading-tight font-semibold tabular-nums">
                   {review.comparison.expectedNextDueThbMinor === null
                     ? '—'
                     : formatBaht(review.comparison.expectedNextDueThbMinor)}
                 </p>
-                <p className="text-muted-foreground mt-1 text-xs">
+                <p className="text-muted-foreground type-caption">
                   ค้างทั้งออเดอร์ {formatBaht(review.money.outstandingThbMinor)}
                 </p>
               </div>
@@ -218,7 +234,7 @@ export function SlipReviewDialog({
              * instalments were credited, and they differ the first time a bank fee is written
              * off. "Which one a screen means has to be said out loud, every time."
              */}
-            <dl className="text-muted-foreground grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
+            <dl className="text-muted-foreground type-caption grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
               <div>
                 <dt>เงินสดที่เข้ามาแล้ว</dt>
                 <dd className="text-foreground tabular-nums">{formatBaht(review.money.paidThbMinor)}</dd>
@@ -243,9 +259,9 @@ export function SlipReviewDialog({
 
             {/* ── ⓶ The image ─────────────────────────────────────────────── */}
             <div className="flex flex-col gap-2">
-              <p className="text-sm font-medium">ภาพสลิป</p>
+              <p className="type-body font-medium">ภาพสลิป</p>
               {!review.slip.hasImage ? (
-                <p className="text-muted-foreground text-sm">
+                <p className="text-muted-foreground type-body">
                   ไม่มีภาพแนบมา
                   {review.slip.imageErasedAt === null
                     ? ''
@@ -281,9 +297,9 @@ export function SlipReviewDialog({
             {/* ── ⓷ Who paid ──────────────────────────────────────────────── */}
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium">ผู้โอน — อ่านจากภาพ</p>
+                <p className="type-body font-medium">ผู้โอน — อ่านจากภาพ</p>
                 {!review.slip.payerVerified && review.slip.payerName !== null && (
-                  <p className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
+                  <p className="text-muted-foreground type-caption inline-flex items-center gap-1.5">
                     <ShieldAlert className="size-3.5" />
                     ค่านี้ลูกค้าเป็นคนกรอกเอง ยังไม่มีใครเทียบกับภาพ — แก้ให้ตรงกับสลิปก่อนอนุมัติ
                   </p>
@@ -313,14 +329,14 @@ export function SlipReviewDialog({
                 </div>
               </div>
 
-              <p className="text-muted-foreground text-xs">
+              <p className="text-muted-foreground type-caption">
                 เว้นว่างได้ — ระบบจะถือว่ายังไม่ยืนยันผู้โอน และตอนคืนเงินจะไม่นับว่าเป็นบัญชีเดิม
               </p>
             </div>
 
             {/* ── ⓸ Where it goes ─────────────────────────────────────────── */}
             <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium">ตัดเข้างวดไหน</p>
+              <p className="type-body font-medium">ตัดเข้างวดไหน</p>
 
               {review.unallocatableReasonTh !== null && (
                 <Alert>
@@ -335,17 +351,17 @@ export function SlipReviewDialog({
                     key={instalment.id}
                     className="grid grid-cols-[3rem_1fr_9rem] items-center gap-3"
                   >
-                    <span className="text-muted-foreground font-mono text-xs">
+                    <span className="text-muted-foreground type-caption font-mono">
                       งวด {instalment.seq}
                     </span>
-                    <span className="text-sm">
+                    <span className="type-body">
                       ค้าง {formatBaht(instalment.remainingThbMinor)}
                       <span className="text-muted-foreground">
                         {' '}
                         จาก {formatBaht(instalment.dueThbMinor)}
                       </span>
                       {instalment.gatesEntryTo !== null && (
-                        <span className="text-muted-foreground ml-2 text-xs">
+                        <span className="text-muted-foreground type-caption ml-2">
                           · เปิดทางไป {instalment.gatesEntryTo}
                         </span>
                       )}
@@ -364,17 +380,23 @@ export function SlipReviewDialog({
                 ))}
               </div>
 
-              <div className="border-border flex items-center justify-between rounded-lg border border-dashed px-4 py-3 text-sm">
+              {/*
+               * A running total belongs on a rule, not in a box. The dashed rectangle around it
+               * was the third bordered thing in this dialog; `border-t` is the shape a total has
+               * had on a piece of paper for four hundred years and says the same thing with one
+               * edge instead of four.
+               */}
+              <div className="border-border type-body flex items-center justify-between border-t pt-3">
                 <span>ตัดไปแล้ว</span>
-                <span className="tabular-nums">
+                <span className="font-medium tabular-nums">
                   {formatBaht(plan.allocated)} / {formatBaht(review.slip.amountThbMinor)}
                 </span>
               </div>
 
-              {typo && <p className="text-destructive text-xs">มีช่องที่กรอกเป็นตัวเลขไม่ได้</p>}
+              {typo && <p className="text-destructive type-caption">มีช่องที่กรอกเป็นตัวเลขไม่ได้</p>}
 
               {plan.state === 'short' && !typo && (
-                <p className="text-destructive text-xs">
+                <p className="text-destructive type-caption">
                   ยังเหลือ {formatBaht(-plan.differenceThbMinor)} ที่ยังไม่ได้ตัดเข้างวดใด —
                   ถ้าอนุมัติแบบนี้ เงินก้อนนั้นจะค้างอยู่โดยไม่มีงวดไหนรู้จัก
                 </p>
@@ -412,7 +434,7 @@ export function SlipReviewDialog({
                   value={reasonTh}
                   onChange={(event) => setReasonTh(event.target.value)}
                 />
-                <span className="text-muted-foreground text-xs">
+                <span className="text-muted-foreground type-caption">
                   ลูกค้าจะเห็นข้อความนี้ — บอกให้ชัดว่าต้องทำอะไรต่อ
                 </span>
               </div>

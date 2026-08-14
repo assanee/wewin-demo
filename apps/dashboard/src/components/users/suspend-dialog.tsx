@@ -76,7 +76,7 @@ export function SuspendDialog({
           )}
 
           {user.liveSessions > 0 && (
-            <p className="text-muted-foreground text-sm">
+            <p className="text-muted-foreground type-body">
               ตอนนี้มี {user.liveSessions} เซสชันที่ยังใช้งานอยู่ ทั้งหมดจะถูกยกเลิก
             </p>
           )}
@@ -91,7 +91,7 @@ export function SuspendDialog({
               disabled={busy}
               placeholder="เช่น ลาออกแล้ว · พักงานระหว่างสอบสวน"
             />
-            <p className="text-muted-foreground text-xs">
+            <p className="text-muted-foreground type-caption">
               บันทึกไว้ใน log ของระบบ ไม่ได้เก็บไว้กับบัญชี
             </p>
           </div>

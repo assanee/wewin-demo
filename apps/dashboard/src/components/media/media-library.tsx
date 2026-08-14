@@ -6,7 +6,6 @@ import { AlertTriangle, Copy, ImageOff, Loader2, ShieldCheck, Trash2, Upload } f
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { apiUrl } from '@/lib/api/config';
@@ -21,6 +20,7 @@ import {
   type MediaObject,
   type MediaUploadResult,
 } from './media-api';
+import { mediaFocus } from './media-focus';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +44,28 @@ import {
  * Because the decisions this screen supports are about *bytes*: is this the right file, is
  * it big enough, is anything using it, can it go. A grid of pictures answers the first
  * question and hides the other three.
+ *
+ * ── ⭐ One primary thing, and the rows stopped being hand-rolled cards ────────
+ *
+ * There was no `Card` on this screen and it read as though there were: `MediaRow` returned a
+ * `rounded-lg border p-4` box per item, which is a Card in a **different visual language** —
+ * `Card` draws `rounded-xl` with `ring-1 ring-foreground/10`, so the library's boxes did not
+ * match a single other bordered thing in the app while still filling the page with boxes.
+ *
+ * ⚠️ **And because there was no `Card`, these rows never inherited its `text-sm`.** Every
+ * unclassed string here rendered at the browser's 16px while every other screen in the dashboard
+ * rendered its body at 14px — the row title was a bare `font-medium` and came out *larger than
+ * the section headings on `/orders`*. That is the same 16px collision the type scale was built
+ * to delete, arriving by inheritance rather than by choice. Everything is on `type-body` /
+ * `type-caption` now, so the size is stated rather than borrowed.
+ *
+ * The boxes became one `divide-y` list, and `mediaFocus` states the library's condition at
+ * `type-focal` above it. The `Empty` block went with them: its sentence is the empty case of
+ * that same statement, and it was a dashed box drawn around the absence of anything.
+ *
+ * ⚠️ **The citation line moved to the top of each row.** It was rendered muted, last, under the
+ * alt-text box — and it is the fact that decides whether ลบ is offered at all. The answer to
+ * *can it go* should not be below the thing you would have to scroll past to look for it.
  */
 
 type State =
@@ -154,8 +176,26 @@ export function MediaLibrary() {
     );
   }
 
+  const focus =
+    state.status === 'ready' ? mediaFocus(state.items, state.nextCursor !== null) : null;
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      {/*
+       * ⭐ THE PRIMARY THING. On the page ground, no border, type doing the work.
+       *
+       * Only once the list has arrived: a count stated while the request is in flight is a claim
+       * about a library nothing has looked at yet.
+       */}
+      {focus !== null && (
+        <section className="flex flex-col gap-1">
+          <p className="type-focal text-balance">{focus.headlineTh}</p>
+          {focus.detailTh === null ? null : (
+            <p className="text-muted-foreground type-body max-w-2xl">{focus.detailTh}</p>
+          )}
+        </section>
+      )}
+
       {editable && (
         <div className="flex flex-wrap items-center gap-3">
           <input
@@ -169,7 +209,7 @@ export function MediaLibrary() {
             {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
             อัปโหลดรูป
           </Button>
-          <p className="text-muted-foreground text-sm">JPEG · PNG · WebP — สูงสุด 8 MB ต่อไฟล์</p>
+          <p className="text-muted-foreground type-body">JPEG · PNG · WebP — สูงสุด 8 MB ต่อไฟล์</p>
         </div>
       )}
 
@@ -198,28 +238,27 @@ export function MediaLibrary() {
         </Alert>
       )}
 
-      {state.status === 'ready' && state.items.length === 0 && (
-        <Empty className="border-border/60 rounded-lg border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle>ยังไม่มีรูปในคลัง</EmptyTitle>
-            <EmptyDescription>
-              อัปโหลดรูปแรกเพื่อนำไปใช้เป็นภาพหลักของสินค้า
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+      {/*
+       * ⚠️ The `Empty` block that used to stand here is gone rather than restyled. Its title and
+       * its description are now the empty branch of `mediaFocus` — one sentence in one place,
+       * on the page ground, instead of the same sentence inside a dashed rectangle drawn around
+       * nothing.
+       */}
+      {state.status === 'ready' && state.items.length > 0 && (
+        <ul className="divide-border/60 flex flex-col divide-y">
+          {state.items.map((item) => (
+            <li key={item.id} className="py-5 first:pt-0 last:pb-0">
+              <MediaRow
+                media={item}
+                editable={editable}
+                onChanged={replace}
+                onDeleted={() => remove(item.id)}
+                onProblem={setProblem}
+              />
+            </li>
+          ))}
+        </ul>
       )}
-
-      {state.status === 'ready' &&
-        state.items.map((item) => (
-          <MediaRow
-            key={item.id}
-            media={item}
-            editable={editable}
-            onChanged={replace}
-            onDeleted={() => remove(item.id)}
-            onProblem={setProblem}
-          />
-        ))}
 
       {state.status === 'ready' && state.nextCursor !== null && (
         <div>
@@ -317,7 +356,7 @@ function MediaRow({
   }
 
   return (
-    <div className="border-border/60 flex flex-col gap-4 rounded-lg border p-4 md:flex-row">
+    <div className="flex flex-col gap-4 md:flex-row">
       <div className="bg-muted/30 flex size-40 shrink-0 items-center justify-center overflow-hidden rounded">
         {/* eslint-disable-next-line @next/next/no-img-element -- the API is a different
             origin and these are operator-facing thumbnails, not the storefront's LCP. */}
@@ -329,17 +368,43 @@ function MediaRow({
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate font-medium">{media.originalFilename ?? '(ไม่มีชื่อไฟล์)'}</span>
-          <Badge variant="outline">{media.contentType.replace('image/', '')}</Badge>
-          <Badge variant="outline">
-            {media.width} × {media.height}
-          </Badge>
-          <Badge variant="outline">{bytes(media.byteSize)}</Badge>
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="type-body truncate font-medium">
+              {media.originalFilename ?? '(ไม่มีชื่อไฟล์)'}
+            </span>
+            <Badge variant="outline">{media.contentType.replace('image/', '')}</Badge>
+            <Badge variant="outline">
+              {media.width} × {media.height}
+            </Badge>
+            <Badge variant="outline">{bytes(media.byteSize)}</Badge>
+          </div>
+
+          {/*
+           * ⭐ Directly under the filename, because this is the line that answers *can it go* —
+           * and `frozen` decides whether the delete button is rendered at all. It used to be the
+           * last thing in the row, muted, below a textarea: a reader deciding whether to delete
+           * a file had to scroll past the alt-text editor to find out that they could not.
+           */}
+          {(frozen.length > 0 || drafts.length > 0) && (
+            <div className="text-muted-foreground type-caption flex flex-col gap-0.5">
+              {frozen.length > 0 && (
+                <span>
+                  ถูกอ้างอิงในเวอร์ชันที่เผยแพร่แล้ว:{' '}
+                  {frozen.map((reference) => `${reference.productNameTh} v${reference.version}`).join(' · ')}
+                </span>
+              )}
+              {drafts.length > 0 && (
+                <span>
+                  อยู่ในฉบับร่างของ: {drafts.map((reference) => reference.productNameTh).join(' · ')}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm" htmlFor={`alt-${media.id}`}>
+          <label className="type-body" htmlFor={`alt-${media.id}`}>
             คำบรรยายภาพ (alt)
           </label>
           <Textarea
@@ -360,7 +425,7 @@ function MediaRow({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -371,25 +436,8 @@ function MediaRow({
             <Copy className="size-4" />
             {copied ? 'คัดลอกแล้ว' : 'คัดลอก path'}
           </Button>
-          <code className="text-muted-foreground truncate text-xs">{media.path}</code>
+          <code className="text-muted-foreground type-caption truncate">{media.path}</code>
         </div>
-
-        {(frozen.length > 0 || drafts.length > 0) && (
-          <div className="text-muted-foreground flex flex-col gap-1 text-sm">
-            {frozen.length > 0 && (
-              <span>
-                ถูกอ้างอิงในเวอร์ชันที่เผยแพร่แล้ว:{' '}
-                {frozen.map((reference) => `${reference.productNameTh} v${reference.version}`).join(' · ')}
-              </span>
-            )}
-            {drafts.length > 0 && (
-              <span>
-                อยู่ในฉบับร่างของ:{' '}
-                {drafts.map((reference) => reference.productNameTh).join(' · ')}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {editable && (
@@ -401,7 +449,7 @@ function MediaRow({
              * to reproduce what they were shown — and a greyed-out button says "you lack
              * permission", which is a different and wrong answer.
              */
-            <div className="text-muted-foreground flex items-center gap-1.5 text-sm">
+            <div className="text-muted-foreground type-body flex items-center gap-1.5">
               <ImageOff className="size-4" />
               ลบไม่ได้ — มีเวอร์ชันที่เผยแพร่แล้วอ้างอิงอยู่
             </div>

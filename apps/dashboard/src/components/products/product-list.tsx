@@ -7,6 +7,7 @@ import { AlertTriangle, Search } from 'lucide-react';
 import type { AdminProductSummaryWire, CategoryWire } from '@wewin/contract';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
@@ -55,9 +56,41 @@ import { PublishStateBadges, formatTimestamp } from './publish-state';
  * Search covers the four identifiers a person actually has in hand: the Thai name they read,
  * the id they saw in a URL, the slug from a storefront link, and the SKU prefix off a
  * quote. Matching only the name would fail exactly when somebody is chasing something down.
+ *
+ * ── ⭐ The route had no name at all, and the list is its own primary thing ────
+ *
+ * There was **no `<h1>` anywhere on `/products`** — not in the ready state, not in the error
+ * one. The screen opened on a search box and three dropdowns, so a reader who had clicked the
+ * wrong sidebar entry, or whose fetch had failed, had nothing on the page telling them where
+ * they were. `PageHeader` fixes that in all three states.
+ *
+ * There is deliberately **no `type-focal` statement** here, and that is the house rule for a
+ * list screen rather than an omission: the list *is* the primary thing (see the README's table),
+ * so the work is taking chrome off it and tightening the rows — the same conclusion
+ * `order-list.tsx` and `quote-list.tsx` reached. The count that would otherwise want to be a
+ * focal line rides in the header's description, where it qualifies the title instead of
+ * competing with the rows.
  */
 
 const PAGE = 50;
+
+/**
+ * ⚠️ Rendered in the loading and failure states too, not only once the rows arrived — the rule
+ * `page-header.tsx` states, and the one this screen failed hardest. `total` is `null` until the
+ * catalogue is in hand, which is why the description has two forms rather than a count of 0.
+ */
+function Header({ total }: { readonly total: number | null }) {
+  return (
+    <PageHeader
+      title="สินค้า"
+      description={
+        total === null
+          ? 'ทุกสินค้าในแคตตาล็อก ทั้งที่เผยแพร่แล้วและที่ยังเป็นฉบับร่าง'
+          : `${total} รายการในแคตตาล็อก ทั้งที่เผยแพร่แล้วและที่ยังเป็นฉบับร่าง`
+      }
+    />
+  );
+}
 
 type StateFilter = 'all' | 'draft' | 'unpublished' | 'never' | 'live';
 
@@ -175,20 +208,26 @@ export function ProductList() {
 
   if (error !== null) {
     return (
-      <Alert variant="destructive">
-        <AlertTriangle />
-        <AlertTitle>โหลดรายการสินค้าไม่สำเร็จ</AlertTitle>
-        <AlertDescription>{failureMessage(error)}</AlertDescription>
-      </Alert>
+      <div className="flex flex-col gap-8">
+        <Header total={null} />
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>โหลดรายการสินค้าไม่สำเร็จ</AlertTitle>
+          <AlertDescription>{failureMessage(error)}</AlertDescription>
+        </Alert>
+      </div>
     );
   }
 
   if (loaded === null) {
     return (
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 8 }, (_, index) => (
-          <Skeleton key={index} className="h-12 w-full" />
-        ))}
+      <div className="flex flex-col gap-8">
+        <Header total={null} />
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 8 }, (_, index) => (
+            <Skeleton key={index} className="h-12 w-full" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -199,163 +238,184 @@ export function ProductList() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <InputGroup className="w-full sm:w-80">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
+    <div className="flex flex-col gap-8">
+      <Header total={loaded.products.length} />
+
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <InputGroup className="w-full sm:w-80">
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              placeholder="ค้นหาชื่อ รหัส สลัก หรือคำนำหน้า SKU"
+              aria-label="ค้นหาสินค้า"
+            />
+          </InputGroup>
+
+          <Select
+            value={category}
+            onValueChange={(value) => {
+              setCategory(value);
             }}
-            placeholder="ค้นหาชื่อ รหัส สลัก หรือคำนำหน้า SKU"
-            aria-label="ค้นหาสินค้า"
-          />
-        </InputGroup>
+          >
+            <SelectTrigger className="w-48" aria-label="กรองตามหมวดหมู่">
+              <SelectValue placeholder="ทุกหมวดหมู่" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+              {categories.map((entry) => (
+                <SelectItem key={entry.id} value={entry.id}>
+                  {entry.labelTh}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Select
-          value={category}
-          onValueChange={(value) => {
-            setCategory(value);
-          }}
-        >
-          <SelectTrigger className="w-48" aria-label="กรองตามหมวดหมู่">
-            <SelectValue placeholder="ทุกหมวดหมู่" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
-            {categories.map((entry) => (
-              <SelectItem key={entry.id} value={entry.id}>
-                {entry.labelTh}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select
+            value={state}
+            onValueChange={(value) => {
+              setState(value as StateFilter);
+            }}
+          >
+            <SelectTrigger className="w-56" aria-label="กรองตามสถานะ">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(STATE_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Select
-          value={state}
-          onValueChange={(value) => {
-            setState(value as StateFilter);
-          }}
-        >
-          <SelectTrigger className="w-56" aria-label="กรองตามสถานะ">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(STATE_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select
+            value={sort}
+            onValueChange={(value) => {
+              setSort(value as Sort);
+            }}
+          >
+            <SelectTrigger className="w-40" aria-label="เรียงลำดับ">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">เรียงตามชื่อ</SelectItem>
+              <SelectItem value="recent">แก้ไขล่าสุดก่อน</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <Select
-          value={sort}
-          onValueChange={(value) => {
-            setSort(value as Sort);
-          }}
-        >
-          <SelectTrigger className="w-40" aria-label="เรียงลำดับ">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name">เรียงตามชื่อ</SelectItem>
-            <SelectItem value="recent">แก้ไขล่าสุดก่อน</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/*
+          {/*
           No "new product" action here yet: the create and edit screens are not written.
           Phase 4 ran out of budget partway through and the list is what survives. A
           button pointing at a page that does not exist reads as a bug; its absence reads
           as the gap it is.
         */}
-      </div>
+        </div>
 
-      {filtered.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>ไม่พบสินค้าที่ตรงกับเงื่อนไข</EmptyTitle>
-            <EmptyDescription>
-              ลองล้างคำค้นหรือเปลี่ยนตัวกรอง — แคตตาล็อกมีทั้งหมด {loaded.products.length} รายการ
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>สินค้า</TableHead>
-                  <TableHead className="hidden md:table-cell">หมวดหมู่</TableHead>
-                  <TableHead className="hidden lg:table-cell">SKU</TableHead>
-                  <TableHead>สถานะ</TableHead>
-                  <TableHead className="hidden lg:table-cell">อัปเดตล่าสุด</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {shown.map((product) => (
-                  <TableRow key={product.id}>
-                    <TableCell>
-                      {/*
+        {filtered.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>ไม่พบสินค้าที่ตรงกับเงื่อนไข</EmptyTitle>
+              <EmptyDescription>
+                ลองล้างคำค้นหรือเปลี่ยนตัวกรอง — แคตตาล็อกมีทั้งหมด {loaded.products.length} รายการ
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <>
+            {/*
+             * ⚠️ The `rounded-lg border` that used to wrap this table is gone, and it was worse
+             * than an ordinary redundant frame: it was a **Card lookalike in a different visual
+             * language**. `Card` draws `rounded-xl ring-1 ring-foreground/10`; this drew a
+             * `rounded-lg` border. Two boxes meaning the same thing, drawn two ways, on adjacent
+             * screens — which is how a reader learns to trust neither. And it was drawn around the
+             * one element in the app that already carries a full set of rules.
+             */}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="type-caption h-8">สินค้า</TableHead>
+                    <TableHead className="type-caption hidden h-8 md:table-cell">
+                      หมวดหมู่
+                    </TableHead>
+                    <TableHead className="type-caption hidden h-8 lg:table-cell">SKU</TableHead>
+                    <TableHead className="type-caption h-8">สถานะ</TableHead>
+                    {/* Slack to the last column — see `order-list.tsx`. ⚠️ This one is
+                      `lg:table-cell`, so below `lg` the slack falls back to สถานะ on its own,
+                      which is the narrow layout the columns were chosen for anyway. */}
+                    <TableHead className="type-caption hidden h-8 w-full lg:table-cell">
+                      อัปเดตล่าสุด
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shown.map((product) => (
+                    <TableRow key={product.id}>
+                      <TableCell className="px-2 py-1.5">
+                        {/*
                         The link is on the name rather than on the row: a whole-row click
                         target cannot be reached by keyboard without inventing a role for a
                         `<tr>`, and a table of 50 unreachable rows is a table nobody can use
                         without a mouse.
                       */}
-                      <Link
-                        href={`/products/${product.id}` as Route}
-                        className="font-medium underline-offset-4 hover:underline"
-                      >
-                        {product.nameTh}
-                      </Link>
-                      <div className="text-muted-foreground text-xs">{product.id}</div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden md:table-cell">
-                      {categoryLabel(product.categoryId)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden font-mono text-xs lg:table-cell">
-                      {product.skuPrefix}
-                    </TableCell>
-                    <TableCell>
-                      <PublishStateBadges product={product} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
-                      {product.draft !== null
-                        ? formatTimestamp(product.draft.updatedAt)
-                        : product.published !== null
-                          ? formatTimestamp(product.published.publishedAt)
-                          : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                        <Link
+                          href={`/products/${product.id}` as Route}
+                          className="focus-visible:outline-ring type-body rounded font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        >
+                          {product.nameTh}
+                        </Link>
+                        <div className="text-muted-foreground type-caption">{product.id}</div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground type-body hidden px-2 py-1.5 md:table-cell">
+                        {categoryLabel(product.categoryId)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground type-caption hidden px-2 py-1.5 font-mono lg:table-cell">
+                        {product.skuPrefix}
+                      </TableCell>
+                      <TableCell className="px-2 py-1.5">
+                        <PublishStateBadges product={product} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground type-caption hidden px-2 py-1.5 lg:table-cell">
+                        {product.draft !== null
+                          ? formatTimestamp(product.draft.updatedAt)
+                          : product.published !== null
+                            ? formatTimestamp(product.published.publishedAt)
+                            : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
 
-          <div className="flex items-center gap-3">
-            <p className="text-muted-foreground text-xs">
-              แสดง {shown.length} จาก {filtered.length} รายการ
-              {filtered.length === loaded.products.length ? '' : ` (ทั้งหมด ${loaded.products.length})`}
-            </p>
-            {shown.length < filtered.length ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLimit((current) => current + PAGE);
-                }}
-              >
-                แสดงเพิ่ม {Math.min(PAGE, filtered.length - shown.length)} รายการ
-              </Button>
-            ) : null}
-          </div>
-        </>
-      )}
+            <div className="flex items-center gap-3">
+              <p className="text-muted-foreground type-caption">
+                แสดง {shown.length} จาก {filtered.length} รายการ
+                {filtered.length === loaded.products.length
+                  ? ''
+                  : ` (ทั้งหมด ${loaded.products.length})`}
+              </p>
+              {shown.length < filtered.length ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setLimit((current) => current + PAGE);
+                  }}
+                >
+                  แสดงเพิ่ม {Math.min(PAGE, filtered.length - shown.length)} รายการ
+                </Button>
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

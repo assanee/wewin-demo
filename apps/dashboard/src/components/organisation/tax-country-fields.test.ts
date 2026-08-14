@@ -630,7 +630,7 @@ describe('TaxCountriesSection — the permission gate', () => {
    * `useEffect`, which `renderToStaticMarkup` never runs, so it would render `loading` forever
    * and never reach `signed-in` no matter what was passed. `organisation-screen.tsx` resolves
    * `can('organisation.write')` exactly once, at the top of the page, and passes the boolean
-   * down to every section (`:60-61`, `ProfileCard`/`AccountsCard`'s own `editable` prop) —
+   * down to every section (`:60-61`, `ProfileSection`/`AccountsSection`'s own `editable` prop) —
    * `TaxCountriesSection` follows that established shape rather than reading its own session,
    * which is also what makes it renderable here with no network layer at all. The brief's own
    * "if it cannot accept its rows as a prop, give it one" holds: `state` carries the rows.

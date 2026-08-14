@@ -42,7 +42,7 @@ import type {
  *
  * ── ⭐ What did NOT come with it, and why the split lands where it does ─────
  *
- * `FxHealthState` stayed behind. It is the shape of `FxHealthCard`'s prop — loading, failed,
+ * `FxHealthState` stayed behind. It is the shape of `FxHealthSection`'s prop — loading, failed,
  * ready — and it describes the *component's* contract with `organisation-screen.tsx`, not
  * anything any sentence below is derived from. `FxHealthVerdict` came, because it is the value
  * these functions switch on and it is meaningless without them.

@@ -94,7 +94,7 @@ export function CreateUserDialog({
               onChange={(event) => setEmail(event.target.value)}
               disabled={busy}
             />
-            <p className="text-muted-foreground text-xs">
+            <p className="text-muted-foreground type-caption">
               ถือว่ายืนยันแล้วทันที เพราะคุณเป็นผู้ยืนยันว่านี่คืออีเมลของเพื่อนร่วมงาน
             </p>
           </div>
@@ -126,7 +126,7 @@ export function CreateUserDialog({
                 />
                 <div className="flex flex-col gap-0.5">
                   <Label htmlFor={`new-user-group-${group.id}`}>{group.nameTh}</Label>
-                  <span className="text-muted-foreground text-xs">
+                  <span className="text-muted-foreground type-caption">
                     {group.permissions.length === 0 ? 'ไม่ให้สิทธิ์ใดเลย' : group.permissions.join(' · ')}
                   </span>
                 </div>

@@ -207,7 +207,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
          */
         <Card className="bg-accent/40 ring-foreground/25">
           <CardHeader>
-            <CardTitle className="type-section">ลูกค้าขอแก้ไข</CardTitle>
+            <CardTitle>ลูกค้าขอแก้ไข</CardTitle>
             <CardDescription>เปิดเมื่อ {at(order.openChangeRequest.openedAt)}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -294,7 +294,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="type-section">ผู้ติดต่อ</CardTitle>
+            <CardTitle>ผู้ติดต่อ</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="type-body grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2">
@@ -314,7 +314,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="type-section">ยอดเงิน</CardTitle>
+            <CardTitle>ยอดเงิน</CardTitle>
             {order.money === null && (
               <CardDescription>
                 {/* A draft has no contract — that is the whole draft/redesign split. */}

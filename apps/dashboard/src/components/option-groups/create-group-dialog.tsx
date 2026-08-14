@@ -192,7 +192,7 @@ export function CreateGroupDialog({
               />
               <div className="flex flex-col gap-1">
                 <Label htmlFor="include-in-sku">ให้ตัวเลือกนี้ปรากฏในรหัส SKU</Label>
-                <p className="text-muted-foreground text-sm">
+                <p className="text-muted-foreground type-body">
                   เปิดเมื่อค่าที่ลูกค้าเลือกทำให้เป็นสินค้าคนละตัวในสายผลิต
                 </p>
               </div>

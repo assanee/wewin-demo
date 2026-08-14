@@ -89,6 +89,15 @@ const decodeRefund = (raw: unknown): Refund => {
 };
 
 /**
+ * How many rows one call can return.
+ *
+ * ⚠️ Exported rather than inlined because the *screen* needs it: `refund-focus.ts` totals the
+ * payable queue, and a total taken from a full page is a partial sum that has to say so. A
+ * constant only this file could see would make that caveat impossible to state.
+ */
+export const REFUND_PAGE_LIMIT = 200;
+
+/**
  * `?payee=different` is the report plan 7.12 asks for: every refund going somewhere other
  * than the account that paid. Not a filter for convenience — a list somebody is meant to read.
  */
@@ -99,7 +108,7 @@ export const listRefunds = (filter: {
   const query = new URLSearchParams();
   for (const status of filter.statuses ?? []) query.append('status', status);
   query.set('payee', filter.payee ?? 'any');
-  query.set('limit', '200');
+  query.set('limit', String(REFUND_PAGE_LIMIT));
 
   return apiJson(`/payments/refunds?${query.toString()}`, (body) =>
     asArray(asRecord(body, 'รายการคืนเงิน')['refunds'] ?? [], 'refunds').map(decodeRefund),

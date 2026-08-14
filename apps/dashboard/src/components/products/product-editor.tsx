@@ -1,15 +1,14 @@
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowLeft, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
+import { PageHeader } from '@/components/page-header';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
@@ -18,6 +17,7 @@ import { useSession } from '@/lib/auth/session';
 import { openDraft, publishDraft, updateDraft } from './catalog-api';
 import { diffDocuments, groupSummary } from './document-diff';
 import { FieldsForm } from './fields-form';
+import { publishFocus } from './publish-focus';
 import { PublishStateBadges, formatTimestamp } from './publish-state';
 import { useProductEditor } from './use-product';
 
@@ -30,6 +30,35 @@ import { useProductEditor } from './use-product';
  * is not an implementation detail to hide behind a Save button, it is the thing a person
  * has to understand to use this screen without surprising themselves, so the draft and
  * the published version are shown side by side and publishing is its own deliberate act.
+ *
+ * ── ⭐ The title was a chip, and the answer was buried three Cards down ───────
+ *
+ * The product's name was an `<h1 className="text-xl font-semibold">` sitting **inside** a
+ * `flex flex-wrap items-center gap-3` toolbar, between a ghost back-button and two Badges. At
+ * 20px in a row of controls it read as one more chip rather than as the name of the record —
+ * the reader's eye had nothing to anchor on, which is precisely what `PageHeader` exists to
+ * fix. The back-link, the SKU and the state badges are all still here; they are now `back` and
+ * `meta`, which is what they always were.
+ *
+ * `mono={false}` — the default, and stated in the header's own contract: an order number is a
+ * machine string and reads as one, a Thai product name is not.
+ *
+ * ── ⭐ One primary thing, and three Cards became three sections ──────────────
+ *
+ * The screen rendered **three `<Card>`s** whenever a draft existed (ข้อมูลสินค้า / ตัวเลือก /
+ * เผยแพร่), each with the same ring and each headed at `text-base` above `text-sm` body copy —
+ * a 2px step, which is the absence of a hierarchy rather than a weak one. None of the three
+ * survives the house rule:
+ *
+ *   **ข้อมูลสินค้า** is a form. Nobody reads it detached from this screen, and the heading plus
+ *   `gap-10` already separates it from what follows.
+ *   **ตัวเลือก** is a `<Table>` — the one case the rule names outright. A table already draws a
+ *   full set of rules; a ring around it is an edge around an edge.
+ *   **เผยแพร่** is an *act*, not a reference. Its diff list and its button do not need a border
+ *   to be told apart from the form above them; they need a heading, which they now have.
+ *
+ * What replaces them at the top is `publishFocus` — whether what you changed is live yet, which
+ * is the question somebody opened this screen to answer.
  */
 export function ProductEditorScreen({ productId }: { readonly productId: string }) {
   const { can } = useSession();
@@ -75,120 +104,138 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
    */
   const diff = draft === null ? null : diffDocuments(publishedDocument, draft.product);
 
+  const focus = publishFocus({
+    publishedVersion: product.published?.version ?? null,
+    draftVersion: draft?.version ?? null,
+    draftChangeCount: diff === null ? null : diff.changes.length,
+    unpublishedFieldCount: product.unpublishedFields.length,
+  });
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/products">
-            <ArrowLeft data-icon="inline-start" />
-            สินค้าทั้งหมด
-          </Link>
-        </Button>
-        <h1 className="text-xl font-semibold">{product.nameTh}</h1>
-        <Badge variant="outline" className="font-mono">
-          {product.skuPrefix}
-        </Badge>
-        <PublishStateBadges product={product} className="ms-auto" />
-      </div>
+    <div className="flex flex-col gap-10">
+      <PageHeader
+        title={product.nameTh}
+        back={{ href: '/products', label: 'สินค้าทั้งหมด' }}
+        meta={
+          <>
+            <Badge variant="outline" className="font-mono">
+              {product.skuPrefix}
+            </Badge>
+            <PublishStateBadges product={product} />
+          </>
+        }
+      />
+
+      {/*
+       * ⭐ THE PRIMARY THING: is what I changed live yet. On the page ground, no border.
+       *
+       * It sits above everything, including the "no draft" branch — a product whose live version
+       * has drifted from its `products` row has something pending whether or not a draft is open,
+       * and that state used to be visible only as a red badge in the header.
+       */}
+      <section className="flex flex-col gap-1">
+        <p className="type-focal text-balance">{focus.headlineTh}</p>
+        {focus.detailTh === null ? null : (
+          <p className="text-muted-foreground type-body">{focus.detailTh}</p>
+        )}
+      </section>
 
       {draft === null ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>ยังไม่มีฉบับร่าง</CardTitle>
-            <CardDescription>
-              เอกสารที่เผยแพร่แล้วแก้ไม่ได้ — การแก้สินค้าคือการเปิดฉบับร่างแล้วเผยแพร่เป็นเวอร์ชันใหม่
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              disabled={!mayWrite || editor.busy}
-              onClick={() => {
-                void editor.withProduct('เปิดฉบับร่าง', () => openDraft(product.id));
-              }}
-            >
-              เปิดฉบับร่าง
-            </Button>
+        <Section
+          title="เปิดฉบับร่าง"
+          descriptionTh="เอกสารที่เผยแพร่แล้วแก้ไม่ได้ — การแก้สินค้าคือการเปิดฉบับร่างแล้วเผยแพร่เป็นเวอร์ชันใหม่"
+        >
+          <div className="flex flex-col gap-2">
+            <div>
+              <Button
+                disabled={!mayWrite || editor.busy}
+                onClick={() => {
+                  void editor.withProduct('เปิดฉบับร่าง', () => openDraft(product.id));
+                }}
+              >
+                เปิดฉบับร่าง
+              </Button>
+            </div>
             {mayWrite ? null : (
-              <p className="mt-2 text-sm text-muted-foreground">
-                บัญชีของคุณไม่มีสิทธิ์แก้ไขแคตตาล็อก
-              </p>
+              <p className="text-muted-foreground type-body">บัญชีของคุณไม่มีสิทธิ์แก้ไขแคตตาล็อก</p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </Section>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>ข้อมูลสินค้า</CardTitle>
-              <CardDescription>
-                ฉบับร่างเวอร์ชัน {draft.version} · แก้ล่าสุด {formatTimestamp(draft.updatedAt)}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldsForm
-                product={draft.product}
-                categories={editor.reference?.categories ?? []}
-                disabled={!mayWrite || editor.busy}
-                onSave={(validated) =>
-                  editor.withDraft('บันทึกข้อมูลสินค้า', (expectedDocumentHash) =>
-                    updateDraft(product.id, expectedDocumentHash, {
-                      slug: validated.slug,
-                      skuPrefix: validated.skuPrefix,
-                      fields: validated.fields,
-                    }),
-                  )
-                }
-              />
-            </CardContent>
-          </Card>
+          <Section
+            title="ข้อมูลสินค้า"
+            descriptionTh={`ฉบับร่างเวอร์ชัน ${draft.version} · แก้ล่าสุด ${formatTimestamp(draft.updatedAt)}`}
+          >
+            <FieldsForm
+              product={draft.product}
+              categories={editor.reference?.categories ?? []}
+              disabled={!mayWrite || editor.busy}
+              onSave={(validated) =>
+                editor.withDraft('บันทึกข้อมูลสินค้า', (expectedDocumentHash) =>
+                  updateDraft(product.id, expectedDocumentHash, {
+                    slug: validated.slug,
+                    skuPrefix: validated.skuPrefix,
+                    fields: validated.fields,
+                  }),
+                )
+              }
+            />
+          </Section>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>ตัวเลือก</CardTitle>
-              <CardDescription>
-                แก้ตัวเลือกยังทำที่หน้านี้ไม่ได้ — ตารางนี้แสดงสิ่งที่ฉบับร่างถืออยู่
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          <Section
+            title="ตัวเลือก"
+            descriptionTh="แก้ตัวเลือกยังทำที่หน้านี้ไม่ได้ — ตารางนี้แสดงสิ่งที่ฉบับร่างถืออยู่"
+          >
+            {/* ⚠️ No Card. A `<Table>` is the case the house rule names outright. */}
+            <div className="overflow-x-auto">
               <Table>
                 <TableBody>
                   {draft.product.groups.map((group) => (
                     <TableRow key={group.code}>
-                      <TableCell className="font-medium">{group.labelTh}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                      <TableCell className="type-body px-2 py-1.5 font-medium">
+                        {group.labelTh}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground type-caption px-2 py-1.5 font-mono">
                         {group.code}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{groupSummary(group)}</TableCell>
+                      {/* Slack to the last column — see `order-list.tsx`. */}
+                      <TableCell className="text-muted-foreground type-body w-full px-2 py-1.5">
+                        {groupSummary(group)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
+            </div>
+          </Section>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>เผยแพร่</CardTitle>
-              <CardDescription>
-                {diff?.firstPublish
-                  ? 'สินค้านี้ยังไม่เคยเผยแพร่ — ทุกอย่างในฉบับร่างจะใหม่สำหรับลูกค้าทั้งหมด'
-                  : 'สิ่งที่ลูกค้าจะเห็นเปลี่ยนไปเมื่อเผยแพร่ฉบับร่างนี้'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
+          <Section
+            title="เผยแพร่"
+            descriptionTh={
+              diff?.firstPublish
+                ? 'สินค้านี้ยังไม่เคยเผยแพร่ — ทุกอย่างในฉบับร่างจะใหม่สำหรับลูกค้าทั้งหมด'
+                : 'สิ่งที่ลูกค้าจะเห็นเปลี่ยนไปเมื่อเผยแพร่ฉบับร่างนี้'
+            }
+          >
+            <div className="flex flex-col gap-4">
               {diff === null || diff.changes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground type-body">
                   ฉบับร่างยังเหมือนกับเวอร์ชันที่เผยแพร่อยู่ทุกประการ
                 </p>
               ) : (
-                <ul className="flex flex-col gap-1 text-sm">
+                <ul className="type-body flex flex-col gap-1">
                   {diff.changes.map((change) => (
                     <li key={change.key} className="flex gap-2">
                       <Badge
                         variant={change.kind === 'removed' ? 'destructive' : 'secondary'}
                         className="shrink-0"
                       >
-                        {change.kind === 'added' ? 'เพิ่ม' : change.kind === 'removed' ? 'ตัดออก' : 'เปลี่ยน'}
+                        {change.kind === 'added'
+                          ? 'เพิ่ม'
+                          : change.kind === 'removed'
+                            ? 'ตัดออก'
+                            : 'เปลี่ยน'}
                       </Badge>
                       <span>
                         {change.labelTh}
@@ -231,9 +278,7 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
                   เผยแพร่เวอร์ชัน {draft.version}
                 </Button>
                 {mayPublish ? null : (
-                  <p className="text-sm text-muted-foreground">
-                    บัญชีของคุณไม่มีสิทธิ์เผยแพร่
-                  </p>
+                  <p className="text-muted-foreground type-body">บัญชีของคุณไม่มีสิทธิ์เผยแพร่</p>
                 )}
               </div>
 
@@ -242,14 +287,47 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
                   <AlertTitle>เวอร์ชันที่เผยแพร่อยู่ตอนนี้</AlertTitle>
                   <AlertDescription>
                     เวอร์ชัน {product.published.version} · เผยแพร่เมื่อ{' '}
-                    {formatTimestamp(product.published.publishedAt)} — เอกสารนี้แช่แข็งแล้วและจะถูกเก็บเข้าคลังเมื่อเผยแพร่ฉบับร่าง
+                    {formatTimestamp(product.published.publishedAt)} —
+                    เอกสารนี้แช่แข็งแล้วและจะถูกเก็บเข้าคลังเมื่อเผยแพร่ฉบับร่าง
                   </AlertDescription>
                 </Alert>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </Section>
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * One band of the editor.
+ *
+ * The three that used to be Cards are these now — a `<section>` with a `type-section` heading
+ * and `gap-10` above it, the same shape `account-settings.tsx` arrived at for the same reason:
+ * everything on this page is one subject, read top to bottom, and a ring around each band was
+ * three statements that they might be confused for one another.
+ *
+ * ⚠️ `descriptionTh` is `type-body`, not the `text-sm` `CardDescription` it replaces. Same size,
+ * but named — so the next person applying this scale does not have to know that `text-sm`
+ * happened to be the body step.
+ */
+function Section({
+  title,
+  descriptionTh,
+  children,
+}: {
+  readonly title: string;
+  readonly descriptionTh: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="type-section">{title}</h2>
+        <p className="text-muted-foreground type-body max-w-2xl">{descriptionTh}</p>
+      </div>
+      {children}
+    </section>
   );
 }

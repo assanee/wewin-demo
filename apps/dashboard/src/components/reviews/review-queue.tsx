@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiUrl } from '@/lib/api/config';
 import { failureMessage } from '@/lib/api/errors';
 import { HIDDEN_REASONS, hideBody, hideIsReady, reasonLabel, type HiddenReason } from './hide-reason';
+import { URGENT_HOURS, hoursLeft, reviewFocus } from './review-focus';
 import { hideReview, listQueue, publishReview, replyToReview, type QueueItem } from './review-api';
 
 /**
@@ -46,6 +46,26 @@ import { hideReview, listQueue, publishReview, replyToReview, type QueueItem } f
  *
  * Hiding does not delete. `hidden_at` is a column and the stats view does not filter on it,
  * which is what makes "hiding is not editing the score" true rather than merely claimed.
+ *
+ * ── ⭐ The clock leads, and it did not used to ────────────────────────────────
+ *
+ * The paragraph above has claimed since it was written that `hoursRemaining` is *"the first thing
+ * on every card"*. It was not. It rendered as a `text-xs` span pushed into the **top-right
+ * corner**, lighter and smaller than the product name on the left, on a screen whose loudest
+ * elements were N identical `Card` borders — one per review, from a single `<Card>` literal
+ * inside `.map()`, each with two more bordered photo tiles inside it. The file's stated intent
+ * was not true of its output, which is the sort of thing only counting catches.
+ *
+ * So: **the countdown is now the first column of every row**, at `text-xl` where the borders used
+ * to be, and the cards are a `divide-y` list — one hairline between items instead of four edges
+ * around each. `reviewFocus` states the thing the list is evidence for at `type-focal` above it.
+ *
+ * ⚠️ **Urgency is carried by weight and position, not by colour.** The clock used to turn
+ * `text-destructive` under twelve hours. The list is sorted soonest-first, so the most urgent
+ * review is already the top row; red was a third statement of a fact the order and the number
+ * both already made, and this pass takes hierarchy out of colour everywhere it can. What is left
+ * is `font-semibold` on the urgent ones and `text-muted-foreground` on the rest — the same
+ * styled-*down* idiom `overview-screen.tsx`'s `QueueRow` uses for an idle queue.
  */
 
 const at = (iso: string): string =>
@@ -91,33 +111,75 @@ export function ReviewQueue() {
     );
   }
 
-  if (state.items.length === 0) {
-    return (
-      <Card>
-        <CardContent className="text-muted-foreground py-10 text-center text-sm">
-          ไม่มีรีวิวที่อยู่ในช่วงกลั่นกรอง
-        </CardContent>
-      </Card>
-    );
-  }
+  const focus = reviewFocus(state.items);
+
+  /*
+   * Soonest first: the clock is the only ordering that matters on this screen.
+   *
+   * ⚠️ The spread is load-bearing here, unlike the one `overview-focus.ts` deleted — `sort`
+   * mutates, and `state.items` is the array held in React state. Sorting it in place would
+   * reorder the rendered list behind React's back.
+   */
+  const ordered = [...state.items].sort((a, b) => a.hoursRemaining - b.hoursRemaining);
 
   return (
-    <div className="flex flex-col gap-4">
-      {state.total > state.items.length && (
-        <p className="text-muted-foreground text-xs">
-          แสดง {state.items.length} จาก {state.total} รายการ
-        </p>
-      )}
+    <div className="flex flex-col gap-6">
+      {/*
+       * ⭐ THE PRIMARY THING. On the page ground, no border, type doing the work.
+       *
+       * Rendered when the queue is empty too — "ไม่มีรีวิวที่กำลังจะเผยแพร่เอง" is the answer to
+       * the question this screen exists to answer, and it used to be a centred line inside a Card.
+       */}
+      <section className="flex flex-col gap-1">
+        <p className="type-focal text-balance">{focus.headlineTh}</p>
+        {focus.detailTh === null ? null : (
+          <p className="text-muted-foreground type-body">{focus.detailTh}</p>
+        )}
+        {state.total > state.items.length && (
+          <p className="text-muted-foreground type-caption">
+            แสดง {state.items.length} จาก {state.total} รายการ
+          </p>
+        )}
+      </section>
 
-      {[...state.items]
-        /* Soonest first: the clock is the only ordering that matters on this screen. */
-        .sort((a, b) => a.hoursRemaining - b.hoursRemaining)
-        .map((item) => (
-          <Card key={item.id}>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+      {/*
+       * One hairline between reviews, where there used to be a `Card` around each of them. Every
+       * one of those borders said "this is a separate item" about a list that is visibly a list.
+       */}
+      <ul className="divide-border/60 flex flex-col divide-y">
+        {ordered.map((item) => {
+          const urgent = item.hoursRemaining <= URGENT_HOURS;
+
+          return (
+            <li key={item.id} className="flex flex-col gap-4 py-5 first:pt-0 last:pb-0 sm:flex-row">
+              {/*
+               * ⭐ THE CLOCK, FIRST — in the DOM and on the screen. Not a status chip: nothing
+               * here is pending approval, it is pending *publication*, and this number is how
+               * long somebody has to disagree. A fixed width gives every countdown the same left
+               * edge, so a column of them can be compared without being read.
+               */}
+              <div className="flex shrink-0 flex-col sm:w-40">
+                <span
+                  className={`text-xl leading-tight tabular-nums ${
+                    urgent ? 'font-semibold' : 'text-muted-foreground'
+                  }`}
+                >
+                  อีก {hoursLeft(item.hoursRemaining)} ชม.
+                </span>
+                {/*
+                 * The verb stays on the row, at caption size. "อีก 5 ชม." on its own is a
+                 * countdown to nothing in particular; เผยแพร่เอง is what happens at zero, and it
+                 * happens whether or not anybody is looking at this screen.
+                 */}
+                <span className="text-muted-foreground type-caption inline-flex items-center gap-1">
+                  <Clock className="size-3" aria-hidden />
+                  เผยแพร่เอง {at(item.publishesAt)}
+                </span>
+              </div>
+
+              <div className="flex min-w-0 flex-1 flex-col gap-3">
                 <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex" aria-label={`${String(item.rating)} ดาว`}>
                       {[1, 2, 3, 4, 5].map((star) => (
                         <Star
@@ -128,104 +190,99 @@ export function ReviewQueue() {
                         />
                       ))}
                     </span>
-                    <span className="text-sm font-medium">{item.productNameTh}</span>
+                    <span className="type-body font-medium">{item.productNameTh}</span>
                   </div>
-                  <span className="text-muted-foreground text-xs">
+                  <span className="text-muted-foreground type-caption">
                     {item.authorDisplayName ?? 'ไม่ระบุชื่อ'} ·{' '}
-                    <Link href={`/orders/${item.orderId}` as Route} className="hover:underline">
+                    <Link
+                      href={`/orders/${item.orderId}` as Route}
+                      className="focus-visible:outline-ring rounded hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    >
                       {item.orderNo ?? item.orderId.slice(0, 8)}
                     </Link>{' '}
                     · เขียนเมื่อ {at(item.createdAt)}
                   </span>
                 </div>
 
-                {/*
-                 * ⚠️ The clock, not a status chip. Nothing here is "pending approval" — it is
-                 * pending *publication*, and the number is how long somebody has to disagree.
-                 */}
-                <span
-                  className={`inline-flex items-center gap-1.5 text-xs ${
-                    item.hoursRemaining <= 12 ? 'text-destructive' : 'text-muted-foreground'
-                  }`}
-                >
-                  <Clock className="size-3.5" />
-                  เผยแพร่อัตโนมัติในอีก {Math.max(0, Math.round(item.hoursRemaining))} ชม. ·{' '}
-                  {at(item.publishesAt)}
-                </span>
-              </div>
+                {item.bodyTh !== null && <p className="type-body whitespace-pre-wrap">{item.bodyTh}</p>}
 
-              {item.bodyTh !== null && <p className="text-sm whitespace-pre-wrap">{item.bodyTh}</p>}
+                {item.photos.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {item.photos.map((photo, index) =>
+                      photo.path === null ? (
+                        /*
+                         * The row survived and the bytes did not — an erasure or a retention
+                         * sweep. Rendering the gap is plan 9.4(2): the record that a photo
+                         * existed is itself the thing being kept.
+                         *
+                         * ⚠️ This one keeps its border while the photograph beside it lost one:
+                         * here the dashed rectangle *is* the content — it is the shape of the
+                         * thing that is missing. A border around a photograph is chrome around
+                         * something that already has an edge.
+                         */
+                        <div
+                          key={index}
+                          className="border-border text-muted-foreground type-caption flex size-24 flex-col items-center justify-center gap-1 rounded border border-dashed"
+                        >
+                          <ImageOff className="size-4" />
+                          ภาพถูกลบแล้ว
+                        </div>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          key={index}
+                          src={apiUrl(photo.path)}
+                          alt={photo.altTextTh ?? 'ภาพจากรีวิว'}
+                          className="size-24 rounded object-cover"
+                        />
+                      ),
+                    )}
+                  </div>
+                )}
 
-              {item.photos.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {item.photos.map((photo, index) =>
-                    photo.path === null ? (
-                      /*
-                       * The row survived and the bytes did not — an erasure or a retention
-                       * sweep. Rendering the gap is plan 9.4(2): the record that a photo
-                       * existed is itself the thing being kept.
-                       */
-                      <div
-                        key={index}
-                        className="border-border text-muted-foreground flex size-24 flex-col items-center justify-center gap-1 rounded border border-dashed text-[10px]"
-                      >
-                        <ImageOff className="size-4" />
-                        ภาพถูกลบแล้ว
-                      </div>
-                    ) : (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        key={index}
-                        src={apiUrl(photo.path)}
-                        alt={photo.altTextTh ?? 'ภาพจากรีวิว'}
-                        className="border-border size-24 rounded border object-cover"
-                      />
-                    ),
-                  )}
+                  <Button
+                    size="sm"
+                    disabled={busyId === item.id}
+                    onClick={() => {
+                      setBusyId(item.id);
+                      void (async () => {
+                        try {
+                          await publishReview(item.id);
+                          toast.success('เผยแพร่แล้ว');
+                          await reload();
+                        } catch (error) {
+                          toast.error(failureMessage(error));
+                        } finally {
+                          setBusyId(null);
+                        }
+                      })();
+                    }}
+                  >
+                    เผยแพร่เลย
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={busyId === item.id}
+                    onClick={() => setHiding(item)}
+                  >
+                    <EyeOff /> ซ่อน
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === item.id}
+                    onClick={() => setReplying(item)}
+                  >
+                    ตอบกลับ
+                  </Button>
                 </div>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  disabled={busyId === item.id}
-                  onClick={() => {
-                    setBusyId(item.id);
-                    void (async () => {
-                      try {
-                        await publishReview(item.id);
-                        toast.success('เผยแพร่แล้ว');
-                        await reload();
-                      } catch (error) {
-                        toast.error(failureMessage(error));
-                      } finally {
-                        setBusyId(null);
-                      }
-                    })();
-                  }}
-                >
-                  เผยแพร่เลย
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={busyId === item.id}
-                  onClick={() => setHiding(item)}
-                >
-                  <EyeOff /> ซ่อน
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busyId === item.id}
-                  onClick={() => setReplying(item)}
-                >
-                  ตอบกลับ
-                </Button>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </li>
+          );
+        })}
+      </ul>
 
       {hiding !== null && (
         <HideDialog

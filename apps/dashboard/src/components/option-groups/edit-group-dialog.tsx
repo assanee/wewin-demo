@@ -100,26 +100,26 @@ export function EditGroupDialog({
           />
 
           {/* Read-only, deliberately present. See the header. */}
-          <div className="border-border/60 text-muted-foreground grid grid-cols-2 gap-3 rounded-lg border border-dashed p-3 text-sm">
+          <div className="border-border/60 text-muted-foreground grid grid-cols-2 gap-3 rounded-lg border border-dashed type-body p-3">
             <div>
-              <p className="text-xs">รหัสกลุ่ม</p>
+              <p className="type-caption">รหัสกลุ่ม</p>
               <code>{group.code}</code>
             </div>
             <div>
-              <p className="text-xs">ชนิด · รูปแบบ</p>
+              <p className="type-caption">ชนิด · รูปแบบ</p>
               <span>
                 {group.kind} · {group.input}
               </span>
             </div>
             <div>
-              <p className="text-xs">อยู่ในรหัส SKU</p>
+              <p className="type-caption">อยู่ในรหัส SKU</p>
               <span>{group.includeInSkuCode ? 'ใช่' : 'ไม่'}</span>
             </div>
             <div>
-              <p className="text-xs">หน่วยที่เขียน</p>
+              <p className="type-caption">หน่วยที่เขียน</p>
               <span>{group.authoredUnit ?? '—'}</span>
             </div>
-            <p className="col-span-2 text-xs">
+            <p className="type-caption col-span-2">
               สี่ค่านี้แก้ไม่ได้ — รหัส SKU ที่ออกไปแล้วต้องหมายถึงของเดิมเสมอ
             </p>
           </div>

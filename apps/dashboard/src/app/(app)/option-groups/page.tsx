@@ -1,4 +1,5 @@
 import { OptionGroupList } from '@/components/option-groups/option-group-list';
+import { PageHeader } from '@/components/page-header';
 
 /**
  * The shared option vocabulary.
@@ -10,13 +11,16 @@ import { OptionGroupList } from '@/components/option-groups/option-group-list';
  */
 export default function OptionGroupsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">ชุดตัวเลือก</h1>
-        <p className="text-muted-foreground">
-          กลุ่มตัวเลือกและค่าของตัวเลือก ที่สินค้าแต่ละเวอร์ชันหยิบไปใช้
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      {/*
+       * The title was a hand-rolled `text-2xl font-semibold` and the description an unclassed
+       * `<p>` — 16px, which is *larger* than the 14px body copy under it and larger than every
+       * group heading on the screen. `PageHeader` is the only place `type-page` exists.
+       */}
+      <PageHeader
+        title="ชุดตัวเลือก"
+        description="กลุ่มตัวเลือกและค่าของตัวเลือก ที่สินค้าแต่ละเวอร์ชันหยิบไปใช้"
+      />
 
       <OptionGroupList />
     </div>
