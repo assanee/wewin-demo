@@ -35,8 +35,9 @@ import {
 } from './order-api';
 import { orderFocus } from './order-focus';
 import { statusLabel, transitionForm } from './order-language';
-import { outstandingDisplay, readOutstanding } from './order-outstanding';
+import { outstandingDisplay, readOutstanding, type OwedFigures } from './order-outstanding';
 import { OrderTimeline } from './order-spine';
+import { balanceNoticeFor } from './transition-balance';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -417,6 +418,17 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
         <TransitionDialog
           orderId={order.id}
           available={moving}
+          /*
+           * ⭐ The order's own money, handed to the dialog that closes the job.
+           *
+           * ⛔ Nothing is computed on the way. `order` already carries
+           * `outstandingThbMinor`/`nextDueThbMinor` — Postgres's folds, columns on the read
+           * that fetched it, and the same two the ค้างชำระ row above is printing — so the
+           * dialog and the card cannot name different numbers. `balanceNoticeFor` decides
+           * whether there is anything to say; see `transition-balance.ts` for why it is a
+           * notice and not a gate.
+           */
+          owed={order}
           onClose={() => setMoving(null)}
           onDone={() => {
             setMoving(null);
@@ -438,15 +450,33 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
 function TransitionDialog({
   orderId,
   available,
+  owed,
   onClose,
   onDone,
 }: {
   readonly orderId: string;
   readonly available: AvailableTransition;
+  /** Just the two money columns — `OrderDetail` structurally satisfies `OwedFigures`. */
+  readonly owed: OwedFigures;
   readonly onClose: () => void;
   readonly onDone: () => void;
 }) {
   const form = transitionForm(available.payloadKind);
+  /*
+   * ⭐ WHAT IS STILL OWED, SAID AT THE MOMENT THE JOB IS CLOSED.
+   *
+   * The owner's report was that a job handed over before the balance was collected put the
+   * money beyond the software (`0046_slips_after_delivery.sql` fixed that half). This is the
+   * other half: the person pressing "ส่งมอบแล้ว" is the only one who knows whether this job's
+   * balance was meant to be collected today, and they were deciding without the figure.
+   *
+   * ⚠️ It does **not** disable the confirm button and must not. Asked when they collect, the
+   * owner said *"แล้วแต่งาน ไม่ตายตัว"*; a gate here would refuse the close on every job of the
+   * kind they collect on the day for. `null` on every other transition and on every order with
+   * nothing outstanding — the module decides, and the test beside it enumerates all nine
+   * statuses.
+   */
+  const balance = balanceNoticeFor(available.toStatus, owed);
   const [reason, setReason] = useState('');
   const [noteTh, setNoteTh] = useState('');
   const [fault, setFault] = useState(false);
@@ -468,6 +498,27 @@ function TransitionDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
+          {/*
+           * ⚠️ Above the fields, not below them, and not in `DialogDescription`. A reason
+           * textarea is what staff's eyes land in, and a figure underneath it is read after the
+           * decision rather than before it. The description line stays what it was — where this
+           * order is going — because that is the sentence the dialog title needs, and burying a
+           * baht figure in it would make the amount a subordinate clause.
+           *
+           * `Alert` and not a bare `<p>`: it carries the app's own token colours in both themes
+           * and an `AlertTitle`/`AlertDescription` pair, which is the shape this content is —
+           * a statement and the reason it is being made. `default` and not `destructive`,
+           * deliberately: an outstanding balance at handover is a normal state of business, and
+           * red would read as the refusal this explicitly is not.
+           */}
+          {balance !== null && (
+            <Alert>
+              <AlertTriangle />
+              <AlertTitle>{balance.headlineTh}</AlertTitle>
+              <AlertDescription>{balance.noteTh}</AlertDescription>
+            </Alert>
+          )}
+
           {form.fields.map((field) =>
             field.kind === 'checkbox' ? (
               <div key={field.name} className="flex items-start gap-3">

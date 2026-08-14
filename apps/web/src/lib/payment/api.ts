@@ -139,26 +139,22 @@ export interface PaymentInstructions {
    */
   readonly nextDueThbMinor: bigint;
   /**
-   * ⭐ Whether this order can still receive a payment at all — the server's answer, not a
+   * ⭐ Whether this order is still a commitment somebody owes on — the server's answer, not a
    * status this bundle would have to interpret.
    *
-   * `false` means the endpoint that takes the slip would refuse it (409
-   * `order_not_accepting_slips`, and `payment_slips_live_orders_only` behind that): the order
-   * is cancelled, superseded, delivered, or a draft. The figures beside it are still true
-   * about the order's residue — they are simply not a bill, and on a cancelled order the
-   * money may be owed the other way.
+   * `false` for cancelled and superseded only. The figures beside it are still true about the
+   * order's residue — they are simply not a bill, and on a cancelled order the money may be
+   * owed the other way.
    *
    * ⚠️ **Not `outstandingThbMinor <= 0`**, which says *paid in full*. The two are false in
    * different directions and conflating them is the cruelty this field exists to prevent:
    * "ชำระครบแล้ว" on a cancelled order the customer is owed a deposit on.
-   */
-  readonly acceptsPayment: boolean;
-  /**
-   * Whether the order is still a live commitment — see `PaymentInstructionsWire.orderIsLive`.
    *
-   * ⚠️ The pair, not either alone. `acceptsPayment` false says only "no slip can be attached
-   * here"; it is answered identically by a cancelled order and by a delivered one, and those
-   * two need opposite sentences. This boolean is what separates them.
+   * ⚠️ An `acceptsPayment` boolean used to arrive beside this one, saying "no slip can be
+   * attached here". It has been removed from the wire: since
+   * `0046_slips_after_delivery.sql` opened `delivered` to slips, the two answered identically
+   * on every status, and two names for one question is a screen deciding which to believe.
+   * See `PaymentInstructionsWire.orderIsLive` in `@wewin/contract` for the whole argument.
    */
   readonly orderIsLive: boolean;
   readonly accounts: readonly PaymentAccount[];
@@ -207,14 +203,10 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
    *
    * Neither is quieter than a decode failure, and a decode failure is a sentence on screen
    * with a "try again" rather than a wrong statement about somebody's money.
-   */
-  const acceptsPayment = body['acceptsPayment'];
-  /*
-   * ⚠️ Required for a third reason, on top of the two above: absent, the screen loses the one
-   * fact that separates a cancelled order from a finished one, and every state that cannot take
-   * a slip collapses back into the single sentence that cost a delivered order its
-   * "ชำระครบแล้ว" and hid an unpaid delivered balance entirely. A missing boolean here does not
-   * degrade the screen, it un-fixes it.
+   *
+   * ⚠️ It is also the *only* status fact this screen now receives — the `acceptsPayment`
+   * boolean that used to be read here is gone from the wire — so there is nothing left to fall
+   * back on. A missing value here does not degrade the screen, it un-fixes it.
    */
   const orderIsLive = body['orderIsLive'];
   const rawAccounts = body['accounts'];
@@ -222,7 +214,6 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     grandTotalThbMinor === null ||
     outstandingThbMinor === null ||
     nextDueThbMinor === null ||
-    typeof acceptsPayment !== 'boolean' ||
     typeof orderIsLive !== 'boolean' ||
     !Array.isArray(rawAccounts)
   ) {
@@ -240,7 +231,6 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     grandTotalThbMinor,
     outstandingThbMinor,
     nextDueThbMinor,
-    acceptsPayment,
     orderIsLive,
     accounts,
   };

@@ -153,14 +153,35 @@ export interface PaymentInstructionsWire {
    */
   readonly nextDueThbMinor: MoneyWire<'THB'>;
   /**
-   * ⭐ Whether this order can still receive a payment — decided by the server, on the same
-   * list that would refuse the upload.
+   * ⭐ Whether this order is still a live commitment, and therefore whether the screen may say
+   * anything at all about the money — `false` only for cancelled and superseded.
    *
-   * `false` means `POST /orders/:id/payment-slips/image` would answer 409
-   * `order_not_accepting_slips` and `payment_slips_live_orders_only` would refuse the row
-   * underneath it. The figures above are still stated truthfully — they describe whatever
-   * residue the order carries — but they are not a bill anybody can act on, and a screen
-   * that printed them beside an upload form would be asking for money it cannot take.
+   * `false` means the residue above is **not a debt**. A cancelled order on which a deposit
+   * was paid carries a real outstanding figure and the money may be owed *to* the customer;
+   * a superseded order's residue was carried to the order that replaced it and is already
+   * counted there. Naming a figure under a "ยอดคงค้าง" label in either case asks somebody for
+   * money they do not owe, which is the defect this field was added to end.
+   *
+   * `true` means an ordinary live obligation, and the storefront may state the figures and
+   * offer the upload form: `POST /orders/:id/payment-slips/image` will take the slip, and
+   * `payment_slips_live_orders_only` will take the row underneath it.
+   *
+   * ── ⚠️ THERE USED TO BE TWO BOOLEANS HERE. THERE IS NOW ONE ─────────────────
+   *
+   * `acceptsPayment` shipped beside this field and said "no further slip can be attached". It
+   * existed because the two disagreed about exactly one status: `delivered` was live — the
+   * balance a real debt, chased by the staff money card — and closed to slips, so the customer
+   * could read the amount on this screen and had no way to pay it. That is the owner's report
+   * *"ถ้าส่งมอบไปก่อนเก็บครบ จะเก็บผ่านระบบไม่ได้อีก"*, and `0046_slips_after_delivery.sql` closed it by
+   * opening `delivered` to slips.
+   *
+   * With the gap closed, `acceptsPayment` and `isLiveOrder` select the same six statuses —
+   * `apps/api/tests/payments/slips/attachable.test.ts` enumerates all nine and asserts it — so
+   * the pair was two names for one question, and a client would have had to decide which one
+   * to believe. The field was removed rather than kept "in case they diverge again": a wire
+   * field is a promise to every deployed bundle, and a boolean nobody can distinguish from its
+   * neighbour is the sort a screen eventually reads the wrong one of. If the two questions
+   * ever part again, the second field comes back with the disagreement written down.
    *
    * ⚠️ **A boolean, and deliberately not the order's status.** Two reasons, and the second
    * is the one that matters:
@@ -168,41 +189,15 @@ export interface PaymentInstructionsWire {
    *   1. `order.ts` already imports `OrganisationProfileWire` from this module, so a status
    *      field here would need `ORDER_STATUSES_WIRE`'s runtime value across a cycle to be
    *      validated. A boolean needs nothing.
-   *   2. It **removes** a duplicated definition rather than adding one. The question
-   *      "may this order still be paid?" is `SLIP_ATTACHABLE_STATUSES`
-   *      (`apps/api/src/payments/slips/attachable.ts`, itself the mirror of the 0011
-   *      trigger), and a client sent the status would have to hold its own copy of that
-   *      list to answer it — which is precisely how
-   *      `apps/web/src/lib/payment/payable.ts` came to be a third copy. Sending the
-   *      *answer* leaves the screen nothing to get wrong.
+   *   2. It **removes** a duplicated definition rather than adding one. A client sent the
+   *      status would have to hold its own copy of the live-order list to answer this —
+   *      which is precisely how `apps/web/src/lib/payment/payable.ts` came to be a copy.
+   *      Sending the *answer* leaves the screen nothing to get wrong.
    *
    * ⚠️ **Not "settled", and the two must never be conflated.** `outstandingThbMinor <= 0`
-   * says *paid in full*; this says *closed to further payment*. A cancelled order on which
-   * the customer paid a deposit is `false` here with a real outstanding residue and money
-   * owed **to** the customer — telling them they had paid in full would be false, and
-   * telling them they owed the residue is the defect this field was added to end.
-   */
-  readonly acceptsPayment: boolean;
-  /**
-   * Whether this order is still a live commitment — `false` only for cancelled and superseded.
-   *
-   * ⚠️ **Carried beside `acceptsPayment`, not instead of it, because one boolean cannot say
-   * what the screen has to say.** The two disagree on exactly one status, `delivered`, and that
-   * disagreement is the whole reason this field exists:
-   *
-   *   cancelled / superseded  `acceptsPayment` false, `orderIsLive` false
-   *     — no debt to state. The residue is money owed *to* the customer and belongs to the
-   *       refunds module; naming a figure here is the bug the pair was added to end.
-   *   delivered               `acceptsPayment` false, `orderIsLive` **true**
-   *     — the job is done and this screen can take no further slip, but any balance is a real
-   *       debt. Paid in full, that customer is entitled to read *paid in full*; still owing,
-   *       they are entitled to read the amount. Hiding it does not make it go away: `delivered`
-   *       has no transition out and is absent from `SLIP_ATTACHABLE_STATUSES`, so this is the
-   *       last screen on which that money is ever mentioned to the person who owes it.
-   *
-   * With only `acceptsPayment`, both collapsed into one "payment is closed" sentence — which
-   * cost the ordinary finished order its "ชำระครบแล้ว" and made an unpaid delivered balance
-   * invisible on every surface the customer has.
+   * says *paid in full*; this says *there is a contract somebody still owes on*. They are
+   * false in different directions, and "ชำระครบแล้ว" on a cancelled order whose deposit the
+   * company is about to refund is the cruellest sentence available.
    *
    * Computed by `isLiveOrder()` (`apps/api/src/orders/live-order.ts`) — the same predicate the
    * order encoder and the overview aggregate read, so there is no fourth definition of "live".

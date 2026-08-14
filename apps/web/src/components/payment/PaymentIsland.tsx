@@ -364,12 +364,15 @@ function PaymentForOrder({
    * This used to be `const settled = data.outstandingThbMinor <= 0n` and nothing else, which
    * is *false* on a cancelled order carrying an unpaid balance: the screen printed
    * "ยอดคงค้างทั้งหมด ฿10,354.18" over the upload form on an order the customer had cancelled and
-   * on which the company owed them their deposit back. `acceptsPayment` is the server's own
-   * answer, from the same list that would refuse the upload with a 409, and `paymentPanel.ts`
-   * holds the decision so it can be tested — a `.test.tsx` is never collected here.
+   * on which the company owed them their deposit back. `orderIsLive` is the server's own
+   * answer, from the same predicate the staff money card reads, and `paymentPanel.ts` holds
+   * the decision so it can be tested — a `.test.tsx` is never collected here.
+   *
+   * ⚠️ An `acceptsPayment` boolean was passed beside it until `0046_slips_after_delivery.sql`
+   * opened `delivered` to slips; the two then answered identically on every status and the
+   * wire dropped one. See `paymentPanel.ts` for what that removed from this screen.
    */
   const panel = describePaymentPanel({
-    acceptsPayment: data.acceptsPayment,
     orderIsLive: data.orderIsLive,
     outstandingMinor: data.outstandingThbMinor,
     nextDueMinor: data.nextDueThbMinor,
@@ -401,10 +404,12 @@ function PaymentForOrder({
         accepted, it answers with one figure and this renders exactly the single outstanding
         line that was here before.
 
-        ⭐ …and on an order that can no longer be paid it answers with **none**, which is the
-        round after this one. `panel.figures` is empty on a cancelled, superseded, delivered or
-        draft order — the residue is real but it is a refund question or a phone call, not a
-        bill, and a figure under "ยอดคงค้างทั้งหมด" is a bill whatever its value.
+        ⭐ …and on an order nobody owes anything on it answers with **none**, which is the
+        round after this one. `panel.figures` is empty on a cancelled or superseded order — the
+        residue is real but it is a refund question, not a bill, and a figure under
+        "ยอดคงค้างทั้งหมด" is a bill whatever its value. A **delivered** order is not in that set:
+        it is a contract fulfilled, its balance is genuinely owed, and since 0046 the form
+        below can take it.
 
         ⚠️ `payment.outstandingAmount` is this app's only money template and is a bare
         `f.bahtExact` in all eight locales, so it formats the due-now the same way — to the

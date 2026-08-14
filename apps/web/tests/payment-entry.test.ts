@@ -33,20 +33,34 @@ describe('⭐ the action does not appear when there is nothing to pay', () => {
   /*
    * ⚠️ THE ASSERTION THIS TASK TURNS ON.
    *
-   * "ชำระเงิน" on a job delivered last month reads as a bill already settled, and the screen
-   * behind it refuses the slip anyway — `payment_slips_live_orders_only` fires on the INSERT.
-   * A customer who transfers against that button has sent money to a closed contract, which
-   * becomes a reconciliation exception and a phone call rather than a payment.
+   * "ชำระเงิน" on an order the customer cancelled reads as a bill, and the screen behind it
+   * refuses the slip anyway — `payment_slips_live_orders_only` fires on the INSERT. A customer
+   * who transfers against that button has sent money to a dead contract, which becomes a
+   * reconciliation exception and a phone call rather than a payment — and on a cancellation
+   * the money may have been owed the other way to begin with.
    */
-  it('refuses the three finished statuses', () => {
-    expect(acceptsPayment('delivered')).toBe(false);
+  it('refuses the two dead statuses', () => {
     expect(acceptsPayment('cancelled')).toBe(false);
     expect(acceptsPayment('superseded')).toBe(false);
   });
 
+  it('⭐ OFFERS the action on a delivered order, which is a contract fulfilled', () => {
+    /*
+     * ⚠️ THE OWNER'S DEFECT, ON THE LINK SIDE. *"ถ้าส่งมอบไปก่อนเก็บครบ จะเก็บผ่านระบบไม่ได้อีก"* —
+     * hand the job over before the balance is collected and there was no door left at all:
+     * `delivered` has no transition out, so the status could not be walked back to one that
+     * had a door. The customer received the goods and owes the money; the row gets a button.
+     *
+     * Deliberately its own case rather than a line added to the list below: this is the one
+     * membership that changed, and a mutation that drops `'delivered'` from
+     * `PAYABLE_ORDER_STATUSES` must fail on a test whose name says what was lost.
+     */
+    expect(acceptsPayment('delivered')).toBe(true);
+  });
+
   it('refuses a draft, which is a cart and has no document to pay against', () => {
-    /* Absent from the server's list for a different reason than the three above: not
-     * "finished" but "never started" — no order number, no pinned document, no total. */
+    /* Absent from the server's list for a different reason than the two above: not
+     * "dead" but "never started" — no order number, no pinned document, no total. */
     expect(acceptsPayment('draft')).toBe(false);
   });
 
@@ -92,10 +106,9 @@ describe('⭐ the storefront rule is the server rule, and cannot drift from it q
      * on `apps/api` and must not start.
      *
      * ⚠️ The constant moved out of `slips.service.ts` into `attachable.ts` when the payment
-     * screen's own gate started reading it: `OrdersService.paymentInstructions` answers
-     * `acceptsPayment` on the wire from this list, so it had to be importable without
-     * importing `SlipsService`. Same list, same declaration, one file across — and this
-     * regex is the reason that file's header says its shape is load-bearing.
+     * screen's own gate started reading it. That gate has since gone — the wire carries
+     * `orderIsLive` alone — so *this regex* is now the only reader outside the API, and it is
+     * the reason that file's header still says its declaration shape is load-bearing.
      */
     const service = read('../../api/src/payments/slips/attachable.ts');
     const block = /SLIP_ATTACHABLE_STATUSES: readonly OrderStatus\[\] = \[([^\]]*)\]/u.exec(service);
@@ -109,9 +122,19 @@ describe('⭐ the storefront rule is the server rule, and cannot drift from it q
   });
 
   it('agrees with the database trigger that is the actual definition', () => {
-    /* `payment_slips_live_orders_only` — the one that fires on INSERT and is therefore the
-     * only copy a customer's money can actually be refused by. */
-    const migration = read('../../../packages/db/drizzle/0011_payment_guards.sql');
+    /*
+     * `payment_slips_live_orders_only` — the one that fires on INSERT and is therefore the
+     * only copy a customer's money can actually be refused by.
+     *
+     * ⚠️ Read from `0046_slips_after_delivery.sql` and no longer from `0011_payment_guards.sql`,
+     * because migrations are append-only: 0011 still contains the narrower literal and always
+     * will, and a test pointed at it would fail against a database that is correct. **The
+     * effective list is whatever the LAST migration to write this trigger wrote**, which is
+     * why `apps/api/tests/payments/slips/attachable-drift.pg.test.ts` asks the live catalogue
+     * instead — this file cannot, because `apps/web` has no database. If a 0047 ever touches
+     * this trigger, the path below moves with it.
+     */
+    const migration = read('../../../packages/db/drizzle/0046_slips_after_delivery.sql');
     const trigger = /CREATE TRIGGER payment_slips_live_orders_only[\s\S]*?'\{([a-z_,]+)\}'/u.exec(migration);
 
     expect(trigger, 'the trigger should still be findable by this shape').not.toBeNull();
@@ -185,9 +208,15 @@ describe('⭐ the payment screen gates on the server’s answer, not on a list o
   const island = read('../src/components/payment/PaymentIsland.tsx');
   const paymentApi = read('../src/lib/payment/api.ts');
 
-  it('reads `acceptsPayment` off the wire and hands it to the render decision', () => {
-    expect(island).toContain('acceptsPayment: data.acceptsPayment');
+  it('reads `orderIsLive` off the wire and hands it to the render decision', () => {
+    expect(island).toContain('orderIsLive: data.orderIsLive');
     expect(island).toContain('describePaymentPanel({');
+    /*
+     * ⚠️ And it is the ONLY status fact passed. A second boolean here would be the pair this
+     * round removed, and the first thing to reappear if somebody "restores" the delivered
+     * branch rather than reading why it went.
+     */
+    expect(island).not.toContain('acceptsPayment:');
     /*
      * ⚠️ And the figures are the panel's, not a second call beside it. Rendering
      * `describeOwedFigures(data.…)` again here would leave every other assertion in this file
@@ -197,19 +226,20 @@ describe('⭐ the payment screen gates on the server’s answer, not on a list o
     expect(island).not.toContain('describeOwedFigures(');
   });
 
-  it('⭐ refuses a response with no `acceptsPayment` rather than assuming one', () => {
+  it('⭐ refuses a response with no `orderIsLive` rather than assuming one', () => {
     /*
      * ⚠️ Both defaults ship a defect: `true` bills a cancelled order (the bug itself), `false`
      * tells every paying customer the screen is closed. A decode failure is a sentence with a
      * "try again" behind it, which is the only one of the three that is not a wrong statement
-     * about somebody's money.
+     * about somebody's money. It matters more since the wire dropped its second boolean:
+     * there is nothing else left for the screen to fall back on.
      */
     const apiCode = paymentApi.replaceAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
 
-    expect(apiCode).toMatch(/const acceptsPayment = body\['acceptsPayment'\];\s*\n/u);
-    expect(apiCode).toContain("typeof acceptsPayment !== 'boolean'");
+    expect(apiCode).toMatch(/const orderIsLive = body\['orderIsLive'\];\s*\n/u);
+    expect(apiCode).toContain("typeof orderIsLive !== 'boolean'");
     /* And no `?? true` / `?? false` tacked onto the read, which is the silent version. */
-    expect(apiCode).not.toMatch(/acceptsPayment\s*(\?\?|\|\|)/u);
+    expect(apiCode).not.toMatch(/orderIsLive\s*(\?\?|\|\|)/u);
   });
 
   it('does not gate the screen on `payable.ts`, which is the list-only mirror', () => {

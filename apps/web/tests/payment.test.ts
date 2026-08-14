@@ -123,7 +123,6 @@ describe('⭐ the payment-instructions decoder refuses a payload it cannot trust
     grandTotalThbMinor: { unit: 'THB.satang', digits: '1479168' },
     outstandingThbMinor: { unit: 'THB.satang', digits: '1035418' },
     nextDueThbMinor: { unit: 'THB.satang', digits: '443750' },
-    acceptsPayment: true,
     orderIsLive: true,
     accounts: [],
   } as const;
@@ -160,7 +159,6 @@ describe('⭐ the payment-instructions decoder refuses a payload it cannot trust
     /* Distinct on a 30/70 order: what is still owed, and what to pay now. */
     expect(result.data.outstandingThbMinor).toBe(1_035_418n);
     expect(result.data.nextDueThbMinor).toBe(443_750n);
-    expect(result.data.acceptsPayment).toBe(true);
     expect(result.data.orderIsLive).toBe(true);
   });
 
@@ -172,7 +170,12 @@ describe('⭐ the payment-instructions decoder refuses a payload it cannot trust
     'grandTotalThbMinor',
     'outstandingThbMinor',
     'nextDueThbMinor',
-    'acceptsPayment',
+    /*
+     * ⚠️ `acceptsPayment` was a fifth entry here until `0046_slips_after_delivery.sql` made it
+     * answer identically to `orderIsLive` on every status and the wire dropped it. It is not
+     * merely no longer required — an unknown key is ignored by the decoder, so a case for it
+     * would have passed by testing nothing.
+     */
     'orderIsLive',
   ] as const) {
     it(`refuses the whole payload when ${missing} is absent`, async () => {

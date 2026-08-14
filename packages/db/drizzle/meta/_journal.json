@@ -323,6 +323,13 @@
       "when": 1786400000016,
       "tag": "0045_forfeit_note_no_cutting",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786400000017,
+      "tag": "0046_slips_after_delivery",
+      "breakpoints": true
     }
   ]
 }

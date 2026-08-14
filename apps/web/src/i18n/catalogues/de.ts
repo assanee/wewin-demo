@@ -610,8 +610,6 @@ export const de: PartialUiCatalogue = {
   'payment.settled': 'Diese Bestellung ist vollständig bezahlt',
   'payment.closed':
     'Für diese Bestellung werden keine Zahlungen mehr angenommen. Bei Fragen zum Betrag wenden Sie sich bitte an unser Vertriebsteam.',
-  'payment.closedOwing':
-    'Es ist noch ein Betrag offen, Zahlungen können hier aber nicht mehr eingereicht werden. Wenden Sie sich zur Begleichung bitte an unser Vertriebsteam.',
   'payment.account.legend': 'Überweisen Sie auf eines dieser Konten',
   'payment.account.copy': (p) => `Kontonummer ${p.accountDigits} kopieren`,
   'payment.account.copied': 'Kontonummer kopiert',

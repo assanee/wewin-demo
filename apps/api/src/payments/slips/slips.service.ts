@@ -104,14 +104,14 @@ import type {
  */
 
 /*
- * ⚠️ `SLIP_ATTACHABLE_STATUSES` used to be declared here. It has moved to `./attachable`,
- * unchanged, because it acquired a second reader that is not a slip route:
- * `OrdersService.paymentInstructions` answers `acceptsPayment` on the wire the customer's
- * payment screen renders from, and a screen offering an upload this service would refuse
- * with a 409 is the defect that move exists to make impossible. Read that file's header for
- * why it is a file rather than an export from this one (the require cycle `src/orders`
- * cannot take), and `slips.pg.test.ts` for the assertion that the database refuses what the
- * list refuses.
+ * ⚠️ `SLIP_ATTACHABLE_STATUSES` used to be declared here. It moved to `./attachable` when
+ * `OrdersService.paymentInstructions` became a second reader of it; that reader has since
+ * gone (the wire carries `orderIsLive` alone), and the list stays where it is because the
+ * remaining outside reader cannot import at all — `apps/web/tests/payment-entry.test.ts`
+ * *parses* the declaration out of that file's source, `apps/web` having no dependency on
+ * `apps/api`. Read that file's header for why it is a file rather than an export from this
+ * one, `slips.pg.test.ts` for the assertion that the database refuses what the list refuses,
+ * and `attachable-drift.pg.test.ts` for the one that holds the two lists equal.
  */
 
 /** The freeze point. Plan 7.5(ข): the deposit changed the condition, not the place. */

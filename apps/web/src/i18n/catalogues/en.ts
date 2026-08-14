@@ -575,8 +575,6 @@ export const en: PartialUiCatalogue = {
    */
   'payment.closed':
     'This order is no longer accepting payments. If you have a question about the amount, please contact our sales team.',
-  'payment.closedOwing':
-    'A balance is still owing, but payments can no longer be submitted here. Please contact our sales team to settle it.',
   'payment.account.legend': 'Transfer to any one of these accounts',
   'payment.account.copy': (p) => `Copy account number ${p.accountDigits}`,
   'payment.account.copied': 'Account number copied',

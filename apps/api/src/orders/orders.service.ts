@@ -25,12 +25,14 @@ import { OrganisationRepository } from '../organisation/organisation.repository'
 import { TaxCountryService } from '../organisation/tax-country.service';
 import { PaymentLifecycleService } from '../payments/lifecycle';
 /*
- * The list file and not `../payments/slips` — the same reason `../quotes/authority` is
- * imported by its port below: the slips barrel exports `SlipsModule`, and reaching it from
- * here would pull a module that already imports `src/orders` back through this file. The
- * constant has no dependency but the status type; see its own header.
+ * ⚠️ `acceptsPayment` from `../payments/slips/attachable` used to be imported here, for the
+ * wire field of the same name. `0046_slips_after_delivery.sql` made it answer identically to
+ * `isLiveOrder` on every status, the wire dropped it, and this import went with it — so
+ * `src/orders` no longer reaches into the slips feature at all. Should a reader ever need it
+ * back, take it from the list file and not from `../payments/slips`: the barrel exports
+ * `SlipsModule`, and reaching it from here pulls a module that already imports `src/orders`
+ * back through this file.
  */
-import { acceptsPayment } from '../payments/slips/attachable';
 import { isLiveOrder } from './live-order';
 import { AuthorityService } from '../quotes/authority';
 /* The port file and not the barrel — see `organisation.module.ts` on the require cycle. */
@@ -357,24 +359,27 @@ export class OrdersService {
       outstandingThbMinor: encodeThb(money.outstandingThbMinor),
       nextDueThbMinor: encodeThb(money.nextDueThbMinor),
       /*
-       * ⭐ WHETHER THIS ORDER CAN STILL BE PAID — asked here because the screen cannot ask it.
+       * ⭐ WHETHER THIS ORDER IS STILL A LIVE COMMITMENT — asked here because the screen cannot.
        *
        * This route does not go through `encodeOrderSummary`, so the live-order predicate that
        * fix closed `GET /orders` and `GET /orders/:id` with never reached it: the storefront's
        * payment page read ฿10,354.18 outstanding and ฿10,354.18 due on an order the customer
        * had **cancelled**, and rendered the upload form under it, at the same moment
        * `GET /orders` answered `null` for the same order. The slip would then have been
-       * refused 409 by `SLIP_ATTACHABLE_STATUSES` — so no money was ever taken; what was taken
-       * was the customer's belief that they owed it.
+       * refused 409 — so no money was ever taken; what was taken was the customer's belief
+       * that they owed it.
        *
-       * ── Why not `isLiveOrder`, which is the predicate the encoder uses ──────────────
+       * ── ⚠️ There used to be a second boolean here, and it has gone ─────────────────
        *
-       * Because they are different questions and they disagree about `delivered`. A delivered
-       * job with an unpaid balance is live — the debt is real and the money card exists to
-       * chase it — and it still cannot take another slip through this screen. This endpoint
-       * is the *payment* screen's wire, so the question it must answer is the one the upload
-       * route would answer: `acceptsPayment` is the same list that raises
-       * `order_not_accepting_slips`, so the screen and the endpoint behind it cannot disagree.
+       * `acceptsPayment` shipped beside this one because the two disagreed about exactly one
+       * status: a `delivered` order was live (the debt real) and closed to slips (the upload
+       * refused). `0046_slips_after_delivery.sql` opened `delivered` to slips, and with that
+       * the two predicates answer identically on all nine statuses —
+       * `tests/payments/slips/attachable.test.ts` enumerates them and holds it. Two names for
+       * one question is a client deciding which of them to believe, so the wire carries the
+       * one it has always meant: *is this a commitment anybody still owes?* The upload route
+       * keeps its own guard (`SLIP_ATTACHABLE_STATUSES`, the trigger's mirror) — the screen
+       * simply no longer restates it.
        *
        * ── The figures are still stated, and that is deliberate ────────────────────────
        *
@@ -384,21 +389,6 @@ export class OrdersService {
        * change to a shape three tests compare against `GET /orders` figure for figure; the
        * screen decides what to *print*, and `PaymentIsland` prints no owed figure at all when
        * this is `false`.
-       */
-      acceptsPayment: acceptsPayment(order.status),
-      /*
-       * ⭐ AND WHETHER THE ORDER IS STILL A LIVE COMMITMENT — the second half of the question.
-       *
-       * `acceptsPayment` alone answers *false* for a cancelled order and for a delivered one,
-       * and those two need opposite sentences: on the first the company owes the customer, on
-       * the second the customer may owe the company. Sending both booleans lets the screen tell
-       * them apart without this endpoint shipping the status itself, which
-       * `PaymentInstructionsWire` explains it deliberately does not.
-       *
-       * The note above ("they disagree about `delivered`") is exactly why this is a second field
-       * rather than a replacement: the payment *form* is still governed by `acceptsPayment`, so
-       * no slip can be attached to a delivered order through this screen. What changes is only
-       * what the screen is allowed to *say* about the money.
        */
       orderIsLive: isLiveOrder(order.status),
       accounts: accounts.map(encodeAccountPublic),
