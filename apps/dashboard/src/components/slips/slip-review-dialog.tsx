@@ -103,7 +103,7 @@ export function SlipReviewDialog({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [selfReviewReasonTh, setSelfReviewReasonTh] = useState('');
   const [busy, setBusy] = useState(false);
-  const { state: session, can } = useSession();
+  const { can } = useSession();
 
   useEffect(() => {
     let live = true;
@@ -142,15 +142,23 @@ export function SlipReviewDialog({
   const review = state.status === 'ready' ? state.review : null;
 
   /*
-   * 🔒 Whether this reviewer is about to do both halves — `no-slip.ts` decides, and it is
-   * presentation only. `SlipsService.accept` demands the permission *and* the reason, and
+   * 🔒 Whether this reviewer is about to do both halves.
+   *
+   * ⚠️ **`viewerIsSubmitter` is read off the wire and is not derived from the session here.** The
+   * server computes it with `slip_submitter_user_ids()` — the function the refusal itself calls —
+   * which counts the guest cart this reviewer later claimed as the same person. Comparing
+   * `session.principal.userId` to `slip.submittedByUserId` is what this line used to do, and on
+   * that funnel it concluded `not_mine`, showed no declaration box, and left the reviewer with a
+   * 403 asking for a reason the screen had nowhere to type.
+   *
+   * What is still local, and must be: `holdsBypass`. That is a permission the session already
+   * carries, and it decides only whether this screen says "find a colleague" or "write down why".
+   * `SlipsService.accept` demands the permission *and* the reason, and
    * `payment_slips_guard_write()` refuses the write when the column is null whatever this screen
-   * concluded. What it buys is that the person finds out before typing a whole allocation plan,
-   * and that the refusal names the remedy instead of arriving as a 403.
+   * concluded — none of this is the control.
    */
   const selfReview = selfReviewState({
-    viewerUserId: session.status === 'signed-in' ? session.principal.userId : null,
-    submittedByUserId: review?.slip.submittedByUserId ?? null,
+    viewerIsSubmitter: review?.viewerIsSubmitter ?? false,
     holdsBypass: can('payments.self_review_slip'),
   });
 

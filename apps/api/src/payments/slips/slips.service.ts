@@ -479,13 +479,36 @@ export class SlipsService {
   async review(scope: Scope, slipId: string): Promise<SlipReviewWire> {
     const { slip, order } = await this.loadForStaff(scope, slipId);
 
-    const [allocations, instalments, money] = await Promise.all([
+    const [allocations, instalments, money, submitters] = await Promise.all([
       this.slips.allocationsForSlips([slip.id]),
       this.slips.instalments(order.id),
       this.slips.orderMoney(order.id),
+      /*
+       * 🔒 The same call `assertReviewerIsNotSubmitter` makes before it refuses.
+       *
+       * The screen has to ask the *server* whether this slip is the reader's own, because the
+       * answer is a union — the direct submitter and the user who claimed the submitting guest —
+       * and a client holding one nullable column cannot compute it. It used to try:
+       * `submittedByUserId === null → "not mine"`, which on the main funnel (anonymous cart,
+       * upload, sign in, review) is wrong in the one direction that cannot be recovered from.
+       * The dialog then offered รับรอง with no declaration box, the API answered 403
+       * `self_review_needs_reason`, and there was nowhere on the screen to supply it.
+       *
+       * One implementation of "who submitted this", in SQL, called by the refusal and by the
+       * screen that warns about the refusal. A second one in TypeScript is how the two stopped
+       * agreeing the first time.
+       */
+      this.slips.submitterUserIds(slip.id),
     ]);
 
     if (money === undefined) throw new Error('payments/slips: the order money could not be read');
+
+    /*
+     * Null for a guest, and for a customer reading their own slip. Neither is a person the
+     * two-person rule is about, and `includes(null)` would be a type error rather than a
+     * question worth asking.
+     */
+    const viewerUserId = orderActor(scope)?.actorUserId ?? null;
 
     const gateIsOpen = await this.slips.gateIsOpen(order.id, FREEZE_STATUS);
     const suggestion = suggestAllocations(slip.amountThbMinor, instalments);
@@ -493,6 +516,7 @@ export class SlipsService {
 
     return {
       slip: encodeSlip(slip, allocations, 'staff'),
+      viewerIsSubmitter: viewerUserId !== null && submitters.includes(viewerUserId),
       order: {
         id: order.id,
         orderNo: order.orderNo,

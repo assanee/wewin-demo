@@ -168,10 +168,16 @@ export function recordFormBody(fields: RecordFormFields, now: Date): RecordFormR
  * ────────────────────────────────────────────────────────────────────────────── */
 
 export interface SelfReviewFacts {
-  /** Who is looking at the screen. `null` when the session has not resolved. */
-  readonly viewerUserId: string | null;
-  /** Who entered the slip. `null` on a guest's, and on a customer's copy of the wire. */
-  readonly submittedByUserId: string | null;
+  /**
+   * 🔒 `SlipReviewWire.viewerIsSubmitter` — **the server's answer, carried, not recomputed.**
+   *
+   * There is no user id in this shape on purpose. Comparing the session to
+   * `slip.submittedByUserId` is the inference this function used to make, and it is not the rule:
+   * `slip_submitter_user_ids()` also resolves the guest cart the reviewer later claimed, and that
+   * cart's slip carries `null` in the column. `false` while the review is still loading, which
+   * says nothing about a screen that has no buttons on it yet.
+   */
+  readonly viewerIsSubmitter: boolean;
   readonly holdsBypass: boolean;
 }
 
@@ -192,18 +198,21 @@ export type SelfReviewState =
  * before they have typed a full allocation plan, and that the `blocked` case names the remedy —
  * "find a colleague" — instead of a 403.
  *
- * ⚠️ It is deliberately blind to the guest-claim half of the rule. `slip_submitter_user_ids()`
- * resolves a guest cart later signed into an account to the same person and this comparison
- * cannot; the consequence is a screen that occasionally offers a button the API then refuses,
- * which is the safe direction. The unsafe direction — a screen that *decides* — is the one this
- * function must never be mistaken for.
+ * ⚠️ **It no longer decides whose slip this is, and that is the fix.** It used to, by comparing
+ * the session to `slip.submittedByUserId`, and it was blind to the half of the rule that matters
+ * most: `slip_submitter_user_ids()` resolves a guest cart later signed into an account to the
+ * same person, and that cart's slip has `null` in the column. So on the *main* funnel the
+ * reviewer's own slip read as somebody else's — `not_mine`, no warning, and no declaration
+ * textarea. Pressing รับรอง then got a 403 `self_review_needs_reason` naming a field that was not
+ * on the screen, and the review could not be completed through the UI at all. Failing closed, and
+ * still a dead end.
+ *
+ * The fact now arrives on the wire (`SlipReviewWire.viewerIsSubmitter`) computed by the same SQL
+ * function the refusal uses — the argument that put `orderIsLive` on `PaymentInstructionsWire`
+ * rather than shipping a status for every client to interpret with its own copy of the list.
  */
 export function selfReviewState(facts: SelfReviewFacts): SelfReviewState {
-  if (
-    facts.viewerUserId === null ||
-    facts.submittedByUserId === null ||
-    facts.viewerUserId !== facts.submittedByUserId
-  ) {
+  if (!facts.viewerIsSubmitter) {
     return { kind: 'not_mine' };
   }
 

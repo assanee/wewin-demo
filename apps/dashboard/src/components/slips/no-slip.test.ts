@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -144,21 +146,14 @@ describe('the recording form', () => {
 });
 
 describe('🔒 what the review screen says before one person does both halves', () => {
-  const OTHER = '22222222-2222-4222-8222-222222222222';
-  const ME = '33333333-3333-4333-8333-333333333333';
-
   it('says nothing at all about a slip somebody else entered', () => {
-    expect(
-      selfReviewState({ viewerUserId: ME, submittedByUserId: OTHER, holdsBypass: true }),
-    ).toEqual({ kind: 'not_mine' });
+    expect(selfReviewState({ viewerIsSubmitter: false, holdsBypass: true })).toEqual({
+      kind: 'not_mine',
+    });
   });
 
   it('blocks the reviewer who entered it and holds no bypass, and names the remedy', () => {
-    const state = selfReviewState({
-      viewerUserId: ME,
-      submittedByUserId: ME,
-      holdsBypass: false,
-    });
+    const state = selfReviewState({ viewerIsSubmitter: true, holdsBypass: false });
 
     expect(state.kind).toBe('blocked');
     /* `รับรอง` is the word these screens already use. No new vocabulary. */
@@ -170,24 +165,71 @@ describe('🔒 what the review screen says before one person does both halves', 
    * the screen asks for the sentence, and the API and the trigger both refuse without it.
    */
   it('asks the holder of the bypass for a reason rather than letting them straight through', () => {
-    const state = selfReviewState({ viewerUserId: ME, submittedByUserId: ME, holdsBypass: true });
+    const state = selfReviewState({ viewerIsSubmitter: true, holdsBypass: true });
 
     expect(state.kind).toBe('must_declare');
     if (state.kind === 'must_declare') expect(state.messageTh).toContain('เหตุผล');
   });
 
-  it('claims nothing when the session or the submitter is unknown', () => {
+  /*
+   * ⭐ THE GUEST CART, ON THE SCREEN — the dashboard half of the walk `viewer-is-submitter.pg.test.ts`
+   * runs over HTTP.
+   *
+   * A slip uploaded from an anonymous cart that this reviewer later signed into carries
+   * `submitted_by_user_id = NULL`; `slip_submitter_user_ids()` resolves it to them anyway, so the
+   * wire says `viewerIsSubmitter: true` with no user id in sight. This function must ask for the
+   * declaration on exactly that input — the old comparison saw the null, answered `not_mine`,
+   * rendered no textarea, and the 403 that followed named a field the screen did not have.
+   */
+  it('⭐ asks for the declaration on a guest-cart slip the reviewer later claimed', () => {
+    expect(selfReviewState({ viewerIsSubmitter: true, holdsBypass: true }).kind).toBe(
+      'must_declare',
+    );
+    expect(selfReviewState({ viewerIsSubmitter: true, holdsBypass: false }).kind).toBe('blocked');
+  });
+
+  it('claims nothing while the review has not loaded', () => {
     /*
-     * A customer's copy of the wire carries `submittedByUserId: null` by design, and the session
-     * is null for a beat on first paint. Both must read as "not mine" — this function is
-     * presentation, and the API is the control, so guessing here can only produce a screen that
-     * is wrong in the direction of offering a button the server then refuses.
+     * The dialog passes `review?.viewerIsSubmitter ?? false` — there is no slip on the screen yet
+     * and no buttons to warn about. It reads as "not mine" for the same reason it now reads as
+     * anything at all: the fact is the server's, and before the response there is no fact.
      */
-    expect(
-      selfReviewState({ viewerUserId: null, submittedByUserId: ME, holdsBypass: true }),
-    ).toEqual({ kind: 'not_mine' });
-    expect(
-      selfReviewState({ viewerUserId: ME, submittedByUserId: null, holdsBypass: true }),
-    ).toEqual({ kind: 'not_mine' });
+    expect(selfReviewState({ viewerIsSubmitter: false, holdsBypass: false })).toEqual({
+      kind: 'not_mine',
+    });
+  });
+});
+
+/**
+ * ⚠️ THE INFERENCE ITSELF, PINNED SHUT.
+ *
+ * The bug was not a wrong comparison so much as a client holding the ingredients to make one. Both
+ * of these read source text, which is exactly what the assertion is about — a screen that computes
+ * "is this mine?" from an id it decoded, whatever the arithmetic, is the same dead end again.
+ */
+describe('⚠️ no dashboard screen re-derives whose slip this is', () => {
+  const read = (path: string): string => readFileSync(path, 'utf8');
+
+  it('does not decode `submittedByUserId` into the client shape at all', () => {
+    const source = read('src/components/slips/slip-api.ts');
+    const code = source.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '');
+
+    /* The comment explaining the absence stays; the field and its decode do not. */
+    expect(source).toContain('submittedByUserId');
+    expect(code).not.toContain('submittedByUserId');
+
+    /* And the fact that replaced it is decoded strictly, never `=== true`. */
+    expect(code).toContain("asBoolean(review['viewerIsSubmitter'], 'review.viewerIsSubmitter')");
+  });
+
+  it('feeds the review dialog the wire’s boolean rather than the session', () => {
+    const code = read('src/components/slips/slip-review-dialog.tsx')
+      .replace(/\/\*[\s\S]*?\*\//gu, '')
+      .replace(/^\s*\/\/.*$/gmu, '');
+
+    expect(code).toContain('viewerIsSubmitter: review?.viewerIsSubmitter ?? false');
+    expect(code).not.toContain('submittedByUserId');
+    /* The session still answers the permission question, and only that one. */
+    expect(code).not.toContain('session.principal.userId');
   });
 });

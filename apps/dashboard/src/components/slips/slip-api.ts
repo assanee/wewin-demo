@@ -31,6 +31,20 @@ const asText = (value: unknown, what: string): string => {
 const asTextOrNull = (value: unknown, what: string): string | null =>
   value === null || value === undefined ? null : asText(value, what);
 
+/**
+ * ⚠️ A boolean, or a failure — never `value === true`.
+ *
+ * The shorthand this file uses elsewhere reads a missing field as `false`, which is the honest
+ * default for `hasImage` and `payerVerified` and the wrong one for a fact the screen *acts* on.
+ * A `viewerIsSubmitter` that silently defaults to `false` against an API that stopped sending it
+ * is precisely the dead end this field exists to close, arriving again with no symptom until a
+ * reviewer cannot finish a review. The same refusal `apps/web` makes about `orderIsLive`.
+ */
+const asBoolean = (value: unknown, what: string): boolean => {
+  if (typeof value !== 'boolean') throw new TypeError(`${what}: expected a boolean`);
+  return value;
+};
+
 /** The unit is checked, never assumed — `THB.satang` and `THB.satang/m2` differ only by tag. */
 const asSatang = (value: unknown, what: string): bigint => {
   const money = asRecord(value, what);
@@ -82,13 +96,22 @@ export interface Slip {
    * that was photographed and later erased has no image either, and reads completely
    * differently to a reviewer.
    */
-  /**
-   * Who entered this slip — staff audience only, `null` in a customer's copy and `null` for a
-   * guest's upload. The review dialog compares it to the signed-in user to decide whether it is
-   * about to ask for a declared bypass; see `selfReviewState`, and its note on why that
-   * comparison is presentation and never the control.
+  /*
+   * ⚠️ `submittedByUserId` is on the wire and is deliberately **not decoded here**.
+   *
+   * This client had it, and the review dialog compared it to the signed-in user to decide
+   * whether to ask for a declared bypass. That comparison cannot be right: a slip uploaded from
+   * a guest cart carries `null` in that column whoever later claimed the cart, so the reviewer
+   * who *did* submit it read as somebody else — no warning, no declaration box, and then a 403
+   * `self_review_needs_reason` with nowhere on the screen to supply the reason. The server
+   * answers the question instead, on `SlipReview.viewerIsSubmitter`, from
+   * `slip_submitter_user_ids()`.
+   *
+   * Not decoding it is the point rather than tidiness: a field sitting in this interface is an
+   * invitation for the next person to make the same inference, and there is no screen here that
+   * needs the raw id — the audit list names the recorder through `recordedBy`, which carries a
+   * display name as well.
    */
-  readonly submittedByUserId: string | null;
   readonly noSlipReasonTh: string | null;
   /**
    * 🔒 Why the reviewer was also the submitter. `null` on every slip two people handled, and
@@ -138,6 +161,17 @@ export interface Instalment {
 
 export interface SlipReview {
   readonly slip: Slip;
+  /**
+   * 🔒 Whether the person reading this screen is one of the people who submitted this slip —
+   * **the server's answer**, from `slip_submitter_user_ids()`, and never re-derived here.
+   *
+   * The union it computes includes the user who claimed the submitting guest cart, which is the
+   * ordinary funnel: upload anonymously, sign in, review. No column on this wire carries that
+   * fact, so a client that compares `submittedByUserId` to the session decides "somebody else's"
+   * for the person's own slip — and renders no declaration box for a review the API will then
+   * refuse without one, with no way to finish it. See `selfReviewState`.
+   */
+  readonly viewerIsSubmitter: boolean;
   readonly order: {
     readonly id: string;
     readonly orderNo: string | null;
@@ -204,7 +238,6 @@ const decodeSlip = (raw: unknown): Slip => {
     unallocatedThbMinor: asSatang(slip['unallocatedThbMinor'], 'slip.unallocatedThbMinor'),
     createdAt: asText(slip['createdAt'], 'slip.createdAt'),
     receivedBankAccount: decodeReceivedBankAccount(slip['receivedBankAccount']),
-    submittedByUserId: asTextOrNull(slip['submittedByUserId'], 'slip.submittedByUserId'),
     noSlipReasonTh: asTextOrNull(slip['noSlipReasonTh'], 'slip.noSlipReasonTh'),
     selfReviewReasonTh: asTextOrNull(slip['selfReviewReasonTh'], 'slip.selfReviewReasonTh'),
   };
@@ -266,6 +299,7 @@ export const getReview = (slipId: string): Promise<SlipReview> =>
 
     return {
       slip: decodeSlip(review['slip']),
+      viewerIsSubmitter: asBoolean(review['viewerIsSubmitter'], 'review.viewerIsSubmitter'),
       order: {
         id: asText(order['id'], 'order.id'),
         orderNo: asTextOrNull(order['orderNo'], 'order.orderNo'),

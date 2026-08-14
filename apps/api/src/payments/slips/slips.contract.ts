@@ -336,6 +336,20 @@ export interface SlipWire {
   readonly unallocatedThbMinor: MoneyWire<'THB'>;
   /** True when a reviewer read the payer off the image. False means the payer typed it. */
   readonly payerVerified: boolean;
+  /**
+   * ⚠️ **The identity, and never the answer to "is this mine?"**
+   *
+   * It is one of the two columns behind that question and not the question: a slip uploaded from
+   * a guest cart carries `null` here whoever eventually claimed the cart, so
+   * `submittedByUserId === viewer` is false for the person who really did submit it. Ask
+   * `SlipReviewWire.viewerIsSubmitter`, which the server computes from
+   * `slip_submitter_user_ids()`; the same reason `RecordedSlipEntryWire.selfReviewed` is not
+   * `recordedBy.userId === reviewedBy.userId`.
+   *
+   * What it is for is the trail — who entered this row — which is why it survives on the 201 of
+   * `POST /payments/slips/recorded`, where it is the only field naming the person who recorded a
+   * payment nobody sent a slip for.
+   */
   readonly submittedByUserId: string | null;
   readonly reviewedByUserId: string | null;
   /**
@@ -440,6 +454,31 @@ export interface InstalmentSummaryWire {
  */
 export interface SlipReviewWire {
   readonly slip: SlipWire;
+  /**
+   * 🔒 Is the person who asked for this screen one of the people who submitted this slip?
+   *
+   * ⚠️ **Computed by `slip_submitter_user_ids()` against the requesting user, and never by
+   * comparing `slip.submittedByUserId` to whoever the client thinks is signed in.** That
+   * comparison is the same bug `selfReviewed` on the audit wire already refuses to make: the
+   * function unions the direct submitter with the user who claimed the submitting *guest*, so a
+   * slip uploaded from an anonymous cart that the reviewer later signed into is one person — and
+   * a client comparing one nullable column sees `null !== me` and concludes it is not theirs.
+   *
+   * The consequence of getting it wrong is not a security hole; the service and
+   * `payment_slips_guard_write()` both refuse a self-review without the permission and without
+   * the reason, whatever a screen decided. It is a *dead end*: a review dialog that concludes
+   * "not mine" renders no declaration box, the reviewer presses รับรอง, the API answers 403
+   * `self_review_needs_reason`, and there is no field on the screen to put that reason in. The
+   * review cannot be completed at all.
+   *
+   * So the fact is computed once, here, where `slip_submitter_user_ids()` is — the same argument
+   * that put `orderIsLive` on `PaymentInstructionsWire` instead of shipping a status for every
+   * client to interpret with its own copy of the rule.
+   *
+   * `false` for a customer's or a guest's reading of a slip: they are not the people this
+   * two-person rule is about, and there is no self-review screen for them to see.
+   */
+  readonly viewerIsSubmitter: boolean;
   readonly order: {
     readonly id: string;
     readonly orderNo: string | null;
