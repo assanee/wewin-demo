@@ -194,6 +194,14 @@ describeWithPg('⭐ what the payment screen asks a customer for', () => {
           amountThbMinor: amount,
           transferredAt: new Date(),
           bankReference: `REF-${tag}-${randomUUID().slice(0, 6)}`,
+          /*
+           * ⚠️ `payment_slips_evidence_exists` (0047): a slip carries an image, an image that was
+           * erased, or a stated reason. This fixture models a *customer's* slip — one somebody
+           * photographed — so it carries a key. The column was always meant to be here; nothing
+           * checked until the CHECK arrived, and a fixture with no evidence at all is a row the
+           * storefront cannot produce.
+           */
+          storageKey: `test/slip-${randomUUID()}.png`,
           status: 'accepted',
           reviewedByUserId: reviewer,
           reviewedAt: new Date(),
@@ -345,6 +353,8 @@ describeWithPg('⭐ what the payment screen asks a customer for', () => {
       amountThbMinor: 200_000n,
       transferredAt: new Date(),
       bankReference: `REF-${tag}-${randomUUID().slice(0, 6)}`,
+      /* An image, because this is the storefront's own slip — see `payment_slips_evidence_exists`. */
+      storageKey: `test/slip-${randomUUID()}.png`,
       status: 'submitted',
     });
 

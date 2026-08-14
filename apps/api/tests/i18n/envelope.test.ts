@@ -454,5 +454,20 @@ describe('what is still a Thai string, as a number', () => {
  * plain `Error` — a 500, which is the honest answer, because nothing about the caller's
  * request was wrong. It also un-hid the two guards from each other: while both spelled the
  * same 404, a review found either could be deleted with the whole suite green.
+ *
+ * ── 223 → 224: the declared bypass of the two-person rule ─────────────────────────
+ *
+ * One, in `payments/slips/slips.service.ts`'s `assertReviewerIsNotSubmitter`. The rule already
+ * had one literal Thai refusal there and now has two, because 0047 split the single "you may
+ * not review your own slip" into two different instructions to the person reading it:
+ *
+ *   `reviewer_is_submitter`      you may not do this at all — find a colleague.
+ *   `self_review_needs_reason`   you may, and not silently — type why, and it is kept for ever.
+ *
+ * Collapsing them back into one sentence to avoid a literal would make the second look like a
+ * permissions problem to somebody who simply forgot to type a reason, which is the one reading
+ * that would send them to an administrator instead of to the text box. The route behind both is
+ * `POST /payments/slips/:slipId/acceptance`, gated on `payments.verify` — staff-only, Thai, and
+ * the same argument the rest of this file's slip literals already rest on.
  */
-const RAW_LITERAL_CALL_SITES = 223;
+const RAW_LITERAL_CALL_SITES = 224;

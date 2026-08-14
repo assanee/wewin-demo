@@ -237,6 +237,11 @@ const payInstalment = async (orderId: string, instalmentId: string, amount: bigi
         amountThbMinor: amount,
         transferredAt: new Date(),
         bankReference: `REF-${tag}-${randomUUID().slice(0, 6)}`,
+        /*
+         * ⚠️ `payment_slips_evidence_exists` (0047): an image, an erased image, or a stated
+         * reason. This models a customer's slip, so it carries a key.
+         */
+        storageKey: `test/slip-${randomUUID()}.png`,
         status: 'accepted',
         reviewedByUserId: reviewer,
         reviewedAt: new Date(),

@@ -13,7 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { desc, sql } from 'drizzle-orm';
 import { guests, users } from './auth.js';
 import { ORDER_STATUSES, orderDocuments, orderEvents, orders } from './order.js';
 import { bankAccounts } from './organisation.js';
@@ -539,6 +539,36 @@ export const paymentSlips = pgTable(
       onDelete: 'restrict',
     }),
 
+    /**
+     * ⭐ WHY THIS PAYMENT HAS NO PICTURE — `0047_slip_without_evidence.sql`.
+     *
+     * The owner's report: *"เจ้าหน้าที่สามารถปิดยอดการชำระได้โดยไม่มีการยืนยันสลิป แต่ต้องระบุ
+     * เหตุผล เพราะอาจมีกรณีที่ลูกค้าโอนชำระแล้วแต่ไม่ได้แนบสลิปยืนยัน"* — the customer really did
+     * transfer, and really did not attach the slip.
+     *
+     * `storage_key` was already nullable, so a row with no image was *representable* before this
+     * column existed; what it was not was **explicable**. This is the third arm of
+     * `payment_slips_evidence_exists`: an image, an image that was erased, or a reason. Set by
+     * staff at INSERT and frozen by `payment_slips_guard_write()` the moment the slip is
+     * reviewed, because a reason somebody can improve after the money landed is not a trail.
+     */
+    noSlipReasonTh: text('no_slip_reason_th'),
+
+    /**
+     * 🔒 WHY THE REVIEWER IS ALSO THE SUBMITTER — a DECLARED bypass of the two-person rule.
+     *
+     * ⚠️ The database cannot see permissions, so this column does not mean "allowed". Whether
+     * this reviewer may declare a bypass at all is `payments.self_review_slip`, checked in
+     * `SlipsService.accept`. What the two enforcement points guarantee — the CHECK below and
+     * `payment_slips_guard_write()`, which resolves a claimed guest to the same person — is that
+     * reviewer = submitter is **refused unless this column is filled**, through every code path
+     * there will ever be. The app decides whether; the database guarantees the trail.
+     *
+     * Null on every ordinary slip, which is what makes it the marker the audit list is built on
+     * (`GET /payments/slips/recorded`).
+     */
+    selfReviewReasonTh: text('self_review_reason_th'),
+
     ...timestamps,
   },
   (table) => [
@@ -623,11 +653,53 @@ export const paymentSlips = pgTable(
      * `submitted_by_guest_id` above plus `payment_slips_guard_write()` in
      * `0013_payment_closure.sql`, which refuses a reviewer who claimed the submitting guest.
      * A CHECK cannot do it because it needs a second table.
+     *
+     * ⭐ THE THIRD ARM IS `0047_slip_without_evidence.sql`, and it is not a hole. The owner chose
+     * that a high permission may bypass this rule; the database has no way to read a permission,
+     * so what it insists on instead is that the bypass is never *silent* — a self-review with no
+     * `self_review_reason_th` is refused here and again in the trigger. Both had to move
+     * together: amend one and the other still refuses, which is a feature that passes a unit test
+     * and fails on the first real order.
      */
     check(
       'payment_slips_reviewer_is_not_submitter',
       sql`${table.reviewedByUserId} is null
-          or ${table.reviewedByUserId} is distinct from ${table.submittedByUserId}`,
+          or ${table.reviewedByUserId} is distinct from ${table.submittedByUserId}
+          or ${table.selfReviewReasonTh} is not null`,
+    ),
+
+    /*
+     * ⭐ EVIDENCE EXISTS IN ONE OF THREE FORMS — `0047_slip_without_evidence.sql`.
+     *
+     *     an image · an image that was erased · a stated reason
+     *
+     * The middle arm is the one that is easy to leave out and expensive to leave out: a slip
+     * whose picture the PDPA erasure destroyed has neither a `storage_key` nor a reason, is an
+     * ordinary customer slip, and must stay legal. `payment_slips_erasure_shape` already refuses
+     * the two erasure columns disagreeing, so that arm can only be true of a row that did once
+     * carry an image.
+     */
+    check(
+      'payment_slips_evidence_exists',
+      sql`${table.storageKey} is not null
+          or ${table.storageKeyErasedAt} is not null
+          or ${table.noSlipReasonTh} is not null`,
+    ),
+    /* A reason made of spaces is the absence of a reason wearing a value. */
+    check(
+      'payment_slips_no_slip_reason_shape',
+      sql`${table.noSlipReasonTh} is null or btrim(${table.noSlipReasonTh}) <> ''`,
+    ),
+    /*
+     * A declared bypass belongs to a review. `payment_slips_review_shape` already holds
+     * `reviewed_by_user_id` null on a `submitted` row, so this pins the declaration to the
+     * decision it excuses — and makes `self_review_reason_th is not null` a *truthful* marker for
+     * the audit list rather than a field anybody can fill in advance.
+     */
+    check(
+      'payment_slips_self_review_shape',
+      sql`${table.selfReviewReasonTh} is null
+          or (btrim(${table.selfReviewReasonTh}) <> '' and ${table.reviewedByUserId} is not null)`,
     ),
 
     /* The reviewer's queue: oldest unreviewed first, and it costs nothing to look at. */
@@ -635,6 +707,14 @@ export const paymentSlips = pgTable(
       .on(table.transferredAt)
       .where(sql`status = 'submitted'`),
     index('payment_slips_order_idx').on(table.orderId, table.transferredAt),
+    /*
+     * The audit surface the owner is trusting, and the reason it is cheap. "Which payments were
+     * recorded with no slip" is a highly selective question over a table that grows with every
+     * transfer, so the list is a scan of the exceptions rather than of the payments.
+     */
+    index('payment_slips_no_slip_idx')
+      .on(desc(table.transferredAt))
+      .where(sql`no_slip_reason_th is not null`),
   ],
 );
 

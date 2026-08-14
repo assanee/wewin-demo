@@ -36,6 +36,9 @@ export const PERMISSION_CODES = [
   'quotes.approve',
   'payments.read',
   'payments.verify',
+  /* ⭐ 0047. Both held by no group at boot — the owner grants them by hand. */
+  'payments.record_without_slip',
+  'payments.self_review_slip',
   'organisation.read',
   'organisation.write',
   'users.read',

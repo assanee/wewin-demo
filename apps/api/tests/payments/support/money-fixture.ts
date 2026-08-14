@@ -138,10 +138,14 @@ export async function giveOrderHeldMoney(
 
     await tx.execute(sql`
       insert into payment_slips
-        (id, order_id, status, amount_thb_minor, transferred_at, payer_name, payer_account_last4)
+        (id, order_id, status, amount_thb_minor, transferred_at, payer_name, payer_account_last4,
+         storage_key)
       values (${slipId}::uuid, ${options.orderId}::uuid, 'submitted',
               ${options.paidThbMinor.toString()}::bigint, now(),
-              ${options.payerName}, ${options.payerAccountLast4})
+              ${options.payerName}, ${options.payerAccountLast4},
+              -- ⚠️ payment_slips_evidence_exists (0047): an image, an erased image, or a stated
+              -- reason. This fixture is a customer slip, so it carries a key.
+              ${`test/slip-${slipId}.png`})
     `);
 
     /*

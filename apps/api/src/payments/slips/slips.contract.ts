@@ -95,6 +95,68 @@ export const createSlipRequestSchema = z.strictObject({
 export type CreateSlipRequestWire = z.infer<typeof createSlipRequestSchema>;
 
 /**
+ * A reason somebody will read months later, with the money already spent.
+ *
+ * Ten characters and not `rejectSlipRequestSchema`'s three, and the difference is what the
+ * field is *for*. A rejection reason is read by the customer within the hour, beside a slip
+ * they are looking at — "เบลอ" is genuinely a complete answer there. The two reasons below are
+ * the entire substance of *"สิ่งสำคัญคือต้องสามารถตรวจสอบย้อนหลังได้"*: they are read by an
+ * auditor with no image, no customer on the telephone and no memory of the day, and "ok" would
+ * satisfy a CHECK while answering nothing. `payment_slips_no_slip_reason_shape` and
+ * `payment_slips_self_review_shape` refuse blank in the database; this refuses *thin* at the
+ * edge, where the message can name the field.
+ */
+const auditReasonSchema = z
+  .string()
+  .trim()
+  .min(10, 'เหตุผลต้องยาวพอที่คนอื่นจะอ่านย้อนหลังแล้วเข้าใจ อย่างน้อย 10 ตัวอักษร')
+  .max(2000);
+
+/**
+ * ⭐ Record a payment that arrived with no slip — the owner's *"ลูกค้าโอนชำระแล้วแต่ไม่ได้
+ * แนบสลิปยืนยัน"*.
+ *
+ * ── ⚠️ THIS IS NOT AN ACCEPTANCE, AND THAT IS THE WHOLE SHAPE OF IT ─────────────
+ *
+ * What this creates is an ordinary `submitted` slip with no image and a stated reason. It lands
+ * in the same queue, is compared on the same two-column screen, and is accepted through the same
+ * `POST /payments/slips/:slipId/acceptance` as any other — which is where the allocations are
+ * planned, `slip_allocations` written, the footing asserted and the ledger posted.
+ *
+ * A route that recorded *and* accepted in one call would have been a second way for money to
+ * move, and it would have made every use of this feature a self-review by construction: the
+ * person who typed the figures would be the person who blessed them, always, with no second
+ * pair of eyes even available. Two steps means a company with two staff keeps the two-person
+ * rule for free, and a company with one uses `payments.self_review_slip` and leaves a written
+ * reason. The owner's ask is satisfied either way; the control survives in the first case.
+ *
+ * `orderId` is in the body rather than the path because this route hangs off `payments/slips`,
+ * where staff already are — `slips.controller.ts` is the customer's surface and its
+ * `RequirePrincipal` is not the guard this needs.
+ *
+ * There is no `imageHandle` and there must not be one. A staff member who *has* the picture has
+ * no business here: they are recording an image-less payment, and a route that accepted an
+ * optional image would be a second implementation of `createSlip` differing by a permission.
+ */
+export const recordSlipRequestSchema = z.strictObject({
+  orderId: z.string().uuid(),
+  amountThbMinor: positiveThbSchema,
+  /** When the bank says the money moved — not when this row was typed. */
+  transferredAt: instantSchema,
+  /** Required, and the reason this route exists. `payment_slips_evidence_exists`'s third arm. */
+  noSlipReasonTh: auditReasonSchema,
+  bankReference: z.string().trim().min(1).max(120).optional(),
+  payerName: z.string().trim().min(1).max(200).optional(),
+  payerAccountLast4: z
+    .string()
+    .regex(/^[0-9]{4}$/u, 'ต้องเป็นเลขสี่หลักท้ายบัญชีเท่านั้น')
+    .optional(),
+  receivedBankAccountId: z.string().uuid().optional(),
+});
+
+export type RecordSlipRequestWire = z.infer<typeof recordSlipRequestSchema>;
+
+/**
  * One line of the reviewer's allocation: this much of this slip closes this instalment.
  *
  * ⚠️ **Untrusted input, and it is the input that decides what got paid.** A reviewer types
@@ -150,6 +212,25 @@ export const acceptSlipRequestSchema = z.strictObject({
    * allocation is refused rather than quietly absorbed as "excess".
    */
   acknowledgeOverpaymentThbMinor: positiveThbSchema.optional(),
+  /**
+   * 🔒 THE DECLARED BYPASS OF THE TWO-PERSON RULE — `0047_slip_without_evidence.sql`.
+   *
+   * Present only when the reviewer is also the submitter. Supplying it is *not* what makes the
+   * self-review allowed — `payments.self_review_slip` is — and holding that permission is not
+   * enough either: `SlipsService.accept` demands **both**, and `payment_slips_guard_write()`
+   * refuses the write outright if the column is null and the reviewer is a submitter, whatever
+   * the application decided.
+   *
+   * Optional here rather than conditionally required, because the schema cannot know who the
+   * caller is or who uploaded the slip. The service can, and does, and answers in Thai.
+   *
+   * ⚠️ Supplying it on a slip somebody *else* uploaded is accepted and ignored — see
+   * `SlipsService.assertReviewerIsNotSubmitter`, which only writes it when it is true. A reason
+   * recorded against a bypass that never happened would put a self-review marker on the audit
+   * list for a slip two people handled correctly, which is the audit lying in the direction
+   * nobody would check.
+   */
+  selfReviewReasonTh: auditReasonSchema.optional(),
 });
 
 export type AcceptSlipRequestWire = z.infer<typeof acceptSlipRequestSchema>;
@@ -163,6 +244,13 @@ export type AcceptSlipRequestWire = z.infer<typeof acceptSlipRequestSchema>;
  */
 export const rejectSlipRequestSchema = z.strictObject({
   reasonTh: z.string().trim().min(3).max(2000),
+  /**
+   * The same declared bypass as on the acceptance, and it is needed here for the same reason
+   * the original rule covered rejection: a person who could refuse their own upload could clear
+   * their own mistake off the queue before anybody else saw it. That is the control failing in
+   * the quieter direction, and a bypass that covered only acceptance would leave it open.
+   */
+  selfReviewReasonTh: auditReasonSchema.optional(),
 });
 
 export type RejectSlipRequestWire = z.infer<typeof rejectSlipRequestSchema>;
@@ -179,6 +267,20 @@ export const slipQueueQuerySchema = z.strictObject({
 });
 
 export type SlipQueueQuery = z.infer<typeof slipQueueQuerySchema>;
+
+/**
+ * The audit list's query — see `RecordedSlipListWire`.
+ *
+ * `only` is an enum and not a boolean, and that is not fussiness: `z.coerce.boolean()` turns the
+ * string `"false"` into `true`, so a query string is the one place a boolean flag reliably means
+ * the opposite of what was typed. Two named values cannot do that.
+ */
+export const recordedSlipQuerySchema = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  only: z.enum(['all', 'self_reviewed']).default('all'),
+});
+
+export type RecordedSlipQuery = z.infer<typeof recordedSlipQuerySchema>;
 
 /* ────────────────────────────────────────────────────────────────────────────── *
  * Responses
@@ -234,8 +336,48 @@ export interface SlipWire {
   readonly unallocatedThbMinor: MoneyWire<'THB'>;
   /** True when a reviewer read the payer off the image. False means the payer typed it. */
   readonly payerVerified: boolean;
+  /**
+   * ⚠️ **The identity, and never the answer to "is this mine?"**
+   *
+   * It is one of the two columns behind that question and not the question: a slip uploaded from
+   * a guest cart carries `null` here whoever eventually claimed the cart, so
+   * `submittedByUserId === viewer` is false for the person who really did submit it. Ask
+   * `SlipReviewWire.viewerIsSubmitter`, which the server computes from
+   * `slip_submitter_user_ids()`; the same reason `RecordedSlipEntryWire.selfReviewed` is not
+   * `recordedBy.userId === reviewedBy.userId`.
+   *
+   * What it is for is the trail — who entered this row — which is why it survives on the 201 of
+   * `POST /payments/slips/recorded`, where it is the only field naming the person who recorded a
+   * payment nobody sent a slip for.
+   */
   readonly submittedByUserId: string | null;
   readonly reviewedByUserId: string | null;
+  /**
+   * ⭐ Why this payment has no image — `0047_slip_without_evidence.sql`.
+   *
+   * `null` on every slip a customer photographed, and on a slip whose picture was erased for
+   * PDPA (`imageErasedAt` is the one that says so). Non-null exactly on the rows this feature
+   * creates, which is what makes it the marker the review queue and the audit list both key on.
+   *
+   * **Not audience-gated.** The rule this file already follows is that *reasons* cross to the
+   * customer and *identities* do not — `rejectedReasonTh` is on a customer's copy and
+   * `reviewedByUserId` is not. A customer looking at their own order and finding a payment
+   * against it that they never uploaded a slip for is owed the company's sentence explaining it,
+   * and withholding it produces exactly the telephone call this whole feature exists to avoid.
+   */
+  readonly noSlipReasonTh: string | null;
+  /**
+   * 🔒 Why the reviewer was also the submitter — **staff only**, `null` in a customer's copy.
+   *
+   * The exception to the rule the field above follows, and it is worth saying why rather than
+   * leaving it looking inconsistent. This sentence is not about the customer's payment; it is
+   * about how the company staffs its payments desk on a given day — "คนเดียวอยู่เวรเสาร์" is an
+   * internal control note, and the customer can neither act on it nor is entitled to it. What
+   * they *are* entitled to, and get, is `noSlipReasonTh`.
+   *
+   * Non-null is the definition of a self-reviewed slip for every reader of this wire.
+   */
+  readonly selfReviewReasonTh: string | null;
   /**
    * Which of the company's own accounts this transfer names — resolved to what reconciliation
    * actually reads, not the raw id. The column (`0027_organisation.sql`) used to be write-only:
@@ -312,6 +454,31 @@ export interface InstalmentSummaryWire {
  */
 export interface SlipReviewWire {
   readonly slip: SlipWire;
+  /**
+   * 🔒 Is the person who asked for this screen one of the people who submitted this slip?
+   *
+   * ⚠️ **Computed by `slip_submitter_user_ids()` against the requesting user, and never by
+   * comparing `slip.submittedByUserId` to whoever the client thinks is signed in.** That
+   * comparison is the same bug `selfReviewed` on the audit wire already refuses to make: the
+   * function unions the direct submitter with the user who claimed the submitting *guest*, so a
+   * slip uploaded from an anonymous cart that the reviewer later signed into is one person — and
+   * a client comparing one nullable column sees `null !== me` and concludes it is not theirs.
+   *
+   * The consequence of getting it wrong is not a security hole; the service and
+   * `payment_slips_guard_write()` both refuse a self-review without the permission and without
+   * the reason, whatever a screen decided. It is a *dead end*: a review dialog that concludes
+   * "not mine" renders no declaration box, the reviewer presses รับรอง, the API answers 403
+   * `self_review_needs_reason`, and there is no field on the screen to put that reason in. The
+   * review cannot be completed at all.
+   *
+   * So the fact is computed once, here, where `slip_submitter_user_ids()` is — the same argument
+   * that put `orderIsLive` on `PaymentInstructionsWire` instead of shipping a status for every
+   * client to interpret with its own copy of the rule.
+   *
+   * `false` for a customer's or a guest's reading of a slip: they are not the people this
+   * two-person rule is about, and there is no self-review screen for them to see.
+   */
+  readonly viewerIsSubmitter: boolean;
   readonly order: {
     readonly id: string;
     readonly orderNo: string | null;
@@ -356,6 +523,55 @@ export interface SlipQueueEntryWire {
 
 export interface SlipQueueWire {
   readonly entries: readonly SlipQueueEntryWire[];
+}
+
+/**
+ * ⭐ THE AUDIT SURFACE THE OWNER IS TRUSTING — `GET /payments/slips/recorded`.
+ *
+ * *"สิ่งสำคัญคือต้องสามารถตรวจสอบย้อนหลังได้ ถ้าทำได้ก็โอเค"*. This shape is that sentence made
+ * answerable, and every clause of the question has a field:
+ *
+ *     which payments were recorded with no slip   every row in this list, and only those
+ *     who recorded them                           `recordedBy`
+ *     who accepted them                           `reviewedBy`
+ *     why                                         `slip.noSlipReasonTh` · `slip.selfReviewReasonTh`
+ *     which were self-reviewed                    `selfReviewed`
+ *
+ * ⚠️ `selfReviewed` is computed by `slip_submitter_user_ids()` — the same SQL function the
+ * trigger uses — and **not** by comparing `reviewedByUserId` to `submittedByUserId` on this
+ * wire. That comparison is the bug 5b red team RT-1 found: it misses the guest cart that was
+ * later signed into an account, and an audit list that under-reports is worse than none, because
+ * somebody checked it.
+ *
+ * Every status, not only `accepted`. A slip recorded with no evidence and then *rejected* is
+ * still an evidence-free entry somebody made, and a list that showed only the ones that worked
+ * would hide exactly the pattern an auditor is looking for.
+ */
+export interface RecordedSlipActorWire {
+  readonly userId: string;
+  /**
+   * `users.display_name`. Null on an account with no name — which on an **erased** one is a
+   * guarantee rather than an omission (`users_erased_has_no_name`), and the id above is then the
+   * whole of what the trail can honestly say about them.
+   */
+  readonly name: string | null;
+}
+
+export interface RecordedSlipEntryWire {
+  readonly slip: SlipWire;
+  readonly orderId: string;
+  readonly orderNo: string | null;
+  readonly orderStatus: OrderStatusWire;
+  /** Null only if the row was written by something other than a signed-in staff member. */
+  readonly recordedBy: RecordedSlipActorWire | null;
+  /** Null while the entry is still waiting in the queue. */
+  readonly reviewedBy: RecordedSlipActorWire | null;
+  /** From `slip_submitter_user_ids()`, never from comparing two columns on this wire. */
+  readonly selfReviewed: boolean;
+}
+
+export interface RecordedSlipListWire {
+  readonly entries: readonly RecordedSlipEntryWire[];
 }
 
 /** What an accepted slip moved, when it moved anything. */

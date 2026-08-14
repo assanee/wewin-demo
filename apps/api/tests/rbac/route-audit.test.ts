@@ -418,6 +418,8 @@ describe('boot-time route audit', () => {
       'GET /payments/slip-images/:grant [anonymous]',
       'GET /payments/slips [permissions]',
       'GET /payments/slips/:slipId [permissions]',
+      /* ⭐ 0047's audit surface. Declared BEFORE `:slipId` in the controller — see its note. */
+      'GET /payments/slips/recorded [permissions]',
       'GET /products/:productId/reviews [anonymous]',
       'GET /quotes/approvals [permissions]',
       'GET /quotes/approvals/:approvalId [permissions]',
@@ -533,6 +535,8 @@ describe('boot-time route audit', () => {
       'POST /payments/slips/:slipId/acceptance [permissions]',
       'POST /payments/slips/:slipId/image-grant [principal]',
       'POST /payments/slips/:slipId/rejection [permissions]',
+      /* ⭐ 0047: a payment that arrived with no slip. Records, and does not accept. */
+      'POST /payments/slips/recorded [permissions]',
       'POST /quotes/approvals [permissions]',
       'POST /quotes/approvals/:approvalId/decision [permissions]',
       'POST /reviews [principal]',

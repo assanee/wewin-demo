@@ -1,9 +1,16 @@
 import { encodeThb } from '@wewin/contract/order';
 
-import type { AllocationRow, InstalmentRow, OrderMoneyRow, SlipRow } from './slips.repository';
+import type {
+  AllocationRow,
+  InstalmentRow,
+  OrderMoneyRow,
+  RecordedSlipRow,
+  SlipRow,
+} from './slips.repository';
 import { remainingOf } from './allocations';
 import type {
   InstalmentSummaryWire,
+  RecordedSlipEntryWire,
   SlipAllocationWire,
   SlipOrderMoneyWire,
   SlipWire,
@@ -77,6 +84,24 @@ export function encodeSlip(
     submittedByUserId: audience === 'staff' ? row.submittedByUserId : null,
     reviewedByUserId: audience === 'staff' ? row.reviewedByUserId : null,
     /*
+     * ⭐ Why there is no image — and it crosses to the customer, deliberately.
+     *
+     * The rule this file already follows is reasons out, identities withheld: `rejectedReasonTh`
+     * is on a customer's copy and `reviewedByUserId` is not. A customer who finds a payment on
+     * their own order that they never sent a slip for is owed the sentence explaining it, and
+     * withholding it produces the telephone call the whole feature exists to avoid.
+     */
+    noSlipReasonTh: row.noSlipReasonTh,
+    /*
+     * 🔒 …and the one reason that does NOT cross, which is worth stating rather than leaving to
+     * look inconsistent with the line above.
+     *
+     * This sentence is not about the customer's payment. It is about how the company staffed its
+     * payments desk that day — an internal control note the customer can neither act on nor is
+     * entitled to. `noSlipReasonTh` above is the half that is about their money.
+     */
+    selfReviewReasonTh: audience === 'staff' ? row.selfReviewReasonTh : null,
+    /*
      * Both columns come from the same left join in `SlipsRepository` (`RECEIVING_ACCOUNT_JOIN`)
      * and are `null` together — a slip with no receiving account on file has neither a code nor
      * a name to report, never one without the other.
@@ -85,6 +110,34 @@ export function encodeSlip(
       row.receivedBankAccountCode === null || row.receivedBankAccountName === null
         ? null
         : { bankCode: row.receivedBankAccountCode, accountName: row.receivedBankAccountName },
+  };
+}
+
+/**
+ * ⭐ One row of the audit list — `GET /payments/slips/recorded`.
+ *
+ * Staff audience, always, and there is no argument for it: the route requires `payments.read`
+ * plus `orders.read`, which is precisely the reach `audienceFor` computes to `'staff'`. Passing
+ * the audience in would be offering a customer view of a screen no customer can reach.
+ *
+ * The two actor objects are `null` rather than `{ userId, name: null }` when there is nobody:
+ * "not reviewed yet" and "reviewed by an account with no display name" are different facts and a
+ * list about accountability must not render them the same way.
+ */
+export function encodeRecordedSlip(row: RecordedSlipRow): RecordedSlipEntryWire {
+  const actor = (
+    userId: string | null,
+    name: string | null,
+  ): RecordedSlipEntryWire['recordedBy'] => (userId === null ? null : { userId, name });
+
+  return {
+    slip: encodeSlip(row.slip, [], 'staff'),
+    orderId: row.slip.orderId,
+    orderNo: row.orderNo,
+    orderStatus: row.orderStatus,
+    recordedBy: actor(row.slip.submittedByUserId, row.recordedByName),
+    reviewedBy: actor(row.slip.reviewedByUserId, row.reviewedByName),
+    selfReviewed: row.selfReviewed,
   };
 }
 

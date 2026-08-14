@@ -268,8 +268,10 @@ describeWithPg('the overview', () => {
        * allocations for `assert_slip_allocations` to object to.
        */
       await db.execute(sql`
-        insert into payment_slips (order_id, status, amount_thb_minor, transferred_at)
-        values (${order.id}::uuid, 'submitted', 100000::bigint, now())
+        insert into payment_slips (order_id, status, amount_thb_minor, transferred_at, storage_key)
+        values (${order.id}::uuid, 'submitted', 100000::bigint, now(),
+                -- A customer slip, so it has an image: payment_slips_evidence_exists (0047).
+                ${`test/overview-${order.id}.png`})
       `);
 
       const counted = (await overview(reviewer)).slips?.awaitingReview ?? -1;

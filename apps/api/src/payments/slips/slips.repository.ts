@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Database } from '@wewin/db';
 // Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
-import { and, asc, eq, inArray, sql } from '@wewin/db/sql';
+import { and, asc, desc, eq, inArray, sql } from '@wewin/db/sql';
 import {
   bankAccounts,
   orderInstalments,
@@ -100,6 +100,44 @@ export interface SlipRow {
   readonly receivedBankAccountId: string | null;
   readonly receivedBankAccountCode: string | null;
   readonly receivedBankAccountName: string | null;
+  /**
+   * ⭐ Why this payment has no image, when it has none — `0047_slip_without_evidence.sql`.
+   *
+   * Null on every customer slip, including one whose picture was erased for PDPA. Non-null is
+   * the definition of "recorded without evidence" everywhere in this application, and
+   * `payment_slips_evidence_exists` is what makes that definition exhaustive rather than a
+   * convention: a row with no key, no erasure stamp and no reason cannot exist.
+   */
+  readonly noSlipReasonTh: string | null;
+  /**
+   * 🔒 Why the reviewer was also the submitter. Null on every slip two people handled.
+   *
+   * Written in the same statement as the review and frozen with it. Read `encodeSlip` for why
+   * this one is staff-only while `noSlipReasonTh` is not.
+   */
+  readonly selfReviewReasonTh: string | null;
+}
+
+/**
+ * One row of the audit list — `GET /payments/slips/recorded`.
+ *
+ * The two actor names come from two joins against `users` rather than from a second round trip,
+ * because the question this list answers is *"who did this"* and an id is not an answer to it.
+ */
+export interface RecordedSlipRow {
+  readonly slip: SlipRow;
+  readonly orderNo: string | null;
+  readonly orderStatus: OrderStatus;
+  readonly recordedByName: string | null;
+  readonly reviewedByName: string | null;
+  /**
+   * ⚠️ From `slip_submitter_user_ids()`, and never from `reviewed_by = submitted_by`.
+   *
+   * The column comparison is exactly the bug RT-1 found: it is blind to the guest cart that was
+   * later signed into an account, which is the *main* funnel. An audit list that under-reports
+   * is worse than no list, because somebody read it and stopped looking.
+   */
+  readonly selfReviewed: boolean;
 }
 
 export interface AllocationRow {
@@ -166,6 +204,8 @@ const SLIP_COLUMNS = {
    */
   receivedBankAccountCode: bankAccounts.bankCode,
   receivedBankAccountName: bankAccounts.accountName,
+  noSlipReasonTh: paymentSlips.noSlipReasonTh,
+  selfReviewReasonTh: paymentSlips.selfReviewReasonTh,
 } as const;
 
 /**
@@ -452,13 +492,25 @@ export class SlipsRepository {
       readonly amountThbMinor: bigint;
       readonly transferredAt: Date;
       readonly bankReference: string | null;
-      readonly storageKey: string;
+      /**
+       * The object key, or `null` on a staff-recorded payment that never had a picture.
+       *
+       * ⚠️ Nullable here and required-in-practice on the customer path, because
+       * `payment_slips_evidence_exists` decides the real rule and it is a *disjunction*: null
+       * here is only legal beside a `noSlipReasonTh`. A second insert method for the staff case
+       * would have been two writers of one table diverging the first time a column is added —
+       * the seam plan 7.13 found three times. One writer, one CHECK, and the CHECK is the thing
+       * that cannot be forgotten.
+       */
+      readonly storageKey: string | null;
       readonly payerName: string | null;
       readonly payerAccountLast4: string | null;
       readonly submittedByUserId: string | null;
       readonly submittedByGuestId: string | null;
       /** Which of the company's accounts this transfer names — task 13 fix round 1. */
       readonly receivedBankAccountId: string | null;
+      /** ⭐ Why there is no image. Null on every slip that has one. */
+      readonly noSlipReasonTh: string | null;
     },
   ): Promise<string> {
     const [row] = await tx
@@ -474,11 +526,86 @@ export class SlipsRepository {
         submittedByUserId: input.submittedByUserId,
         submittedByGuestId: input.submittedByGuestId,
         receivedBankAccountId: input.receivedBankAccountId,
+        noSlipReasonTh: input.noSlipReasonTh,
       })
       .returning({ id: paymentSlips.id });
 
     if (!row) throw new Error('payments/slips: the slip could not be created');
     return row.id;
+  }
+
+  /**
+   * ⭐ Every payment recorded with no slip, newest transfer first — the audit list.
+   *
+   * `no_slip_reason_th is not null` is the predicate, and `payment_slips_no_slip_idx` is the
+   * partial index behind it, so this is a scan of the exceptions rather than of the payments.
+   *
+   * ⚠️ `selfReviewed` is a LATERAL against `slip_submitter_user_ids()` — the function the
+   * trigger itself calls — and not `reviewed_by_user_id = submitted_by_user_id`. Written the
+   * short way it would miss the guest cart later signed into an account, which is the case RT-1
+   * walked end to end, and the list would quietly under-report the thing it exists to report.
+   *
+   * Every status. A recorded payment that was *rejected* is still an evidence-free entry
+   * somebody made, and a list of only the successful ones hides the pattern an auditor is
+   * looking for.
+   */
+  async listRecordedWithoutSlip(
+    limit: number,
+    selfReviewedOnly: boolean,
+    tx?: Tx,
+  ): Promise<RecordedSlipRow[]> {
+    /*
+     * Correlated scalar subqueries rather than two aliased joins against `users`. The rows here
+     * are the exceptions — a handful, bounded by `limit` — so the join is not worth the second
+     * name `users` would need in this query, and `@wewin/db/sql` deliberately re-exports a small
+     * vocabulary that `alias` is not part of. Widening that export map for one list would be a
+     * change to a shared surface for a local convenience.
+     */
+    /*
+     * `display_name` and nothing else. `users` carries no address column — an address is an
+     * `auth_identities` row and a person may hold several — so a fallback to one would be a third
+     * join to pick an arbitrary member of a set. Null here means one of two things and the wire
+     * says which: no user at all (`recordedBy` is null) or an account with no name on it, which
+     * on an **erased** account is not an omission but a guarantee: `users_erased_has_no_name`.
+     */
+    const recordedByName = sql<string | null>`
+      (select u.display_name from users u where u.id = ${paymentSlips.submittedByUserId})`;
+    const reviewedByName = sql<string | null>`
+      (select u.display_name from users u where u.id = ${paymentSlips.reviewedByUserId})`;
+
+    const selfReviewed = sql<boolean>`exists (
+      select 1 from slip_submitter_user_ids(${paymentSlips.id}) s
+       where s.user_id = ${paymentSlips.reviewedByUserId}
+    )`;
+
+    const recorded = sql`${paymentSlips.noSlipReasonTh} is not null`;
+
+    const rows = await this.executor(tx)
+      .select({
+        ...SLIP_COLUMNS,
+        orderNo: orders.orderNo,
+        orderStatus: orders.status,
+        recordedByName,
+        reviewedByName,
+        selfReviewed,
+      })
+      .from(paymentSlips)
+      .innerJoin(orders, eq(orders.id, paymentSlips.orderId))
+      .leftJoin(...RECEIVING_ACCOUNT_JOIN)
+      .where(selfReviewedOnly ? and(recorded, selfReviewed) : recorded)
+      .orderBy(desc(paymentSlips.transferredAt), asc(paymentSlips.id))
+      .limit(limit);
+
+    return rows.map(
+      ({ orderNo, orderStatus, recordedByName, reviewedByName, selfReviewed: isSelf, ...slip }) => ({
+        slip,
+        orderNo,
+        orderStatus,
+        recordedByName,
+        reviewedByName,
+        selfReviewed: isSelf,
+      }),
+    );
   }
 
   /**
@@ -505,6 +632,16 @@ export class SlipsRepository {
        * could be stamped verified by the person who typed it.
        */
       readonly payer: { readonly name: string; readonly accountLast4: string } | null;
+      /**
+       * 🔒 The declared bypass, written in the SAME statement as the review — and it has to be.
+       *
+       * `payment_slips_guard_write()` refuses reviewer-is-submitter when this column is null, and
+       * refuses *any* change once the row has left `submitted`. So there is no order of two
+       * statements that works: setting it first is refused by `payment_slips_self_review_shape`
+       * (no reviewer yet), setting it after is refused by the freeze. One UPDATE or nothing,
+       * which is exactly the property that makes the trail non-optional.
+       */
+      readonly selfReviewReasonTh: string | null;
     },
   ): Promise<boolean> {
     const updated = await tx
@@ -514,6 +651,7 @@ export class SlipsRepository {
         reviewedByUserId: input.reviewerId,
         reviewedAt: new Date(),
         unallocatedThbMinor: input.unallocatedThbMinor,
+        selfReviewReasonTh: input.selfReviewReasonTh,
         ...(input.payer === null
           ? {}
           : {
@@ -532,7 +670,13 @@ export class SlipsRepository {
 
   async markRejected(
     tx: Tx,
-    input: { readonly slipId: string; readonly reviewerId: string; readonly reasonTh: string },
+    input: {
+      readonly slipId: string;
+      readonly reviewerId: string;
+      readonly reasonTh: string;
+      /** The declared bypass — see `markAccepted`, which explains why it is this statement's. */
+      readonly selfReviewReasonTh: string | null;
+    },
   ): Promise<boolean> {
     const updated = await tx
       .update(paymentSlips)
@@ -541,6 +685,7 @@ export class SlipsRepository {
         reviewedByUserId: input.reviewerId,
         reviewedAt: new Date(),
         rejectedReasonTh: input.reasonTh,
+        selfReviewReasonTh: input.selfReviewReasonTh,
         updatedAt: new Date(),
       })
       .where(and(eq(paymentSlips.id, input.slipId), eq(paymentSlips.status, 'submitted')))

@@ -20,7 +20,13 @@ import {
 import { scopeHolds, type Scope } from '../../rbac';
 import { planAllocations, suggestAllocations, thbMinor } from './allocations';
 import { SLIP_ATTACHABLE_STATUSES } from './attachable';
-import { encodeInstalment, encodeMoney, encodeSlip, type SlipAudience } from './encode';
+import {
+  encodeInstalment,
+  encodeMoney,
+  encodeRecordedSlip,
+  encodeSlip,
+  type SlipAudience,
+} from './encode';
 import {
   mintImageGrant,
   mintUploadHandle,
@@ -38,6 +44,8 @@ import type {
   AcceptSlipResultWire,
   CreateSlipRequestWire,
   OrderTransitionWire,
+  RecordSlipRequestWire,
+  RecordedSlipListWire,
   RejectSlipRequestWire,
   RejectSlipResultWire,
   SlipImageGrantWire,
@@ -304,12 +312,102 @@ export class SlipsService {
          */
         submittedByUserId: actor.actorUserId,
         submittedByGuestId: actor.actorGuestId,
+        /* The customer's slip has a picture, so it needs no explanation for the absence of one. */
+        noSlipReasonTh: null,
       });
 
       const slip = await this.slips.findSlip(slipId, tx);
       if (!slip) throw new Error('payments/slips: the slip could not be read back');
 
       return encodeSlip(slip, [], audienceFor(scope));
+    });
+  }
+
+  /**
+   * ⭐ Record a payment that arrived with no slip — the owner's *"ลูกค้าโอนชำระแล้วแต่ไม่ได้แนบ
+   * สลิปยืนยัน"*, and the one route this feature adds.
+   *
+   * ── ⚠️ WHAT THIS DOES NOT DO, AND WHY THAT IS THE DESIGN ─────────────────────────
+   *
+   * **It does not accept anything.** What it writes is an ordinary `submitted` slip with no
+   * image and a stated reason. The money does not move here; it moves where it has always
+   * moved — `accept()`, through `planAllocations`, `slip_allocations`, the deferred footing
+   * assertion and `LedgerService.recordSlipAccepted`. There is no second path for money, and
+   * this method contains no arithmetic at all.
+   *
+   * A route that recorded *and* accepted would have made every use of this feature a self-review
+   * by construction, because the person who typed the figures would be the only person the
+   * request ever saw. Split in two, a company with two staff keeps the two-person rule for free
+   * and a company with one uses `payments.self_review_slip` and leaves a reason on the row. The
+   * owner's ask is met either way; the control survives in the first case.
+   *
+   * ── The shape is `createSlip`'s, minus the image and plus the reason ─────────────
+   *
+   * Same lock (`lockOrFail` on the order, `act`), same status gate, same transfer-time
+   * plausibility, same bank-account check, same insert method. The differences are exactly two:
+   * there is no `imageHandle` to verify, and `noSlipReasonTh` is required — which is
+   * `payment_slips_evidence_exists`'s third arm, and the database refuses the row without it
+   * whatever this method forgets.
+   */
+  async recordSlip(scope: Scope, body: RecordSlipRequestWire): Promise<SlipWire> {
+    const actor = requireActor(scope);
+    /*
+     * A recorded payment is somebody's name against money nobody photographed, so the recorder
+     * must be a person — the same assertion `requireReviewer` makes about the other half of the
+     * pair, and for a stronger reason: with no image, `submitted_by_user_id` is the *only*
+     * accountability on the row until it is reviewed.
+     */
+    if (actor.actorUserId === null) {
+      throw AppError.unauthenticated('การบันทึกการชำระเงินต้องทำในนามผู้ใช้ที่ลงชื่อเข้าใช้แล้ว');
+    }
+
+    return this.slips.transaction(async (tx) => {
+      const order = await this.scoped.lockOrFail(tx, scope, body.orderId, 'act');
+      this.assertSlipAttachable(order);
+      await this.assertRoomForAnotherSlip(order);
+
+      const transferredAt = new Date(body.transferredAt);
+      this.assertTransferPlausible(order, transferredAt);
+
+      const receivedBankAccountId = await this.assertKnownActiveAccount(
+        tx,
+        body.receivedBankAccountId,
+      );
+
+      const slipId = await this.slips.insertSlip(tx, {
+        orderId: order.id,
+        amountThbMinor: thbMinor(body.amountThbMinor),
+        transferredAt,
+        bankReference: body.bankReference ?? null,
+        /* ⭐ No image, and the row says so in two columns at once. */
+        storageKey: null,
+        noSlipReasonTh: body.noSlipReasonTh,
+        payerName: body.payerName ?? null,
+        payerAccountLast4: body.payerAccountLast4 ?? null,
+        receivedBankAccountId,
+        submittedByUserId: actor.actorUserId,
+        /*
+         * Null, and not `actor.actorGuestId`. A staff member holding `payments.record_without_slip`
+         * is a signed-in user; carrying a guest id here would put a *second* identity on the row
+         * for the two-person rule to resolve, and `slip_submitter_user_ids()` would then union in
+         * whoever that guest cookie once belonged to.
+         */
+        submittedByGuestId: null,
+      });
+
+      const slip = await this.slips.findSlip(slipId, tx);
+      if (!slip) throw new Error('payments/slips: the recorded payment could not be read back');
+
+      /*
+       * A log line as well as a row, because this is the event an auditor asks about first and a
+       * log is searchable across a window the queue no longer shows. It is *not* the audit
+       * surface — `GET /payments/slips/recorded` is, and it is a query rather than a grep.
+       */
+      this.logger.log(
+        `Payment recorded with no slip: slip=${slip.id} order=${order.id} by=${actor.actorUserId}`,
+      );
+
+      return encodeSlip(slip, [], 'staff');
     });
   }
 
@@ -348,6 +446,24 @@ export class SlipsService {
   }
 
   /**
+   * ⭐ THE AUDIT SURFACE THE OWNER IS TRUSTING.
+   *
+   * *"สิ่งสำคัญคือต้องสามารถตรวจสอบย้อนหลังได้ ถ้าทำได้ก็โอเค"* — this is the "ทำได้". Which
+   * payments were recorded with no slip, who recorded them, who accepted them, why, and which
+   * of those were self-reviewed, in one query, ordered by when the money is claimed to have
+   * moved.
+   *
+   * Nothing is folded, filtered or judged here. `only=self_reviewed` narrows the same list to
+   * the rows where one person did both halves; everything else about what the list *means* is
+   * `SlipsRepository.listRecordedWithoutSlip`, where `slip_submitter_user_ids()` decides who
+   * counts as the same person.
+   */
+  async recordedWithoutSlip(limit: number, only: 'all' | 'self_reviewed'): Promise<RecordedSlipListWire> {
+    const rows = await this.slips.listRecordedWithoutSlip(limit, only === 'self_reviewed');
+    return { entries: rows.map(encodeRecordedSlip) };
+  }
+
+  /**
    * The two-column comparison — plan 7.6's *"หน้าจอตรวจต้องเป็นการเทียบสองคอลัมน์ ไม่ใช่ปุ่ม
    * 'ยืนยัน'"*.
    *
@@ -363,13 +479,36 @@ export class SlipsService {
   async review(scope: Scope, slipId: string): Promise<SlipReviewWire> {
     const { slip, order } = await this.loadForStaff(scope, slipId);
 
-    const [allocations, instalments, money] = await Promise.all([
+    const [allocations, instalments, money, submitters] = await Promise.all([
       this.slips.allocationsForSlips([slip.id]),
       this.slips.instalments(order.id),
       this.slips.orderMoney(order.id),
+      /*
+       * 🔒 The same call `assertReviewerIsNotSubmitter` makes before it refuses.
+       *
+       * The screen has to ask the *server* whether this slip is the reader's own, because the
+       * answer is a union — the direct submitter and the user who claimed the submitting guest —
+       * and a client holding one nullable column cannot compute it. It used to try:
+       * `submittedByUserId === null → "not mine"`, which on the main funnel (anonymous cart,
+       * upload, sign in, review) is wrong in the one direction that cannot be recovered from.
+       * The dialog then offered รับรอง with no declaration box, the API answered 403
+       * `self_review_needs_reason`, and there was nowhere on the screen to supply it.
+       *
+       * One implementation of "who submitted this", in SQL, called by the refusal and by the
+       * screen that warns about the refusal. A second one in TypeScript is how the two stopped
+       * agreeing the first time.
+       */
+      this.slips.submitterUserIds(slip.id),
     ]);
 
     if (money === undefined) throw new Error('payments/slips: the order money could not be read');
+
+    /*
+     * Null for a guest, and for a customer reading their own slip. Neither is a person the
+     * two-person rule is about, and `includes(null)` would be a type error rather than a
+     * question worth asking.
+     */
+    const viewerUserId = orderActor(scope)?.actorUserId ?? null;
 
     const gateIsOpen = await this.slips.gateIsOpen(order.id, FREEZE_STATUS);
     const suggestion = suggestAllocations(slip.amountThbMinor, instalments);
@@ -377,6 +516,7 @@ export class SlipsService {
 
     return {
       slip: encodeSlip(slip, allocations, 'staff'),
+      viewerIsSubmitter: viewerUserId !== null && submitters.includes(viewerUserId),
       order: {
         id: order.id,
         orderNo: order.orderNo,
@@ -434,7 +574,13 @@ export class SlipsService {
        * to add more.
        */
       this.assertSlipAttachable(order);
-      await this.assertReviewerIsNotSubmitter(slip, reviewerId, tx);
+      const selfReviewReasonTh = await this.assertReviewerIsNotSubmitter(
+        slip,
+        reviewerId,
+        scope,
+        body.selfReviewReasonTh,
+        tx,
+      );
 
       const instalments = await this.slips.instalments(order.id, tx);
       const plan = planAllocations({
@@ -471,6 +617,14 @@ export class SlipsService {
          * against.
          */
         payer: body.payer ?? null,
+        /*
+         * 🔒 Null unless this really is a self-review. `assertReviewerIsNotSubmitter` returns the
+         * reason only when the reviewer is in `slip_submitter_user_ids()`, so a reason supplied
+         * against somebody else's slip is dropped rather than written — a self-review marker on
+         * the audit list for a slip two people handled correctly is the audit lying in the
+         * direction nobody would think to check.
+         */
+        selfReviewReasonTh,
       });
       if (!accepted) {
         /* Somebody else reviewed it between the lock and the write — or, more likely, before it. */
@@ -567,12 +721,19 @@ export class SlipsService {
        */
       await this.scoped.findOrFail(scope, slip.orderId, 'read');
 
-      await this.assertReviewerIsNotSubmitter(slip, reviewerId, tx);
+      const selfReviewReasonTh = await this.assertReviewerIsNotSubmitter(
+        slip,
+        reviewerId,
+        scope,
+        body.selfReviewReasonTh,
+        tx,
+      );
 
       const rejected = await this.slips.markRejected(tx, {
         slipId: slip.id,
         reviewerId,
         reasonTh: body.reasonTh,
+        selfReviewReasonTh,
       });
 
       if (!rejected) {
@@ -939,19 +1100,45 @@ export class SlipsService {
   }
 
   /**
-   * 🔒 Two-person rule #1 of the four this phase spends — plan 7.7's single control.
+   * 🔒 Two-person rule #1 of the four this phase spends — plan 7.7's single control, and the
+   * one declared bypass the owner asked for.
    *
-   * The database holds it too (`payment_slips_reviewer_is_not_submitter`). This exists so
-   * the refusal is a sentence rather than a CHECK violation, and it is deliberately *not*
-   * the enforcement: a reviewer approving their own upload is the one thing that makes the
-   * whole manual-payment model worthless, and it should be impossible for a second code
-   * path as well as for this one.
+   * The database holds it too, in two places (`payment_slips_reviewer_is_not_submitter` and
+   * `payment_slips_guard_write()`). This exists so the refusal is a sentence rather than a
+   * CHECK violation, and it is deliberately *not* the enforcement: a reviewer approving their
+   * own upload is the one thing that makes the whole manual-payment model worthless, and it
+   * should be impossible for a second code path as well as for this one.
+   *
+   * ── ⭐ THE BYPASS NEEDS BOTH HALVES, AND NEITHER ALONE ───────────────────────────
+   *
+   *     holds `payments.self_review_slip`, no reason      →  403. Nothing is written.
+   *     supplies a reason, holds no permission            →  403. Nothing is written.
+   *     both                                              →  allowed, and the reason goes on
+   *                                                          the row in the same statement as
+   *                                                          the review, for ever.
+   *
+   * The two refusals say different things on purpose. "You may not do this at all" and "you may,
+   * but not silently" are different instructions to the person reading them, and collapsing them
+   * into one message would make the second look like a permissions problem to somebody who
+   * simply forgot to type a sentence.
+   *
+   * ⚠️ Returns the reason to be written, or `null`, rather than writing it — because it must be
+   * written in the *same UPDATE* as the review. `payment_slips_self_review_shape` refuses the
+   * column beside a null reviewer and the freeze refuses it afterwards, so there is no ordering
+   * of two statements that works. That is not an inconvenience; it is what makes the trail
+   * non-optional rather than a follow-up somebody can fail to make.
+   *
+   * ⚠️ Returns `null` on a slip somebody else uploaded, whatever was supplied. A reason recorded
+   * against a bypass that never happened would put a self-review marker on the audit list for a
+   * slip two people handled correctly — the audit lying in the direction nobody would check.
    */
   private async assertReviewerIsNotSubmitter(
     slip: SlipRow,
     reviewerId: string,
+    scope: Scope,
+    declaredReasonTh: string | undefined,
     tx: Tx,
-  ): Promise<void> {
+  ): Promise<string | null> {
     /*
      * ⚠️ THE COMPARISON IS AGAINST `slip_submitter_user_ids()`, NOT AGAINST ONE COLUMN.
      *
@@ -963,14 +1150,31 @@ export class SlipsService {
      * refusal about the same set of people.
      */
     const submitters = await this.slips.submitterUserIds(slip.id, tx);
-    if (!submitters.includes(reviewerId)) return;
+    if (!submitters.includes(reviewerId)) return null;
 
-    throw new AppError(
-      'FORBIDDEN',
-      403,
-      'ผู้ที่อัปโหลดสลิปใบนี้ตรวจสลิปของตัวเองไม่ได้ — ต้องให้อีกคนตรวจ · ตะกร้าที่เปิดแบบไม่ล็อกอินแล้วมาล็อกอินภายหลัง ถือเป็นคนเดียวกัน',
-      { reason: 'reviewer_is_submitter' },
+    if (!scopeHolds(scope, 'payments.self_review_slip')) {
+      throw new AppError(
+        'FORBIDDEN',
+        403,
+        'ผู้ที่บันทึกสลิปใบนี้ตรวจสลิปของตัวเองไม่ได้ — ต้องให้อีกคนตรวจ · ตะกร้าที่เปิดแบบไม่ล็อกอินแล้วมาล็อกอินภายหลัง ถือเป็นคนเดียวกัน',
+        { reason: 'reviewer_is_submitter' },
+      );
+    }
+
+    if (declaredReasonTh === undefined) {
+      throw new AppError(
+        'FORBIDDEN',
+        403,
+        'คุณเป็นผู้บันทึกสลิปใบนี้เอง จะตรวจเองได้ต้องระบุเหตุผลที่ต้องทำทั้งสองขั้นตอนด้วยตนเอง — เหตุผลนี้จะถูกบันทึกไว้ถาวรเพื่อการตรวจสอบย้อนหลัง',
+        { reason: 'self_review_needs_reason' },
+      );
+    }
+
+    this.logger.warn(
+      `Two-person rule bypassed by declaration: slip=${slip.id} order=${slip.orderId} reviewer=${reviewerId}`,
     );
+
+    return declaredReasonTh;
   }
 
   /**

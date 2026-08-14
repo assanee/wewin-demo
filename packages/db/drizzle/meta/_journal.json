@@ -330,6 +330,13 @@
       "when": 1786400000017,
       "tag": "0046_slips_after_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786400000018,
+      "tag": "0047_slip_without_evidence",
+      "breakpoints": true
     }
   ]
 }

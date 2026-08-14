@@ -31,6 +31,20 @@ const asText = (value: unknown, what: string): string => {
 const asTextOrNull = (value: unknown, what: string): string | null =>
   value === null || value === undefined ? null : asText(value, what);
 
+/**
+ * ⚠️ A boolean, or a failure — never `value === true`.
+ *
+ * The shorthand this file uses elsewhere reads a missing field as `false`, which is the honest
+ * default for `hasImage` and `payerVerified` and the wrong one for a fact the screen *acts* on.
+ * A `viewerIsSubmitter` that silently defaults to `false` against an API that stopped sending it
+ * is precisely the dead end this field exists to close, arriving again with no symptom until a
+ * reviewer cannot finish a review. The same refusal `apps/web` makes about `orderIsLive`.
+ */
+const asBoolean = (value: unknown, what: string): boolean => {
+  if (typeof value !== 'boolean') throw new TypeError(`${what}: expected a boolean`);
+  return value;
+};
+
 /** The unit is checked, never assumed — `THB.satang` and `THB.satang/m2` differ only by tag. */
 const asSatang = (value: unknown, what: string): bigint => {
   const money = asRecord(value, what);
@@ -73,6 +87,58 @@ export interface Slip {
    * says so rather than leaving the row blank, because an older slip genuinely does not know.
    */
   readonly receivedBankAccount: { readonly bankCode: string; readonly accountName: string } | null;
+  /**
+   * ⭐ Why this payment has no image — `0047_slip_without_evidence.sql`.
+   *
+   * `null` on every customer slip, including one whose picture was erased for PDPA
+   * (`imageErasedAt` is what says so). Non-null is the definition of "recorded without
+   * evidence" on every screen, so no screen derives it from `hasImage` being false — a slip
+   * that was photographed and later erased has no image either, and reads completely
+   * differently to a reviewer.
+   */
+  /*
+   * ⚠️ `submittedByUserId` is on the wire and is deliberately **not decoded here**.
+   *
+   * This client had it, and the review dialog compared it to the signed-in user to decide
+   * whether to ask for a declared bypass. That comparison cannot be right: a slip uploaded from
+   * a guest cart carries `null` in that column whoever later claimed the cart, so the reviewer
+   * who *did* submit it read as somebody else — no warning, no declaration box, and then a 403
+   * `self_review_needs_reason` with nowhere on the screen to supply the reason. The server
+   * answers the question instead, on `SlipReview.viewerIsSubmitter`, from
+   * `slip_submitter_user_ids()`.
+   *
+   * Not decoding it is the point rather than tidiness: a field sitting in this interface is an
+   * invitation for the next person to make the same inference, and there is no screen here that
+   * needs the raw id — the audit list names the recorder through `recordedBy`, which carries a
+   * display name as well.
+   */
+  readonly noSlipReasonTh: string | null;
+  /**
+   * 🔒 Why the reviewer was also the submitter. `null` on every slip two people handled, and
+   * `null` in a customer's copy whatever the row says — this is an internal control note.
+   */
+  readonly selfReviewReasonTh: string | null;
+}
+
+/** One row of the audit list — `GET /payments/slips/recorded`. */
+export interface RecordedActor {
+  readonly userId: string;
+  readonly name: string | null;
+}
+
+export interface RecordedEntry {
+  readonly slip: Slip;
+  readonly orderId: string;
+  readonly orderNo: string | null;
+  readonly orderStatus: string;
+  readonly recordedBy: RecordedActor | null;
+  readonly reviewedBy: RecordedActor | null;
+  /**
+   * ⚠️ Computed server-side by `slip_submitter_user_ids()`, never here by comparing the two
+   * actors above. That comparison misses the guest cart later signed into an account, and an
+   * audit marker that under-reports is worse than none because somebody looked at it.
+   */
+  readonly selfReviewed: boolean;
 }
 
 export interface QueueEntry {
@@ -95,6 +161,17 @@ export interface Instalment {
 
 export interface SlipReview {
   readonly slip: Slip;
+  /**
+   * 🔒 Whether the person reading this screen is one of the people who submitted this slip —
+   * **the server's answer**, from `slip_submitter_user_ids()`, and never re-derived here.
+   *
+   * The union it computes includes the user who claimed the submitting guest cart, which is the
+   * ordinary funnel: upload anonymously, sign in, review. No column on this wire carries that
+   * fact, so a client that compares `submittedByUserId` to the session decides "somebody else's"
+   * for the person's own slip — and renders no declaration box for a review the API will then
+   * refuse without one, with no way to finish it. See `selfReviewState`.
+   */
+  readonly viewerIsSubmitter: boolean;
   readonly order: {
     readonly id: string;
     readonly orderNo: string | null;
@@ -161,6 +238,17 @@ const decodeSlip = (raw: unknown): Slip => {
     unallocatedThbMinor: asSatang(slip['unallocatedThbMinor'], 'slip.unallocatedThbMinor'),
     createdAt: asText(slip['createdAt'], 'slip.createdAt'),
     receivedBankAccount: decodeReceivedBankAccount(slip['receivedBankAccount']),
+    noSlipReasonTh: asTextOrNull(slip['noSlipReasonTh'], 'slip.noSlipReasonTh'),
+    selfReviewReasonTh: asTextOrNull(slip['selfReviewReasonTh'], 'slip.selfReviewReasonTh'),
+  };
+};
+
+const decodeActor = (value: unknown, what: string): RecordedActor | null => {
+  if (value === null || value === undefined) return null;
+  const actor = asRecord(value, what);
+  return {
+    userId: asText(actor['userId'], `${what}.userId`),
+    name: asTextOrNull(actor['name'], `${what}.name`),
   };
 };
 
@@ -177,6 +265,30 @@ export const listQueue = (limit = 200): Promise<readonly QueueEntry[]> =>
     }),
   );
 
+/**
+ * ⭐ Every payment recorded with no slip — the audit surface the owner accepted this feature on.
+ *
+ * `only=self_reviewed` narrows it to the entries one person handled both halves of.
+ */
+export const listRecorded = (
+  only: 'all' | 'self_reviewed' = 'all',
+  limit = 200,
+): Promise<readonly RecordedEntry[]> =>
+  apiJson(`/payments/slips/recorded?limit=${String(limit)}&only=${only}`, (body) =>
+    asArray(asRecord(body, 'รายการที่บันทึกโดยไม่มีสลิป')['entries'] ?? [], 'entries').map((raw) => {
+      const entry = asRecord(raw, 'entry');
+      return {
+        slip: decodeSlip(entry['slip']),
+        orderId: asText(entry['orderId'], 'entry.orderId'),
+        orderNo: asTextOrNull(entry['orderNo'], 'entry.orderNo'),
+        orderStatus: asText(entry['orderStatus'], 'entry.orderStatus'),
+        recordedBy: decodeActor(entry['recordedBy'], 'entry.recordedBy'),
+        reviewedBy: decodeActor(entry['reviewedBy'], 'entry.reviewedBy'),
+        selfReviewed: entry['selfReviewed'] === true,
+      };
+    }),
+  );
+
 export const getReview = (slipId: string): Promise<SlipReview> =>
   apiJson(`/payments/slips/${slipId}`, (body) => {
     const review = asRecord(body, 'สลิป');
@@ -187,6 +299,7 @@ export const getReview = (slipId: string): Promise<SlipReview> =>
 
     return {
       slip: decodeSlip(review['slip']),
+      viewerIsSubmitter: asBoolean(review['viewerIsSubmitter'], 'review.viewerIsSubmitter'),
       order: {
         id: asText(order['id'], 'order.id'),
         orderNo: asTextOrNull(order['orderNo'], 'order.orderNo'),
@@ -265,12 +378,46 @@ export const mintImageUrl = async (slipId: string): Promise<string> => {
   return asText(grant['path'], 'grant.path');
 };
 
+/**
+ * ⭐ Record a payment that arrived with no slip.
+ *
+ * ⚠️ **This does not accept anything.** It writes a `submitted` slip with no image and a stated
+ * reason, which then goes through the ordinary review — same queue, same two-column comparison,
+ * same allocations. There is no second path for money in this application and this is not one.
+ */
+export interface RecordedPayment {
+  readonly orderId: string;
+  readonly amountThbMinor: { readonly unit: 'THB.satang'; readonly digits: string };
+  readonly transferredAt: string;
+  readonly noSlipReasonTh: string;
+  readonly bankReference?: string;
+  readonly payerName?: string;
+  readonly payerAccountLast4?: string;
+}
+
+export const recordPayment = async (body: RecordedPayment): Promise<Slip> => {
+  const response = await apiFetch('/payments/slips/recorded', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return decodeSlip(await response.json());
+};
+
 export interface Acceptance {
   readonly allocations: readonly AllocationRequest[];
   readonly noteTh?: string;
   /** Read off the image by a person. Omitted leaves the payer unverified — which fails closed. */
   readonly payer?: { readonly name: string; readonly accountLast4: string };
   readonly acknowledgeOverpaymentThbMinor?: { readonly unit: 'THB.satang'; readonly digits: string };
+  /**
+   * 🔒 The declared bypass of the two-person rule. Sent only when the reviewer is the person who
+   * entered the slip, and only when they hold `payments.self_review_slip` — the API refuses both
+   * halves separately and the screen says which one is missing before it lets the button fire.
+   */
+  readonly selfReviewReasonTh?: string;
 }
 
 export const acceptSlip = async (slipId: string, body: Acceptance): Promise<void> => {
@@ -283,11 +430,19 @@ export const acceptSlip = async (slipId: string, body: Acceptance): Promise<void
   if (!response.ok) throw await apiErrorFromResponse(response);
 };
 
-export const rejectSlip = async (slipId: string, reasonTh: string): Promise<void> => {
+export const rejectSlip = async (
+  slipId: string,
+  reasonTh: string,
+  selfReviewReasonTh?: string,
+): Promise<void> => {
   const response = await apiFetch(`/payments/slips/${slipId}/rejection`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ reasonTh: reasonTh.trim() }),
+    body: JSON.stringify({
+      reasonTh: reasonTh.trim(),
+      /* The rule covers rejection too: clearing your own mistake off the queue is the same control failing quietly. */
+      ...(selfReviewReasonTh === undefined ? {} : { selfReviewReasonTh }),
+    }),
   });
 
   if (!response.ok) throw await apiErrorFromResponse(response);
