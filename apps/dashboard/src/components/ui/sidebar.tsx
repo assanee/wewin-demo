@@ -301,12 +301,34 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   )
 }
 
+/**
+ * ⚠️ `min-w-0` is load-bearing and is the one line this file adds to stock shadcn.
+ *
+ * This `<main>` is the flex sibling of the sidebar, and a flex item's default `min-width`
+ * is `auto` — which does not mean zero. It means *no narrower than my own min-content*.
+ * So one un-wrappable string anywhere inside the page raises this element's floor, the
+ * pair no longer fits beside a 256px sidebar, and the whole document scrolls sideways.
+ * Every `overflow-x-auto` in the app is defeated from here: the scroll container itself
+ * behaves correctly and reports the right `scrollWidth`, but nothing ever squeezes it,
+ * so it never has a reason to scroll.
+ *
+ * Measured on `/quotes/:id` with a price override, at a 1440px viewport: `main` sat at
+ * 1440 instead of 1184 and the document overflowed by exactly 256 — the sidebar's width.
+ * `min-width: 0` alone returned it to 1184 with the table scrolling inside its own box.
+ *
+ * The trade this makes, stated plainly: page-level overflow at least let a person reach
+ * the content by scrolling the window. Below this floor, anything too wide *without its
+ * own scroll container* is clipped and unreachable instead. That is the better failure —
+ * it is visible in review rather than merely ugly — but it only holds while every wide
+ * thing carries its own `overflow-x-auto`. Tables get one from `ui/table.tsx`; anything
+ * else wide needs its own.
+ */
 function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
   return (
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex w-full flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
+        "relative flex w-full min-w-0 flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
         className
       )}
       {...props}
