@@ -39,6 +39,30 @@ export interface OrderSummary {
   readonly frozenAt: string | null;
   readonly submittedAt: string | null;
   readonly grandTotalThbMinor: bigint | null;
+  /**
+   * What is still owed on this order — `order_outstanding_thb_minor()`, read as a column on
+   * the same select that fetched the row. A list of fifty orders is still one query.
+   *
+   * ⚠️ **Null on exactly the same fact as `grandTotalThbMinor`: there is no contract yet.**
+   * Never on its own, and never meaning zero. The fold itself answers ฿0.00 for a cart, which
+   * is arithmetically right and reads on a queue as *settled* — so the API nulls all three
+   * money fields together and `order-outstanding.ts` keeps the two apart the rest of the way
+   * to the cell.
+   *
+   * ⛔ Never derived here. Not `grandTotal` minus anything, not a fold of the instalments —
+   * `packages/contract/src/schedule.ts` refuses to ship a total beside the parts precisely so
+   * that no client is tempted, and this field is the database's own answer travelling intact.
+   */
+  readonly outstandingThbMinor: bigint | null;
+  /**
+   * What to pay *now* — `order_next_due_thb_minor()`, the remainder of the first instalment no
+   * accepted slip has settled.
+   *
+   * Equal to `outstandingThbMinor` on a pay-in-full order and smaller by the balance on a
+   * 30/70, which is why both are sent: neither is derivable from the other. **฿0.00 rather
+   * than null when an order is settled in full** — null is reserved for "no contract yet".
+   */
+  readonly nextDueThbMinor: bigint | null;
   readonly updatedAt: string;
 }
 
@@ -174,6 +198,15 @@ const decodeSummary = (raw: unknown): OrderSummary => {
     frozenAt: asTextOrNull(order['frozenAt'], 'order.frozenAt'),
     submittedAt: asTextOrNull(order['submittedAt'], 'order.submittedAt'),
     grandTotalThbMinor: asSatangOrNull(order['grandTotalThbMinor'], 'order.grandTotalThbMinor'),
+    /*
+     * `asSatangOrNull`, the same leniency `grandTotalThbMinor` above already has: an absent key
+     * decodes as null rather than throwing. That is deliberate and it is the file's existing
+     * bargain — lenient about *which* fields an older API sends, strict about what is in the
+     * ones that arrive — so a `MoneyRateWire` in this slot is still a `TypeError` naming the
+     * field, which is the mistake that has actually shipped here.
+     */
+    outstandingThbMinor: asSatangOrNull(order['outstandingThbMinor'], 'order.outstandingThbMinor'),
+    nextDueThbMinor: asSatangOrNull(order['nextDueThbMinor'], 'order.nextDueThbMinor'),
     updatedAt: asText(order['updatedAt'], 'order.updatedAt'),
   };
 };

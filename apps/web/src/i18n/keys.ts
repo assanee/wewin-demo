@@ -652,10 +652,15 @@ export interface UiParamsByKey {
 
   /* ---- Paying, and attaching a slip ---------------------------------- */
   /**
-   * ⭐ The way *to* the payment screen — the only key in this block rendered by screens
-   * other than that one. `QuotationIsland` puts it under the totals and `MyQuotations`
-   * puts it on each payable row, so both doors are labelled with one string and cannot
-   * drift apart in seven languages.
+   * ⭐ The way *to* the payment screen. `QuotationIsland` puts it under the totals and
+   * `MyQuotations` puts it on each payable row, so both doors are labelled with one string
+   * and cannot drift apart in seven languages.
+   *
+   * ⚠️ It is no longer the only key in this block rendered elsewhere: the account list now
+   * states the same two figures the payment screen does, through `payment.dueNow`,
+   * `payment.outstanding` and `payment.settled`. That is deliberate reuse rather than
+   * spread — a list that named the outstanding with words of its own would be a second
+   * vocabulary for one number, in eight languages, one click apart.
    *
    * ⚠️ **It must not name an amount, and it must not claim money moves.** The screen it
    * opens asks for `outstandingThbMinor`, folded live — which on a fresh order equals the
@@ -673,9 +678,100 @@ export interface UiParamsByKey {
   'payment.meta.title': Plain;
   'payment.heading': Plain;
   'payment.loading': Plain;
+  /**
+   * ⭐ "Everything still owed" — the label for `outstandingThbMinor`, on both screens.
+   *
+   * ⚠️ **It has to say *the whole*, not merely *the rest*.** Beside `payment.dueNow` on a
+   * 30/70 order this reads "ยอดคงค้างทั้งหมด ฿14,400.00" under "ยอดที่ต้องชำระตอนนี้ ฿4,320.00",
+   * and the two are only unambiguous because of the qualifier: a bare "ยอดคงค้าง" leaves a
+   * customer to work out whether the 4,320 is *inside* the 14,400 or comes after it, which
+   * they can only do by noticing which number is bigger. That is arithmetic, and showing both
+   * figures was supposed to remove it. `apps/dashboard` had already reached the same wording
+   * for the same pairing — `ค้างทั้งออเดอร์` under `งวดถัดไปต้องการ` in `slip-review-dialog.tsx`.
+   *
+   * Every locale therefore carries the same qualifier — "in total", 总, कुल, Tổng, Gesamt,
+   * ທັງໝົດ, စုစုပေါင်း — and it stays true and plain when this is the only figure on screen,
+   * which is what a pay-in-full order and a settled one both show.
+   */
   'payment.outstanding': Plain;
+  /**
+   * ⭐ "What to pay now" — the label for `nextDueThbMinor`, beside `payment.outstanding`.
+   *
+   * The figure `PaymentIsland`'s amount field opens on: the remainder of the first unsettled
+   * instalment, which `order_next_due_thb_minor()` answers as the deposit on a 30/70 and as
+   * the whole amount on a pay-in-full schedule. Both `MyQuotations` and `PaymentIsland` print
+   * it as the prominent figure with the outstanding underneath, which is the owner's decision
+   * — and, since the payment screen was aligned to the list, one decision rather than two
+   * (`lib/payment/owedFigures.ts`).
+   *
+   * ⚠️ **It appears only when the two figures differ**, so the Thai has to read as *this
+   * instalment* rather than as *the bill*. `quotation.fx.payable` ("ยอดที่ต้องชำระ") is the
+   * grand total on the quotation and would contradict that screen if it were reused here;
+   * this is that phrase plus the "ตอนนี้" the catalogue already uses elsewhere, which is
+   * exactly the distinction being drawn and not a new word for money.
+   *
+   * Like `payment.action`, it names no amount: `owedFigures.ts` decides which figure this
+   * labels and each screen formats it through `f.bahtExact`, so no digit is ever welded into
+   * a translator's sentence.
+   */
+  'payment.dueNow': Plain;
   'payment.outstandingAmount': { owedMinor: bigint };
   'payment.settled': Plain;
+  /**
+   * ⭐ "This order can no longer be paid" — the one sentence a closed order gets.
+   *
+   * Rendered when `PaymentInstructionsWire.acceptsPayment` is false, which the server answers
+   * from `SLIP_ATTACHABLE_STATUSES` — the same list that refuses the upload with a 409. The
+   * screen prints no owed figure at all in that state: the residue on a cancelled order is a
+   * refund question and on a delivered one it is a phone call, and a number under
+   * `payment.outstanding` is a demand whatever its value. It printed
+   * "ยอดคงค้างทั้งหมด ฿10,354.18" over the upload form on a cancelled order until this key
+   * existed.
+   *
+   * ⚠️ **It is not `payment.settled` and must never be worded like it.** That key says *paid
+   * in full*; this one says *closed to further payment*. They are both true of a delivered,
+   * fully-paid order and they are both "true" of an order the customer paid in full and then
+   * cancelled — where the company owes the money back, and "ชำระครบแล้ว" would be the
+   * cruellest sentence available.
+   *
+   * ⚠️ **Cancelled and superseded only — narrowed after the first version was measured.** It
+   * began as one key for every order that could not take a slip, which put it on a delivered
+   * order too: the ordinary finished customer lost "ชำระครบแล้ว" and read an administrative
+   * sentence instead, and a delivered order still carrying a balance printed no figure at all.
+   * `orderIsLive` now separates the two, `payment.closedOwing` covers the owing half, and
+   * `payment.settled` went back to serving the finished one.
+   *
+   * What remains is the state where the screen must say nothing about the money: the residue on
+   * a cancelled order is owed *to* the customer. The sentence cannot say *why* the order closed
+   * — the wire carries booleans and deliberately not the status, because a status would put a
+   * copy of the list back in every client — so it says only what the server answered and points
+   * at the people who can say the rest. The second clause is conditional ("if you have a
+   * question about the amount"), which is the door for a customer owed a refund.
+   *
+   * The vocabulary is each catalogue's own — the Thai is `payment.heading`'s "แจ้งชำระเงิน"
+   * and `payment.account.none`'s "ติดต่อทีมขาย", not new words for a screen that already has
+   * them. Like every other label in this block it names no amount.
+   */
+  'payment.closed': Plain;
+  /**
+   * A delivered order that still owes money: the amount stands, the transfer form does not.
+   *
+   * ⚠️ **This is the last screen on which that money is ever mentioned to the person who owes
+   * it.** `delivered` is absent from `SLIP_ATTACHABLE_STATUSES` and has no transition out, so
+   * nothing in the software can collect it and nothing else will raise it. The first version of
+   * the closed screen printed no figure here at all, which did not make the receivable go away
+   * — it removed it from the only surface its debtor can see.
+   *
+   * ⚠️ **Names no amount.** The figure is already above this sentence, printed through
+   * `payment.outstandingAmount` — this app's only money template and a bare `f.bahtExact` in all
+   * eight locales — so it is formatted to the satang in the reader's own numerals and never
+   * enters a translated sentence. This key explains why there is no form and what to do instead.
+   *
+   * ⚠️ **Not `payment.closed`.** That key is for an order whose money may be owed the other way
+   * and must stay silent about figures; this one is a balance the customer genuinely owes. Same
+   * screen, opposite direction of money, so opposite sentences.
+   */
+  'payment.closedOwing': Plain;
   'payment.account.legend': Plain;
   'payment.account.copy': { accountDigits: string };
   'payment.account.copied': Plain;

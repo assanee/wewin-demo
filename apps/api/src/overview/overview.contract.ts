@@ -1,4 +1,5 @@
 import type { MoneyWire } from '@wewin/contract/money';
+import type { OrderStatusWire } from '@wewin/contract/order';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +70,55 @@ export interface RefundsOverviewWire {
 export interface MoneyOverviewWire {
   readonly receivedThisMonth: MoneyWire<'THB'>;
   readonly outstanding: MoneyWire<'THB'>;
+  /**
+   * ⚠️ **THE BIGGEST DEBTS, NOT THE DEBT.** Capped — see `OutstandingOrderWire`.
+   *
+   * The aggregate above stays, because the two answer different questions: "how much is out
+   * there" is a number the owner asks about the month, and "who owes it" is the list somebody
+   * telephones from. Replacing the total with the list would lose the first, and a screen that
+   * added the list up would show a smaller total than yesterday on the day a ninth order went
+   * unpaid — the truncation reading as a repayment.
+   *
+   * Empty when nothing is owed, which is the honest shape of a company that has been paid. It
+   * is inside the money card rather than beside it so that it is gated by exactly the same
+   * permission: an itemised debt is more disclosive than its total, never less, and a second
+   * key would be a second place for that gate to be got right.
+   */
+  readonly outstandingOrders: readonly OutstandingOrderWire[];
+}
+
+/**
+ * One order that owes money — the aggregate above, itemised so somebody can act on it.
+ *
+ * ⚠️ **THIS LIST IS TRUNCATED AND THE READER CANNOT SEE THAT FROM ITS CONTENTS.** It is the
+ * top 8 by amount, over the same live-order predicate the aggregate uses, and eight is chosen
+ * to be a *call list* rather than a report: a card on a landing page that a person reads in one
+ * glance and works through before lunch. A ledger of every unpaid order is a different screen
+ * with its own paging, and shipping an unbounded one here would put the whole receivables book
+ * on the dashboard's first render, growing with the business, for a card nobody scrolls.
+ *
+ * So `sum(outstandingOrders)` is **not** `outstanding` and must never be rendered as though it
+ * were — the total is carried beside it precisely so that no screen has to add these up.
+ *
+ * Ordered by amount, largest first: the useful end of a debt list is the money, and the
+ * tie-break is the oldest submission, because between two equal debts the older one has been
+ * owed longer.
+ *
+ * `outstandingThbMinor` is `order_outstanding_thb_minor()` — the same function the aggregate
+ * folds and the same one `OrderSummaryWire.outstandingThbMinor` carries, so a figure here and
+ * the figure on the order's own row are one call made twice, never two derivations.
+ */
+export interface OutstandingOrderWire {
+  readonly id: string;
+  /**
+   * Null is unreachable through this list and typed anyway: `order_no` is stamped at submit and
+   * every status this list admits is post-submit. It matches `OrderSummaryWire.orderNo` rather
+   * than claiming a non-null the column does not guarantee.
+   */
+  readonly orderNo: string | null;
+  /** Which queue the order is sitting in — a debt in `redesign` is a different call from one in `awaiting_payment`. */
+  readonly status: OrderStatusWire;
+  readonly outstandingThbMinor: MoneyWire<'THB'>;
 }
 
 /** `approvals.status = 'pending'` — a concession waiting on somebody senior. */

@@ -1,4 +1,6 @@
 import { orders } from '@wewin/db/schema';
+// Through @wewin/db and not 'drizzle-orm' directly — see the note in packages/db/src/sql.ts.
+import { sql } from '@wewin/db/sql';
 import type { OrderStatus } from '@wewin/db/schema';
 
 import type { OrderIntent, OrderReach } from './order-reach';
@@ -100,6 +102,37 @@ export interface ScopedOrder {
    */
   readonly depositFloorBp: number | null;
 
+  /**
+   * Still owed, and due now — computed by Postgres on this row, in this query.
+   *
+   * ── Why they are on the row and not fetched beside it ───────────────────────────
+   *
+   * Because the alternative is a query per order. `GET /orders` serves both front ends and
+   * returns fifty rows, and the fold is per-order: a caller that asked
+   * `PaymentLifecycleService.customerFigures` once per row would turn one statement into
+   * fifty-one, which is the cost `apps/web/src/lib/payment/payable.ts` refused to pay and the
+   * reason the field did not exist until now. As two more expressions in the target list it
+   * costs the same one round trip, which is what `overview.repository.ts` already does with
+   * `order_outstanding_thb_minor(o.id)` inside its own single statement.
+   *
+   * They are on `ORDER_COLUMNS` — the one shape — rather than on a second, wider select used
+   * only by `list`. Two selects would be two places for the ownership term to go missing from,
+   * which is the whole argument this file is built on, and `OrderWire` extends
+   * `OrderSummaryWire` so a single-order read needs the same two numbers anyway. The write
+   * path pays for them too, and gets something for it: `lock` reads them inside the
+   * transaction, so the order a transition hands back reports the money as that transaction
+   * left it rather than as it was before.
+   *
+   * ⚠️ Not columns of `orders` — derived, and derived *there*. `order_outstanding_thb_minor()`
+   * (0011) and `order_next_due_thb_minor()` (0042) are the only definitions of these two
+   * numbers in this system; nothing here subtracts, sums or coalesces its way to a second one.
+   * Both are total: 0 rather than NULL for a cart with no schedule, which is the answer 0042
+   * argues for at length. Whether a cart's ฿0.00 is *shown* is the encoder's decision, not
+   * this row's — see `encodeOrderSummary`.
+   */
+  readonly outstandingThbMinor: bigint;
+  readonly nextDueThbMinor: bigint;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 
@@ -137,6 +170,17 @@ export const ORDER_COLUMNS = {
   grandTotalThbMinor: orders.grandTotalThbMinor,
   scheduledDepositThbMinor: orders.scheduledDepositThbMinor,
   depositFloorBp: orders.depositFloorBp,
+  /*
+   * ⚠️ `.mapWith(BigInt)` and `::text`, not a bare `sql<bigint>` — the generic is a claim to
+   * TypeScript and nothing more (`review.repository.ts` says it in those words). `int8` reaches
+   * node-postgres as a *string*, so a declared `bigint` type-checks and hands the encoder
+   * `'1412400'` at runtime; the cast makes the string deliberate and the decoder makes it a
+   * `bigint` where the row is built. `coalesce` mirrors `ledger.repository.ts`'s own call: the
+   * fold is NULL only for an order id that names no row, which cannot happen when the id comes
+   * off the row being selected — and a NULL that slipped through would reach `encodeThb`.
+   */
+  outstandingThbMinor: sql`coalesce(order_outstanding_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
+  nextDueThbMinor: sql`coalesce(order_next_due_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
   createdAt: orders.createdAt,
   updatedAt: orders.updatedAt,
 } as const;

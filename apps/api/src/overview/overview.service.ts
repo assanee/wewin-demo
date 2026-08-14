@@ -70,6 +70,17 @@ export class OverviewService {
            */
           receivedThisMonth: encodeThb(money.receivedThisMonth),
           outstanding: encodeThb(money.outstanding),
+          /*
+           * The same tagging, one level down — and the same repository read, so the total and
+           * the orders under it were taken against one predicate rather than assembled from two
+           * fetches a caller could have made at different moments.
+           */
+          outstandingOrders: money.outstandingOrders.map((order) => ({
+            id: order.id,
+            orderNo: order.orderNo,
+            status: order.status,
+            outstandingThbMinor: encodeThb(order.outstandingThbMinor),
+          })),
         },
       }),
       ...(quotes !== undefined && { quotes }),

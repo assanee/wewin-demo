@@ -562,9 +562,14 @@ export const my: PartialUiCatalogue = {
   'payment.meta.title': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.heading': 'ငွေပေးချေမှု အသိပေးရန်',
   'payment.loading': 'သင့်ငွေပေးချေမှုအချက်အလက်များ ဖွင့်နေသည်…',
-  'payment.outstanding': 'ကျန်ရှိနေသေးသောပမာဏ',
+  'payment.outstanding': 'ကျန်ရှိနေသေးသော စုစုပေါင်းပမာဏ',
+  'payment.dueNow': 'ယခုပေးရမည့်ပမာဏ',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'ဤအော်ဒါအတွက် ငွေပေးချေမှု ပြီးပါပြီ',
+  'payment.closed':
+    'ဤအော်ဒါအတွက် ငွေပေးချေမှု အသိပေးခြင်းကို ပိတ်လိုက်ပါပြီ။ ပမာဏနှင့်ပတ်သက်၍ မေးစရာရှိပါက အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
+  'payment.closedOwing':
+    'ကျန်ရှိနေသေးသောပမာဏ ရှိပါသည်၊ သို့သော် ဤနေရာမှ ငွေပေးချေမှု အသိပေးခြင်း မပြုလုပ်နိုင်ပါ။ ကျန်ငွေ ရှင်းလင်းရန် အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
   'payment.account.legend': 'အောက်ပါဘဏ်အကောင့်များထဲမှ တစ်ခုသို့ လွှဲပါ',
   'payment.account.copy': (p) => `ဘဏ်အကောင့်နံပါတ် ${p.accountDigits} ကို ကူးရန်`,
   'payment.account.copied': 'ဘဏ်အကောင့်နံပါတ် ကူးပြီးပါပြီ',

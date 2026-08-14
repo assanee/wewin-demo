@@ -138,6 +138,29 @@ export interface PaymentInstructions {
    * pay-in-full order, different by the balance on a 30/70. `0n` when nothing is due.
    */
   readonly nextDueThbMinor: bigint;
+  /**
+   * ⭐ Whether this order can still receive a payment at all — the server's answer, not a
+   * status this bundle would have to interpret.
+   *
+   * `false` means the endpoint that takes the slip would refuse it (409
+   * `order_not_accepting_slips`, and `payment_slips_live_orders_only` behind that): the order
+   * is cancelled, superseded, delivered, or a draft. The figures beside it are still true
+   * about the order's residue — they are simply not a bill, and on a cancelled order the
+   * money may be owed the other way.
+   *
+   * ⚠️ **Not `outstandingThbMinor <= 0`**, which says *paid in full*. The two are false in
+   * different directions and conflating them is the cruelty this field exists to prevent:
+   * "ชำระครบแล้ว" on a cancelled order the customer is owed a deposit on.
+   */
+  readonly acceptsPayment: boolean;
+  /**
+   * Whether the order is still a live commitment — see `PaymentInstructionsWire.orderIsLive`.
+   *
+   * ⚠️ The pair, not either alone. `acceptsPayment` false says only "no slip can be attached
+   * here"; it is answered identically by a cancelled order and by a delivered one, and those
+   * two need opposite sentences. This boolean is what separates them.
+   */
+  readonly orderIsLive: boolean;
   readonly accounts: readonly PaymentAccount[];
 }
 
@@ -173,11 +196,34 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
    * the API is a version behind. A refusal to render is loud; a wrong prefilled amount is not.
    */
   const nextDueThbMinor = satang(body['nextDueThbMinor']);
+  /*
+   * ⚠️ Required, and required for the same reason as the figure above it — a *boolean* has
+   * two ways to be wrong when it is missing, and both ship a defect:
+   *
+   *   defaulting to `true`  → the screen bills a cancelled order, which is precisely the bug
+   *                           this field was added to end;
+   *   defaulting to `false` → the screen tells every paying customer that payment is closed,
+   *                           against an API that would have taken their slip.
+   *
+   * Neither is quieter than a decode failure, and a decode failure is a sentence on screen
+   * with a "try again" rather than a wrong statement about somebody's money.
+   */
+  const acceptsPayment = body['acceptsPayment'];
+  /*
+   * ⚠️ Required for a third reason, on top of the two above: absent, the screen loses the one
+   * fact that separates a cancelled order from a finished one, and every state that cannot take
+   * a slip collapses back into the single sentence that cost a delivered order its
+   * "ชำระครบแล้ว" and hid an unpaid delivered balance entirely. A missing boolean here does not
+   * degrade the screen, it un-fixes it.
+   */
+  const orderIsLive = body['orderIsLive'];
   const rawAccounts = body['accounts'];
   if (
     grandTotalThbMinor === null ||
     outstandingThbMinor === null ||
     nextDueThbMinor === null ||
+    typeof acceptsPayment !== 'boolean' ||
+    typeof orderIsLive !== 'boolean' ||
     !Array.isArray(rawAccounts)
   ) {
     return null;
@@ -190,7 +236,14 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     accounts.push(account);
   }
 
-  return { grandTotalThbMinor, outstandingThbMinor, nextDueThbMinor, accounts };
+  return {
+    grandTotalThbMinor,
+    outstandingThbMinor,
+    nextDueThbMinor,
+    acceptsPayment,
+    orderIsLive,
+    accounts,
+  };
 }
 
 /* ------------------------------------------------------------------ *

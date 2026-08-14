@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase, createPool, type Database, type Pool } from '@wewin/db/client';
 import { sql } from '@wewin/db/sql';
 import { toBigInt } from '@wewin/contract/exact';
-import type { OrderLineRequestWire } from '@wewin/contract/order';
+import type { OrderLineRequestWire, OrderWire } from '@wewin/contract/order';
 import type { BankAccountWire, PaymentInstructionsWire } from '@wewin/contract/organisation';
 
 import {
@@ -20,7 +20,8 @@ import {
   type PaymentsApp,
 } from '../payments/support/payments-app';
 import { giveOrderHeldMoney } from '../payments/support/money-fixture';
-import { writeThirtySeventy } from '../payments/slips/support/slips-app';
+import { uploadImage, writeThirtySeventy } from '../payments/slips/support/slips-app';
+import { makePng } from '../media/fixtures';
 
 /**
  * `GET /orders/:orderId/payment-instructions` — task 10.
@@ -299,6 +300,122 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
       expect(toBigInt(body.outstandingThbMinor)).toBe(expected);
       expect(toBigInt(body.outstandingThbMinor)).toBe(schedule.balanceThbMinor);
     },
+  );
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ Whether the order can still be paid — the question this route did not answer
+   * ---------------------------------------------------------------- */
+
+  it('says a live order can still receive a payment', async () => {
+    /*
+     * The control the interesting test needs: without it, a route hard-coding `false` — or an
+     * `acceptsPayment` that lost its list — would pass the cancellation assertion below and be
+     * a screen that never lets anybody pay.
+     */
+    const order = await submittedOrder(call, customerA, line, contactFor('live'));
+
+    const answer = await call('GET', `/orders/${order.id}/payment-instructions`, {
+      token: customerA.token,
+    });
+    expect(answer.status).toBe(200);
+    expect((answer.body as PaymentInstructionsWire).acceptsPayment).toBe(true);
+  });
+
+  it(
+    '⭐ says payment is closed the moment the order is cancelled — while the figures still ' +
+      'describe the residue, and the upload route agrees',
+    async () => {
+      /*
+       * ─────────────────────────────────────────────────────────────────────────────
+       * ⭐ THE ASSERTION THIS FIX TURNS ON.
+       * ─────────────────────────────────────────────────────────────────────────────
+       *
+       * This route does not go through `encodeOrderSummary`, so the live-order predicate that
+       * fixed `GET /orders` and `GET /orders/:id` never reached it. Executed against this very
+       * database, one cancelled order answered:
+       *
+       *     GET /orders/:id/payment-instructions → outstanding 1035418, nextDue 1035418
+       *     GET /orders            (same order)  → null
+       *
+       * and `PaymentIsland` — which had no status gate at all, only
+       * `outstandingThbMinor <= 0n` — printed "ยอดคงค้างทั้งหมด ฿10,354.18" in `text-lead
+       * text-lime` with the slip-upload form beneath it, on an order the customer had
+       * cancelled and on which the company owed *them* the deposit they had already paid.
+       *
+       * A deposit is paid here before the cancellation precisely so the wrong answer is the
+       * cruel one: there is real money on the order, a real unpaid balance behind it, and the
+       * company is the party that owes.
+       */
+      const order = await submittedOrder(call, customerA, line, contactFor('cancelled'));
+      const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
+      const schedule = await writeThirtySeventy(db, app, order.id, grandTotal);
+
+      await giveOrderHeldMoney(db, {
+        orderId: order.id,
+        grandTotalThbMinor: grandTotal,
+        paidThbMinor: schedule.depositThbMinor,
+        payerName: `payer ${tag}`,
+        payerAccountLast4: '5150',
+        reviewerUserId: staff.userId,
+      });
+
+      const before = await call('GET', `/orders/${order.id}/payment-instructions`, {
+        token: customerA.token,
+      });
+      expect(before.status).toBe(200);
+      expect((before.body as PaymentInstructionsWire).acceptsPayment).toBe(true);
+
+      const cancelled = await call('POST', `/orders/${order.id}/transitions/cancelled`, {
+        token: customerA.token,
+        body: { reason: 'เปลี่ยนใจ ยังไม่พร้อมติดตั้ง' },
+      });
+      expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+      expect((cancelled.body as OrderWire).status).toBe('cancelled');
+
+      const answer = await call('GET', `/orders/${order.id}/payment-instructions`, {
+        token: customerA.token,
+      });
+      expect(answer.status).toBe(200);
+      const body = answer.body as PaymentInstructionsWire;
+
+      /* The one field the screen gates on. */
+      expect(body.acceptsPayment).toBe(false);
+
+      /*
+       * ⚠️ And the figures are still *stated*, which is the difference between withholding a
+       * bill and losing a number. `GET /orders` nulls its two folds on a cancelled row —
+       * a ค้างชำระ column has no honest value there — but this response has exactly one
+       * reader, and it is the screen that must be able to show a customer what happened on an
+       * order that has stopped. What changed is not the arithmetic; it is that the screen is
+       * told not to print it as a demand.
+       *
+       * Compared against the fold read straight from Postgres, so a future "fix" that zeroed
+       * the figures here instead of gating the screen fails this line rather than passing it.
+       */
+      const residue = await outstandingFold(db, order.id);
+      expect(residue, 'the deposit is paid and the balance is not — there is a residue').toBeGreaterThan(0n);
+      expect(toBigInt(body.outstandingThbMinor)).toBe(residue);
+      expect(toBigInt(body.grandTotalThbMinor)).toBe(grandTotal);
+
+      /*
+       * ⭐ And the boolean is the *same list* the upload route refuses on. This is what makes
+       * it a fix rather than a second opinion: had the screen kept its own copy of the
+       * statuses — as `apps/web/src/lib/payment/payable.ts` does for the two link sites — the
+       * two could drift, and the drift is silent in the direction that hurts (a form offered
+       * over an endpoint that answers 409).
+       */
+      const refused = await uploadImage(
+        app.baseUrl,
+        `/orders/${order.id}/payment-slips/image`,
+        customerA.token,
+        makePng(),
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body).toMatchObject({
+        error: { details: { reason: 'order_not_accepting_slips', status: 'cancelled' } },
+      });
+    },
+    60_000,
   );
 });
 

@@ -24,8 +24,15 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { failureMessage } from '@/lib/api/errors';
-import { fetchOverview, type Overview } from './overview-api';
+import { statusLabel } from '@/components/orders/order-language';
+import {
+  fetchOverview,
+  type MoneyOverview,
+  type OutstandingOrder,
+  type Overview,
+} from './overview-api';
 import { overviewFocus } from './overview-focus';
+import { outstandingBreakdown } from './outstanding-breakdown';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +49,7 @@ import { overviewFocus } from './overview-focus';
  *
  *   ⓵ **ต้องมีคนทำ** — the five queues. A number here is somebody's afternoon.
  *   ⓶ **ออเดอร์** — where the work in the building actually is.
- *   ⓷ **เงิน** — taken this month, still owed.
+ *   ⓷ **เงิน** — taken this month, still owed, and *by whom* (`OutstandingOrders`).
  *   ⓸ **แคตตาล็อกและระบบ** — health, not work. Slowest-moving, so last.
  *
  * ── ⭐ One primary thing, and it is a sentence rather than a card ─────────────
@@ -287,24 +294,32 @@ export function OverviewScreen() {
            * figures that are only meaningful read against each other, each needing a sentence
            * saying which of the several possible money numbers it is. That is a self-contained
            * amounts breakdown — the case a border is *for*.
+           *
+           * The itemised debt is **inside** this card rather than beside it, on the API's own
+           * arrangement: `outstandingOrders` is a key of `money`, so `payments.read` gates the
+           * breakdown by exactly the key that gates the total. See `OutstandingOrders`.
            */}
           <Card>
-            <CardContent className="grid gap-6 sm:grid-cols-2">
-              <MoneyFigure
-                label="รับชำระเดือนนี้"
-                value={overview.money.receivedThisMonth}
-                /*
-                 * The API's contract says which of the several possible money numbers this
-                 * is, and a screen that shows money without saying which one is how two
-                 * departments end up quoting different figures from the same dashboard.
-                 */
-                noteTh="ยอดหน้าสลิปที่อนุมัติแล้ว นับตามเดือนเวลาไทย — ไม่ใช่ยอดที่ลูกค้าแจ้งว่าโอน"
-              />
-              <MoneyFigure
-                label="ยอดค้างชำระ"
-                value={overview.money.outstanding}
-                noteTh="รวมทุกออเดอร์ที่ยังเดินอยู่ ไม่นับตะกร้า ออเดอร์ที่ยกเลิก และที่ถูกแทนที่"
-              />
+            <CardContent className="flex flex-col gap-6">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <MoneyFigure
+                  label="รับชำระเดือนนี้"
+                  value={overview.money.receivedThisMonth}
+                  /*
+                   * The API's contract says which of the several possible money numbers this
+                   * is, and a screen that shows money without saying which one is how two
+                   * departments end up quoting different figures from the same dashboard.
+                   */
+                  noteTh="ยอดหน้าสลิปที่อนุมัติแล้ว นับตามเดือนเวลาไทย — ไม่ใช่ยอดที่ลูกค้าแจ้งว่าโอน"
+                />
+                <MoneyFigure
+                  label="ยอดค้างชำระ"
+                  value={overview.money.outstanding}
+                  noteTh="รวมทุกออเดอร์ที่ยังเดินอยู่ ไม่นับตะกร้า ออเดอร์ที่ยกเลิก และที่ถูกแทนที่"
+                />
+              </div>
+
+              <OutstandingOrders money={overview.money} />
             </CardContent>
           </Card>
         </Section>
@@ -457,6 +472,100 @@ function QueueRow({ queue }: { readonly queue: QueueCard }) {
           {inner}
         </Link>
       )}
+    </li>
+  );
+}
+
+/**
+ * ⭐ ยอดค้างชำระ, itemised — the figure turned into somewhere to go.
+ *
+ * The card used to end at the number. ฿487,000 owed is a fact nobody can act on: the next
+ * question is always *which orders*, and answering it meant leaving for `/orders` and reading
+ * a hundred rows. The API now sends the biggest debts alongside the aggregate, so the answer
+ * is one glance and one click.
+ *
+ * ── ⚠️ THE LIST IS CAPPED AND THE TOTAL IS NOT THE SUM OF THESE ROWS ─────────
+ *
+ * `money.outstandingOrders` is the **top 8 by amount** (`OUTSTANDING_ORDERS_CAP` in
+ * `overview.repository.ts`), over the same live-order predicate the aggregate folds. On a
+ * company with nine unpaid orders the rows add up to less than the figure above them, and
+ * nothing in the rows says so — eight plausible orders that simply do not reconcile. The
+ * total is carried beside them precisely so that no screen has to add these up, and
+ * `outstandingBreakdown` supplies the sentence that makes the pair honest. It is a qualifier,
+ * not a caption: without it the card contradicts itself the day a ninth order goes unpaid.
+ *
+ * ⚠️ The note is **above** the rows rather than under them. A reader has to know the list is
+ * a shortlist *before* they read it, not after — and it doubles as the lead-in that says these
+ * rows belong to ยอดค้างชำระ and not to รับชำระเดือนนี้ beside it.
+ *
+ * ⚠️ Inside the money `Card` and not a Section of its own. The API nests it inside the money
+ * key so `payments.read` gates the breakdown by exactly the key that gates the total; a card of
+ * its own on this screen would suggest a permission of its own, and it would also be the sixth
+ * bordered thing on a page that spent a whole phase getting down to one.
+ *
+ * ⚠️ When exactly one order owes, its row repeats the total above it. That is unavoidable — the
+ * row is where the *link* is — and it is the case the coversAll sentence exists for: it says the
+ * figure and the row are one debt rather than leaving them to look like two.
+ */
+function OutstandingOrders({ money }: { readonly money: MoneyOverview }) {
+  const breakdown = outstandingBreakdown(money.outstanding, money.outstandingOrders);
+
+  return (
+    <div className="border-border/60 flex flex-col gap-1 border-t pt-5">
+      <p className="text-muted-foreground type-caption">{breakdown.noteTh}</p>
+
+      {breakdown.shown.length > 0 && (
+        /*
+         * A list of aligned amounts, matching `QueueRow` above rather than a table: the money
+         * lands in one column so the eye ranks the debts without reading them, and the whole row
+         * is the hit area. `divide-y` is deliberately absent — eight rules under a rule the
+         * block already has would be drawing edges around edges.
+         */
+        <ul className="flex flex-col">
+          {breakdown.shown.map((order) => (
+            <OwingRow key={order.id} order={order} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One owing order, as a row that goes somewhere.
+ *
+ * ⚠️ The amount is `type-body`, not the `text-xl` of the figure above it. These rows are the
+ * breakdown *of* that figure; a part rendered louder than its whole inverts the reading order
+ * the phase-2 rewrite exists to establish — and the same argument that took money down from
+ * `text-3xl` applies one level further in.
+ *
+ * The status is here because a debt in ขอแก้แบบ is a different telephone call from one in
+ * รอชำระเงิน, and it is `statusLabel` from the orders folder rather than a second Thai table on
+ * this side: two copies of `STATUS_TH` is how two screens come to call one status two things.
+ */
+function OwingRow({ order }: { readonly order: OutstandingOrder }) {
+  return (
+    <li>
+      <Link
+        href={`/orders/${order.id}` as Route}
+        className="group focus-visible:outline-ring hover:bg-accent/60 -mx-2 flex items-center gap-3 rounded-md px-2 py-2 focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        {/*
+         * `orderNo` is unreachable-null through this list — every status it admits is
+         * post-submit — but it is typed nullable and rendering an empty cell for a debt would
+         * be the one row nobody could act on. The id prefix is what `order-list.tsx` falls back
+         * to for the same reason.
+         */}
+        <span className="type-body font-mono">{order.orderNo ?? order.id.slice(0, 8)}</span>
+        <span className="text-muted-foreground type-caption">{statusLabel(order.status)}</span>
+        <span className="type-body ml-auto font-medium tabular-nums">
+          {formatBaht(order.outstandingThbMinor)}
+        </span>
+        <ArrowRight
+          className="text-muted-foreground size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          aria-hidden
+        />
+      </Link>
     </li>
   );
 }

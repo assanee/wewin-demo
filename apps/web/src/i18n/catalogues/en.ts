@@ -564,9 +564,19 @@ export const en: PartialUiCatalogue = {
   'payment.meta.title': 'Notify us of a payment',
   'payment.heading': 'Notify us of a payment',
   'payment.loading': 'Opening your payment details…',
-  'payment.outstanding': 'Still owing',
+  'payment.outstanding': 'Still owing in total',
+  'payment.dueNow': 'To pay now',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'This order is paid in full',
+  /*
+   * ⚠️ Not "paid in full" — a cancelled order reaches this line too, and on one the company
+   * may owe the customer their deposit back. It states only what the server answered (this
+   * screen can no longer take a payment) and offers the people who can say the rest.
+   */
+  'payment.closed':
+    'This order is no longer accepting payments. If you have a question about the amount, please contact our sales team.',
+  'payment.closedOwing':
+    'A balance is still owing, but payments can no longer be submitted here. Please contact our sales team to settle it.',
   'payment.account.legend': 'Transfer to any one of these accounts',
   'payment.account.copy': (p) => `Copy account number ${p.accountDigits}`,
   'payment.account.copied': 'Account number copied',

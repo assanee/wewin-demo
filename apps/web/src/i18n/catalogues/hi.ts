@@ -577,9 +577,14 @@ export const hi: PartialUiCatalogue = {
   'payment.meta.title': 'भुगतान की सूचना दें',
   'payment.heading': 'भुगतान की सूचना दें',
   'payment.loading': 'आपके भुगतान का विवरण खोला जा रहा है…',
-  'payment.outstanding': 'बकाया राशि',
+  'payment.outstanding': 'कुल बकाया राशि',
+  'payment.dueNow': 'अभी देय राशि',
   'payment.outstandingAmount': (p, f) => f.bahtExact(p.owedMinor),
   'payment.settled': 'यह ऑर्डर पूरी तरह भुगतान हो चुका है',
+  'payment.closed':
+    'यह ऑर्डर अब भुगतान स्वीकार नहीं करता। राशि के बारे में कोई सवाल हो तो कृपया सेल्स टीम से संपर्क कीजिए।',
+  'payment.closedOwing':
+    'कुछ राशि अब भी बकाया है, लेकिन यहाँ से भुगतान नहीं भेजा जा सकता। बाकी राशि चुकाने के लिए कृपया सेल्स टीम से संपर्क कीजिए।',
   'payment.account.legend': 'इनमें से किसी भी खाते में ट्रांसफर करें',
   'payment.account.copy': (p) => `खाता नंबर ${p.accountDigits} कॉपी करें`,
   'payment.account.copied': 'खाता नंबर कॉपी हो गया',
