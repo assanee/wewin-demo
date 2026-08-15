@@ -52,12 +52,13 @@ interface Options {
   readonly email: string;
   readonly permissions: readonly PermissionCode[];
   readonly groupCode: string;
+  readonly groupNameTh: string;
 }
 
 function usage(problem: string): never {
   process.stderr.write(
     `${problem}\n\n` +
-      'Usage: create-user <email> [--permissions a.b,c.d] [--group code]\n' +
+      'Usage: create-user <email> [--permissions a.b,c.d] [--group code] [--name "ชื่อกลุ่ม"]\n' +
       `Permissions: ${PERMISSION_CODES.join(', ')}\n`,
   );
   process.exit(2);
@@ -93,7 +94,18 @@ function parse(argv: readonly string[]): Options {
     usage(`A group code must match ^[a-z][a-z0-9_]*$ — "${groupCode}" does not.`);
   }
 
-  return { email, permissions: codes as readonly PermissionCode[], groupCode };
+  /*
+   * `groups.name_th` is NOT NULL and is what every screen shows — the permissions table, the
+   * authority-ceiling role picker, the user's own group list. It used to be hard-coded to
+   * "ผู้ดูแลระบบตั้งต้น" for whatever `--group` was passed, which was harmless while this script only
+   * ever made the one bootstrap group and actively misleading the moment it made a second: a
+   * `finance_manager` row reading "ผู้ดูแลระบบตั้งต้น" in the ceiling picker is a ceiling granted to a
+   * role nobody can identify.
+   */
+  const groupNameTh = flag('name')?.trim() ?? 'ผู้ดูแลระบบตั้งต้น';
+  if (groupNameTh.length === 0) usage('--name cannot be empty.');
+
+  return { email, permissions: codes as readonly PermissionCode[], groupCode, groupNameTh };
 }
 
 /**
@@ -209,10 +221,24 @@ async function main(): Promise<void> {
           set: { passwordHash, updatedAt: new Date() },
         });
 
+      /*
+       * ⚠️ The conflict branch keeps the name the group already has — `sql\`groups.name_th\`` is
+       * the *existing* row in an ON CONFLICT DO UPDATE, where `excluded.name_th` would be the one
+       * being proposed. It reads like a pointless self-assignment and is not: DO NOTHING returns
+       * no row, so `returning` would hand back `undefined` for every group that already exists and
+       * the script would fail on its second run. This shape is the one way to get the id back
+       * without writing anything.
+       *
+       * It also closes a real hazard. This is a bootstrap script an operator points at an existing
+       * database to reset a forgotten password; before this, doing so silently renamed whatever
+       * group was passed to "ผู้ดูแลระบบตั้งต้น". A rename is invisible in an audit trail that
+       * records permission grants, and `groups.code` — the thing every guard reads — never moved,
+       * so nothing would have failed. Only a human reading the ceiling picker would notice.
+       */
       const [group] = await tx
         .insert(groups)
-        .values({ code: options.groupCode, nameTh: 'ผู้ดูแลระบบตั้งต้น' })
-        .onConflictDoUpdate({ target: groups.code, set: { nameTh: 'ผู้ดูแลระบบตั้งต้น' } })
+        .values({ code: options.groupCode, nameTh: options.groupNameTh })
+        .onConflictDoUpdate({ target: groups.code, set: { nameTh: sql`groups.name_th` } })
         .returning({ id: groups.id });
       if (group === undefined) throw new Error('could not create the group row');
 
@@ -234,6 +260,7 @@ async function main(): Promise<void> {
         `\n${existing.length > 0 ? 'Updated' : 'Created'} ${options.email}\n` +
           `  user id     ${userId}\n` +
           `  group       ${options.groupCode}\n` +
+          `  group name  ${options.groupNameTh}  (kept as-is if the group already existed)\n` +
           `  permissions ${options.permissions.join(', ')}\n\n` +
           'Sign in at the dashboard, or:\n' +
           `  curl -s localhost:3000/auth/password -H 'content-type: application/json' \\\n` +
