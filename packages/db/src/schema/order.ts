@@ -169,6 +169,13 @@ export const ORDER_EVENT_TYPES = [
   'change_requested',
   'change_resolved',
   'balance_reminded',
+  /*
+   * ⭐ An approved ขออนุมัติตัดยอดค้างทิ้ง. Beside `balance_reminded` because it is the same
+   * kind of row: money moved in the customer's favour and no status changed. Without it a
+   * forgiven debt was the one balance movement the spine did not witness — WW-1044 had
+   * ฿9,886.80 written off and its timeline still ended at `installation_scheduled`.
+   */
+  'balance_written_off',
 ] as const;
 
 /**

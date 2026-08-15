@@ -172,9 +172,16 @@ export class UsersController {
   @contractVersion()
   @RequirePermissions('users.write')
   async sendPasswordLink(
+    @CurrentScope() scope: Scope,
     @Param('userId') userId: string,
   ): Promise<{ readonly sent: boolean }> {
-    return { sent: await this.users.sendSetPasswordLinkTo(userId) };
+    /*
+     * ⭐ `@CurrentScope` added when `user.password_link_sent` started being recorded. This was
+     * the only write handler in this file that did not ask for the caller — which is exactly
+     * why the audit row was missing: there was no actor to name. Issuing a reset link for
+     * somebody else's account, including another staff member's, left no trace of who did it.
+     */
+    return { sent: await this.users.sendSetPasswordLinkTo(callerOf(scope), userId) };
   }
 
   @Get('groups')

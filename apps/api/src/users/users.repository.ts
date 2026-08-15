@@ -554,6 +554,28 @@ export class UsersRepository {
    * already confirmed the phone belongs to this user, and repeating it here means the UPDATE
    * itself cannot act on the wrong person's row even if that check is ever skipped upstream.
    */
+  /**
+   * ⭐ Records that somebody issued a set-password link for another account.
+   *
+   * ⚠️ One statement in its own transaction, which is the exception in this file and is called
+   * out rather than hidden: the thing it describes — the `auth_tokens` row — was written by the
+   * auth module in a transaction this class never sees. `UsersService.sendSetPasswordLinkTo`
+   * carries the full argument and the shape to take if it ever needs to be exact.
+   *
+   * No payload. `admin_events_payload_is_impersonal` raises on any value containing `@`, and the
+   * address is the one value obviously in hand here — which is precisely the mistake that trigger
+   * exists to catch. `subject_user_id` already says whose account it was.
+   */
+  async recordPasswordLinkSent(userId: string, actorUserId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await this.audit.record(tx, {
+        action: 'user.password_link_sent',
+        actorUserId,
+        subjectUserId: userId,
+      });
+    });
+  }
+
   async verifyPhone(phoneId: string, userId: string, actorUserId: string): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const updated = await tx

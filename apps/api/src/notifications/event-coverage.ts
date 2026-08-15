@@ -37,6 +37,30 @@ export const DELIBERATELY_SILENT_EVENTS: Readonly<Partial<Record<OrderEventType,
    * customer that our messages are noise before the one that matters arrives.
    */
   created: 'a draft is a cart: no contact channel exists yet (plan 10.2) and most are abandoned',
+  /*
+   * ⚠️ SILENT BY DEFAULT, AND THIS IS THE OPEN QUESTION, NOT THE ANSWER.
+   *
+   * Thirteen of the fifteen types notify; this is the second exception ever, so it deserves
+   * more than a line. The customer is not left uninformed: `payment.writtenOff` already says
+   * "ยอดคงค้างส่วนที่เหลือได้รับการอนุมัติให้ตัดยอดแล้ว — ไม่มีสิ่งที่ต้องชำระเพิ่ม" on their own
+   * order screen in all eight locales, and the balance reaching zero is what stops the
+   * reminders. What is missing is a message we *push*.
+   *
+   * The reason for not writing one here is that an unprompted email saying the company has
+   * forgiven a debt is a commercial statement, not a status update. A write-off is normally the
+   * end of a negotiation somebody had by phone, and the person who had it is better placed to
+   * confirm it in the terms they agreed than a template is. Sending one anyway risks putting in
+   * writing a concession that was meant to be case-by-case.
+   *
+   * That is a judgement about how this business talks to its customers, so it is the owner's to
+   * make and not this file's. If the answer is "yes, tell them", the work is one row in
+   * `notification_rules` plus `order.balance_written_off.customer` in templates.ts, and this
+   * entry comes out.
+   */
+  balance_written_off:
+    'a forgiven debt is the end of a negotiation a person had; the staff who agreed it should ' +
+    'confirm it in their own terms. The customer already sees payment.writtenOff on their order ' +
+    'screen and the reminders stop on their own. Owner to decide whether we also push a message.',
 };
 
 export function isDeliberatelySilent(eventType: string): boolean {

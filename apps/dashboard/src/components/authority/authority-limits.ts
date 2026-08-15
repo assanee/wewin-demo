@@ -42,12 +42,18 @@ import type {
  */
 export const DIMENSION_LABEL_TH: Readonly<Record<AuthorityDimension, string>> = {
   margin: 'ส่วนลด (เงินที่ลูกค้าจ่ายน้อยลง)',
-  cashflow: 'กระแสเงินสด (เงินที่ได้ก่อนเปิดผลิตน้อยลง)',
+  cashflow: 'กระแสเงินสด (เงินที่บริษัทได้รับน้อยลง)',
 };
 
 export const DIMENSION_HINT_TH: Readonly<Record<AuthorityDimension, string>> = {
   margin: 'นับรวมยอดบรรทัดที่ถูกลด ส่วนลดทั้งใบ ยอดรวมที่ถูกลด และบรรทัดค่าใช้จ่ายที่ติดลบ',
-  cashflow: 'นับรวมการลดยอดมัดจำและการเลื่อนงวดที่ถือประตูเข้าสายการผลิต',
+  /*
+   * ⚠️ ตัดยอดค้างทิ้ง added by 0051's round. It draws on this same ceiling — `approvals`
+   * pins `dimension: 'cashflow'` for a write-off with a CHECK — and it is the one thing
+   * on this list that happens AFTER delivery rather than before production, which is why
+   * the label above no longer says ก่อนเปิดผลิต.
+   */
+  cashflow: 'นับรวมการลดยอดมัดจำ การเลื่อนงวดที่ถือประตูเข้าสายการผลิต และการตัดยอดค้างทิ้ง',
 };
 
 export const dimensionOptions = (): readonly { value: AuthorityDimension; labelTh: string }[] => [
@@ -62,6 +68,15 @@ export function ceilingMeaningTh(limit: AuthorityLimitView): string {
   }
   if (limit.maxConcessionThbMinor === 0n) {
     return 'บันทึกส่วนลดได้ แต่ต้องให้คนอื่นอนุมัติทุกครั้ง';
+  }
+  /*
+   * ⚠️ Two sentences, because one ceiling now governs two different acts. On `margin` the
+   * unit is a quotation. On `cashflow` it is also the largest ตัดยอดค้างทิ้ง this role may
+   * approve, and a reader told only about ใบเสนอราคา would look at ฿50,000 here and have
+   * no idea it is what let somebody forgive a debt.
+   */
+  if (limit.dimension === 'cashflow') {
+    return `ลดได้เองถึง ${baht(limit.maxConcessionThbMinor)} ต่อหนึ่งใบเสนอราคา และอนุมัติตัดยอดค้างทิ้งได้ถึงยอดเดียวกัน`;
   }
   return `ลดได้เองถึง ${baht(limit.maxConcessionThbMinor)} ต่อหนึ่งใบเสนอราคา`;
 }

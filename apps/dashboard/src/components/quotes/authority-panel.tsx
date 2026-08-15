@@ -82,7 +82,7 @@ export type QuoteWriteFn = QuoteEditor['write'];
 
 const DIMENSION_LABEL_TH: Readonly<Record<ApprovalDimensionWire, string>> = {
   margin: 'ส่วนลด (เงินที่ลูกค้าจ่ายน้อยลง)',
-  cashflow: 'กระแสเงินสด (เงินที่ได้ก่อนเปิดผลิตน้อยลง)',
+  cashflow: 'กระแสเงินสด (เงินที่บริษัทได้รับน้อยลง)',
 };
 
 const DIMENSION_HINT_TH: Readonly<Record<ApprovalDimensionWire, string>> = {

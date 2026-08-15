@@ -119,6 +119,7 @@ export const ORDER_EVENT_TYPES = [
   'change_requested',
   'change_resolved',
   'balance_reminded',
+  'balance_written_off',
 ] as const;
 
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
@@ -144,6 +145,16 @@ const EVENT_TH: Record<OrderEventType, string> = {
    * `แจ้งเตือน` and `ค้างชำระ`, both of which this dashboard already uses.
    */
   balance_reminded: 'แจ้งเตือนยอดค้างชำระ',
+  /*
+   * ⭐ 0051. `ตัดยอดค้างทิ้ง` is the phrase the owner used and the one every other screen in
+   * this feature already carries — the request button on the order, the approvals queue, the
+   * decision dialog. A timeline that invented a fifteenth synonym for it would be the same
+   * defect this feature has been shedding all week.
+   *
+   * Past tense, because a timeline row is a thing that happened: the request is `ขออนุมัติ…`,
+   * this row appears only once somebody approved it.
+   */
+  balance_written_off: 'ตัดยอดค้างทิ้งแล้ว',
 };
 
 /**

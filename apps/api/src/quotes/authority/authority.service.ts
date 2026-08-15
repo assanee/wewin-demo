@@ -6,6 +6,7 @@ import { AppError } from '../../common/errors/app-error';
 import { DEFAULT_VAT_RULE } from '../../orders/defaults';
 /* The one definition of a live obligation, as the pure function it is — see `write-off.service.ts`. */
 import { isLiveOrder } from '../../orders/live-order';
+import { OrderRepository } from '../../orders/order.repository';
 import { GATE_COVERAGE_BP_DEFAULT } from '../../payments/schedule';
 import { scopeHolds, type Scope } from '../../rbac';
 import { approvalRights, WRITE_OFF_PERMISSION, type ApprovalRights } from './approval-rights';
@@ -171,6 +172,18 @@ export class AuthorityService {
      * scope, and threading it from them would put a settings read into a controller.
      */
     @Inject(DEPOSIT_POLICY) private readonly depositPolicy: DepositPolicyPort,
+    /**
+     * ⭐ 0051, and used for exactly one call: `appendEvent`, to put an approved write-off on the
+     * order's timeline.
+     *
+     * The repository and not `OrdersService`. This module's header records that it deliberately
+     * does not import `OrdersModule`, and that still holds — the class is listed in this module's
+     * own `providers`, the way `SlipsModule` does it, so no module edge appears and nothing here
+     * can drive the state machine. `appendEvent`'s own note is the licence: *"There is one way
+     * onto the spine and it is this method"*, because the outbox reads that table and nothing
+     * else. A write-off that skipped it would be an event nobody could be notified about.
+     */
+    private readonly orders: OrderRepository,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -788,6 +801,43 @@ export class AuthorityService {
 
       /* Zero rows means somebody else decided it between the lock and the update. */
       if (!recorded) throw AppError.conflict('คำขออนุมัตินี้ถูกตัดสินไปแล้ว');
+
+      /*
+       * ⭐ 0051. A forgiven debt joins the order's timeline, in this transaction.
+       *
+       * In this transaction and not after it: `order_outstanding_thb_minor()` folds an approved
+       * write-off, so between committing the decision and appending the row there is a window in
+       * which the balance has already moved and nothing says why. Sharing the transaction makes
+       * that window not exist — the same argument `remindBalance` makes for its own append.
+       *
+       * ⚠️ `actorKind: 'staff'` is passed directly rather than through `orderActor(scope)`. That
+       * helper types a caller as staff only when they hold `orders.read` AND `orders.write`, and
+       * this route is gated on `quotes.approve` plus `payments.write_off` — so an approver with no
+       * orders permissions would be typed `customer`, and `order_events_guard_insert()` would then
+       * refuse the row with "user % does not own order %". Staffness is already proved here, twice:
+       * `staffUserId(scope)` above, and the write-off permission check that let this branch run.
+       *
+       * Only on approval. A refused request moved no money; `approvals` already records that it
+       * was considered, which is the point of keeping refusals as rows.
+       */
+      if (row.kind === 'write_off' && input.decision === 'approved') {
+        await this.orders.appendEvent(tx, {
+          orderId: row.orderId,
+          eventType: 'balance_written_off',
+          fromStatus: null,
+          toStatus: null,
+          actorKind: 'staff',
+          actorUserId: decidedByUserId,
+          actorGuestId: null,
+          payload: {
+            written_off_thb_minor: row.concessionThbMinor.toString(),
+            reason: row.reasonTh,
+            ...(input.noteTh === undefined || input.noteTh === null
+              ? {}
+              : { note_th: input.noteTh }),
+          },
+        });
+      }
     });
 
     const decided = await this.repository.approvalById(approvalId);

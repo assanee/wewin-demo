@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, KeyRound, LogOut, Phone, PhoneOff, Plus, ShieldOff, UserCheck } from 'lucide-react';
+import { AlertTriangle, KeyRound, LogOut, Phone, PhoneOff, Plus, ShieldOff } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { toast } from 'sonner';
+
 import { failureMessage } from '@/components/products/catalog-api';
 import { useSession } from '@/lib/auth/session';
 
@@ -109,8 +111,6 @@ type State =
 export function UserAdmin() {
   const { can, state: session } = useSession();
   const [state, setState] = useState<State>({ status: 'loading' });
-  const [problem, setProblem] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
@@ -134,16 +134,28 @@ export function UserAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
 
+  /**
+   * ⚠️ **Toasts, not the banner this used to render.**
+   *
+   * The banner was not missing and it was not empty — it was pinned to the top of this component,
+   * above the tab strip and above an unpaginated table of every account. Press ส่งลิงก์รหัสผ่าน on
+   * a row two thirds of the way down and the answer appears two thousand pixels behind you, so the
+   * screen looked like it had done nothing at all. It reported the API's sentence faithfully to a
+   * part of the page nobody was looking at, which is worse than saying nothing: the operator's
+   * next move is to press it again.
+   *
+   * `act` is shared by every row action here — groups, sign-out, MFA, suspension — so all of them
+   * were equally silent and all of them are fixed by this one change. `sonner` is what the rest of
+   * this dashboard already uses; `record-payment-dialog.tsx` is the pattern being copied.
+   */
   async function act(userId: string, run: () => Promise<unknown>, said: string): Promise<void> {
     setBusyId(userId);
-    setProblem(null);
-    setNote(null);
     try {
       await run();
-      setNote(said);
+      toast.success(said);
       await reload();
     } catch (cause) {
-      setProblem(failureMessage(cause));
+      toast.error(failureMessage(cause));
     } finally {
       setBusyId(null);
     }
@@ -154,20 +166,6 @@ export function UserAdmin() {
      * focal statement, the tabs and the audit trail from one another — see `overview-screen.tsx`,
      * which makes the same trade of a ring for a gap. */
     <div className="flex flex-col gap-8">
-      {problem !== null && (
-        <Alert variant="destructive">
-          <AlertTriangle className="size-4" />
-          <AlertTitle>ทำรายการไม่สำเร็จ</AlertTitle>
-          <AlertDescription>{problem}</AlertDescription>
-        </Alert>
-      )}
-      {note !== null && (
-        <Alert>
-          <UserCheck className="size-4" />
-          <AlertDescription>{note}</AlertDescription>
-        </Alert>
-      )}
-
       {state.status === 'loading' && <Skeleton className="h-64 w-full" />}
 
       {state.status === 'failed' && (
@@ -447,7 +445,7 @@ export function UserAdmin() {
                 available={state.available}
                 editable={editable}
                 onChanged={() => void reload()}
-                onProblem={setProblem}
+                onProblem={(message) => toast.error(message)}
               />
             </TabsContent>
           </Tabs>
@@ -460,11 +458,13 @@ export function UserAdmin() {
           onClose={() => setCreating(false)}
           onCreated={(invitationSent) => {
             setCreating(false);
-            setNote(
-              invitationSent
-                ? 'สร้างบัญชีแล้ว และส่งลิงก์ตั้งรหัสผ่านไปให้เรียบร้อย'
-                : 'สร้างบัญชีแล้ว แต่ส่งอีเมลไม่สำเร็จ — ใช้ปุ่ม "ส่งลิงก์รหัสผ่าน" อีกครั้งได้',
-            );
+            /* ⚠️ The failure half is a `warning`, not a `success`: the account exists but nobody
+               can sign into it yet, and a green tick over that sentence contradicts it. */
+            if (invitationSent) {
+              toast.success('สร้างบัญชีแล้ว และส่งลิงก์ตั้งรหัสผ่านไปให้เรียบร้อย');
+            } else {
+              toast.warning('สร้างบัญชีแล้ว แต่ส่งอีเมลไม่สำเร็จ — ใช้ปุ่ม "ส่งลิงก์รหัสผ่าน" อีกครั้งได้');
+            }
             void reload();
           }}
         />
@@ -476,7 +476,7 @@ export function UserAdmin() {
           onClose={() => setSuspending(null)}
           onDone={() => {
             setSuspending(null);
-            setNote('ระงับบัญชีแล้ว และออกจากระบบทุกอุปกรณ์ของบัญชีนี้');
+            toast.success('ระงับบัญชีแล้ว และออกจากระบบทุกอุปกรณ์ของบัญชีนี้');
             void reload();
           }}
         />
@@ -498,7 +498,7 @@ export function UserAdmin() {
           onClose={() => setEditingGroups(null)}
           onSaved={() => {
             setEditingGroups(null);
-            setNote('บันทึกกลุ่มแล้ว');
+            toast.success('บันทึกกลุ่มแล้ว');
             void reload();
           }}
         />

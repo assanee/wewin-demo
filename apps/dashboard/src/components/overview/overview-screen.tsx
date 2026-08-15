@@ -162,7 +162,15 @@ export function OverviewScreen() {
     ...(overview.quotes
       ? [
           {
-            label: 'ใบเสนอราคารออนุมัติ',
+            /*
+             * ⚠️ Not 'ใบเสนอราคารออนุมัติ'. The count behind this card is
+             * `select count(*) from approvals where status = 'pending'` with no `kind` filter
+             * (`overview.repository.ts`), so ขออนุมัติตัดยอดค้างทิ้ง — which is an act on an
+             * ORDER, not a discount on a quotation — has been inside this number since 0047.
+             * A reader who trusted the old label would open the queue, find a write-off, and
+             * conclude the count was wrong rather than the word.
+             */
+            label: 'คำขออนุมัติรออยู่',
             count: overview.quotes.approvalsPending,
             icon: FileText,
             /*
@@ -180,7 +188,7 @@ export function OverviewScreen() {
              * what that page and its queue endpoint ask for.
              */
             href: '/approvals' as Route,
-            action: 'มีส่วนลดเกินอำนาจที่พนักงานขายตั้งไว้',
+            action: 'ส่วนลดที่เกินอำนาจ และคำขอตัดยอดค้างทิ้ง',
           },
         ]
       : []),

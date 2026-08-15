@@ -286,6 +286,7 @@ const PAYLOAD_ORDER = [
   'slip_amount_thb_minor',
   'absorbed_delta_thb_minor',
   'outstanding_thb_minor',
+  'written_off_thb_minor',
   'fault',
   'resolution',
   /* What was pinned. */
@@ -311,6 +312,13 @@ const PAYLOAD_LABEL_TH: Readonly<Record<(typeof PAYLOAD_ORDER)[number], string>>
    * again at send time.
    */
   outstanding_thb_minor: 'ยอดคงค้าง ณ ตอนแจ้ง',
+  /*
+   * ⭐ 0051. Deliberately NOT reusing `outstanding_thb_minor`: on `balance_reminded` that key
+   * means *what was still owed when we asked*, and on this row the interesting number is what
+   * the company gave up. One key carrying two meanings is how a reader ends up comparing two
+   * figures that were never the same quantity.
+   */
+  written_off_thb_minor: 'ยอดที่ตัดทิ้ง',
   fault: 'ผู้รับภาระ',
   resolution: 'ผลการตัดสิน',
   line_count: 'จำนวนรายการ',
@@ -356,6 +364,8 @@ const SATANG_READERS = {
   absorbed_delta_thb_minor: signedBaht,
   /* Unsigned: a balance owed is never negative in a reminder — the ask is refused at ฿0.00. */
   outstanding_thb_minor: baht,
+  /* Unsigned too: `write_off_amount_positive` refuses a request at or below ฿0.00. */
+  written_off_thb_minor: baht,
 } as const satisfies Readonly<Record<`${string}_thb_minor`, (minor: bigint) => string>>;
 
 /**
@@ -404,10 +414,11 @@ function readValue(key: (typeof PAYLOAD_ORDER)[number], value: unknown): string 
     case 'note_th':
       return typeof value === 'string' && value.trim() !== '' ? value : null;
 
-    /* All three money keys go through `SATANG_READERS` and nothing else may. See its header. */
+    /* All four money keys go through `SATANG_READERS` and nothing else may. See its header. */
     case 'slip_amount_thb_minor':
     case 'absorbed_delta_thb_minor':
-    case 'outstanding_thb_minor': {
+    case 'outstanding_thb_minor':
+    case 'written_off_thb_minor': {
       const minor = readSatang(value);
       return minor === null ? null : SATANG_READERS[key](minor);
     }

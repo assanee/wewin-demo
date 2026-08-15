@@ -103,6 +103,7 @@ export const ORDER_EVENT_TYPES_WIRE = [
   'change_requested',
   'change_resolved',
   'balance_reminded',
+  'balance_written_off',
 ] as const;
 
 export type OrderEventTypeWire = (typeof ORDER_EVENT_TYPES_WIRE)[number];

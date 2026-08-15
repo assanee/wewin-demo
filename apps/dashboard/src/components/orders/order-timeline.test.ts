@@ -236,6 +236,24 @@ describe('⭐ a payload read as Thai sentences', () => {
     expect(line?.known).toBe(true);
   });
 
+  it('⭐ reads the forgiven amount as money, and keeps it distinct from the reminder figure', () => {
+    /*
+     * 0051. Same trap as `outstanding_thb_minor` above and one step worse, because the two keys can
+     * appear on the same order a few minutes apart: `balance_reminded` records what was still owed
+     * when we asked, and `balance_written_off` records what the company then gave up. Sharing one
+     * key would have been the cheap change and would have left a reader comparing two figures that
+     * were never the same quantity.
+     *
+     * ⚠️ Absent from `SATANG_READERS`, a `_thb_minor` value renders as raw digits — "988680" on a
+     * screen where every other number is money. That is the hundredfold error this asserts against.
+     */
+    const line = payloadLines({ written_off_thb_minor: '988680' })[0];
+
+    expect(line?.labelTh).toBe('ยอดที่ตัดทิ้ง');
+    expect(line?.valueText).toBe('฿9,886.80');
+    expect(line?.known).toBe(true);
+  });
+
   it('shortens a hash to something recognisable rather than pretending it is readable', () => {
     const lines = payloadLines({ line_count: 1, document_hash: HASH });
 
@@ -380,9 +398,10 @@ describe('who did it and where it came from', () => {
      * The same guard `statusLabel` gets, for the same reason: the old spine rendered the machine
      * string `submitted_for_payment` as its heading on a Thai-only screen.
      */
-    /* Fourteen since 0050 added `balance_reminded`, the fourth event that moves no status. */
-    expect(ORDER_EVENT_TYPES).toHaveLength(14);
+    /* Fifteen since 0051 added `balance_written_off`, the fifth event that moves no status. */
+    expect(ORDER_EVENT_TYPES).toHaveLength(15);
     expect(ORDER_EVENT_TYPES).toContain('balance_reminded');
+    expect(ORDER_EVENT_TYPES).toContain('balance_written_off');
 
     for (const type of ORDER_EVENT_TYPES) {
       const label = eventLabelTh(type);

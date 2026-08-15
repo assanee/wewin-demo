@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { OrderRepository } from '../../orders/order.repository';
 import { OrganisationModule } from '../../organisation';
 import { ApprovalsController } from './approvals.controller';
 import { AuthorityController } from './authority.controller';
@@ -70,7 +71,7 @@ import { WriteOffsController } from './write-offs.controller';
 @Module({
   imports: [OrganisationModule],
   controllers: [ApprovalsController, AuthorityController, WriteOffsController],
-  providers: [AuthorityService, AuthorityRepository, WriteOffService],
+  providers: [AuthorityService, AuthorityRepository, WriteOffService, OrderRepository],
   exports: [AuthorityService],
 })
 export class AuthorityModule {}

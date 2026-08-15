@@ -121,6 +121,55 @@ describeWithPg('the administrative spine', () => {
       expect(latest?.action).toBe('user.groups_changed');
       expect(latest?.payload).toStrictEqual({ groupIds: [] });
     });
+
+    it('⭐ records who issued a set-password link, and says nothing about the address', async () => {
+      /*
+       * `user.password_link_sent` was a declared action that nothing ever wrote. Found by pressing
+       * the button and watching `auth_tokens` gain a row while `admin_events` stood still: a staff
+       * member could issue a reset link for any account — another staff member's included — and
+       * the trail showed nothing. The route is guarded by `users.write`, so this is the one admin
+       * action that could hand somebody else's account away unrecorded.
+       */
+      /*
+       * `makeActor` builds a staff account with permissions and no address — nothing else in
+       * this file needs one. A set-password link has nowhere to go without a *verified* primary
+       * address (`user_emails_primary_is_verified`), and the route answers 409 rather than
+       * pretending, so the fixture supplies one here rather than the route being loosened.
+       */
+      await db.execute(sql`
+        insert into user_emails (user_id, address, is_primary, verified_at)
+        values (${subject.userId}::uuid, ${`audit-subject-${tag}@wewin.test`}, true, now())
+        on conflict do nothing
+      `);
+
+      const before = (await events(subject.userId)).length;
+
+      const response = await call('POST', `/admin/users/${subject.userId}/password-link`, {
+        token: admin.token,
+      });
+      expect(response.status, JSON.stringify(response.body)).toBe(201);
+
+      const after = await events(subject.userId);
+      expect(after).toHaveLength(before + 1);
+
+      const latestSent = after[after.length - 1];
+      expect(latestSent?.action).toBe('user.password_link_sent');
+      /*
+       * ⚠️ Empty, deliberately. The address is the one value obviously in hand at this call site,
+       * and `admin_events_payload_is_impersonal` raises on any value containing `@` — so putting
+       * it here would not merely leak, it would fail the insert. `subject_user_id` already says
+       * whose account it was, and it survives an erasure.
+       */
+      expect(latestSent?.payload).toStrictEqual({});
+
+      const [row] = (
+        await db.execute<{ actor: string }>(sql`
+          select actor_user_id::text as actor from admin_events
+           where subject_user_id = ${subject.userId}::uuid order by seq desc limit 1
+        `)
+      ).rows;
+      expect(row?.actor).toBe(admin.userId);
+    });
   });
 
   describe('⭐ the row rolls back with the change', () => {

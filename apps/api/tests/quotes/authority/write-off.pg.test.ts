@@ -356,6 +356,133 @@ describeWithPg('⭐ write-offs — forgiving a balance the customer owes', () =>
    * ⓶ THE GUARD, AT BOTH MOMENTS
    * ================================================================= */
 
+  /* ================================================================= *
+   * ⓵b THE SPINE — 0051
+   * ================================================================= */
+
+  /**
+   * Reads `order_events` for one order, newest first.
+   *
+   * Raw SQL rather than the drizzle table so that a column rename in the schema shows up here as
+   * a failure rather than as a silently-empty result — this helper's whole job is to prove a row
+   * exists, and a reader that cannot fail is a reader that always agrees with you.
+   */
+  async function spine(orderId: string): Promise<readonly Record<string, unknown>[]> {
+    const result = await db.execute(sql`
+      select event_type, from_status, to_status, actor_kind, actor_user_id, payload
+        from order_events where order_id = ${orderId} order by seq desc
+    `);
+    return (result as unknown as { readonly rows?: readonly Record<string, unknown>[] }).rows
+      ?? (result as unknown as readonly Record<string, unknown>[]);
+  }
+
+  describe('⓵b the forgiven debt reaches the order timeline', () => {
+    it('⭐ an APPROVED write-off appends `balance_written_off`, naming the decider and the amount', async () => {
+      /*
+       * WW-1044 is why this test exists. ฿9,886.80 was forgiven on a live order and its timeline
+       * still ended at `installation_scheduled` from the day before — every other movement of
+       * money leaves a row, and the one that makes a balance vanish left nothing. Somebody
+       * reading that order later would find a total that no longer matches what was collected
+       * and no row saying why.
+       */
+      const order = await quote('spine');
+      await grantCashflowCeiling(approverGroupId, '99999999');
+      const before = await folds(order.id);
+      const beforeRows = await spine(order.id);
+
+      const asked = await call('POST', `/orders/${order.id}/write-offs`, {
+        token: clerk.token,
+        body: {
+          amountThbMinor: before.outstanding.toString(),
+          reasonTh: 'ลูกค้าแจ้งว่าจะไม่ชำระส่วนที่เหลือ ตกลงยุติกันด้วยยอดมัดจำที่จ่ายมาแล้ว',
+        },
+      });
+      expect(asked.status).toBe(201);
+      const requested = asked.body as { readonly id: string };
+
+      /* ⚠️ Asking forgives nothing and says nothing. The row belongs to the decision. */
+      expect(await spine(order.id)).toHaveLength(beforeRows.length);
+
+      const decided = await call('POST', `/quotes/approvals/${requested.id}/decision`, {
+        token: approver.token,
+        body: { decision: 'approved', noteTh: 'ตรวจกับยอดคงค้างแล้ว ยุติตามที่ตกลงกันทางโทรศัพท์' },
+      });
+      expect(decided.status).toBe(200);
+
+      const rows = await spine(order.id);
+      expect(rows).toHaveLength(beforeRows.length + 1);
+
+      const row = rows[0];
+      expect(row?.['event_type']).toBe('balance_written_off');
+      /* No status moved: the work is still to be delivered, only the debt is gone. */
+      expect(row?.['from_status']).toBeNull();
+      expect(row?.['to_status']).toBeNull();
+      /*
+       * ⭐ The decider, not the requester. Four-eyes means these are two different people, and a
+       * timeline that named the person who *asked* would credit the wrong one with the decision.
+       */
+      expect(row?.['actor_kind']).toBe('staff');
+      expect(row?.['actor_user_id']).toBe(approver.userId);
+
+      const payload = row?.['payload'] as Record<string, unknown>;
+      expect(payload['written_off_thb_minor']).toBe(before.outstanding.toString());
+      expect(payload['reason']).toContain('ตกลงยุติกัน');
+      expect(payload['note_th']).toContain('ยุติตามที่ตกลงกันทางโทรศัพท์');
+    });
+
+    it('⚠️ a REFUSED write-off appends nothing — no money moved', async () => {
+      const order = await quote('spine-no');
+      await grantCashflowCeiling(approverGroupId, '99999999');
+      const before = await spine(order.id);
+
+      const asked = await call('POST', `/orders/${order.id}/write-offs`, {
+        token: clerk.token,
+        body: { amountThbMinor: '100000', reasonTh: 'ขอตัดยอดเพราะลูกค้าต่อรอง' },
+      });
+      const requested = asked.body as { readonly id: string };
+
+      const decided = await call('POST', `/quotes/approvals/${requested.id}/decision`, {
+        token: approver.token,
+        body: { decision: 'rejected', noteTh: 'ยังเก็บได้ ให้ตามต่อ' },
+      });
+      expect(decided.status).toBe(200);
+
+      expect(await spine(order.id)).toHaveLength(before.length);
+    });
+
+    it('⭐ THE DATABASE refuses the row without an amount, and refuses a customer as its actor', async () => {
+      /*
+       * The service always supplies both, so these go through raw SQL: the guard exists for the
+       * day a second caller appears, and a guard nothing tests is a comment.
+       *
+       * ⚠️ Each refusal is paired with an insert that must SUCCEED, and that pairing is the whole
+       * design of this test. The driver wraps Postgres's message as "Failed query: …", so a bare
+       * `.rejects.toThrow()` cannot tell *which* rule refused — it would pass just as happily if
+       * the column list were wrong and every insert here failed. The row that goes in proves the
+       * statement is otherwise sound, so the row that bounces bounced on the guard.
+       */
+      const order = await quote('spine-guard');
+      const insert = (actorKind: string, actorId: string, payload: string) =>
+        db.execute(sql`
+          insert into order_events (order_id, event_type, actor_kind, actor_user_id, payload)
+          values (${order.id}, 'balance_written_off', ${actorKind}, ${actorId}, ${payload}::jsonb)
+        `);
+
+      /* No amount: a row saying a debt was forgiven without saying how much looks complete. */
+      await expect(insert('staff', approver.userId, '{}')).rejects.toThrow();
+
+      /* A customer cannot forgive their own debt, whatever the payload says. */
+      await expect(
+        insert('customer', clerk.userId, '{"written_off_thb_minor":"100"}'),
+      ).rejects.toThrow();
+
+      /* The control: same statement, both rules satisfied. */
+      await expect(
+        insert('staff', approver.userId, '{"written_off_thb_minor":"100"}'),
+      ).resolves.toBeDefined();
+    });
+  });
+
   describe('⓶ a concession larger than the balance owed', () => {
     it('⭐ refuses the ASK when the amount is above the outstanding', async () => {
       const order = await quote('overask');

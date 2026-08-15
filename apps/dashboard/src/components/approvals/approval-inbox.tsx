@@ -369,9 +369,17 @@ export function ApprovalInbox() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="type-caption h-8">ใบเสนอราคา</TableHead>
+                {/*
+                  ⚠️ Kind-neutral, because one heading sits over two meanings. The cell below
+                  renders `approval.orderNo` for BOTH kinds — a write-off is raised on an order
+                  and has no quotation of its own — and the amount is a discount on one row and a
+                  forgiven balance on the next. The row cells already say which: `subjectTh`
+                  prints ตัดยอดค้างทิ้ง in the มิติ column, and `amountLabelTh` exists for the
+                  same reason on the detail screen.
+                */}
+                <TableHead className="type-caption h-8">อ้างอิง</TableHead>
                 <TableHead className="type-caption h-8">มิติ</TableHead>
-                <TableHead className="type-caption h-8 text-right">ยอดที่ขอลด</TableHead>
+                <TableHead className="type-caption h-8 text-right">ยอดที่ขอ</TableHead>
                 <TableHead className="type-caption h-8">ผู้ขอ</TableHead>
                 <TableHead className="type-caption h-8">รออยู่</TableHead>
                 <TableHead className="type-caption h-8">เหตุผล</TableHead>
@@ -489,9 +497,10 @@ function DecidedTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="type-caption h-8">ใบเสนอราคา</TableHead>
+            {/* Same mixed queue, same reasoning as the pending table above. */}
+            <TableHead className="type-caption h-8">อ้างอิง</TableHead>
             <TableHead className="type-caption h-8">มิติ</TableHead>
-            <TableHead className="type-caption h-8 text-right">ยอดที่ลด</TableHead>
+            <TableHead className="type-caption h-8 text-right">ยอดที่ตัดสิน</TableHead>
             <TableHead className="type-caption h-8">ผู้ขอ</TableHead>
             <TableHead className="type-caption h-8">ตัดสินเมื่อ</TableHead>
             <TableHead className="type-caption h-8 text-right">เพดานตอนอนุมัติ</TableHead>
@@ -857,7 +866,9 @@ function DecisionDialog({
             href={`/quotes/${detail.approval.orderId}` as Route}
             className="text-muted-foreground hover:text-foreground type-caption focus-visible:outline-ring inline-flex w-fit items-center gap-1 rounded px-1 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
-            เปิดใบเสนอราคาฉบับเต็ม <ArrowRight className="size-3" />
+            {/* `isWriteOff` is computed at the top of this component and was already unused here. */}
+            {isWriteOff ? 'เปิดออเดอร์ฉบับเต็ม' : 'เปิดใบเสนอราคาฉบับเต็ม'}{' '}
+            <ArrowRight className="size-3" />
           </Link>
         )}
       </DialogContent>

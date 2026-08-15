@@ -301,14 +301,33 @@ export class UsersService {
     }
   }
 
-  async sendSetPasswordLinkTo(userId: string): Promise<boolean> {
+  /**
+   * ⭐ Records `user.password_link_sent`.
+   *
+   * ⚠️ **In its own transaction, after the fact, and that is a real weakness rather than a
+   * preference.** Every other admin event shares a transaction with the state change it
+   * describes; this one cannot, because the state change is an `auth_tokens` row written
+   * inside `PasswordResetRepository.issueToken`'s own private transaction, three modules away,
+   * and no `Tx` is threaded out of it. So the row is best-effort relative to the token. The
+   * alternative — an optional actor threaded through `PasswordResetService.request`, which is
+   * also the unauthenticated login-page path — was judged the larger change; if this ever
+   * needs to be exact, that is the shape to take (`MfaRepository.disable` already does it).
+   *
+   * ⚠️ And what it records is *"a link was asked for"*, not *"an email arrived"*.
+   * `sendSetPasswordLink` returns `false` only when `request` throws, which in practice means
+   * the reset throttle's 429; transport failures are swallowed downstream on purpose. An audit
+   * trail that claimed delivery would be claiming something this process cannot know.
+   */
+  async sendSetPasswordLinkTo(callerUserId: string, userId: string): Promise<boolean> {
     const email = await this.repository.primaryAddressOf(userId);
     if (email === undefined) {
       throw AppError.conflict('บัญชีนี้ยังไม่มีอีเมลที่ยืนยันแล้ว จึงส่งลิงก์ไม่ได้', {
         reason: 'no-verified-address',
       });
     }
-    return this.sendSetPasswordLink(email);
+    const sent = await this.sendSetPasswordLink(email);
+    if (sent) await this.repository.recordPasswordLinkSent(userId, callerUserId);
+    return sent;
   }
 
   /**
