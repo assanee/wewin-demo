@@ -10,6 +10,7 @@ import type {
   QuoteWire,
 } from '@wewin/contract/quote';
 import type { OrganisationProfileWire } from '@wewin/contract/organisation';
+import type { LengthWire } from '@wewin/contract/measure';
 import type { LengthUnit } from '@wewin/core/units';
 
 import { apiJson } from '@/lib/api/client';
@@ -66,6 +67,36 @@ const quotePath = (orderId: string, suffix = ''): string =>
 
 export const getQuote = (orderId: string): Promise<QuoteWire> =>
   apiJson(quotePath(orderId), decodeQuote);
+
+/**
+ * ⭐ Add a line by copying one that is already priced — `POST …/quote/lines`.
+ *
+ * The endpoint has existed since the quote editor did and nothing has ever called it, so every
+ * line on every quotation in this system arrived through the storefront's configurator. See
+ * `duplicate-line.ts` for why the copy is a copy and not a second configurator.
+ *
+ * ⚠️ `enteredUnits` is sent empty, deliberately. It records which unit a person *typed* in, and
+ * nobody typed anything here — the measures came off a line the customer configured. The server
+ * accepts it (checked against a running one) and falls back to each group's authored unit,
+ * which is the same unit the source line was priced in.
+ */
+export const duplicateLine = (
+  orderId: string,
+  expect: QuotePreconditionWire,
+  line: {
+    readonly productVersionId: string;
+    readonly documentHash: string;
+    readonly productId: string;
+    readonly selections: Readonly<Record<string, string>>;
+    readonly measures: Readonly<Record<string, LengthWire>>;
+    readonly qty: number;
+  },
+): Promise<QuoteWire> =>
+  apiJson(
+    quotePath(orderId, '/lines'),
+    decodeQuote,
+    post({ expect, line: { ...line, enteredUnits: {} } }),
+  );
 
 /* ------------------------------------------------------------------ *
  * Writes

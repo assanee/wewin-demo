@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Lock, Minus, Plus, Trash2, Undo2, UserPen } from 'lucide-react';
+import { CopyPlus, Lock, Minus, Plus, Trash2, Undo2, UserPen } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,10 @@ import { LineFigure } from './provenance';
 import { addCharge, presentLine, removeLine, reviseQty, revokeOverride } from './quote-api';
 import { liveOverrideOf, type LineView } from './quote-model';
 import { measureUmOf } from './quote-wire';
+import type { QuoteLineWire } from '@wewin/contract/quote';
+
 import type { QuoteWriteFn } from './authority-panel';
+import { DuplicateLineDialog } from './duplicate-line-dialog';
 
 /**
  * The editing surface: one row per line, with its computed and its effective figure.
@@ -244,6 +247,9 @@ function LineRow({
   readonly onOverride: (context: OverrideContext, subjectTh: string) => void;
 }) {
   const { line } = view;
+  /* Held per row rather than at the table: one dialog belongs to one line, and threading a
+     setter through `LineRow`'s five props to save a boolean is a worse trade. */
+  const [duplicating, setDuplicating] = useState<QuoteLineWire | null>(null);
   /* Narrowed once. Re-narrowing inside a callback is how a handler ends up with an empty id. */
   const liveOverride = liveOverrideOf(view);
   const subjectTh = line.customerDescriptionTh ?? line.skuCode ?? `บรรทัดที่ ${String(line.seq)}`;
@@ -360,6 +366,27 @@ function LineRow({
             </Button>
           )}
 
+          {/*
+            ⭐ เพิ่มรายการ, by copying this one. See `duplicate-line.ts` for why the entry point
+            for adding a line is a copy of an existing line rather than a configurator: the
+            endpoint has never had a caller, so every line in this system arrived through the
+            storefront, and a salesperson taking an order by phone could not add a second window
+            to a quotation. Offered only on a catalogue line — a delivery charge has no
+            configuration to copy, and ‛เพิ่มค่าใช้จ่าย’ above already adds one of those.
+          */}
+          {line.kind === 'catalog' && line.selections !== null && line.measures !== null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled || view.locked}
+              title={view.locked ? LOCK_REASON_TH : undefined}
+              onClick={() => setDuplicating(line)}
+            >
+              <CopyPlus data-icon="inline-start" />
+              ทำสำเนา
+            </Button>
+          )}
+
           <Button
             size="sm"
             variant="ghost"
@@ -391,6 +418,17 @@ function LineRow({
           ) : null}
         </div>
       </TableCell>
+
+      {duplicating !== null && (
+        <TableCell className="hidden p-0">
+          <DuplicateLineDialog
+            orderId={orderId}
+            line={duplicating}
+            onClose={() => setDuplicating(null)}
+            onWrite={onWrite}
+          />
+        </TableCell>
+      )}
     </TableRow>
   );
 }
