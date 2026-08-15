@@ -22,9 +22,16 @@ export default function ApprovalsPage() {
        * which inherits the browser's 16px — so the description was *larger* than every piece of
        * body copy under it and read as the more important of the two. `PageHeader` is 30/14.
        */}
+      {/*
+        ⚠️ "คำขออนุมัติ", not "คำขออนุมัติส่วนลด". This queue took a second kind of request when
+        write-offs landed — forgiving a balance a customer already owes, which is not a discount
+        and is decided against a different ceiling. A heading naming only one of the two makes
+        the other look like it arrived here by mistake, and a screen nobody trusts the title of
+        is a screen people stop opening.
+      */}
       <PageHeader
-        title="คำขออนุมัติส่วนลด"
-        description="ส่วนลดที่เกินอำนาจของฝ่ายขาย รอให้ผู้มีอำนาจตัดสิน — อนุมัติได้เท่าที่เพดานของคุณครอบคลุม และไม่อนุมัติได้ทุกคำขอ"
+        title="คำขออนุมัติ"
+        description="ส่วนลดที่เกินอำนาจของฝ่ายขาย และคำขอตัดยอดค้างทิ้ง รอให้ผู้มีอำนาจตัดสิน — อนุมัติได้เท่าที่เพดานของคุณครอบคลุม และไม่อนุมัติได้ทุกคำขอ"
       />
 
       <ApprovalInbox />

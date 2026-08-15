@@ -174,7 +174,7 @@ export const NAVIGATION: readonly NavSection[] = [
          * until an administrator grants it — which is the intended state, not a wiring failure.
          */
         href: '/approvals',
-        labelTh: 'คำขออนุมัติส่วนลด',
+        labelTh: 'คำขออนุมัติ',
         icon: Gavel,
         requires: ['quotes.read', 'quotes.approve'],
       },

@@ -301,8 +301,23 @@ export function SlipReviewDialog({
                 <Alert>
                   <ShieldAlert />
                   <AlertTitle>ไม่มีสลิป — เจ้าหน้าที่บันทึกรายการนี้</AlertTitle>
-                  <AlertDescription>
-                    <span className="text-foreground">{review.slip.noSlipReasonTh}</span>
+                  {/*
+                    ⚠️ Two blocks, not two spans. These are two different voices — the first is
+                    the sentence a colleague typed, the second is this screen instructing the
+                    reviewer — and as adjacent inline spans they rendered with no separator at
+                    all: `…รายการเดินบัญชีวันที่ 15 ส.ค.ไม่มีภาพให้เทียบ — รับรองรายการนี้…`, one
+                    run-on sentence in a box whose whole job is to be read carefully.
+
+                    It got worse the more carefully a colleague wrote: a longer reason swallows
+                    more of the instruction before the eye reaches it. Seen only by opening the
+                    dialog — the strings are separate constants and every test that touches them
+                    checks one at a time, so nothing here was ever wrong to a test.
+                  */}
+                  <AlertDescription className="flex flex-col gap-1.5">
+                    <span className="text-foreground">
+                      <span className="text-muted-foreground">เหตุผลที่บันทึกไว้: </span>
+                      {review.slip.noSlipReasonTh}
+                    </span>
                     <span>
                       ไม่มีภาพให้เทียบ — รับรองรายการนี้ก็ต่อเมื่อยืนยันได้จากทางอื่น เช่น รายการเดินบัญชีของธนาคาร
                     </span>
