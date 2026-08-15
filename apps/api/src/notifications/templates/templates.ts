@@ -175,11 +175,40 @@ export interface RenderedTemplate {
  */
 type Renderer = (context: TemplateContext) => RenderedTemplate | undefined;
 
-/** `คุณสมชาย` when we know the name, a neutral form when we do not. Never an empty greeting. */
-const greeting = (context: TemplateContext): string =>
-  context.contactName === null || context.contactName.trim().length === 0
-    ? 'เรียน ลูกค้าผู้มีอุปการคุณ'
-    : `เรียน คุณ${context.contactName.trim()}`;
+/**
+ * `คุณสมชาย` when we know the name, a neutral form when we do not. Never an empty greeting.
+ *
+ * ⚠️ **The honorific is not added when the customer already wrote one.** `contact_name` is a
+ * free-text field the customer fills in themselves, and a Thai speaker writing their own name
+ * into a form very often writes `คุณทดสอบ แท็บ`. Prefixing unconditionally produced
+ * `เรียน คุณคุณทดสอบ แท็บ` on every message that customer ever received — found by reading a
+ * rendered email rather than by any test, because every test here supplies a bare name.
+ *
+ * The list is the four a customer plausibly types in front of their own name on a quotation.
+ * A name that opens with any of them is already addressed and is left alone; everything else
+ * gets `คุณ`, which is what this function existed to do.
+ */
+const THAI_HONORIFICS: readonly string[] = ['คุณ', 'นาย', 'นางสาว', 'นาง'];
+
+/**
+ * The name as it should be addressed: `คุณสมชาย`, but `คุณทดสอบ` left alone.
+ *
+ * ⚠️ Exported within this module so the reminder's own Thai copy calls it too. It had a second
+ * greeting builder with the same `คุณ${name}` in it, and two copies of one rule is how the fix
+ * above would have been half-applied — the transactional messages corrected and the reminder
+ * still doubling the honorific.
+ *
+ * Order in the list is irrelevant: nothing is stripped, so `.some` only has to find one match.
+ * (`นางสาว` sits before `นาง` for a reader's benefit and no other reason — a prefix-stripping
+ * version would need that order, and this is not one.)
+ */
+const addressedTh = (name: string): string =>
+  THAI_HONORIFICS.some((title) => name.startsWith(title)) ? name : `คุณ${name}`;
+
+const greeting = (context: TemplateContext): string => {
+  const name = context.contactName?.trim() ?? '';
+  return name.length === 0 ? 'เรียน ลูกค้าผู้มีอุปการคุณ' : `เรียน ${addressedTh(name)}`;
+};
 
 /** `เลขที่ 25-000123` where there is a number; a draft has none, and saying so beats printing `null`. */
 const orderLabel = (context: TemplateContext): string =>
@@ -363,7 +392,7 @@ const named = (contactName: string | null): string | null => {
 const REMINDER_COPY: Readonly<Record<SupportedLocale, ReminderCopy>> = {
   th: {
     subject: (ref) => `แจ้งชำระเงิน — ${ref}`,
-    greeting: (name) => (name === null ? 'เรียน ลูกค้าผู้มีอุปการคุณ' : `เรียน คุณ${name}`),
+    greeting: (name) => (name === null ? 'เรียน ลูกค้าผู้มีอุปการคุณ' : `เรียน ${addressedTh(name)}`),
     orderRef: (orderNo) => (orderNo === null ? 'ใบเสนอราคาของท่าน' : `ใบสั่งซื้อเลขที่ ${orderNo}`),
     lead: (ref) => `${ref} ยังมียอดค้างชำระอยู่`,
     amountLabels: {

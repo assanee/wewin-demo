@@ -626,3 +626,48 @@ describe('⭐ a settled balance is never chased', () => {
     expect(hasTemplate('th', BALANCE_REMINDER_TEMPLATE_KEY)).toBe(true);
   });
 });
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ⭐ THE HONORIFIC THE CUSTOMER ALREADY WROTE.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `orders.contact_name` is free text the customer fills in on the quotation form, and a Thai
+ * speaker writing their own name into a form very often writes `คุณทดสอบ แท็บ`. The greeting
+ * prefixed `คุณ` unconditionally, so that customer received `เรียน คุณคุณทดสอบ แท็บ` on every
+ * message we ever sent them.
+ *
+ * ⚠️ It survived a 1901-test suite because every fixture in this file supplies a bare name. It
+ * was found by decoding a rendered .eml and reading it — which is the only instrument that was
+ * ever going to find it, and the reason these cases are pinned now.
+ */
+describe('⭐ a name that already carries an honorific', () => {
+  const openingOf = (contactName: string, key = 'order.payment_confirmed.customer'): string =>
+    renderTemplate('th', key, { ...CONTEXT, contactName })?.body.split('\n')[0] ?? '';
+
+  it('does not add a second คุณ', () => {
+    expect(openingOf('คุณทดสอบ แท็บ')).toBe('เรียน คุณทดสอบ แท็บ');
+    expect(openingOf('คุณทดสอบ แท็บ')).not.toContain('คุณคุณ');
+  });
+
+  it('still adds คุณ to a bare name', () => {
+    /* The control. The fix must not have turned the greeting into a passthrough. */
+    expect(openingOf('สมชาย')).toBe('เรียน คุณสมชาย');
+  });
+
+  it('leaves the other honorifics a customer types alone', () => {
+    expect(openingOf('นายสมชาย ใจดี')).toBe('เรียน นายสมชาย ใจดี');
+    expect(openingOf('นางสาวมาลี')).toBe('เรียน นางสาวมาลี');
+    expect(openingOf('นางมาลี')).toBe('เรียน นางมาลี');
+  });
+
+  it('⚠️ applies to the reminder too, which had its own copy of the rule', () => {
+    /*
+     * The reminder's Thai copy is a separate catalogue entry with its own greeting builder, so
+     * fixing only the shared one would have left the single message most likely to be read
+     * carefully still doubling the honorific.
+     */
+    expect(openingOf('คุณทดสอบ แท็บ', BALANCE_REMINDER_TEMPLATE_KEY)).toBe('เรียน คุณทดสอบ แท็บ');
+    expect(openingOf('สมชาย', BALANCE_REMINDER_TEMPLATE_KEY)).toBe('เรียน คุณสมชาย');
+  });
+});
