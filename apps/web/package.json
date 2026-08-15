@@ -17,6 +17,7 @@
     "lint": "oxlint"
   },
   "dependencies": {
+    "@wewin/contract": "workspace:*",
     "@wewin/core": "workspace:*",
     "@wewin/i18n": "workspace:*",
     "lucide-react": "^1.31.0",

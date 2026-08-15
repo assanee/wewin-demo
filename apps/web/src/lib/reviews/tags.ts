@@ -35,6 +35,21 @@
 /** The catalogue tag from plan 8.2 — "the product changed". */
 export const productTag = (productId: string): string => `product:${productId}`;
 
+/**
+ * ⭐ The catalogue tag keyed by **slug**, for the one fetch that cannot use the id.
+ *
+ * `loadPublishedProduct` asks `GET /catalog/products/:slug` for a product the fixtures do
+ * not contain — and a `fetch` must carry its tags at call time, while the product id only
+ * arrives in the response body. Keying that entry by slug is the only spelling available to
+ * it.
+ *
+ * ⚠️ A slug is not a stable identity the way an id is: changing a product's slug changes
+ * which entry this names. That is acceptable here because a slug change already invalidates
+ * the URL itself — the old page is gone either way — whereas keying reviews or a price by
+ * slug would silently strand them.
+ */
+export const productSlugTag = (slug: string): string => `product-slug:${slug}`;
+
 /** The review tag — "what customers said about this product changed". */
 export const reviewsTag = (productId: string): string => `reviews:${productId}`;
 

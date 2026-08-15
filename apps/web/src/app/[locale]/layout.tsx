@@ -26,11 +26,26 @@ import { type LocaleRouteParams, localeFromSegment, localeStaticParams } from '@
  */
 
 /*
- * The eight, prerendered. `dynamicParams = false` closes the set: `/xx/products` 404s at
- * the router rather than rendering a page whose every string quietly fell back to Thai —
- * which would look like a working page in a language nobody asked for.
+ * The eight, prerendered — and the set of *routes below them* is now open.
+ *
+ * ⭐ This was `false`, to stop `/xx/products` rendering a page whose every string quietly
+ * fell back to Thai. `dynamicParams` is inherited by the whole subtree and a child cannot
+ * re-open it, so that one line also closed the product routes: a product created in the
+ * dashboard — published, correct, served by the API — was answered 404 by the shop for
+ * ever, because the build enumerates `@wewin/core/fixtures` and it is not in there.
+ *
+ * ⛔ **The protection it was written for is provided by `proxy.ts:38`, not by this flag**,
+ * and that was measured rather than assumed. With this set to `true`: `/xx/products` and
+ * `/xx` both answer **307**, exactly as before — the proxy redirects any first segment that
+ * is not a locale before the router ever sees it — while `/th/products/<a real product>`
+ * answers 200 and `/th/products/nope` still answers 404. Every page also calls
+ * `localeFromSegment(...)` and `notFound()`s on `null`, so the guard is doubled anyway.
+ *
+ * ⚠️ The eight locales are still enumerated by `generateStaticParams` below and still
+ * prerendered. What changed is only that a slug the build did not know is now rendered on
+ * demand instead of refused — see the note on `dynamicParams` in `products/[slug]/page.tsx`.
  */
-export const dynamicParams = false;
+export const dynamicParams = true;
 export const generateStaticParams = localeStaticParams;
 
 /**

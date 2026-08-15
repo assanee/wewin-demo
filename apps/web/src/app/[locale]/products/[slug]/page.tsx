@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getProductBySlug, products } from '@wewin/core/fixtures';
 
 import { ConfiguratorIsland } from '@/components/configurator/ConfiguratorIsland';
+import { loadPublishedProduct, type PublishedProduct } from '@/lib/catalog/published-product';
 import { ProductGallery } from '@/components/catalog/ProductGallery';
 import { ReviewBlock } from '@/components/reviews/ReviewBlock';
 import { localeBundle } from '@/i18n/server';
@@ -31,14 +32,23 @@ export function generateStaticParams(): { slug: string }[] {
 }
 
 /**
- * The set of products is closed at build time, exactly as the set of locales is.
+ * ⭐ The set of products is **no longer closed at build time**, and that is the whole point.
  *
- * Stated here rather than left to inherit from the layout. With `false`, a request for
- * `/th/products/does-not-exist` is answered by the router; with the default, Next would
- * render this segment on demand for any slug, and every typo'd or stale URL would become
- * a function invocation that ends in the `notFound()` below. Same answer, paid for.
+ * It used to be `false`, with a good argument: a typo'd URL was answered by the router
+ * instead of becoming a function invocation that ends in `notFound()`. What that argument
+ * did not account for is that the build enumerates `@wewin/core/fixtures`, so a product
+ * created in the dashboard — published, correct, and served by the API — was answered 404 by
+ * the shop forever. Verified before this change on two dashboard-created products, one of
+ * them months old.
+ *
+ * ⚠️ The cost is real and is the one the old comment named: a stale or typo'd URL now costs
+ * one invocation and one API call before its 404. It is the smaller cost. A shop that cannot
+ * sell what its own back office creates is not trading; a wasted request is a wasted request.
+ *
+ * The 81 fixture products are unaffected — they are still enumerated by
+ * `generateStaticParams` below and still prerendered, with no fetch on their path.
  */
-export const dynamicParams = false;
+export const dynamicParams = true;
 
 /**
  * `params`, and **never `searchParams`** — plan 8.2's second trap, and this is the route
@@ -64,8 +74,13 @@ export async function generateMetadata({
   const locale = localeFromSegment(segment);
   if (locale === null) notFound();
 
-  const product = getProductBySlug(slug);
-  if (!product) notFound();
+  /*
+   * ⚠️ Fixtures first, and no fetch when they answer. The 81 keep a metadata path with no
+   * network on it — which is what lets `tests/configurator-render.test.ts` call this in an
+   * environment that has no fetch stub — and only a slug they do not know pays for a request.
+   */
+  const identity = await identify(slug);
+  if (identity === null) notFound();
 
   // `localeBundle` and not `useLocale()`: this runs on the server, where there is no
   // provider and no hooks. Same six fields, minus `setLocale` — see `i18n/server.ts`.
@@ -75,10 +90,15 @@ export async function generateMetadata({
   // Thai where it has not. `content` reports which happened; a `<title>` cannot carry a
   // `lang` marker, so what it can do instead is be honest about the language of the
   // *page*, which `<html lang>` in the root layout already is.
-  const name = content({ on: 'productName', productId: product.id }, product.nameTh);
-  const summary = content({ on: 'productSummary', productId: product.id }, product.summaryTh);
+  //
+  // ⚠️ A dashboard-created product has no entry in the compiled translation bundles, so
+  // `content` falls back to Thai for it. That is correct and not a gap to paper over: there
+  // is no translation, and inventing one would be worse than showing the language it was
+  // written in.
+  const name = content({ on: 'productName', productId: identity.id }, identity.nameTh);
+  const summary = content({ on: 'productSummary', productId: identity.id }, identity.summaryTh);
 
-  const path = `/products/${product.slug}`;
+  const path = `/products/${identity.slug}`;
 
   return {
     // Slots into the layout's `%s · WEWIN180` template.
@@ -103,12 +123,13 @@ export default async function ProductConfiguratorPage({
   if (locale === null) notFound();
 
   // Verified here, on the server, so an unknown slug is a 404 rather than a page that
-  // renders an empty configurator. The island looks the product up again from the same
-  // fixtures rather than being handed it: only strings cross the boundary, because a
-  // `Product` holds `bigint` micrometres and `bigint` satang and a serialiser is not a
-  // thing to trust with either.
-  const product = getProductBySlug(slug);
-  if (!product) notFound();
+  // renders an empty configurator. For a fixture product the island still looks it up by
+  // slug from the same compiled data — only strings cross the boundary, because a `Product`
+  // holds `bigint` micrometres and `bigint` satang and a serialiser is not a thing to trust
+  // with either. A product that is in no bundle is handed its published **document**, whose
+  // quantities are tagged digit strings, so that property survives.
+  const identity = await identify(slug);
+  if (identity === null) notFound();
 
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
@@ -127,8 +148,8 @@ export default async function ProductConfiguratorPage({
         `ReviewBlock` below made the same call for the same reason: an empty state on 648
         pages is a shop announcing what it does not have.
       */}
-      <ProductGallery slug={slug} productId={product.id} locale={locale} />
-      <ConfiguratorIsland locale={locale} slug={slug} />
+      <ProductGallery slug={slug} productId={identity.id} locale={locale} />
+      <ConfiguratorIsland locale={locale} slug={slug} document={identity.document} />
       {/*
         The reviews — plan section 9, and the first thing on this storefront that comes
         from a fetch rather than from `@wewin/core/fixtures`.
@@ -145,7 +166,46 @@ export default async function ProductConfiguratorPage({
         all keyed by the catalogue's product id, and a page that invalidated one spelling
         while the writer poked the other would never update and never say why.
       */}
-      <ReviewBlock productId={product.id} locale={locale} />
+      <ReviewBlock productId={identity.id} locale={locale} />
     </main>
   );
+}
+
+/**
+ * Which product this slug names — from the compiled catalogue if it is in there, from the
+ * database if it is not.
+ *
+ * ⛔ Fixtures are tried first and the order is load-bearing, not a preference. It keeps the
+ * 81 prerendered pages on a path with no network: no fetch during the build, none in
+ * `generateMetadata`, and byte-identical output. Only a slug the bundle does not know pays
+ * for a request, which is exactly the set of products that could not be shown at all before.
+ */
+async function identify(slug: string): Promise<{
+  readonly id: string;
+  readonly slug: string;
+  readonly nameTh: string;
+  readonly summaryTh: string;
+  /** Present only for a product that came from the database — see `ConfiguratorIsland`. */
+  readonly document?: PublishedProduct['wire'] | undefined;
+} | null> {
+  const fixture = getProductBySlug(slug);
+  if (fixture) {
+    return {
+      id: fixture.id,
+      slug: fixture.slug,
+      nameTh: fixture.nameTh,
+      summaryTh: fixture.summaryTh,
+    };
+  }
+
+  const published = await loadPublishedProduct(slug);
+  if (published === null) return null;
+
+  return {
+    id: published.productId,
+    slug: published.slug,
+    nameTh: published.nameTh,
+    summaryTh: published.summaryTh,
+    document: published.wire,
+  };
 }

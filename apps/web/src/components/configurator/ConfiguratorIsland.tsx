@@ -3,6 +3,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { getProductBySlug } from '@wewin/core/fixtures';
+import type { ProductDocumentWire } from '@wewin/contract/catalog';
+import { toProduct } from '@wewin/contract/catalog';
 import { getCustomGroup, getSkuGroup } from '@wewin/core/filters';
 import { configHash } from '@wewin/core/hash';
 import { buildShareUrl, readSharedConfig, type SharedConfig } from '@wewin/core/share-link';
@@ -94,13 +96,30 @@ import { ToggleOption } from './ToggleOption';
 export function ConfiguratorIsland({
   locale,
   slug,
+  document,
 }: {
   /** Narrowed from the `[locale]` segment by the server component. Never guessed. */
   readonly locale: Locale;
   /** The `[slug]` segment. Verified to name a product by the server component. */
   readonly slug: string;
+  /**
+   * ⭐ The published document, for a product the fixtures do not contain.
+   *
+   * Absent for all 81 seeded products — they are compiled into both bundles and a slug is
+   * still enough, so their path through this component is unchanged. Present only for a
+   * product created in the dashboard, which exists in no bundle and therefore cannot be
+   * looked up by any string.
+   *
+   * ⚠️ It is the **wire**, not a `Product`. The note below explains why only strings used
+   * to cross this boundary; a `ProductDocumentWire` keeps that property, because every
+   * quantity on it is a tagged digit *string* (`{unit:'um',digits:'600000'}`) rather than a
+   * `bigint`. The bigints are reconstructed on this side by the package's own `toProduct`,
+   * which is the same function the price path has always used — not a second decoder
+   * written here, which is how a money field quietly changes meaning.
+   */
+  readonly document?: ProductDocumentWire | undefined;
 }) {
-  return <ConfigureRoute locale={locale} slug={slug} />;
+  return <ConfigureRoute locale={locale} slug={slug} document={document} />;
 }
 
 /**
@@ -122,9 +141,28 @@ export function ConfiguratorIsland({
  *      compiled into both bundles, so a slug is enough — and a slug is a value whose
  *      round trip cannot lose a unit.
  */
-function ConfigureRoute({ locale, slug }: { locale: Locale; slug: string }) {
+function ConfigureRoute({
+  locale,
+  slug,
+  document,
+}: {
+  locale: Locale;
+  slug: string;
+  document?: ProductDocumentWire | undefined;
+}) {
   const search = useUrlSearch();
-  const product = getProductBySlug(slug);
+  const fromFixtures = getProductBySlug(slug);
+  /*
+   * ⛔ Memoised on the wire, and it has to be. `useConfigurator` keys `defaultStateFor` and
+   * every derived value — the price, the issues, the SKU code — on the product's **identity**
+   * (`useMemo(..., [product])`), and `shareUrl` does the same. A fresh object from `toProduct`
+   * on every render would re-run `calcPrice` and `validate` on every keystroke.
+   */
+  const decoded = useMemo(
+    () => (document === undefined ? undefined : toProduct(document.product)),
+    [document],
+  );
+  const product = fromFixtures ?? decoded;
   const { getLine, ready } = useQuote();
   const { t } = useLocale();
 

@@ -172,6 +172,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@wewin/contract':
+        specifier: workspace:*
+        version: link:../../packages/contract
       '@wewin/core':
         specifier: workspace:*
         version: link:../../packages/core
