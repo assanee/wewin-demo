@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Search } from 'lucide-react';
+import { AlertTriangle, Plus, Search } from 'lucide-react';
 import type { AdminProductSummaryWire, CategoryWire } from '@wewin/contract';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -19,6 +20,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSession } from '@/lib/auth/session';
+
+import { CreateProductDialog } from './create-product-dialog';
 import {
   Table,
   TableBody,
@@ -141,8 +145,11 @@ interface LoadState {
 }
 
 export function ProductList() {
+  const router = useRouter();
+  const { can } = useSession();
   const [loaded, setLoaded] = useState<LoadState | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [creating, setCreating] = useState(false);
 
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
@@ -256,6 +263,18 @@ export function ProductList() {
               aria-label="ค้นหาสินค้า"
             />
           </InputGroup>
+
+          {/*
+            ⚠️ `catalog.write` gates it, and the API enforces it — a hidden button is a
+            courtesy rather than a control, exactly as `option-group-list.tsx` says. It is
+            hidden so a read-only clerk sees a screen that makes sense.
+          */}
+          {can('catalog.write') && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="size-4" />
+              เพิ่มสินค้า
+            </Button>
+          )}
 
           <Select
             value={category}
@@ -416,6 +435,23 @@ export function ProductList() {
           </>
         )}
       </div>
+
+      {creating && (
+        <CreateProductDialog
+          products={loaded.products}
+          onClose={() => setCreating(false)}
+          onCreated={(productId) => {
+            /*
+             * Straight to the draft editor rather than back to a list of 82. Creating opens a
+             * draft — `createProduct` returns a `DraftWire` — so the product does not exist to
+             * a customer yet and the person is one publish away from finishing. Sending them
+             * back to the table would hide that.
+             */
+            setCreating(false);
+            router.push(`/products/${productId}` as Route);
+          }}
+        />
+      )}
     </div>
   );
 }
