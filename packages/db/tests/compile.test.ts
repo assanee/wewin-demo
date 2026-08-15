@@ -74,6 +74,83 @@ describe('document round-trip', () => {
   });
 });
 
+describe('⭐ the gallery and the video link — 0052', () => {
+  const base = coreProducts[0];
+  if (base === undefined) throw new Error('fixtures are empty');
+
+  it('⚠️ writes neither key when a product has neither, so an old document stays byte-identical', () => {
+    /*
+     * THE ASSERTION THAT PROTECTS 83 FROZEN DOCUMENTS.
+     *
+     * `images: []` and `videoUrl: null` decode to the same thing as absent — but only absent
+     * leaves the canonical JSON unchanged, and the hash with it. Write the empty forms and
+     * every product in the catalogue gets a new `document_hash` the first time it is
+     * republished after this shipped, which reads to every open quotation as "the catalogue
+     * moved" about a product where nothing moved.
+     */
+    const document = toDocument(base);
+
+    expect('images' in document).toBe(false);
+    expect('videoUrl' in document).toBe(false);
+    expect(canonicalJson(document)).not.toContain('images');
+    expect(canonicalJson(document)).not.toContain('videoUrl');
+  });
+
+  it('⭐ the hash of a product with no pictures is what it was before this field existed', () => {
+    /*
+     * Stronger than the test above and the reason it is worth two: it compares the hash of a
+     * document compiled today against one compiled from the same product with the two keys
+     * explicitly stripped — the shape a pre-0052 build produced.
+     */
+    const withFields = toDocument({ ...base, images: [], videoUrl: null });
+    const asBefore = toDocument(base);
+
+    expect(documentHash(withFields)).toBe(documentHash(asBefore));
+  });
+
+  it('carries the gallery in order, and survives the round trip', () => {
+    const source = {
+      ...base,
+      images: ['/media/aaaaaaaa-1111-4111-8111-111111111111', '/products/x.svg'],
+      videoUrl: 'https://www.youtube.com/watch?v=abc123',
+    };
+    const document = toDocument(source);
+
+    expect(document.images).toStrictEqual([
+      '/media/aaaaaaaa-1111-4111-8111-111111111111',
+      '/products/x.svg',
+    ]);
+    expect(document.videoUrl).toBe('https://www.youtube.com/watch?v=abc123');
+
+    const back = fromDocument(document);
+    expect(back.images).toStrictEqual(source.images);
+    expect(back.videoUrl).toBe(source.videoUrl);
+  });
+
+  it('⚠️ a gallery of a different order is a different document', () => {
+    /*
+     * Order is content here, not presentation: the first picture is what a customer sees
+     * first. If reordering did not move the hash, a reordered gallery could be published
+     * without anything downstream noticing the document had changed.
+     */
+    const one = toDocument({ ...base, images: ['/products/a.svg', '/products/b.svg'] });
+    const other = toDocument({ ...base, images: ['/products/b.svg', '/products/a.svg'] });
+
+    expect(documentHash(one)).not.toBe(documentHash(other));
+  });
+
+  it('parses back through the catalogue schema, which is what publish validates against', () => {
+    const source = { ...base, images: ['/products/a.svg'], videoUrl: 'https://vimeo.com/1' };
+
+    expect(() => productSchema.parse(fromDocument(toDocument(source)))).not.toThrow();
+  });
+
+  it('⚠️ refuses a video link that is not a URL, and a path that does not start with /', () => {
+    expect(() => productSchema.parse({ ...base, videoUrl: 'youtube.com/watch' })).toThrow();
+    expect(() => productSchema.parse({ ...base, images: ['products/a.svg'] })).toThrow();
+  });
+});
+
 describe('document hash', () => {
   it('ignores key order, because jsonb does not preserve it', () => {
     const source = coreProducts[0];

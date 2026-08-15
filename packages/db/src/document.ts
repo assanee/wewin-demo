@@ -121,4 +121,20 @@ export interface CatalogDocumentV1 {
   groups: DocOptionGroup[];
   rules: DocRule[];
   skuPrefix: string;
+  /**
+   * ⭐ 0052. The gallery and the video link, both optional.
+   *
+   * ⚠️ **Optional is what keeps `schemaVersion` at 1.** Eighty-three documents were frozen
+   * before these existed, and `product_versions_document_schema_version_matches` ties the
+   * blob's own `schemaVersion` to the column beside it — so making these required would
+   * either break every decode or force a V2 and a rewrite of every row. An additive optional
+   * field is readable by a V1 reader, which is the whole reason it is spelled this way.
+   *
+   * They are inside the freeze, like every other editable product column, because changing
+   * how a product is *described* is a new version of the description. `option_values.available`
+   * is the one catalogue fact deliberately kept out, with its own CHECK, because stock is not
+   * a description.
+   */
+  images?: string[];
+  videoUrl?: string | null;
 }

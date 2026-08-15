@@ -103,6 +103,29 @@ export interface Product {
   groups: OptionGroup[];
   rules: Rule[];
   skuPrefix: string; // e.g. 'AWN4T'
+  /**
+   * ⭐ 0052. Every picture this product shows, in the order it shows them.
+   *
+   * ⚠️ Optional, and it has to be: the 83 documents already frozen in
+   * `product_versions` were written before this field existed, and `fromDocument` decodes
+   * them unchanged. A required array would make every published product in the system fail
+   * to decode the moment this shipped.
+   *
+   * `heroImage` is left exactly as it was rather than folded in here. It is one string with
+   * one meaning — the picture that stands for the product in a list — and a gallery whose
+   * first entry silently doubled as the hero would make "remove the first picture" a change
+   * to what the catalogue card looks like.
+   */
+  images?: string[];
+  /**
+   * ⭐ One video, as a link. `null` and absent both mean there is none.
+   *
+   * Not an uploaded file: `media_objects` accepts three image types, checked by sniffing
+   * magic bytes, and each has a hand-written reader that strips metadata and reads the
+   * dimensions out of the bytes. Put to the owner as its own decision; the answer was a
+   * YouTube/Vimeo link.
+   */
+  videoUrl?: string | null;
 }
 
 export interface Category {

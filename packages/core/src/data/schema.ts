@@ -322,6 +322,15 @@ export const productSchema = z
     groups: z.array(optionGroupSchema).min(1),
     rules: z.array(ruleSchema),
     skuPrefix: z.string().min(1),
+    /*
+     * Optional on both, because documents frozen before 0052 carry neither. A path is
+     * checked for shape and not for existence — this layer has no filesystem and no object
+     * store, and a rule it cannot enforce is a rule that lies.
+     */
+    images: z
+      .array(z.string().regex(/^\/[A-Za-z0-9._/-]+$/u, 'an image path starts with /'))
+      .optional(),
+    videoUrl: z.string().url('a video link must be a URL').nullable().optional(),
   })
   .superRefine((product, ctx) => {
     const groupCodes = product.groups.map((group) => group.code);

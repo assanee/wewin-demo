@@ -285,6 +285,18 @@ export function toDocument(product: Product): CatalogDocumentV1 {
     groups: product.groups.map(toDocGroup),
     rules: product.rules.map(toDocRule),
     skuPrefix: product.skuPrefix,
+    /*
+     * Omitted rather than written as `[]` and `null` when there is nothing. An absent key and
+     * an empty array decode to the same thing, but only the absent key leaves a document
+     * byte-identical to one frozen before 0052 — which is what stops every unchanged product
+     * getting a new `document_hash` the first time it is republished after this shipped.
+     */
+    ...(product.images === undefined || product.images.length === 0
+      ? {}
+      : { images: [...product.images] }),
+    ...(product.videoUrl === undefined || product.videoUrl === null
+      ? {}
+      : { videoUrl: product.videoUrl }),
   };
 }
 
@@ -363,5 +375,8 @@ export function fromDocument(
       when: fromDocExpr(rule.when),
     })),
     skuPrefix: document.skuPrefix,
+    /* Absent stays absent, so a round trip through the document changes nothing. */
+    ...(document.images === undefined ? {} : { images: [...document.images] }),
+    ...(document.videoUrl === undefined ? {} : { videoUrl: document.videoUrl }),
   };
 }
