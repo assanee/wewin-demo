@@ -330,6 +330,9 @@ export const zh: PartialUiCatalogue = {
   'account.password.problem.tooShort': '新密码太短——至少 12 个字符。',
   'account.password.problem.sameAsCurrent': '新密码必须与当前密码不同。',
   'account.password.problem.mismatch': '新密码与确认密码不一致。',
+  'product.gallery.label': '产品图片和视频',
+  'product.gallery.video.link': '观看视频（在新标签页中打开）',
+  'product.gallery.video.title': '产品视频',
   'account.checking': '正在检查…',
   'account.needAccount': '登录后即可索取报价单',
   'account.whyAccount':

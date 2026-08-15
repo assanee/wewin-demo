@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, ImagePlus, Trash2 } from 'lucide-react';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { apiUrl } from '@/lib/api/config';
 
@@ -43,7 +42,6 @@ export function GalleryEditor({
   readonly onVideoUrl: (next: string) => void;
 }) {
   const [picking, setPicking] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -55,15 +53,9 @@ export function GalleryEditor({
         </span>
       </div>
 
-      {problem !== null && (
-        <Alert variant="destructive">
-          <AlertDescription>{problem}</AlertDescription>
-        </Alert>
-      )}
-
       {images.length === 0 ? (
         <p className="text-muted-foreground type-body border-dashed border py-6 text-center">
-          ยังไม่มีรูป — หน้าสินค้าจะแสดงเฉพาะรูปหลัก
+          ยังไม่มีรูป — หน้าสินค้าจะไม่แสดงรูปสินค้าเลย
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -104,10 +96,7 @@ export function GalleryEditor({
                 size="icon"
                 aria-label={`เอารูปที่ ${String(index + 1)} ออก`}
                 disabled={disabled}
-                onClick={() => {
-                  setProblem(null);
-                  onImages(removeImageAt(images, index));
-                }}
+                onClick={() => onImages(removeImageAt(images, index))}
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -120,10 +109,7 @@ export function GalleryEditor({
         <Button
           variant="outline"
           disabled={disabled || images.length >= GALLERY_MAX}
-          onClick={() => {
-            setProblem(null);
-            setPicking(true);
-          }}
+          onClick={() => setPicking(true)}
         >
           <ImagePlus data-icon="inline-start" />
           เพิ่มรูป
@@ -163,15 +149,16 @@ export function GalleryEditor({
         <MediaPicker
           titleTh="เพิ่มรูปสินค้า"
           onClose={() => setPicking(false)}
+          /*
+           * The reason is returned rather than displayed here: this component is behind the
+           * dialog while it is open. See `MediaPicker.onPick`.
+           */
           onPick={(path) => {
             const result = addImage(images, path);
-            if (!result.ok) {
-              setProblem(result.reasonTh);
-              return;
-            }
-            setProblem(null);
+            if (!result.ok) return result.reasonTh;
             onImages(result.images);
             setPicking(false);
+            return null;
           }}
         />
       )}

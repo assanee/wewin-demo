@@ -43,7 +43,16 @@ export function MediaPicker({
   onClose,
 }: {
   readonly titleTh: string;
-  readonly onPick: (path: string) => void;
+  /**
+   * Take this picture. Return the reason it cannot be taken, or `null` to accept.
+   *
+   * ⛔ The return value exists because the refusal has to be rendered **here**, inside the
+   * open dialog. It was first written to `void`, with the caller showing the message in the
+   * gallery editor — which is behind this dialog while it is open, so clicking a picture
+   * that was already in the gallery did nothing a person could see. A refusal nobody can
+   * read is a broken button. Found by clicking it; no node-environment test can see this.
+   */
+  readonly onPick: (path: string) => string | null;
   readonly onClose: () => void;
 }) {
   const [items, setItems] = useState<readonly MediaObject[] | null>(null);
@@ -76,9 +85,14 @@ export function MediaPicker({
       /*
        * The upload answers 200 with somebody else's row when these exact bytes were already
        * stored. Attaching it is still right — it is the same picture — so the only thing
-       * that changes is that nothing new was added to the library.
+       * that changes is that nothing new was added to the library. It can still be refused:
+       * uploading a file that is byte-identical to one already in this gallery lands here.
        */
-      onPick(result.media.path);
+      const refusal = onPick(result.media.path);
+      if (refusal !== null) {
+        setProblem(refusal);
+        setUploading(false);
+      }
     } catch (cause) {
       setProblem(failureMessage(cause));
       setUploading(false);
@@ -143,7 +157,10 @@ export function MediaPicker({
                 <button
                   key={media.id}
                   type="button"
-                  onClick={() => onPick(media.path)}
+                  onClick={() => {
+                    const refusal = onPick(media.path);
+                    setProblem(refusal);
+                  }}
                   disabled={uploading}
                   className="focus-visible:ring-ring group flex flex-col gap-1 rounded border p-1 text-left hover:border-primary focus-visible:ring-2 focus-visible:outline-none"
                 >

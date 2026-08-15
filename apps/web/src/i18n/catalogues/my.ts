@@ -362,6 +362,9 @@ export const my: PartialUiCatalogue = {
   'account.password.problem.sameAsCurrent':
     'စကားဝှက်အသစ်သည် လက်ရှိစကားဝှက်နှင့် ကွဲပြားရမည်။',
   'account.password.problem.mismatch': 'စကားဝှက်အသစ်နှင့် အတည်ပြုချက် မကိုက်ညီပါ။',
+  'product.gallery.label': 'ကုန်ပစ္စည်း ဓာတ်ပုံနှင့် ဗီဒီယို',
+  'product.gallery.video.link': 'ဗီဒီယိုကြည့်ရန် (တက်ဘ်အသစ်ဖွင့်မည်)',
+  'product.gallery.video.title': 'ကုန်ပစ္စည်း ဗီဒီယို',
   'account.checking': 'စစ်ဆေးနေသည်…',
   'account.needAccount': 'စျေးနှုန်းစာရွက်တောင်းရန် အကောင့်ဝင်ပါ',
   'account.whyAccount':

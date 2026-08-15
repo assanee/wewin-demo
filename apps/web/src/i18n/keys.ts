@@ -335,6 +335,10 @@ export interface UiParamsByKey {
   'account.password.problem.tooShort': Plain;
   'account.password.problem.sameAsCurrent': Plain;
   'account.password.problem.mismatch': Plain;
+  /** ⭐ 0052. The product gallery — the section label and the two things a video needs. */
+  'product.gallery.label': Plain;
+  'product.gallery.video.link': Plain;
+  'product.gallery.video.title': Plain;
   'account.checking': Plain;
   'account.needAccount': Plain;
   'account.whyAccount': Plain;

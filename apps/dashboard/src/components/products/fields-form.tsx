@@ -427,6 +427,8 @@ export function FieldsForm({
           onPick={(path) => {
             set('heroImage')(path);
             setPickingHero(false);
+            /* Nothing to refuse: the hero is one path, and any picture may be it. */
+            return null;
           }}
         />
       )}

@@ -126,11 +126,26 @@ describe('a link without a version is refused whole', () => {
     // is the only reader. A second `get('v')` anywhere in the app is somebody deciding
     // what to do about a missing version at a second site — and the helpful decision, the
     // one that gets made when the rule is not in front of you, is to carry on without it.
-    const offenders = sourceFiles(sourceRoot)
+    //
+    // ⚠️ The rule is about **this app's own URL**; the pattern cannot tell that from any
+    // other URL's query, and `v` is also how YouTube names a video id. So a file may be
+    // exempt — and the exempt list lives *here*, in the guard, rather than as a comment in
+    // the file being excused. Adding one is an edit to this test, which is a line in a
+    // diff somebody reviews; a marker in the offending file is a line nobody sees again.
+    const ALLOWED = [
+      // Parses a *YouTube* watch link into a player URL. Never reads `location`, never
+      // reads this app's search params — see the note at the top of the file.
+      'lib/catalog/gallery.ts',
+    ];
+
+    const readers = sourceFiles(sourceRoot)
       .filter(({ source }) => /\.get\(\s*['"]v['"]\s*\)/.test(source))
       .map(({ name }) => name);
 
-    expect(offenders).toEqual([]);
+    expect(readers.filter((name) => !ALLOWED.includes(name))).toEqual([]);
+    // The exemptions have to still exist: a stale entry here is a hole held open for a
+    // file that no longer needs it.
+    expect(readers).toEqual(ALLOWED);
   });
 
   it('and the scan can see the app, so the assertion above is not vacuous', () => {

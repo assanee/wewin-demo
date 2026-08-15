@@ -395,6 +395,9 @@ export const de: PartialUiCatalogue = {
     'Das neue Passwort muss sich vom aktuellen unterscheiden.',
   'account.password.problem.mismatch':
     'Das neue Passwort und die Bestätigung stimmen nicht überein.',
+  'product.gallery.label': 'Produktfotos und Video',
+  'product.gallery.video.link': 'Video ansehen (öffnet neuen Tab)',
+  'product.gallery.video.title': 'Produktvideo',
   'account.checking': 'Wird geprüft…',
   'account.needAccount': 'Melden Sie sich an, um ein Angebot anzufordern',
   'account.whyAccount':

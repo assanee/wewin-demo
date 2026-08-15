@@ -351,6 +351,9 @@ export const la: PartialUiCatalogue = {
   'account.password.problem.tooShort': 'ລະຫັດຜ່ານໃໝ່ສັ້ນເກີນໄປ — ຢ່າງໜ້ອຍ 12 ຕົວອັກສອນ.',
   'account.password.problem.sameAsCurrent': 'ລະຫັດຜ່ານໃໝ່ຕ້ອງຕ່າງຈາກອັນປັດຈຸບັນ.',
   'account.password.problem.mismatch': 'ລະຫັດຜ່ານໃໝ່ ແລະ ການຢືນຢັນບໍ່ກົງກັນ.',
+  'product.gallery.label': 'ຮູບ ແລະ ວິດີໂອສິນຄ້າ',
+  'product.gallery.video.link': 'ເບິ່ງວິດີໂອ (ເປີດແທັບໃໝ່)',
+  'product.gallery.video.title': 'ວິດີໂອສິນຄ້າ',
   'account.checking': 'ກຳລັງກວດ…',
   'account.needAccount': 'ເຂົ້າລະບົບເພື່ອຂໍໃບສະເໜີລາຄາ',
   'account.whyAccount':

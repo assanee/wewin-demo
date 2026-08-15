@@ -375,6 +375,9 @@ export const hi: PartialUiCatalogue = {
   'account.password.problem.sameAsCurrent':
     'नया पासवर्ड मौजूदा से अलग होना चाहिए।',
   'account.password.problem.mismatch': 'नया पासवर्ड और उसकी पुष्टि मेल नहीं खाते।',
+  'product.gallery.label': 'उत्पाद की तस्वीरें और वीडियो',
+  'product.gallery.video.link': 'वीडियो देखें (नए टैब में खुलेगा)',
+  'product.gallery.video.title': 'उत्पाद वीडियो',
   'account.checking': 'जाँचा जा रहा है…',
   'account.needAccount': 'कोटेशन मँगाने के लिए साइन इन कीजिए',
   'account.whyAccount':

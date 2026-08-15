@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getProductBySlug, products } from '@wewin/core/fixtures';
 
 import { ConfiguratorIsland } from '@/components/configurator/ConfiguratorIsland';
+import { ProductGallery } from '@/components/catalog/ProductGallery';
 import { ReviewBlock } from '@/components/reviews/ReviewBlock';
 import { localeBundle } from '@/i18n/server';
 import {
@@ -111,6 +112,22 @@ export default async function ProductConfiguratorPage({
 
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
+      {/*
+        ⭐ 0052. The pictures, above the configurator, because somebody deciding whether to
+        configure a window wants to see the window first.
+
+        The second fetch on this storefront, and it follows the first exactly: `force-cache`
+        plus `product:<id>` — the tag `lib/reviews/tags.ts` has carried since plan 8.2 while
+        saying in its own comment that it was attached in advance for the day something read
+        a fetch keyed by it. So the page stays prerendered, all 648 of them, and a gallery
+        published from the dashboard arrives through the `revalidateTag` half that already
+        exists.
+
+        It renders **nothing** for a product with no pictures, which today is all 81 —
+        `ReviewBlock` below made the same call for the same reason: an empty state on 648
+        pages is a shop announcing what it does not have.
+      */}
+      <ProductGallery slug={slug} productId={product.id} locale={locale} />
       <ConfiguratorIsland locale={locale} slug={slug} />
       {/*
         The reviews — plan section 9, and the first thing on this storefront that comes
