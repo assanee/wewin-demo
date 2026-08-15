@@ -105,6 +105,13 @@ function seedDocument(product: DraftProductRow): CatalogDocumentV1 {
  */
 export function unpublishedFieldsOf(
   product: DraftProductRow,
+  /*
+   * ⭐ 0052. Passed in rather than read off `product`, because the gallery is rows in
+   * `product_images` and not a column — and **required** rather than optional on purpose.
+   * An optional parameter would let a caller forget it and get a confident "nothing has
+   * changed" for a product whose pictures were all replaced. The compiler now insists.
+   */
+  images: readonly string[],
   published: CatalogDocumentV1 | null,
 ): readonly string[] {
   if (!published) return [];
@@ -130,6 +137,16 @@ export function unpublishedFieldsOf(
   // Compared through the canonical serialisation the document hash uses, so key order in
   // the jsonb — which does not preserve it — cannot make an unchanged elevation look edited.
   differs('elevation', canonicalJson(product.elevation) !== canonicalJson(published.elevation));
+  /*
+   * ⭐ 0052. Order is content — a reordered gallery is an unpublished change — so this
+   * compares the lists element by element and not as sets.
+   *
+   * `published.images` is absent on all 83 documents frozen before this field existed, and
+   * `?? []` reads that as "no pictures", which is what it means. A product that has never
+   * had a gallery therefore still reports nothing unpublished.
+   */
+  differs('images', canonicalJson([...images]) !== canonicalJson([...(published.images ?? [])]));
+  differs('videoUrl', (product.videoUrl ?? null) !== (published.videoUrl ?? null));
 
   return differences;
 }
@@ -152,6 +169,11 @@ export class CatalogAdminService {
         tx,
         rows.map((row) => row.id),
       );
+      /* One query for every product's gallery rather than one per row — the list is 81 long. */
+      const galleries = await this.drafts.galleriesOf(
+        tx,
+        rows.map((row) => row.id),
+      );
 
       const byProduct = new Map<string, { draft?: VersionRow; published?: VersionRow }>();
       for (const version of versions) {
@@ -171,7 +193,7 @@ export class CatalogAdminService {
           nameTh: row.nameTh,
           published: entry.published ? publishedVersionOf(entry.published) : null,
           draft: entry.draft ? draftSummaryOf(entry.draft) : null,
-          unpublishedFields: unpublishedFieldsOf(row, entry.published?.document ?? null),
+          unpublishedFields: unpublishedFieldsOf(row, galleries.get(row.id) ?? [], entry.published?.document ?? null),
         };
       });
 
@@ -197,7 +219,7 @@ export class CatalogAdminService {
         nameTh: row.nameTh,
         published: published ? publishedVersionOf(published) : null,
         draft: draft ? await this.draftView(tx, productId, draft) : null,
-        unpublishedFields: unpublishedFieldsOf(row, published?.document ?? null),
+        unpublishedFields: unpublishedFieldsOf(row, await this.drafts.loadImages(tx, productId), published?.document ?? null),
       };
     });
   }

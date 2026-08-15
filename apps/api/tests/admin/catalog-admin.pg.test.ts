@@ -404,6 +404,26 @@ describeWithPg('the catalogue write surface against Postgres', () => {
       expect(badPath.status).toBe(400);
     });
 
+    it('⛔ refuses a javascript: video link — this string ends up in an href', () => {
+      /*
+       * `z.url()` alone accepts `javascript:alert(1)` and `data:text/html,…`; both are
+       * well-formed URLs. The storefront puts this value in an `href`, and a publish freezes
+       * it into a document that a later fix to the form would not reach. So the protocol is
+       * constrained in the contract, and this is the test that says why.
+       */
+      return Promise.all(
+        ['javascript:alert(1)', 'data:text/html,<script>x</script>', 'vbscript:msgbox(1)'].map(
+          async (videoUrl) => {
+            const refused = await asEditor('PATCH', `/admin/catalog/products/${PROBE_PRODUCT}/draft`, {
+              expectedDocumentHash: hash,
+              fields: { videoUrl },
+            });
+            expect(refused.status, videoUrl).toBe(400);
+          },
+        ),
+      );
+    });
+
     it('refuses to throw away the only draft of a product that has never published', async () => {
       const discarded = await asEditor(
         'DELETE',

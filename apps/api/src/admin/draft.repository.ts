@@ -194,6 +194,32 @@ export class DraftRepository {
     return { product, options, rules, images };
   }
 
+  /**
+   * Every named product's gallery at once, keyed by product.
+   *
+   * The admin list renders 81 products and asks each one whether its pictures differ from
+   * what is published. `loadImages` per row would be 81 round trips for a screen that
+   * already makes two; this is the third. A product with no pictures is simply absent from
+   * the map, which the caller reads as an empty gallery.
+   */
+  async galleriesOf(tx: Tx, productIds: readonly string[]): Promise<Map<string, string[]>> {
+    const byProduct = new Map<string, string[]>();
+    if (productIds.length === 0) return byProduct;
+
+    const rows = await tx
+      .select({ productId: productImages.productId, path: productImages.path })
+      .from(productImages)
+      .where(inArray(productImages.productId, [...productIds]))
+      .orderBy(asc(productImages.productId), asc(productImages.sortOrder));
+
+    for (const row of rows) {
+      const gallery = byProduct.get(row.productId);
+      if (gallery === undefined) byProduct.set(row.productId, [row.path]);
+      else gallery.push(row.path);
+    }
+    return byProduct;
+  }
+
   /** The gallery, in `sort_order`. The order is content: the first picture is seen first. */
   async loadImages(tx: Tx, productId: string): Promise<readonly string[]> {
     const rows = await tx

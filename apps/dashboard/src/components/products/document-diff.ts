@@ -161,6 +161,8 @@ export const FIELD_LABEL_TH: Record<string, string> = {
   pricePerSqm: 'ราคาต่อตารางเมตร',
   minBillableSqUm: 'พื้นที่ขั้นต่ำที่คิดเงิน',
   elevation: 'รูปด้าน',
+  images: 'รูปสินค้า',
+  videoUrl: 'วิดีโอ',
 };
 
 export const fieldLabel = (key: string): string => FIELD_LABEL_TH[key] ?? key;
@@ -220,6 +222,18 @@ function diffFields(published: ProductWire, draft: ProductWire, changes: Changes
     `${sqm(sqUmOf(draft.minBillableSqUm))} ตร.ม.`,
   );
 
+  /*
+   * ⭐ 0052. Reported as a count and the order, not as a list of paths: a person comparing
+   * two publishes wants to know *that* the pictures moved, and `/media/<uuid>` × 6 twice
+   * over tells them nothing they can read. The order is what the numbering shows.
+   */
+  field(
+    'images',
+    galleryText(published.images ?? []),
+    galleryText(draft.images ?? []),
+  );
+  field('videoUrl', published.videoUrl ?? 'ไม่มี', draft.videoUrl ?? 'ไม่มี');
+
   if (canonical(published.elevation) !== canonical(draft.elevation)) {
     changes.add({
       key: 'elevation',
@@ -231,6 +245,23 @@ function diffFields(published: ProductWire, draft: ProductWire, changes: Changes
     });
   }
 }
+
+/**
+ * A gallery as a sentence: how many pictures, and in what order.
+ *
+ * ⚠️ The index is part of the text on purpose. Two galleries holding the same six pictures
+ * in a different order have to produce different strings, or `changes.compare` — which
+ * compares the rendered text — decides the reorder never happened.
+ */
+function galleryText(images: readonly string[]): string {
+  if (images.length === 0) return 'ไม่มีรูป';
+  return `${String(images.length)} รูป — ${images
+    .map((path, index) => `${String(index + 1)}. ${fileNameOf(path)}`)
+    .join(' · ')}`;
+}
+
+/** The last segment of a path: `/media/<uuid>` reads as the uuid, which is at least short. */
+const fileNameOf = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
 
 function diffSkuGroup(
   code: string,

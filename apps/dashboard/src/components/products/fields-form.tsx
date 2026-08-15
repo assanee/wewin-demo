@@ -1,13 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Save, Undo2 } from 'lucide-react';
+import { ImagePlus, Save, Undo2 } from 'lucide-react';
 import type { ElevationWire, ProductFieldsWire, ProductWire } from '@wewin/contract';
 
 import { Button } from '@/components/ui/button';
 import { FieldGroup, FieldSeparator } from '@/components/ui/field';
 
 import { SelectField, TextField } from './form-field';
+import { GalleryEditor } from './gallery-editor';
+import { readVideoUrl } from './gallery';
+import { MediaPicker } from './media-picker';
 import { bahtField, readBaht, readCount, readSqm, sqmField } from './quantities';
 import { areaWire, rateWire } from './wire';
 
@@ -48,6 +51,10 @@ interface FormState {
   readonly categoryId: string;
   readonly summaryTh: string;
   readonly heroImage: string;
+  /** ⭐ 0052. The gallery, in display order. The only non-string field on this form. */
+  readonly images: readonly string[];
+  /** ⭐ 0052. Empty means "no video" — see `readVideoUrl`. */
+  readonly videoUrl: string;
   readonly leadMin: string;
   readonly leadMax: string;
   readonly pricePerSqm: string;
@@ -60,6 +67,17 @@ interface FormState {
 }
 
 type Errors = Partial<Record<keyof FormState, string>>;
+
+/**
+ * The keys of `FormState` whose value is a string.
+ *
+ * ⭐ 0052 made this necessary: `images` is the first field on this form that is not text,
+ * and both `text()` and `set()` take a key and assume one. Narrowing the key type is what
+ * stops `set('images')` from compiling and quietly replacing the gallery with a string.
+ */
+type StringField = {
+  [K in keyof FormState]: FormState[K] extends string ? K : never;
+}[keyof FormState];
 
 const OPERATIONS: readonly { value: ElevationWire['operation']; labelTh: string }[] = [
   { value: 'fixed', labelTh: 'บานติดตาย' },
@@ -92,6 +110,8 @@ export function formFromProduct(product: ProductWire): FormState {
     categoryId: product.categoryId,
     summaryTh: product.summaryTh,
     heroImage: product.heroImage,
+    images: [...(product.images ?? [])],
+    videoUrl: product.videoUrl ?? '',
     leadMin: String(product.leadTimeDays[0]),
     leadMax: String(product.leadTimeDays[1]),
     /* Baht and square metres — see the header. The canonical figures never reach a box. */
@@ -136,7 +156,7 @@ export interface ValidatedFields {
 export function validateFields(form: FormState): ValidatedFields | Errors {
   const errors: Errors = {};
 
-  const text = (key: keyof FormState, messageTh: string): string => {
+  const text = (key: StringField, messageTh: string): string => {
     const value = form[key].trim();
     if (value === '') errors[key] = messageTh;
     return value;
@@ -199,6 +219,13 @@ export function validateFields(form: FormState): ValidatedFields | Errors {
     moving.push(value - 1);
   }
 
+  /*
+   * ⭐ 0052. The gallery itself needs no check here: every path in it came from the picker,
+   * which only ever hands back a path the API gave it. The video is typed by hand and does.
+   */
+  const video = readVideoUrl(form.videoUrl);
+  if (!video.ok) errors.videoUrl = video.reasonTh;
+
   const operation = OPERATIONS.find((entry) => entry.value === form.operation)?.value;
   if (operation === undefined) errors.operation = 'เลือกลักษณะการเปิด';
   const infill = INFILLS.find((entry) => entry.value === form.infill)?.value;
@@ -207,6 +234,7 @@ export function validateFields(form: FormState): ValidatedFields | Errors {
   if (Object.keys(errors).length > 0) return errors;
   if (!leadMin.ok || !leadMax.ok || !price.ok || !minBillable.ok || !panels.ok) return errors;
   if (operation === undefined || infill === undefined) return errors;
+  if (!video.ok) return errors;
 
   const elevation: ElevationWire = {
     panels: panels.value,
@@ -233,6 +261,14 @@ export function validateFields(form: FormState): ValidatedFields | Errors {
       pricePerSqm: rateWire(price.value),
       minBillableSqUm: areaWire(minBillable.value),
       elevation,
+      /*
+       * ⭐ 0052. Both sent on every save, like every other field on this form — the header
+       * explains why a partial patch is not wanted. `images: []` is how a gallery is
+       * emptied and `videoUrl: null` is how a link is removed, so neither can be omitted
+       * to mean "unchanged" without losing the ability to mean "gone".
+       */
+      images: [...form.images],
+      videoUrl: video.value,
     },
   };
 }
@@ -260,6 +296,7 @@ export function FieldsForm({
    * draft reloads after a save, `initial` is a new object and this comparison starts from
    * the saved values, which is exactly when "unsaved" should stop being true.
    */
+  const [pickingHero, setPickingHero] = useState(false);
   const [baseline, setBaseline] = useState(initial);
   if (baseline !== initial) {
     setBaseline(initial);
@@ -267,11 +304,22 @@ export function FieldsForm({
     setErrors({});
   }
 
-  const dirty = (Object.keys(initial) as (keyof FormState)[]).some(
-    (key) => form[key] !== initial[key],
-  );
+  /*
+   * ⚠️ `images` is compared element by element and everything else by value. A reference
+   * comparison would call the form dirty after somebody added a picture and removed it
+   * again, because the list is rebuilt on every edit — and an "unsaved changes" warning
+   * that fires when nothing is unsaved is one people learn to click past.
+   */
+  const dirty = (Object.keys(initial) as (keyof FormState)[]).some((key) => {
+    const next = form[key];
+    const before = initial[key];
+    if (Array.isArray(next) && Array.isArray(before)) {
+      return next.length !== before.length || next.some((path, index) => path !== before[index]);
+    }
+    return next !== before;
+  });
 
-  const set = (key: keyof FormState) => (value: string) => {
+  const set = (key: StringField) => (value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -336,16 +384,52 @@ export function FieldsForm({
           disabled={disabled}
           multiline
         />
-        <TextField
-          label="รูปหลัก"
-          value={form.heroImage}
-          onChange={set('heroImage')}
-          error={errors.heroImage}
-          disabled={disabled}
-          mono
-          description="ที่อยู่ของไฟล์รูป — ยังไม่มีตัวเลือกรูปจากคลังในหน้านี้"
-        />
+        <div className="flex flex-col gap-2">
+          <TextField
+            label="รูปหลัก"
+            value={form.heroImage}
+            onChange={set('heroImage')}
+            error={errors.heroImage}
+            disabled={disabled}
+            mono
+            description="รูปที่ใช้แทนสินค้าในรายการและการ์ดหน้าร้าน — คนละอย่างกับแกลเลอรีด้านล่าง"
+          />
+          {/*
+            ⚠️ The box stays editable beside the picker. All 81 seeded products hold a path
+            to a static file rather than a `/media/<id>`, and a picker that was the only way
+            to set this field would make those paths unreachable — a person correcting a
+            typo in one would have to replace the picture to do it.
+          */}
+          <div>
+            <Button variant="outline" size="sm" disabled={disabled} onClick={() => setPickingHero(true)}>
+              <ImagePlus data-icon="inline-start" />
+              เลือกจากคลังรูป
+            </Button>
+          </div>
+        </div>
       </FieldGroup>
+
+      <FieldSeparator />
+
+      <GalleryEditor
+        images={form.images}
+        videoUrl={form.videoUrl}
+        videoError={errors.videoUrl}
+        disabled={disabled}
+        onImages={(next) => setForm((current) => ({ ...current, images: next }))}
+        onVideoUrl={set('videoUrl')}
+      />
+
+      {pickingHero && (
+        <MediaPicker
+          titleTh="เลือกรูปหลัก"
+          onClose={() => setPickingHero(false)}
+          onPick={(path) => {
+            set('heroImage')(path);
+            setPickingHero(false);
+          }}
+        />
+      )}
 
       <FieldSeparator />
 

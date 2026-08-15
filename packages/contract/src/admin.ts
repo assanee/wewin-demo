@@ -105,8 +105,16 @@ const imagePathSchema = z
  * ⚠️ Checked here rather than by a database CHECK. A constraint that accepted `https://…`
  * would still accept `https://example.com/nothing`, buying the appearance of validation and
  * none of the substance — so the shape is checked where a refusal can be a sentence.
+ *
+ * ⛔ **The protocol constraint is the security check, not a tidiness one.** Bare `z.url()`
+ * accepts `javascript:alert(1)` and `data:text/html,…` — both are well-formed URLs — and
+ * this string is stored, published into a frozen document, and then put in an `href` by the
+ * storefront. Without this line the field is a stored-XSS hole that any staff member with
+ * `catalog.write` can dig, and the frozen document would carry it past a later fix.
  */
-const videoUrlSchema = z.url('a video link must be a URL').max(500);
+const videoUrlSchema = z
+  .url({ protocol: /^https?$/, error: 'a video link must be an http(s) URL' })
+  .max(500);
 
 const skuPrefixSchema = z
   .string()
