@@ -115,6 +115,21 @@ export const listRefunds = (filter: {
   );
 };
 
+/**
+ * ⭐ Ask for a refund. The fourth function, and the one that was missing.
+ *
+ * Without it `listRefunds`, `decideRefund` and `disburseRefund` described a queue nothing
+ * could put anything into: staff could approve and pay out refunds that no screen could raise.
+ *
+ * ⚠️ No amount. The server derives what is owed back from the order's ledger — see
+ * `orders/refund-request.ts` for why a figure on the form would be a second opinion about how
+ * much money the company holds.
+ */
+export const requestRefund = (
+  orderId: string,
+  body: Readonly<Record<string, unknown>>,
+): Promise<void> => post('/payments/refunds', { orderId, ...body });
+
 const post = async (path: string, body: unknown): Promise<void> => {
   const response = await apiFetch(path, {
     method: 'POST',

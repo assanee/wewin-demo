@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageHeader } from '@/components/page-header';
 import { RecordPaymentButton } from '@/components/slips/record-payment-dialog';
 import { listApprovals } from '@/components/approvals/approvals-api';
+import { listRefunds } from '@/components/refunds/refund-api';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -40,6 +41,7 @@ import { orderFocus } from './order-focus';
 import { statusLabel, transitionForm } from './order-language';
 import { outstandingDisplay, readOutstanding, type OwedFigures } from './order-outstanding';
 import { OrderTimeline } from './order-spine';
+import { RefundButton } from './refund-dialog';
 import { WriteOffButton } from './write-off-dialog';
 import { BalanceReminderButton } from './balance-reminder-button';
 import { balanceNoticeFor } from './transition-balance';
@@ -147,6 +149,7 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
    * control somebody is entitled to, and the ask is refused with a sentence either way.
    */
   const [pendingCashflowApprovalId, setPendingCashflowApprovalId] = useState<string | null>(null);
+  const [hasOpenRefund, setHasOpenRefund] = useState(false);
   const { can } = useSession();
 
   async function reload(): Promise<void> {
@@ -170,6 +173,19 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
       );
     } catch {
       setPendingCashflowApprovalId(null);
+    }
+
+    /*
+     * The same shape and the same reason: a side fact about a button, asked after the order and
+     * swallowed on failure. `payments.read` gates the list, and a caller without it simply never
+     * learns there is a request in the way — the server refuses the second one either way.
+     */
+    if (!can('payments.read')) return;
+    try {
+      const open = await listRefunds({ statuses: ['requested', 'approved'] });
+      setHasOpenRefund(open.some((refund) => refund.orderId === orderId));
+    } catch {
+      setHasOpenRefund(false);
     }
   }
 
@@ -512,6 +528,20 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                 orderId={order.id}
                 outstandingThbMinor={order.outstandingThbMinor}
                 pendingCashflowApprovalId={pendingCashflowApprovalId}
+                onRequested={() => void reload()}
+              />
+
+              {/*
+               * ⭐ ขอคืนเงิน, and the mirror image of the button above it: that one forgives money
+               * the customer owes, this one sends back money the customer paid. It appears only on
+               * a cancelled order, because that is the only status `POST /payments/refunds`
+               * accepts — see `refund-request.ts` for the three refusals it was learned from.
+               */}
+              <RefundButton
+                orderId={order.id}
+                status={order.status}
+                heldThbMinor={order.heldThbMinor}
+                hasOpenRefund={hasOpenRefund}
                 onRequested={() => void reload()}
               />
 

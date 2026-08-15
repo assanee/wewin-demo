@@ -656,6 +656,24 @@ export interface OrderSummaryWire {
    * "received" figure would be reporting revenue the company chose not to collect.
    */
   readonly writtenOffThbMinor: MoneyWire<'THB'> | null;
+  /**
+   * ⭐ WHAT THE COMPANY IS STILL HOLDING — `order_held_thb_minor()`.
+   *
+   * ⚠️ **Stated only on a `cancelled` order, which is the exact inverse of the three fields
+   * above.** While an order is live, what matters is what is owed; the deposit the company
+   * holds is not spare money, it is the thing keeping the production slot. Once the order has
+   * stopped, the question reverses: nothing is owed and the only live question is how much of
+   * the customer's money is still here.
+   *
+   * `superseded` is null too, and deliberately: that money was carried to the order that
+   * replaced it and is already counted there, so stating it twice would double it on any
+   * screen that added up two rows.
+   *
+   * This is the figure `POST /payments/refunds` is about, and no route reported it to a client
+   * before — which is why the คืนเงิน screen had a decide button, a disburse button and no way
+   * for anybody to learn there was something to ask for.
+   */
+  readonly heldThbMinor: MoneyWire<'THB'> | null;
   readonly updatedAt: string;
 }
 
@@ -1115,6 +1133,7 @@ export const orderSummaryWireSchema: z.ZodType<OrderSummaryWire> = z.object({
   outstandingThbMinor: thb.nullable(),
   nextDueThbMinor: thb.nullable(),
   writtenOffThbMinor: thb.nullable(),
+  heldThbMinor: thb.nullable(),
   updatedAt: z.iso.datetime(),
 });
 

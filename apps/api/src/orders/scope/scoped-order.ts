@@ -148,6 +148,19 @@ export interface ScopedOrder {
    */
   readonly writtenOffThbMinor: bigint;
 
+  /**
+   * ⭐ What the company is still **holding** for this order — `order_held_thb_minor()`.
+   *
+   * Added when ขอคืนเงิน got a screen. It is not a fourth way of saying the same thing as the
+   * three above: those describe a debt, and this describes the company's side of the account.
+   * On a live order it is the deposit that holds the production slot. On a cancelled one it is
+   * the money that can be sent back, which is the only figure `POST /payments/refunds` is
+   * about — and until now no route reported it to a client at all, so the refund queue had a
+   * decide button, a disburse button, and nothing that could tell a person there was anything
+   * to ask for.
+   */
+  readonly heldThbMinor: bigint;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 
@@ -270,6 +283,8 @@ export const ORDER_COLUMNS = {
    * that all three folds on this row read identically and none of them can reach `encodeThb` null.
    */
   writtenOffThbMinor: sql`coalesce(order_written_off_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
+  /* Its own call on the same terms as the two above: nothing filters or sorts on it. */
+  heldThbMinor: sql`coalesce(order_held_thb_minor(${orders.id}), 0)::text`.mapWith(BigInt),
   createdAt: orders.createdAt,
   updatedAt: orders.updatedAt,
 } as const;

@@ -91,6 +91,25 @@ export const NON_LIVE_ORDER_STATUSES = [
   'superseded',
 ] as const satisfies readonly OrderStatus[];
 
+/**
+ * ⭐ Whether money the company is holding on this order is **free to send back**.
+ *
+ * The refund question, and the exact inverse of the one above rather than a second copy of a
+ * status literal. `refunds.service.ts` answers 409 for every other status —
+ * *"คืนเงินได้เฉพาะออร์เดอร์ที่ถูกยกเลิกแล้วเท่านั้น"* — so this is the one place the notion is
+ * spelled, and `encode.ts` asks it rather than typing `'cancelled'` a second time.
+ * `tests/orders/live-order.test.ts` fails on that literal appearing in the encoder, which is
+ * how this function came to exist.
+ *
+ * ⚠️ `superseded` is not included, and the distinction is the whole reason this is not simply
+ * `!isLiveOrder(status)`: a superseded order's money was carried to the order that replaced it
+ * and is already counted there. Offering to refund it would offer to pay it twice. `draft` is
+ * excluded for the ordinary reason — nothing was ever taken.
+ */
+export function holdsRefundableMoney(status: OrderStatus): boolean {
+  return status === 'cancelled';
+}
+
 /** Whether this order's unsettled remainder is a debt somebody still owes. */
 export function isLiveOrder(status: OrderStatus): boolean {
   return !(NON_LIVE_ORDER_STATUSES as readonly OrderStatus[]).includes(status);

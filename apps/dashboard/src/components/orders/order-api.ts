@@ -77,6 +77,15 @@ export interface OrderSummary {
    * that states no money at all. ฿0.00 is the real answer *nothing was forgiven*.
    */
   readonly writtenOffThbMinor: bigint | null;
+  /**
+   * ⭐ What the company is still holding — stated only on a `cancelled` order.
+   *
+   * ⚠️ Decoded tolerantly, unlike `writtenOffThbMinor` above, and the asymmetry is the point.
+   * An absent write-off figure makes the screen *assert* ชำระครบแล้ว at somebody who never
+   * paid. An absent held figure can only make the ขอคืนเงิน button not appear — a smaller
+   * answer, never a false one — so it degrades to null rather than failing the whole order.
+   */
+  readonly heldThbMinor: bigint | null;
   readonly updatedAt: string;
 }
 
@@ -266,6 +275,7 @@ const decodeSummary = (raw: unknown): OrderSummary => {
       order['writtenOffThbMinor'],
       'order.writtenOffThbMinor',
     ),
+    heldThbMinor: asSatangOrNull(order['heldThbMinor'], 'order.heldThbMinor'),
     updatedAt: asText(order['updatedAt'], 'order.updatedAt'),
   };
 };

@@ -14,7 +14,7 @@ import {
 import type { OrganisationProfileWire } from '@wewin/contract/organisation';
 import type { OrderStatus } from '@wewin/db/schema';
 
-import { isLiveOrder } from './live-order';
+import { holdsRefundableMoney, isLiveOrder } from './live-order';
 import type { ChangeRequestRow, OrderEventRow } from './order.repository';
 import type { ScopedOrder } from './scope';
 import type { TransitionRow } from './transitions';
@@ -140,6 +140,16 @@ export function encodeOrderSummary(row: ScopedOrder): OrderSummaryWire {
      * approval inbox's decided list (`approvals_write_off_idx`), which is where an auditor asks it.
      */
     writtenOffThbMinor: owesLive ? encodeThb(row.writtenOffThbMinor) : null,
+    /*
+     * ⭐ The inverse of `owesLive`, and narrower than it: `cancelled` alone.
+     *
+     * While the order is live the deposit is not spare money and stating it invites somebody to
+     * treat it as refundable. `superseded` is excluded for the opposite reason — that money was
+     * carried to the replacement order and is counted there, so a screen adding two rows would
+     * count it twice. `cancelled` is the one status where held money is both real and free, and
+     * it is exactly the status `POST /payments/refunds` accepts.
+     */
+    heldThbMinor: holdsRefundableMoney(row.status) ? encodeThb(row.heldThbMinor) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
