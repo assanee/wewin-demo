@@ -226,11 +226,17 @@ describe('⭐ the label on the button', () => {
     expect(reminderButtonLabelTh(OWED_EXACT)).toContain('แจ้งเตือนยอดค้างชำระ');
   });
 
-  it('drops the satang when there are none, so a whole-baht balance reads as one', () => {
+  it('⭐ keeps the satang column even when they are zero, so two figures line up', () => {
     /*
-     * `baht` prints decimals only when they exist — ฿5,000 and not ฿5,000.00 — which is why the
-     * exact formatter costs nothing on the orders where the rounded one was indistinguishable.
+     * This asserted `฿5,000` until the owner ruled that staff money always carries two decimals.
+     * The old note argued that dropping `.00` cost nothing on whole-baht orders, and taken one
+     * screen at a time that was true. It is false across two: the button says one thing and the
+     * money card beside it another, and a person reconciling against a bank statement has to
+     * decide which spelling to trust before they can decide whether the figures agree.
+     *
+     * The customer already reads `฿5,000.00` on the payment page and in every email. This is the
+     * same figure, spelled the same way, on the other side of the desk.
      */
-    expect(reminderButtonLabelTh(500_000n)).toBe('แจ้งเตือนยอดค้างชำระ ฿5,000');
+    expect(reminderButtonLabelTh(500_000n)).toBe('แจ้งเตือนยอดค้างชำระ ฿5,000.00');
   });
 });

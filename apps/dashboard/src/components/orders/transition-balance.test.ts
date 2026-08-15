@@ -71,13 +71,13 @@ describe('⭐ what the two closing moves say when money is outstanding', () => {
      */
     const notice = balanceNoticeFor('delivered', owing);
 
-    expect(notice?.headlineTh).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354');
+    expect(notice?.headlineTh).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354.18');
   });
 
   it('says the same thing on the installation move', () => {
     const notice = balanceNoticeFor('awaiting_installation', owing);
 
-    expect(notice?.headlineTh).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354');
+    expect(notice?.headlineTh).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354.18');
   });
 
   it('⭐ tells staff to proceed anyway — this is information, not a gate', () => {
@@ -110,7 +110,7 @@ describe('⭐ what the two closing moves say when money is outstanding', () => {
     const thirtySeventy = { outstandingThbMinor: 1_440_000n, nextDueThbMinor: 432_000n, writtenOffThbMinor: 0n };
 
     expect(balanceNoticeFor('delivered', thirtySeventy)?.headlineTh).toBe(
-      'ออเดอร์นี้ยังค้างชำระ ฿14,400',
+      'ออเดอร์นี้ยังค้างชำระ ฿14,400.00',
     );
   });
 });
@@ -154,7 +154,7 @@ describe('the states that must stay silent', () => {
     expect(
       balanceNoticeFor('delivered', { outstandingThbMinor: 1_035_418n, nextDueThbMinor: null, writtenOffThbMinor: 0n })
         ?.headlineTh,
-    ).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354');
+    ).toBe('ออเดอร์นี้ยังค้างชำระ ฿10,354.18');
   });
 });
 

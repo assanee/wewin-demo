@@ -40,13 +40,34 @@ import { localiseNumerals } from '../src/numerals.js';
 const NBSP = '\u00A0';
 
 describe('money', () => {
-  test('Thai reproduces core exactly, sign and zero included', () => {
-    // If this ever diverges, the storefront and the emails start disagreeing about a
-    // price with no code change in between. Negative and zero are here because
-    // `divRoundHalfUp` rounds away from zero and `-0` is forbidden by spec section 11.
+  test('⭐ Thai reproduces core exactly, sign and zero included', () => {
+    /*
+     * If this ever diverges, the storefront and the emails start disagreeing about a figure
+     * with no code change in between. Negative and zero are here because `-0` is forbidden by
+     * spec section 11, and `49n`/`50n` because they used to straddle a rounding tie.
+     *
+     * ⚠️ **It compares against `'exact'` now, and that is the point of the change rather than a
+     * concession to it.** `formatBaht` rounded to the whole baht until the owner stopped it — a
+     * staff screen cannot show a figure a person is about to reconcile against a bank statement
+     * and silently move it by up to fifty satang. So core's money formatter and the storefront's
+     * exact one are now the same rendering, and this line is what keeps them that way.
+     */
     for (const minor of [0n, -1n, 1n, 49n, 50n, 879_100n, -879_100n, 1_234_567_800n]) {
-      expect(formatMoney('th', minor, 'THB')).toBe(formatBaht(minor));
+      expect(formatMoney('th', minor, 'THB', 'exact')).toBe(formatBaht(minor));
     }
+  });
+
+  test('⚠️ and the price path still rounds, because that half did not change', () => {
+    /*
+     * The other half of the same invariant, and the one a well-meaning fix would break: making
+     * the test above pass by teaching `'whole'` to stop rounding would rewrite every price in
+     * the catalogue and every quote total the customer reads. `'whole'` is the browsing figure,
+     * `'exact'` is the money-movement figure, and the split is by surface rather than by
+     * audience — the customer already sees both.
+     */
+    expect(formatMoney('th', 988_680n, 'THB', 'whole')).toBe('฿9,887');
+    expect(formatMoney('th', 50n, 'THB', 'whole')).toBe('฿1');
+    expect(formatMoney('th', 49n, 'THB', 'whole')).toBe('฿0');
   });
 
   test('a signed zero never reaches the screen', () => {

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { refundFocus, type PayableRefund } from './refund-focus';
 
 /**
- * ⚠️ Whole strings with `toBe`, never `toContain`. `'฿4,000 อนุมัติแล้วแต่ยังไม่ได้จ่าย'` is a
- * substring of `'฿14,000 อนุมัติแล้วแต่ยังไม่ได้จ่าย'`, so a containment assertion here would
+ * ⚠️ Whole strings with `toBe`, never `toContain`. `'฿4,000.00 อนุมัติแล้วแต่ยังไม่ได้จ่าย'` is a
+ * substring of `'฿14,000.00 อนุมัติแล้วแต่ยังไม่ได้จ่าย'`, so a containment assertion here would
  * pass for a debt ten thousand baht larger than the one it meant.
  */
 
@@ -39,7 +39,7 @@ describe('refundFocus', () => {
     const focus = refundFocus([refund(400_000n), refund(150_000n)]);
 
     expect(focus.totalThbMinor).toBe(550_000n);
-    expect(focus.headlineTh).toBe('฿5,500 อนุมัติแล้วแต่ยังไม่ได้จ่าย');
+    expect(focus.headlineTh).toBe('฿5,500.00 อนุมัติแล้วแต่ยังไม่ได้จ่าย');
     expect(focus.detailTh).toBe('2 รายการ — เงินที่บริษัทรับปากลูกค้าไว้แล้วและยังไม่ออกจากบัญชี');
   });
 
@@ -62,8 +62,8 @@ describe('refundFocus', () => {
   });
 
   it('distinguishes an amount whose sentence is a substring of another', () => {
-    expect(refundFocus([refund(400_000n)]).headlineTh).toBe('฿4,000 อนุมัติแล้วแต่ยังไม่ได้จ่าย');
-    expect(refundFocus([refund(1_400_000n)]).headlineTh).toBe('฿14,000 อนุมัติแล้วแต่ยังไม่ได้จ่าย');
+    expect(refundFocus([refund(400_000n)]).headlineTh).toBe('฿4,000.00 อนุมัติแล้วแต่ยังไม่ได้จ่าย');
+    expect(refundFocus([refund(1_400_000n)]).headlineTh).toBe('฿14,000.00 อนุมัติแล้วแต่ยังไม่ได้จ่าย');
   });
 
   it('does not disturb the list it was handed', () => {

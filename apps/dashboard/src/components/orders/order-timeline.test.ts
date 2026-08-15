@@ -262,9 +262,9 @@ describe('⭐ a payload read as Thai sentences', () => {
   });
 
   it('keeps the sign on what the company absorbed, and prints zero plainly', () => {
-    expect(payloadLines({ absorbed_delta_thb_minor: '0' })[0]?.valueText).toBe('฿0');
+    expect(payloadLines({ absorbed_delta_thb_minor: '0' })[0]?.valueText).toBe('฿0.00');
     expect(payloadLines({ absorbed_delta_thb_minor: '-123456' })[0]?.valueText).toBe('-฿1,234.56');
-    expect(payloadLines({ absorbed_delta_thb_minor: '50000' })[0]?.valueText).toBe('+฿500');
+    expect(payloadLines({ absorbed_delta_thb_minor: '50000' })[0]?.valueText).toBe('+฿500.00');
   });
 
   it('⚠️⚠️ refuses to read a key that merely looks like money', () => {

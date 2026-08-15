@@ -93,13 +93,13 @@ describe('no ceiling, a ceiling of zero, and a withdrawn ceiling are three diffe
 
   it('says something different about each of the three states', () => {
     expect(ceilingMeaningTh(limit({ maxConcessionThbMinor: 0n }))).toContain('ต้องให้คนอื่นอนุมัติ');
-    expect(ceilingMeaningTh(limit({ maxConcessionThbMinor: 500_000n }))).toContain('฿5,000');
+    expect(ceilingMeaningTh(limit({ maxConcessionThbMinor: 500_000n }))).toContain('฿5,000.00');
     expect(ceilingMeaningTh(limit({ revokedAt: '2026-08-11T04:00:00.000Z' }))).toContain('ยกเลิก');
 
     /* And the withdrawn sentence wins over the amount — the row still carries its old number. */
     expect(
       ceilingMeaningTh(limit({ maxConcessionThbMinor: 500_000n, revokedAt: '2026-08-11T04:00:00.000Z' })),
-    ).not.toContain('฿5,000');
+    ).not.toContain('฿5,000.00');
   });
 });
 
@@ -196,8 +196,8 @@ describe('the history reads as verbs, not as JSON', () => {
       change({ before: live, after: { ...live, maxConcessionThbMinor: 900_000n } }),
     );
     expect(widened.map((field) => field.key)).toEqual(['maxConcessionThbMinor']);
-    expect(widened[0]?.beforeText).toBe('฿5,000');
-    expect(widened[0]?.afterText).toBe('฿9,000');
+    expect(widened[0]?.beforeText).toBe('฿5,000.00');
+    expect(widened[0]?.afterText).toBe('฿9,000.00');
   });
 });
 
@@ -269,7 +269,7 @@ describe('the wire is narrowed, never cast', () => {
     ).toBe('2026-08-11T04:00:00.000Z');
 
     /* And the fold really is the difference between the two sentences the screen prints. */
-    expect(ceilingMeaningTh(decodeAuthorityLimit(wire))).toContain('฿5,000');
+    expect(ceilingMeaningTh(decodeAuthorityLimit(wire))).toContain('฿5,000.00');
     expect(
       ceilingMeaningTh(decodeAuthorityLimit({ ...wire, revokedAt: '2026-08-11T04:00:00.000Z' })),
     ).toContain('ยกเลิก');
@@ -370,7 +370,7 @@ describe('AuthorityLimitsPanel', () => {
     const markup = render(ready(), false);
 
     expect(markup).toContain('หัวหน้าฝ่ายขาย');
-    expect(markup).toContain('฿5,000');
+    expect(markup).toContain('฿5,000.00');
     expect(markup).toContain('ประวัติ');
     expect(markup).not.toContain('กำหนดเพดาน');
     expect(markup).not.toContain('ยกเลิกอำนาจ');

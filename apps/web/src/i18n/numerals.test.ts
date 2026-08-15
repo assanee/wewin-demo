@@ -192,8 +192,28 @@ describe('Thai is identical to what core renders, digit for digit', () => {
   // comparison is a string equality rather than a decode.
   const f = formattersFor('th');
 
-  test('money', () => {
-    for (const minor of MONEY_MINOR) expect(f.baht(minor)).toBe(formatBaht(minor));
+  test('⭐ money — the exact figure, which core owns', () => {
+    /*
+     * ⚠️ `bahtExact`, not `baht`, and the swap is the record of a decision rather than a test
+     * being bent to fit. `formatBaht` rounded to the whole baht until the owner stopped it: a
+     * staff screen cannot move a figure by up to fifty satang when somebody is about to
+     * reconcile it against a bank statement. Core's formatter and this storefront's exact one
+     * are now the same rendering, and this line is what keeps them from drifting apart.
+     */
+    for (const minor of MONEY_MINOR) expect(f.bahtExact(minor)).toBe(formatBaht(minor));
+  });
+
+  test('⚠️ money — and the browsing price still rounds, which is the other half', () => {
+    /*
+     * `f.baht` is the price a shopper reads and it is untouched: `formatMoney(…, 'whole')`.
+     * The split is by surface, not by audience — this same customer sees the exact figure on
+     * the payment page. The three values below are the ones the list above was built to
+     * straddle: the tie at half a baht, either side of it, and the negative tie where
+     * `Math.round(-0.5)` would give `-0` and core owes a whole baht away from zero.
+     */
+    expect(f.baht(49n)).toBe('฿0');
+    expect(f.baht(50n)).toBe('฿1');
+    expect(f.baht(-50n)).toBe('-฿1');
   });
 
   test('lengths, ranges and dimensions', () => {

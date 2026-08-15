@@ -47,7 +47,7 @@ describe('reading money', () => {
   });
 
   it('accepts a pasted figure with separators and a symbol', () => {
-    expect(value(readSignedBaht('฿8,791'))).toBe(879_100n);
+    expect(value(readSignedBaht('฿8,791.00'))).toBe(879_100n);
     expect(value(readSignedBaht(' 18,432.00 '))).toBe(1_843_200n);
   });
 
@@ -77,13 +77,13 @@ describe('showing money', () => {
   it('keeps the satang that phase 5b actually produced', () => {
     expect(baht(940_637n)).toBe('฿9,406.37');
     expect(baht(282_191n)).toBe('฿2,821.91');
-    expect(baht(879_100n)).toBe('฿8,791');
+    expect(baht(879_100n)).toBe('฿8,791.00');
   });
 
   it('puts the minus outside the symbol, where a column makes it visible', () => {
-    expect(baht(-29_100n)).toBe('-฿291');
-    expect(signedBaht(30_000n)).toBe('+฿300');
-    expect(signedBaht(0n)).toBe('฿0');
+    expect(baht(-29_100n)).toBe('-฿291.00');
+    expect(signedBaht(30_000n)).toBe('+฿300.00');
+    expect(signedBaht(0n)).toBe('฿0.00');
   });
 
   it('round-trips through the input spelling exactly', () => {

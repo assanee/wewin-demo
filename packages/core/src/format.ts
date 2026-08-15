@@ -20,21 +20,54 @@ const THAI_LOCALE = 'th-TH';
 const safe = (value: number): number => (Number.isFinite(value) ? value + 0 : 0);
 
 /**
- * Thai baht, whole units. Quotes are never issued in satang.
+ * Thai baht, to the satang, always two decimals: `฿9,886.80`, `฿14,124.00`, `-฿0.01`.
  *
  * Takes minor units, because that is what money is in this codebase now. A formatter
  * that accepted baht would need a caller to divide first, and a division on the way to
  * the screen is exactly where a rounding decision hides from review.
+ *
+ * ── ⚠️ THIS ROUNDED TO THE WHOLE BAHT UNTIL THE OWNER STOPPED IT ────────────────
+ *
+ * The old header said *"Thai baht, whole units. Quotes are never issued in satang"*, and
+ * that was true while quotes were the only money in the system. It stopped being true when
+ * payments arrived: 7% VAT on a whole-baht net lands on satang almost always, and an
+ * outstanding balance is whatever is left after a deposit. The rounding then produced
+ * figures a person could not reconcile against a bank statement, which is the owner's
+ * stated reason for this change — *"เดี๋ยวมีปัญหายอดไม่ตรง"*.
+ *
+ * Three failures it produced, in ascending order of how much they cost:
+ *   · `988680` → `฿9,887`, overstating a debt by twenty satang on the screen a clerk types
+ *     the write-off amount into, where the same number is also the validation ceiling.
+ *   · `50` → `฿1`, half a baht owed reported as a whole one.
+ *   · `49` → `฿0`. **A real balance rendered as nothing.** The slip reviewer's
+ *     `ยังเหลือ … ที่ยังไม่ได้ตัดเข้างวดใด` — a red error whose whole job is to name a
+ *     shortfall — said `฿0` for any shortfall under half a baht.
+ *
+ * ── Two decimals even when the satang are zero, deliberately ────────────────────
+ *
+ * `฿14,124.00`, not `฿14,124`. The customer already reads this exact shape on the payment
+ * page and in every email — `formatMoney(locale, minor, 'THB', 'exact')` — and one figure
+ * spelled two ways across the desk from each other is the same reconciliation problem in a
+ * smaller font. `tests/format.test.ts` pins the two together; `@wewin/i18n`'s own suite pins
+ * this function against `formatMoney(…, 'exact')` so the pair cannot drift apart in silence.
+ *
+ * ⚠️ `divRoundHalfUp` is untouched and still exports: VAT, per-line allocation and the
+ * deposit all round with it, to the *satang*, before the money is ever stored. Rounding
+ * belongs there, in the arithmetic that produces a figure, and not here in the sentence
+ * that reports one.
+ *
+ * Catalogue prices are unaffected in value and gain `.00`: `products_price_whole_baht`
+ * and `option_values_delta_whole_units` are CHECK constraints, so those numbers carry no
+ * satang to reveal.
  */
 export function formatBaht(minor: bigint): string {
-  // Normally already rounded to the whole baht upstream; rounding here too means a
-  // caller that hands over raw satang still gets the same answer as everywhere else.
-  const whole = divRoundHalfUp(minor, 100n);
-  const magnitude = (whole < 0n ? -whole : whole).toLocaleString(THAI_LOCALE, {
-    maximumFractionDigits: 0,
-  });
+  const negative = minor < 0n;
+  const magnitude = negative ? -minor : minor;
+  const whole = (magnitude / 100n).toLocaleString(THAI_LOCALE, { maximumFractionDigits: 0 });
+  const satang = (magnitude % 100n).toString().padStart(2, '0');
 
-  return whole < 0n ? `-฿${magnitude}` : `฿${magnitude}`;
+  /* The sign is taken from `minor`, so `0n` cannot produce `-฿0.00` — spec section 11. */
+  return `${negative ? '-' : ''}฿${whole}.${satang}`;
 }
 
 /**

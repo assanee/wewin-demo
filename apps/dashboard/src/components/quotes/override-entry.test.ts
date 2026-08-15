@@ -348,12 +348,12 @@ describe('a unit price is for reading and does not add up', () => {
 
 describe('a concession as a person reads it', () => {
   it('names the direction, the amount and the percentage', () => {
-    expect(concessionText(879_100n, 850_000n)).toBe('ลดลง ฿291 (3.31%)');
+    expect(concessionText(879_100n, 850_000n)).toBe('ลดลง ฿291.00 (3.31%)');
     expect(concessionText(879_100n, 1_010_965n)).toBe('เพิ่มขึ้น ฿1,318.65 (15%)');
     expect(concessionText(879_100n, 879_100n)).toBe('ไม่เปลี่ยนแปลง');
   });
 
   it('says the amount alone when there is no baseline to be a percentage of', () => {
-    expect(concessionText(0n, 200_000n)).toBe('เพิ่มขึ้น ฿2,000');
+    expect(concessionText(0n, 200_000n)).toBe('เพิ่มขึ้น ฿2,000.00');
   });
 });

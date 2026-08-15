@@ -7,28 +7,47 @@ import { formatBaht, formatInteger, formatLength, formatSqm } from '../src/forma
  */
 
 describe('formatBaht', () => {
-  test('takes minor units and renders whole baht with separators', () => {
-    expect(formatBaht(1_843_200n)).toBe('฿18,432');
-    expect(formatBaht(150_000n)).toBe('฿1,500');
-    expect(formatBaht(0n)).toBe('฿0');
+  test('takes minor units and renders baht with separators and two decimals', () => {
+    expect(formatBaht(1_843_200n)).toBe('฿18,432.00');
+    expect(formatBaht(150_000n)).toBe('฿1,500.00');
+    expect(formatBaht(0n)).toBe('฿0.00');
   });
 
-  test('rounds half up if handed unrounded satang', () => {
-    // Totals arrive already rounded, but a stray caller must not get a third answer.
-    expect(formatBaht(879_120n)).toBe('฿8,791');
-    expect(formatBaht(61_440n)).toBe('฿614');
-    expect(formatBaht(50n)).toBe('฿1');
+  test('⭐ reports the satang it was given rather than a rounded neighbour', () => {
+    /*
+     * This test used to be called "rounds half up if handed unrounded satang" and asserted
+     * `฿8,791`, `฿614` and `฿1` for these same three inputs. The premise was that totals
+     * arrive already whole, so the rounding could only ever tidy a stray caller. Payments
+     * broke the premise: 7% VAT on a whole-baht net lands on satang, and an outstanding
+     * balance is a subtraction. The rounding was then reporting a number nobody could
+     * reconcile against a bank statement, so the owner had it removed.
+     */
+    expect(formatBaht(879_120n)).toBe('฿8,791.20');
+    expect(formatBaht(61_440n)).toBe('฿614.40');
+
+    /*
+     * ⚠️ The three that cost the most, kept as the record of what the rounding did.
+     * `50n` was the tie the old test pinned — half a baht owed, reported as a whole one.
+     * `49n` is the one worth remembering: a real balance rendered as **nothing**, on a
+     * red `ยังเหลือ …` error whose entire job is to name a shortfall.
+     */
+    expect(formatBaht(50n)).toBe('฿0.50');
+    expect(formatBaht(49n)).toBe('฿0.49');
+    expect(formatBaht(988_680n)).toBe('฿9,886.80');
   });
 
-  test('renders a credit with the sign outside the symbol', () => {
-    expect(formatBaht(-180_000n)).toBe('-฿1,800');
+  test('renders a credit with the sign outside the symbol, and never a signed zero', () => {
+    expect(formatBaht(-180_000n)).toBe('-฿1,800.00');
+    expect(formatBaht(-1n)).toBe('-฿0.01');
+    /* `0n` is not negative, so the sign is never printed for it — spec section 11. */
+    expect(formatBaht(0n)).toBe('฿0.00');
   });
 
   test('has no NaN or -0 case left to guard', () => {
     // v1 needed both: the arithmetic was float, so `-0` and `NaN` could reach the
     // screen and did — `pricing.ts` carried a `+ 0` for exactly that reason. A bigint
     // has neither value, so the defect is gone rather than defended against.
-    expect(formatBaht(-0n)).toBe('฿0');
+    expect(formatBaht(-0n)).toBe('฿0.00');
     expect(Object.is(Number(-0n), -0)).toBe(false);
   });
 });

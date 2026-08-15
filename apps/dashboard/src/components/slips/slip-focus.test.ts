@@ -29,7 +29,7 @@ describe('slipQueueFocus', () => {
 
     expect(focus.waiting).toBe(2);
     expect(focus.claimedThbMinor).toBe(200_000n);
-    expect(focus.headlineTh).toBe('2 สลิปรอตรวจ รวม ฿2,000');
+    expect(focus.headlineTh).toBe('2 สลิปรอตรวจ รวม ฿2,000.00');
   });
 
   /**
@@ -76,7 +76,7 @@ describe('slipQueueFocus', () => {
   it('turns the count into a floor when the API returned a full page', () => {
     const focus = slipQueueFocus([slip(150_000n), slip(50_000n)], true);
 
-    expect(focus.headlineTh).toBe('อย่างน้อย 2 สลิปรอตรวจ รวม ฿2,000');
+    expect(focus.headlineTh).toBe('อย่างน้อย 2 สลิปรอตรวจ รวม ฿2,000.00');
     expect(focus.detailTh).toBe(
       'ยอดที่ลูกค้าแจ้ง ยังไม่ตัดเข้างวดจนกว่าจะมีคนรับสลิป · นับเฉพาะรายการที่ API ส่งมา — ตัวเลขบนภาพรวมคือยอดจริงทั้งหมด',
     );
@@ -84,10 +84,10 @@ describe('slipQueueFocus', () => {
 
   it('distinguishes a count whose sentence is a substring of another', () => {
     /* The `toContain` trap, pinned: 2 and 12 must not be mistakable for one another. */
-    expect(slipQueueFocus([slip(100n), slip(100n)]).headlineTh).toBe('2 สลิปรอตรวจ รวม ฿2');
+    expect(slipQueueFocus([slip(100n), slip(100n)]).headlineTh).toBe('2 สลิปรอตรวจ รวม ฿2.00');
     expect(
       slipQueueFocus(Array.from({ length: 12 }, () => slip(100n))).headlineTh,
-    ).toBe('12 สลิปรอตรวจ รวม ฿12');
+    ).toBe('12 สลิปรอตรวจ รวม ฿12.00');
   });
 
   it('does not reorder or otherwise disturb the list it was handed', () => {

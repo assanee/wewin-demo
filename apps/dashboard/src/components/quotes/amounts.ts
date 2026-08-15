@@ -1,4 +1,5 @@
 import { MAX_QTY, MIN_QTY } from '@wewin/core/constants';
+import { formatBaht } from '@wewin/core/format';
 import {
   normaliseAmountEntry,
   normalisePercentEntry,
@@ -180,23 +181,20 @@ export function readDiscountBaht(text: string): ParseResult<AmountEntry> {
   return ruled.ok ? ok(ruled.value) : fail(AMOUNT_REFUSAL_TH[ruled.refusal]);
 }
 
-const groups = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-
 /**
- * Money as a person reads it: `฿9,406.37`, `฿8,500`, `-฿291`.
+ * Money as a person reads it: `฿9,406.37`, `฿8,500.00`, `-฿291.00`.
  *
- * The minus goes outside the symbol, matching `formatBaht`, so that a negative charge in a
- * column of positives is visible at the left edge rather than three characters in.
+ * ⚠️ **One line, and it used to be six.** This was a second implementation of the same idea,
+ * and it disagreed with `formatBaht` in two ways at once: core rounded to the whole baht while
+ * this one did not, and this one dropped `.00` while core never printed decimals at all. Same
+ * money, three spellings, on screens a person reads side by side — the write-off dialog quoted
+ * one figure and the money card above it quoted another, and neither was wrong on its own.
+ *
+ * Now there is one implementation. The minus stays outside the symbol, which is what core does
+ * too, so a negative charge in a column of positives is visible at the left edge rather than
+ * three characters in.
  */
-export function baht(minor: bigint): string {
-  const negative = minor < 0n;
-  const magnitude = negative ? -minor : minor;
-  const whole = magnitude / MINOR_PER_BAHT;
-  const satang = magnitude % MINOR_PER_BAHT;
-  const decimals = satang === 0n ? '' : `.${satang.toString().padStart(2, '0')}`;
-
-  return `${negative ? '-' : ''}฿${groups(whole.toString())}${decimals}`;
-}
+export const baht = (minor: bigint): string => formatBaht(minor);
 
 /** `+฿300` / `-฿291` / `฿0` — for a figure whose direction is the point. */
 export const signedBaht = (minor: bigint): string => (minor > 0n ? `+${baht(minor)}` : baht(minor));

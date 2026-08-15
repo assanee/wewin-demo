@@ -55,7 +55,7 @@ describe('readOutstanding', () => {
 
     expect(reading).toEqual({ kind: 'settled' });
     expect(outstandingDisplay(reading)).toEqual({ textTh: SETTLED_TH, emphasis: 'quiet' });
-    expect(outstandingDisplay(reading).textTh).not.toBe('฿0');
+    expect(outstandingDisplay(reading).textTh).not.toBe('฿0.00');
   });
 
   it('gives an unpaid pay-in-full order one figure, not two copies of one figure', () => {
@@ -153,7 +153,7 @@ describe('readOutstanding', () => {
 describe('outstandingDisplay', () => {
   it('renders a debt through the app formatter, with weight', () => {
     expect(outstandingDisplay(readOutstanding({ outstandingThbMinor: 1_420_000n, nextDueThbMinor: 426_000n, writtenOffThbMinor: 0n }))).toEqual(
-      { textTh: '฿14,200', emphasis: 'debt' },
+      { textTh: '฿14,200.00', emphasis: 'debt' },
     );
   });
 
@@ -284,7 +284,7 @@ describe('⭐ ⓸ an order whose balance was written off', () => {
     });
 
     expect(reading.kind).toBe('owing');
-    expect(outstandingDisplay(reading)).toEqual({ textTh: '฿9,940', emphasis: 'debt' });
+    expect(outstandingDisplay(reading)).toEqual({ textTh: '฿9,940.00', emphasis: 'debt' });
   });
 
   it('⚠️ a cancelled order that was written off still shows the dash, not the sentence', () => {
