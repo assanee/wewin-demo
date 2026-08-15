@@ -94,12 +94,26 @@ services:
       MINIO_ROOT_PASSWORD: wewin-local
       TZ: UTC
     ports:
-      # 9100, not 9000, on the same reasoning as Postgres's 5433: 9000 is where a
-      # developer's unrelated MinIO, or Portainer, or a Go service's admin port already
-      # lives, and pointing an upload endpoint at the wrong bucket is expensive in the same
-      # quiet way as pointing a migration at the wrong database. Inside the container it is
-      # still 9000, so every `mc` command copied from MinIO's own documentation works.
-      - '9100:9000'
+      # Not 9000, on the same reasoning as Postgres's 5433: 9000 is where a developer's
+      # unrelated MinIO, or Portainer, or a Go service's admin port already lives, and
+      # pointing an upload endpoint at the wrong bucket is expensive in the same quiet way
+      # as pointing a migration at the wrong database. Inside the container it is still
+      # 9000, so every `mc` command copied from MinIO's own documentation works.
+      #
+      # ⚠️ **9110, because 9100 was taken and the way it failed is worth writing down.**
+      # `dart` — the Flutter dev server — binds `127.0.0.1:9100` and `[::1]:9100`
+      # specifically, while Docker publishes on the wildcard `*:9100`. macOS gives the
+      # specific bind priority for connections to that address, so Docker started cleanly,
+      # `docker compose ps` reported healthy, and every S3 PUT to `localhost:9100` was
+      # answered by Flutter's dev server with its own 404. The symptom was ~47 slip-image
+      # tests failing with `storageStatus: 404` and reading exactly like a regression in the
+      # upload path; the workaround was to address MinIO by the machine's LAN IP, which the
+      # wildcard bind does own.
+      #
+      # A port nothing else wants is cheaper than a workaround everyone has to remember, and
+      # a health check that passes while the service is unreachable is the failure mode to
+      # design against — `docker compose ps` cannot see a listener that is shadowing it.
+      - '9110:9000'
     volumes:
       - wewin-minio-data:/data
     healthcheck:

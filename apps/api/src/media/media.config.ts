@@ -10,8 +10,9 @@ import { z } from 'zod';
  *
  * ── The variables ─────────────────────────────────────────────────────────────
  *
- *   MEDIA_STORAGE_ENDPOINT     http://localhost:9100   the compose service, on the host port
- *                                                      docker-compose.yml explains
+ *   MEDIA_STORAGE_ENDPOINT     http://localhost:9110   the compose service, on the host port
+ *                                                      docker-compose.yml explains — and it
+ *                                                      explains why the port moved off 9100
  *   MEDIA_STORAGE_REGION       us-east-1               MinIO ignores it; SigV4 does not, and
  *                                                      it must match the bucket's real region
  *                                                      in front of AWS
@@ -60,7 +61,14 @@ const LOCAL_ACCESS_KEY_ID = 'wewin';
 const LOCAL_SECRET_ACCESS_KEY = 'wewin-local';
 
 const schema = z.object({
-  MEDIA_STORAGE_ENDPOINT: httpUrl.default('http://localhost:9100'),
+  /*
+   * ⚠️ 9110 since a `dart` dev server was found shadowing 9100 — it binds `127.0.0.1`
+   * specifically while Docker publishes on the wildcard, and macOS gives the specific bind
+   * priority, so this default reached Flutter's 404 instead of MinIO while `docker compose ps`
+   * reported healthy. docker-compose.yml carries the full account. Keep the two in step: this
+   * default is what every developer and every test run uses when nobody sets the variable.
+   */
+  MEDIA_STORAGE_ENDPOINT: httpUrl.default('http://localhost:9110'),
   MEDIA_STORAGE_REGION: z.string().min(1).default('us-east-1'),
   /*
    * The naming rules S3 actually enforces, restated where a typo fails at boot instead of on
