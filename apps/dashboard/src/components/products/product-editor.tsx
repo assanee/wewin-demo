@@ -1,12 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Upload } from 'lucide-react';
+import { AlertTriangle, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { PageHeader } from '@/components/page-header';
 import { Separator } from '@/components/ui/separator';
@@ -14,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { useSession } from '@/lib/auth/session';
 
-import { openDraft, publishDraft, updateDraft } from './catalog-api';
+import { discardDraft, openDraft, publishDraft, updateDraft } from './catalog-api';
 import { diffDocuments, groupSummary } from './document-diff';
 import { FieldsForm } from './fields-form';
 import { publishFocus } from './publish-focus';
@@ -64,6 +72,8 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
   const { can } = useSession();
   const editor = useProductEditor(productId);
   const [publishing, setPublishing] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   if (editor.state.status === 'loading') {
     return (
@@ -277,10 +287,99 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
                   <Upload data-icon="inline-start" />
                   เผยแพร่เวอร์ชัน {draft.version}
                 </Button>
+                {/*
+                  ⚠️ **ทิ้งฉบับร่าง had no button, and that was not a missing convenience.**
+                  `DELETE …/draft` and `discardDraft` both existed with no caller, so a draft
+                  whose changes turned out to be wrong could only be escaped by publishing
+                  them — the one move somebody had already decided against.
+
+                  ⚠️ Offered only when there is a published version to fall back to, because
+                  the API refuses it otherwise: `catalog-admin.service.ts:349-352` throws
+                  "ทิ้งร่างนี้ไม่ได้ เพราะสินค้ายังไม่เคยเผยแพร่ — สินค้าจะเหลือสถานะที่แก้ไขต่อไม่ได้".
+                  Discarding the only version a product has ever had would leave a row nothing
+                  can edit and nothing can serve. Rendering the button anyway and letting the
+                  server say no would be a button that is never right to press — found by
+                  pressing it.
+
+                  Beside `เผยแพร่` rather than hidden in a menu, because these are the two
+                  answers to the same question, and destructive is not the same as rare.
+                */}
+                {product.published !== null && (
+                  <Button
+                    variant="outline"
+                    disabled={!mayWrite || editor.busy || publishing || discarding}
+                    onClick={() => setConfirmingDiscard(true)}
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    ทิ้งฉบับร่าง
+                  </Button>
+                )}
+                {product.published === null && (
+                  /*
+                    Absent buttons are the quiet version of the defect this round has been
+                    clearing out, so the reason is said rather than left to be inferred from
+                    a gap where a button is on every other product.
+                  */
+                  <p className="text-muted-foreground type-body">
+                    ทิ้งฉบับร่างไม่ได้จนกว่าจะเผยแพร่ครั้งแรก — ร่างนี้เป็นเวอร์ชันเดียวที่สินค้านี้มี
+                  </p>
+                )}
                 {mayPublish ? null : (
                   <p className="text-muted-foreground type-body">บัญชีของคุณไม่มีสิทธิ์เผยแพร่</p>
                 )}
               </div>
+
+              {confirmingDiscard && (
+                <Dialog open onOpenChange={(next) => !next && setConfirmingDiscard(false)}>
+                  <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>ทิ้งฉบับร่างเวอร์ชัน {draft.version}?</DialogTitle>
+                      <DialogDescription>
+                        ลูกค้ายังเห็นเวอร์ชัน {product.published?.version} เหมือนเดิม —
+                        ทิ้งเฉพาะสิ่งที่แก้ไว้ในร่างนี้
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <Alert variant="destructive">
+                      <AlertTriangle className="size-4" />
+                      <AlertTitle>สิ่งที่แก้ไว้ในร่างนี้จะหายไปทั้งหมด</AlertTitle>
+                      <AlertDescription>
+                        ย้อนกลับไม่ได้ · เปิดร่างใหม่ได้ทันทีหลังจากนี้
+                      </AlertDescription>
+                    </Alert>
+
+                    <DialogFooter>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setConfirmingDiscard(false)}
+                        disabled={discarding}
+                      >
+                        เก็บร่างไว้
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        disabled={discarding}
+                        onClick={() => {
+                          setDiscarding(true);
+                          void editor
+                            .withProduct('ทิ้งฉบับร่าง', () =>
+                              discardDraft(product.id, draft.documentHash),
+                            )
+                            .then((ok) => {
+                              if (ok) {
+                                setConfirmingDiscard(false);
+                                toast.success('ทิ้งฉบับร่างแล้ว — เปิดร่างใหม่ได้');
+                              }
+                            })
+                            .finally(() => setDiscarding(false));
+                        }}
+                      >
+                        ทิ้งฉบับร่าง
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
 
               {product.published === null ? null : (
                 <Alert>
