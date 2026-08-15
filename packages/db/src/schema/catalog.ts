@@ -4,6 +4,7 @@ import {
   char,
   check,
   foreignKey,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -88,6 +89,19 @@ export const products = pgTable(
     nameTh: text('name_th').notNull(),
     summaryTh: text('summary_th').notNull(),
     heroImage: text('hero_image').notNull(),
+    /**
+     * ⭐ 0052. One video, as a link, and deliberately not an uploaded file.
+     *
+     * `media_objects` cannot hold one — `media_objects_content_type_supported` allows three
+     * image types, the upload path sniffs magic bytes, and each accepted format has a
+     * hand-written reader in `apps/api/src/media/image/` that strips metadata and reads the
+     * dimensions out of the bytes. An MP4 would need a container parser in that same style and
+     * a per-upload ceiling larger than 8 MiB. Product video lives on YouTube or Vimeo anyway.
+     *
+     * Nullable because most products have none, and one column rather than a table because the
+     * requirement is one video — a `product_videos` table would model a list nobody asked for.
+     */
+    videoUrl: text('video_url'),
     leadTimeMinDays: integer('lead_time_min_days').notNull(),
     leadTimeMaxDays: integer('lead_time_max_days').notNull(),
     currency: baseCurrency,
@@ -233,6 +247,53 @@ export const optionValues = pgTable(
       sql`(${table.deltaMinor} is null or ${table.deltaMinor} % 100 = 0)
           and (${table.deltaBp} is null or ${table.deltaBp} % 100 = 0)`,
     ),
+  ],
+);
+
+/**
+ * ⭐ 0052. The pictures a product shows, in the order it shows them.
+ *
+ * ── `path`, not a foreign key to `media_objects` ─────────────────────────────────
+ *
+ * `schema/media.ts` states the contract in one sentence: *"What a reference looks like is
+ * therefore the whole contract between this table and the catalogue, and it is exactly one
+ * string: `/media/<media_objects.id>`"*. Following it buys the delete guard for nothing —
+ * `media_objects_block_referenced_delete` refuses to delete an object whose `/media/<id>`
+ * appears in any non-draft document, and its own comment says it greps the text so it *"does
+ * not have to be updated when the document grows a second place to hold an image — a
+ * per-option-value picture, a gallery"*. This is that gallery.
+ *
+ * It also means a row may point at a static file the way `products.hero_image` does today,
+ * so nothing had to be migrated to make the column usable.
+ *
+ * ⚠️ On `products` and therefore **frozen into the document at publish**, like every other
+ * editable product field. The one catalogue fact deliberately kept out of the freeze is
+ * `option_values.available`, because stock changes without a publish. A photograph is not
+ * stock — describing a product differently is a new version of the description.
+ */
+export const productImages = pgTable(
+  'product_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productId: text('product_id')
+      .notNull()
+      .references(() => products.id, { onUpdate: 'cascade', onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    /**
+     * Position in the gallery. Unique per product, and deliberately not dense: deleting the
+     * middle picture must not renumber the others, but two pictures claiming one position is
+     * a gallery whose order depends on which row Postgres happened to return first.
+     */
+    sortOrder: integer('sort_order').notNull(),
+    altTextTh: text('alt_text_th'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('product_images_product_sort_key').on(table.productId, table.sortOrder),
+    check('product_images_sort_order_nonnegative', sql`${table.sortOrder} >= 0`),
+    check('product_images_path_shape', sql`${table.path} ~ '^/[A-Za-z0-9._/-]+$'`),
+    index('product_images_gallery_idx').on(table.productId, table.sortOrder),
   ],
 );
 
