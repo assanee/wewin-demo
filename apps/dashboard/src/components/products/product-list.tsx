@@ -22,7 +22,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSession } from '@/lib/auth/session';
 
-import { CreateProductDialog } from './create-product-dialog';
 import {
   Table,
   TableBody,
@@ -149,7 +148,6 @@ export function ProductList() {
   const { can } = useSession();
   const [loaded, setLoaded] = useState<LoadState | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [creating, setCreating] = useState(false);
 
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
@@ -270,7 +268,7 @@ export function ProductList() {
             hidden so a read-only clerk sees a screen that makes sense.
           */}
           {can('catalog.write') && (
-            <Button onClick={() => setCreating(true)}>
+            <Button onClick={() => router.push('/products/new' as Route)}>
               <Plus className="size-4" />
               เพิ่มสินค้า
             </Button>
@@ -436,22 +434,6 @@ export function ProductList() {
         )}
       </div>
 
-      {creating && (
-        <CreateProductDialog
-          products={loaded.products}
-          onClose={() => setCreating(false)}
-          onCreated={(productId) => {
-            /*
-             * Straight to the draft editor rather than back to a list of 82. Creating opens a
-             * draft — `createProduct` returns a `DraftWire` — so the product does not exist to
-             * a customer yet and the person is one publish away from finishing. Sending them
-             * back to the table would hide that.
-             */
-            setCreating(false);
-            router.push(`/products/${productId}` as Route);
-          }}
-        />
-      )}
     </div>
   );
 }

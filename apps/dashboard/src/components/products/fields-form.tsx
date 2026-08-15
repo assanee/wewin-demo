@@ -44,7 +44,7 @@ import { areaWire, rateWire } from './wire';
  * it had not.
  */
 
-interface FormState {
+export interface FormState {
   readonly slug: string;
   readonly skuPrefix: string;
   readonly nameTh: string;
@@ -66,7 +66,7 @@ interface FormState {
   readonly movingPanels: string;
 }
 
-type Errors = Partial<Record<keyof FormState, string>>;
+export type Errors = Partial<Record<keyof FormState, string>>;
 
 /**
  * The keys of `FormState` whose value is a string.
@@ -75,7 +75,7 @@ type Errors = Partial<Record<keyof FormState, string>>;
  * and both `text()` and `set()` take a key and assume one. Narrowing the key type is what
  * stops `set('images')` from compiling and quietly replacing the gallery with a string.
  */
-type StringField = {
+export type StringField = {
   [K in keyof FormState]: FormState[K] extends string ? K : never;
 }[keyof FormState];
 
@@ -101,6 +101,41 @@ const parseList = (text: string): readonly string[] =>
     .split(/[,\s]+/)
     .map((part) => part.trim())
     .filter((part) => part !== '');
+
+/**
+ * ⭐ The form a product that does not exist yet starts from.
+ *
+ * ⚠️ Almost everything is empty on purpose. The three exceptions are the elevation's
+ * `panels`, `operation` and `infill`, which are `<SelectField>`s with no empty entry — a
+ * select showing "บานติดตาย" while holding `''` would be a control that lies about its own
+ * value, and `validateFields` would then refuse a form that looks filled in.
+ *
+ * ⛔ No default price, no default lead time, no default category. A pre-filled ฿3,200 that
+ * nobody noticed is a product sold at somebody else's price; an empty box that
+ * `validateFields` refuses is a question. The whole point of this screen is that the person
+ * says what the product is, so it asks rather than guesses.
+ */
+export function blankFormState(): FormState {
+  return {
+    slug: '',
+    skuPrefix: '',
+    nameTh: '',
+    categoryId: '',
+    summaryTh: '',
+    heroImage: '',
+    images: [],
+    videoUrl: '',
+    leadMin: '',
+    leadMax: '',
+    pricePerSqm: '',
+    minBillableSqm: '',
+    panels: '1',
+    operation: 'fixed',
+    infill: 'glass',
+    panelWidths: '',
+    movingPanels: '',
+  };
+}
 
 export function formFromProduct(product: ProductWire): FormState {
   return {
@@ -333,18 +368,116 @@ export function FieldsForm({
     await onSave(result);
   };
 
+  return (
+    <div className="flex flex-col gap-6">
+      <ProductFieldsFieldset
+        form={form}
+        errors={errors}
+        categories={categories}
+        disabled={disabled}
+        onField={set}
+        onImages={(next) => setForm((current) => ({ ...current, images: next }))}
+        onPickHero={() => setPickingHero(true)}
+      />
+
+      {pickingHero && (
+        <MediaPicker
+          titleTh="เลือกรูปหลัก"
+          onClose={() => setPickingHero(false)}
+          onPick={(path) => {
+            set('heroImage')(path);
+            setPickingHero(false);
+            /* Nothing to refuse: the hero is one path, and any picture may be it. */
+            return null;
+          }}
+        />
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button
+          onClick={() => {
+            void submit();
+          }}
+          disabled={disabled || !dirty}
+        >
+          <Save data-icon="inline-start" />
+          บันทึกลงฉบับร่าง
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setForm(initial);
+            setErrors({});
+          }}
+          disabled={disabled || !dirty}
+        >
+          <Undo2 data-icon="inline-start" />
+          ย้อนกลับ
+        </Button>
+        {dirty ? (
+          <span className="text-muted-foreground type-caption">
+            มีการแก้ไขที่ยังไม่ได้บันทึกลงฉบับร่าง
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ⭐ Every product-level field, as controls — shared by the draft editor above and by the
+ * create-from-scratch screen.
+ *
+ * Extracted rather than copied. These controls are the only place `validateFields`'s rules
+ * are expressed as a screen, and a product being created needs exactly the same ones: a
+ * second copy would be a second set of labels, a second set of placeholders, and a second
+ * thing to remember the day a field is added. It holds no state — each caller keeps its own
+ * notion of "initial" and "unsaved" — which is why the hero picker is opened by a callback
+ * rather than owned here.
+ */
+export function ProductFieldsFieldset({
+  form,
+  errors,
+  categories,
+  disabled,
+  onField,
+  onImages,
+  onPickHero,
+  omitIdentity,
+}: {
+  readonly form: FormState;
+  readonly errors: Errors;
+  readonly categories: readonly { readonly id: string; readonly labelTh: string }[];
+  readonly disabled: boolean;
+  readonly onField: (key: StringField) => (value: string) => void;
+  readonly onImages: (next: readonly string[]) => void;
+  readonly onPickHero: () => void;
+  /**
+   * ⚠️ Drop ชื่อสินค้า / สลัก / คำนำหน้า SKU from this fieldset.
+   *
+   * The draft editor wants them here, among the other product fields. The create screen
+   * asks for them *and* for the product id — which is not a field of `FormState` at all —
+   * so it groups all four at the top; without this flag each of the three appeared twice on
+   * one screen. Seen only by rendering it: two controls bound to the same state look
+   * identical in source and are indistinguishable until you count the labels.
+   */
+  readonly omitIdentity?: boolean;
+}) {
+  const set = onField;
   const categoryOptions = categories.map((entry) => ({ value: entry.id, labelTh: entry.labelTh }));
 
   return (
-    <div className="flex flex-col gap-6">
+    <>
       <FieldGroup className="@container/field-group grid gap-4 md:grid-cols-2">
-        <TextField
-          label="ชื่อสินค้า"
-          value={form.nameTh}
-          onChange={set('nameTh')}
-          error={errors.nameTh}
-          disabled={disabled}
-        />
+        {omitIdentity !== true && (
+          <TextField
+            label="ชื่อสินค้า"
+            value={form.nameTh}
+            onChange={set('nameTh')}
+            error={errors.nameTh}
+            disabled={disabled}
+          />
+        )}
         <SelectField
           label="หมวดหมู่"
           value={form.categoryId}
@@ -358,24 +491,28 @@ export function FieldsForm({
           disabled={disabled}
           description="หมวดหมู่แก้ไขจากที่นี่ไม่ได้ — เลือกได้จากรายการที่มีอยู่เท่านั้น"
         />
-        <TextField
-          label="สลัก (slug)"
-          value={form.slug}
-          onChange={set('slug')}
-          error={errors.slug}
-          disabled={disabled}
-          mono
-          description="ใช้ในลิงก์หน้าร้าน การเปลี่ยนค่านี้ทำให้ลิงก์เดิมใช้ไม่ได้หลังเผยแพร่"
-        />
-        <TextField
-          label="คำนำหน้ารหัส SKU"
-          value={form.skuPrefix}
-          onChange={set('skuPrefix')}
-          error={errors.skuPrefix}
-          disabled={disabled}
-          mono
-          description="ประกอบเป็นรหัส SKU ร่วมกับรหัสของตัวเลือกที่ลูกค้าเลือก"
-        />
+        {omitIdentity !== true && (
+          <TextField
+            label="สลัก (slug)"
+            value={form.slug}
+            onChange={set('slug')}
+            error={errors.slug}
+            disabled={disabled}
+            mono
+            description="ใช้ในลิงก์หน้าร้าน การเปลี่ยนค่านี้ทำให้ลิงก์เดิมใช้ไม่ได้หลังเผยแพร่"
+          />
+        )}
+        {omitIdentity !== true && (
+          <TextField
+            label="คำนำหน้ารหัส SKU"
+            value={form.skuPrefix}
+            onChange={set('skuPrefix')}
+            error={errors.skuPrefix}
+            disabled={disabled}
+            mono
+            description="ประกอบเป็นรหัส SKU ร่วมกับรหัสของตัวเลือกที่ลูกค้าเลือก"
+          />
+        )}
         <TextField
           label="คำอธิบาย"
           value={form.summaryTh}
@@ -401,7 +538,7 @@ export function FieldsForm({
             typo in one would have to replace the picture to do it.
           */}
           <div>
-            <Button variant="outline" size="sm" disabled={disabled} onClick={() => setPickingHero(true)}>
+            <Button variant="outline" size="sm" disabled={disabled} onClick={onPickHero}>
               <ImagePlus data-icon="inline-start" />
               เลือกจากคลังรูป
             </Button>
@@ -416,22 +553,9 @@ export function FieldsForm({
         videoUrl={form.videoUrl}
         videoError={errors.videoUrl}
         disabled={disabled}
-        onImages={(next) => setForm((current) => ({ ...current, images: next }))}
+        onImages={onImages}
         onVideoUrl={set('videoUrl')}
       />
-
-      {pickingHero && (
-        <MediaPicker
-          titleTh="เลือกรูปหลัก"
-          onClose={() => setPickingHero(false)}
-          onPick={(path) => {
-            set('heroImage')(path);
-            setPickingHero(false);
-            /* Nothing to refuse: the hero is one path, and any picture may be it. */
-            return null;
-          }}
-        />
-      )}
 
       <FieldSeparator />
 
@@ -534,33 +658,6 @@ export function FieldsForm({
         />
       </FieldGroup>
 
-      <div className="flex items-center gap-2">
-        <Button
-          onClick={() => {
-            void submit();
-          }}
-          disabled={disabled || !dirty}
-        >
-          <Save data-icon="inline-start" />
-          บันทึกลงฉบับร่าง
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setForm(initial);
-            setErrors({});
-          }}
-          disabled={disabled || !dirty}
-        >
-          <Undo2 data-icon="inline-start" />
-          ย้อนกลับ
-        </Button>
-        {dirty ? (
-          <span className="text-muted-foreground type-caption">
-            มีการแก้ไขที่ยังไม่ได้บันทึกลงฉบับร่าง
-          </span>
-        ) : null}
-      </div>
-    </div>
+    </>
   );
 }
