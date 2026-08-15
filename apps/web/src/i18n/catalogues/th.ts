@@ -358,6 +358,9 @@ export const th: UiCatalogue = {
   'account.problem.unreachable': 'เชื่อมต่อไม่ได้ โปรดลองอีกครั้ง',
   'account.problem.unconfigured': 'ระบบยังไม่พร้อม โปรดติดต่อทีมขาย',
   'account.myQuotations': 'ใบเสนอราคาของฉัน',
+  'account.myReviews': 'รีวิวของฉัน',
+  'account.reviews.none': 'ยังไม่มีสินค้าที่รีวิวได้ — เขียนรีวิวได้หลังจากงานติดตั้งเสร็จแล้ว',
+  'account.reviews.written': 'รีวิวแล้ว',
   'account.noQuotations': 'ยังไม่มีใบเสนอราคา',
   'account.tabs.label': 'ส่วนต่าง ๆ ของบัญชี',
 

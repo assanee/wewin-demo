@@ -419,6 +419,9 @@ export const de: PartialUiCatalogue = {
   'account.problem.unconfigured':
     'Derzeit nicht verfügbar. Bitte wenden Sie sich an den Vertrieb.',
   'account.myQuotations': 'Meine Angebote',
+  'account.myReviews': 'Meine Bewertungen',
+  'account.reviews.none': 'Noch nichts zu bewerten — nach abgeschlossener Montage können Sie eine Bewertung schreiben',
+  'account.reviews.written': 'Bewertet',
   'account.noQuotations': 'Noch keine Angebote',
   'account.tabs.label': 'Kontobereiche',
 

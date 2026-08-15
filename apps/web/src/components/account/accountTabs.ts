@@ -51,7 +51,7 @@ export const ACCOUNT_TAB_PARAM = 'tab';
  * `DEFAULT_ACCOUNT_TAB` says which one that is, so that adding the shipping address at the
  * front cannot silently take the payment door off a fresh visit.
  */
-export const ACCOUNT_TABS = ['quotations', 'password', 'profile'] as const;
+export const ACCOUNT_TABS = ['quotations', 'reviews', 'password', 'profile'] as const;
 
 export type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -76,6 +76,12 @@ export const DEFAULT_ACCOUNT_TAB: AccountTab = 'quotations';
  */
 export const ACCOUNT_TAB_LABEL_KEYS: Record<AccountTab, PlainKey> = {
   quotations: 'account.myQuotations',
+  /*
+   * ⭐ Second, beside the quotations, because both answer "what happened to my order?" — one
+   * before the money and one after the delivery. It is deliberately not first: the header
+   * above records that a fresh visit must land on the payment door.
+   */
+  reviews: 'account.myReviews',
   password: 'account.password.section',
   profile: 'account.profile.section',
 };

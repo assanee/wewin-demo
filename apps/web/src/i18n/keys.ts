@@ -354,6 +354,10 @@ export interface UiParamsByKey {
   'account.problem.unreachable': Plain;
   'account.problem.unconfigured': Plain;
   'account.myQuotations': Plain;
+  /* ⭐ The signed-in review surface. See `MyReviews.tsx` for why it is a tab and not a link. */
+  'account.myReviews': Plain;
+  'account.reviews.none': Plain;
+  'account.reviews.written': Plain;
   'account.noQuotations': Plain;
   /**
    * The accessible name of the account page's tablist — announced before the tabs themselves,

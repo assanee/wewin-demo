@@ -350,6 +350,9 @@ export const zh: PartialUiCatalogue = {
   'account.problem.unreachable': '无法连接，请重试。',
   'account.problem.unconfigured': '暂时无法使用，请联系销售团队。',
   'account.myQuotations': '我的报价单',
+  'account.myReviews': '我的评价',
+  'account.reviews.none': '暂无可评价的商品 — 安装完成后即可撰写评价',
+  'account.reviews.written': '已评价',
   'account.noQuotations': '还没有报价单',
   'account.tabs.label': '账户分区',
 

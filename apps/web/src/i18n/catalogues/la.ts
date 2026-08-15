@@ -372,6 +372,9 @@ export const la: PartialUiCatalogue = {
   'account.problem.unreachable': 'ເຊື່ອມຕໍ່ບໍ່ໄດ້. ກະລຸນາລອງໃໝ່.',
   'account.problem.unconfigured': 'ຍັງໃຊ້ບໍ່ໄດ້ຕອນນີ້. ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
   'account.myQuotations': 'ໃບສະເໜີລາຄາຂອງຂ້ອຍ',
+  'account.myReviews': 'ຣີວິວຂອງຂ້ອຍ',
+  'account.reviews.none': 'ຍັງບໍ່ມີສິນຄ້າທີ່ຣີວິວໄດ້ — ຂຽນຣີວິວໄດ້ຫຼັງຈາກຕິດຕັ້ງແລ້ວ',
+  'account.reviews.written': 'ຣີວິວແລ້ວ',
   'account.noQuotations': 'ຍັງບໍ່ມີໃບສະເໜີລາຄາ',
   'account.tabs.label': 'ພາກສ່ວນຂອງບັນຊີ',
 

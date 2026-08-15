@@ -384,6 +384,9 @@ export const en: PartialUiCatalogue = {
   'account.problem.unreachable': 'Cannot connect. Please try again.',
   'account.problem.unconfigured': 'Not available right now. Please contact the sales team.',
   'account.myQuotations': 'My quotations',
+  'account.myReviews': 'My reviews',
+  'account.reviews.none': 'Nothing to review yet — you can write a review once your installation is finished',
+  'account.reviews.written': 'Reviewed',
   'account.noQuotations': 'No quotations yet',
   'account.tabs.label': 'Account sections',
 

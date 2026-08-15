@@ -381,6 +381,9 @@ export const vi: PartialUiCatalogue = {
   'account.problem.unconfigured':
     'Hiện chưa dùng được. Xin liên hệ bộ phận kinh doanh.',
   'account.myQuotations': 'Báo giá của tôi',
+  'account.myReviews': 'Đánh giá của tôi',
+  'account.reviews.none': 'Chưa có sản phẩm nào để đánh giá — bạn có thể viết đánh giá sau khi lắp đặt xong',
+  'account.reviews.written': 'Đã đánh giá',
   'account.noQuotations': 'Chưa có báo giá nào',
   'account.tabs.label': 'Các mục tài khoản',
 

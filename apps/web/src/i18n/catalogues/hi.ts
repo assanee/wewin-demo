@@ -399,6 +399,9 @@ export const hi: PartialUiCatalogue = {
   'account.problem.unconfigured':
     'अभी उपलब्ध नहीं। कृपया बिक्री टीम से संपर्क कीजिए।',
   'account.myQuotations': 'मेरे कोटेशन',
+  'account.myReviews': 'मेरी समीक्षाएँ',
+  'account.reviews.none': 'अभी समीक्षा के लिए कुछ नहीं — इंस्टॉलेशन पूरा होने के बाद आप समीक्षा लिख सकते हैं',
+  'account.reviews.written': 'समीक्षा हो चुकी',
   'account.noQuotations': 'अभी कोई कोटेशन नहीं',
   'account.tabs.label': 'खाता अनुभाग',
 

@@ -10,6 +10,7 @@ import { AccountGate } from './AccountGate';
 import { ChangePassword } from './ChangePassword';
 import { MyProfile } from './MyProfile';
 import { MyQuotations } from './MyQuotations';
+import { MyReviews } from './MyReviews';
 import {
   ACCOUNT_TABS,
   ACCOUNT_TAB_LABEL_KEYS,
@@ -307,6 +308,8 @@ function AccountPanel({
   switch (tab) {
     case 'quotations':
       return <MyQuotations session={session} />;
+    case 'reviews':
+      return <MyReviews session={session} />;
     case 'password':
       return <ChangePassword session={session} />;
     case 'profile':

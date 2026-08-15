@@ -383,6 +383,9 @@ export const my: PartialUiCatalogue = {
   'account.problem.unreachable': 'ချိတ်ဆက်၍မရပါ။ ထပ်ကြိုးစားပါ။',
   'account.problem.unconfigured': 'ယခုအသုံးမပြုနိုင်ပါ။ အရောင်းအဖွဲ့ကို ဆက်သွယ်ပါ။',
   'account.myQuotations': 'ကျွန်ုပ်၏ စျေးနှုန်းစာရွက်များ',
+  'account.myReviews': 'ကျွန်ုပ်၏ သုံးသပ်ချက်များ',
+  'account.reviews.none': 'သုံးသပ်ရန် မရှိသေးပါ — တပ်ဆင်ပြီးပါက သုံးသပ်ချက် ရေးနိုင်ပါသည်',
+  'account.reviews.written': 'သုံးသပ်ပြီး',
   'account.noQuotations': 'စျေးနှုန်းစာရွက် မရှိသေးပါ',
   'account.tabs.label': 'အကောင့် အပိုင်းများ',
 
