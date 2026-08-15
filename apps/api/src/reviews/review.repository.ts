@@ -599,9 +599,23 @@ export class ReviewRepository {
     reach: ReviewReach,
     limit: number,
     offset: number,
+    state: 'pending' | 'hidden' = 'pending',
   ): Promise<{ readonly items: readonly QueueRow[]; readonly total: number }> {
-    const pending = sql`not review_is_moderated(${reviews})`;
-    const where = sql`${authorFilter(reach)} and ${pending}`;
+    /*
+     * ⭐ `hidden` added when เลิกซ่อน got a screen. `review_is_moderated` is true as soon as
+     * `hidden_at` is set, so the pending queue is exactly the reviews nobody has ruled on —
+     * and a hidden one used to fall out of every list there was, taking the only route to
+     * `unhide` with it.
+     *
+     * Not `not published_at is null and hidden_at is not null`: a review can be hidden after
+     * it was published, and that one still belongs on the hidden list because un-hiding is
+     * still the move. `hidden_at is not null` is the whole condition.
+     */
+    const subset =
+      state === 'hidden'
+        ? sql`${reviews.hiddenAt} is not null`
+        : sql`not review_is_moderated(${reviews})`;
+    const where = sql`${authorFilter(reach)} and ${subset}`;
 
     const items = await this.db
       .select({

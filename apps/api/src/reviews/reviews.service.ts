@@ -337,9 +337,14 @@ export class ReviewsService {
    * queue plan 7.12 records as never draining. A moderator who ignores this queue does not
    * accumulate a backlog; they lose the ability to have acted.
    */
-  async moderationQueue(scope: Scope, limit: number, offset: number): Promise<ModerationQueueWire> {
+  async moderationQueue(
+    scope: Scope,
+    limit: number,
+    offset: number,
+    state: 'pending' | 'hidden' = 'pending',
+  ): Promise<ModerationQueueWire> {
     const reach = this.requireModerator(scope);
-    const { items, total } = await this.repository.moderationQueue(reach, limit, offset);
+    const { items, total } = await this.repository.moderationQueue(reach, limit, offset, state);
     const photos = await this.repository.listPhotos(items.map((item) => item.id));
     const now = Date.now();
 

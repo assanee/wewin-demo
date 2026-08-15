@@ -73,8 +73,13 @@ export interface Queue {
   readonly total: number;
 }
 
-export const listQueue = (): Promise<Queue> =>
-  apiJson('/admin/reviews/queue?limit=100', (body) => {
+/**
+ * ⭐ `state` added when เลิกซ่อน got a screen. `'hidden'` lists the reviews a moderator has
+ * taken down — the API's queue is otherwise "nobody has ruled on this yet", and a hidden
+ * review left that list the moment it was hidden.
+ */
+export const listQueue = (state: 'pending' | 'hidden' = 'pending'): Promise<Queue> =>
+  apiJson(`/admin/reviews/queue?limit=100&state=${state}`, (body) => {
     const queue = asRecord(body, 'คิวรีวิว');
 
     return {

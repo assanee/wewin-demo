@@ -298,6 +298,58 @@ describeWithPg('customer reviews after delivery', () => {
     expect(reasonOf(late.body)).toBe('published-by-the-deadline');
   });
 
+  it('⭐ a hidden review leaves the pending queue, is listed under ?state=hidden, and can come back', async () => {
+    /*
+     * The round trip that had no screen. `review_is_moderated` is true the moment `hidden_at`
+     * is set, so hiding a review dropped it out of `not review_is_moderated(...)` — the only
+     * list the moderation surface had — and `POST :id/unhide` became unreachable. The button
+     * was not forgotten; there was nowhere for it to be. `?state=hidden` is what gives it one.
+     */
+    const order = await deliveredOrder('unhide');
+    const quoteLineId = await lineOf(order.id);
+    const written = await call('POST', '/reviews', {
+      token: customerA.token,
+      body: { quoteLineId, rating: 2, bodyTh: 'ข้อความที่จะถูกซ่อนแล้วเอากลับ', authorDisplayName: null },
+    });
+    const review = (written.body as OwnReviewWire).id;
+
+    const pendingBefore = await call('GET', '/admin/reviews/queue?limit=100', { token: moderator.token });
+    expect((pendingBefore.body as ModerationQueueWire).items.some((item) => item.id === review)).toBe(true);
+
+    expect(
+      (await call('POST', `/admin/reviews/${review}/hide`, {
+        token: moderator.token,
+        body: { reason: 'off_topic', noteTh: null },
+      })).status,
+    ).toBe(200);
+
+    /* ⚠️ Gone from the default queue — this is the half that used to be the whole story. */
+    const pendingAfter = await call('GET', '/admin/reviews/queue?limit=100', { token: moderator.token });
+    expect((pendingAfter.body as ModerationQueueWire).items.some((item) => item.id === review)).toBe(false);
+
+    /* And present in the one a moderator can now ask for. */
+    const hiddenList = await call('GET', '/admin/reviews/queue?limit=100&state=hidden', { token: moderator.token });
+    expect(hiddenList.status, JSON.stringify(hiddenList.body)).toBe(200);
+    expect((hiddenList.body as ModerationQueueWire).items.some((item) => item.id === review)).toBe(true);
+
+    expect((await call('POST', `/admin/reviews/${review}/unhide`, { token: moderator.token, body: {} })).status).toBe(200);
+
+    /* Back where it was, and out of the hidden list. */
+    const pendingBack = await call('GET', '/admin/reviews/queue?limit=100', { token: moderator.token });
+    expect((pendingBack.body as ModerationQueueWire).items.some((item) => item.id === review)).toBe(true);
+    const hiddenAfter = await call('GET', '/admin/reviews/queue?limit=100&state=hidden', { token: moderator.token });
+    expect((hiddenAfter.body as ModerationQueueWire).items.some((item) => item.id === review)).toBe(false);
+  });
+
+  it('⚠️ refuses a third state, so the queue cannot be asked for something it will not do about', async () => {
+    /*
+     * `published` is deliberately not a value: a public review cannot be brought back into a
+     * queue, and accepting the word would imply an action that does not exist.
+     */
+    const refused = await call('GET', '/admin/reviews/queue?state=published', { token: moderator.token });
+    expect(refused.status).toBe(400);
+  });
+
   it('shows the queue only to a moderator — an order permission is not a moderation permission', async () => {
     /* Holding orders.read + orders.write reaches every order in the company and no review. */
     const asOrderStaff = await call('GET', '/admin/reviews/queue', { token: staff.token });

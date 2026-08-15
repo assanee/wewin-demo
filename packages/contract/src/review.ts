@@ -411,9 +411,25 @@ export const publishedReviewsQuerySchema = z.object({
 
 export type PublishedReviewsQuery = z.infer<typeof publishedReviewsQuerySchema>;
 
+/**
+ * ⭐ `state` added when เลิกซ่อน got a screen.
+ *
+ * The queue is `not review_is_moderated(...)`, and `review_is_moderated` is true the moment
+ * `hidden_at` is set — so hiding a review removed it from the only list that showed it, and
+ * `POST :id/unhide` had nowhere to be pressed from. A moderator could hide by mistake and
+ * had no way back through any screen.
+ *
+ * `pending` is the default because that is what the queue has always meant, and every
+ * existing caller passes no `state` at all.
+ *
+ * ⚠️ There is deliberately no `published` state. A published review is public and cannot be
+ * brought back into a queue — the note above `moderationQueue` says so, and adding a third
+ * value here would imply an action that does not exist.
+ */
 export const moderationQueueQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+  state: z.literal(['pending', 'hidden']).default('pending'),
 });
 
 export type ModerationQueueQuery = z.infer<typeof moderationQueueQuerySchema>;

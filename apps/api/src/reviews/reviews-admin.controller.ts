@@ -83,7 +83,7 @@ export class ReviewsAdminController {
     const parsed = moderationQueueQuerySchema.safeParse(query ?? {});
     if (!parsed.success) throw AppError.badRequest('พารามิเตอร์ไม่ถูกต้อง');
 
-    return this.reviews.moderationQueue(scope, parsed.data.limit, parsed.data.offset);
+    return this.reviews.moderationQueue(scope, parsed.data.limit, parsed.data.offset, parsed.data.state);
   }
 
   /**

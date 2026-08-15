@@ -14,9 +14,20 @@ import { tagsForProduct } from '@/lib/reviews/tags';
  *
  * This is that commit. `lib/reviews/api.ts` now reads a product's reviews through a
  * tag-cached `fetch`, so there is something to invalidate; `apps/dashboard`'s moderation
- * screen calls this route after every hide, unhide, publish and reply, through its own
- * server route handler that holds the secret; and apps/api is expected to call it when a
- * customer's review is accepted. Reader and writer name their tags with the same function
+ * screen calls this route after moderating, through its own server route handler that holds
+ * the secret; and apps/api is expected to call it when a customer's review is accepted.
+ *
+ * ⚠️ **This paragraph used to say "after every hide, unhide, publish and reply", and one of
+ * those four was not true for a year.** `unhideReview` sat in `review-api.ts` with no
+ * importer, because hiding a review dropped it out of the moderation queue —
+ * `not review_is_moderated(...)` is false the moment `hidden_at` is set — and there was no
+ * list that could show a hidden one, so there was nowhere for the button to be. A comment
+ * asserting behaviour nothing implements is worse than no comment: it is what a reader
+ * checks against instead of the code. The queue now takes `?state=hidden` and the screen has
+ * a ที่ซ่อนไว้ tab, so the sentence is true — and this note stays as the record of how long
+ * it was not.
+ *
+ * Reader and writer name their tags with the same function
  * (`lib/reviews/tags.ts`), which is what stops the two drifting into a page that silently
  * never updates.
  *

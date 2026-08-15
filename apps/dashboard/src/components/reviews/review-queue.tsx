@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
-import { AlertTriangle, Clock, EyeOff, ImageOff, Star } from 'lucide-react';
+import { AlertTriangle, Clock, Eye, EyeOff, ImageOff, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -23,7 +23,14 @@ import { apiUrl } from '@/lib/api/config';
 import { failureMessage } from '@/lib/api/errors';
 import { HIDDEN_REASONS, hideBody, hideIsReady, reasonLabel, type HiddenReason } from './hide-reason';
 import { URGENT_HOURS, hoursLeft, reviewFocus } from './review-focus';
-import { hideReview, listQueue, publishReview, replyToReview, type QueueItem } from './review-api';
+import {
+  hideReview,
+  listQueue,
+  publishReview,
+  replyToReview,
+  unhideReview,
+  type QueueItem,
+} from './review-api';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -81,14 +88,25 @@ type State =
   | { readonly status: 'failed'; readonly problem: string };
 
 export function ReviewQueue() {
+  /*
+   * ⭐ `tab` added when เลิกซ่อน got a screen.
+   *
+   * `POST :id/unhide` and `unhideReview` both existed with no caller, and the reason was not
+   * a forgotten button: the queue is `not review_is_moderated(...)`, which is false the
+   * moment `hidden_at` is set, so hiding a review removed it from the only list there was.
+   * A moderator who hid the wrong one had no way back through any screen, and
+   * `app/api/revalidate/route.ts` claimed in a comment that this screen already called
+   * unhide — which nothing ever had.
+   */
+  const [tab, setTab] = useState<'pending' | 'hidden'>('pending');
   const [state, setState] = useState<State>({ status: 'loading' });
   const [hiding, setHiding] = useState<QueueItem | null>(null);
   const [replying, setReplying] = useState<QueueItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  async function reload(): Promise<void> {
+  async function reload(which: 'pending' | 'hidden' = tab): Promise<void> {
     try {
-      const queue = await listQueue();
+      const queue = await listQueue(which);
       setState({ status: 'ready', items: queue.items, total: queue.total });
     } catch (error) {
       setState({ status: 'failed', problem: failureMessage(error) });
@@ -96,8 +114,9 @@ export function ReviewQueue() {
   }
 
   useEffect(() => {
-    void reload();
-  }, []);
+    void reload(tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `reload` closes over `tab` already
+  }, [tab]);
 
   if (state.status === 'loading') return <Skeleton className="h-64 w-full" />;
 
@@ -141,6 +160,28 @@ export function ReviewQueue() {
           </p>
         )}
       </section>
+
+      {/*
+        Two buttons rather than a Tabs component: there are exactly two states a moderator can
+        act on, and the third — published — is deliberately absent because a public review
+        cannot be brought back into a queue.
+      */}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant={tab === 'pending' ? 'default' : 'outline'}
+          onClick={() => setTab('pending')}
+        >
+          รอตัดสิน
+        </Button>
+        <Button
+          size="sm"
+          variant={tab === 'hidden' ? 'default' : 'outline'}
+          onClick={() => setTab('hidden')}
+        >
+          <EyeOff /> ที่ซ่อนไว้
+        </Button>
+      </div>
 
       {/*
        * One hairline between reviews, where there used to be a `Card` around each of them. Every
@@ -241,42 +282,74 @@ export function ReviewQueue() {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    disabled={busyId === item.id}
-                    onClick={() => {
-                      setBusyId(item.id);
-                      void (async () => {
-                        try {
-                          await publishReview(item.id);
-                          toast.success('เผยแพร่แล้ว');
-                          await reload();
-                        } catch (error) {
-                          toast.error(failureMessage(error));
-                        } finally {
-                          setBusyId(null);
-                        }
-                      })();
-                    }}
-                  >
-                    เผยแพร่เลย
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={busyId === item.id}
-                    onClick={() => setHiding(item)}
-                  >
-                    <EyeOff /> ซ่อน
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busyId === item.id}
-                    onClick={() => setReplying(item)}
-                  >
-                    ตอบกลับ
-                  </Button>
+                  {tab === 'hidden' ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busyId === item.id}
+                      onClick={() => {
+                        setBusyId(item.id);
+                        void (async () => {
+                          try {
+                            await unhideReview(item.id);
+                            toast.success('เลิกซ่อนแล้ว — กลับเข้าคิวรอตัดสินตามเดิม');
+                            await reload();
+                          } catch (error) {
+                            toast.error(failureMessage(error));
+                          } finally {
+                            setBusyId(null);
+                          }
+                        })();
+                      }}
+                    >
+                      <Eye /> เลิกซ่อน
+                    </Button>
+                  ) : null}
+                  {/*
+                    ⚠️ Not rendered rather than styled away. A `hidden` class leaves the button
+                    in the tab order and reachable by keyboard, so "เผยแพร่เลย" on a review a
+                    moderator has taken down would still be one Tab and one Enter away.
+                  */}
+                  {tab === 'pending' && (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={busyId === item.id}
+                        onClick={() => {
+                          setBusyId(item.id);
+                          void (async () => {
+                            try {
+                              await publishReview(item.id);
+                              toast.success('เผยแพร่แล้ว');
+                              await reload();
+                            } catch (error) {
+                              toast.error(failureMessage(error));
+                            } finally {
+                              setBusyId(null);
+                            }
+                          })();
+                        }}
+                      >
+                        เผยแพร่เลย
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={busyId === item.id}
+                        onClick={() => setHiding(item)}
+                      >
+                        <EyeOff /> ซ่อน
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyId === item.id}
+                        onClick={() => setReplying(item)}
+                      >
+                        ตอบกลับ
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </li>
