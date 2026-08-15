@@ -50,6 +50,14 @@ export const productTag = (productId: string): string => `product:${productId}`;
  */
 export const productSlugTag = (slug: string): string => `product-slug:${slug}`;
 
+/**
+ * ⭐ The whole published catalogue — what the list page depends on.
+ *
+ * One tag rather than one per product, because the list is one cache entry: a product added,
+ * renamed or unpublished changes that entry, and there is nothing finer to invalidate.
+ */
+export const catalogTag = (): string => 'catalog:published';
+
 /** The review tag — "what customers said about this product changed". */
 export const reviewsTag = (productId: string): string => `reviews:${productId}`;
 

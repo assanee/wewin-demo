@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { products } from '@wewin/core/fixtures';
 
+import { loadProductsNotInFixtures } from '@/lib/catalog/published-product';
+
 import { CatalogBrowser, type CatalogCard } from '@/components/catalog/CatalogBrowser';
 import { ProductCard } from '@/components/catalog/ProductCard';
 import { localeBundle } from '@/i18n/server';
@@ -80,7 +82,22 @@ export default async function CatalogPage({
 
   const l = localeBundle(locale);
 
-  const cards: readonly CatalogCard[] = products.map((product) => ({
+  /*
+   * ⭐ The 81 compiled in, then anything the dashboard has published since.
+   *
+   * ⚠️ Fixtures first and fixtures win — see `loadProductsNotInFixtures`. Their cards are
+   * unchanged, so this page's output for the seeded catalogue is what it was; the fetch only
+   * ever *adds*. On a machine that cannot reach the API it adds nothing and the page is
+   * exactly the one it has always been, which is why this cannot break a build.
+   *
+   * ⛔ Without this, a product created in the dashboard had a working page that nothing on
+   * the site linked to — reachable only by typing its URL. A shop whose catalogue omits a
+   * product it will happily sell is a shop that does not sell it.
+   */
+  const fromDatabase = await loadProductsNotInFixtures(new Set(products.map((p) => p.slug)));
+  const shown = [...products, ...fromDatabase];
+
+  const cards: readonly CatalogCard[] = shown.map((product) => ({
     id: product.id,
     card: <ProductCard product={product} l={l} />,
   }));
@@ -97,7 +114,7 @@ export default async function CatalogPage({
       <LocaleProvider locale={locale}>
         <CatalogBrowser
           cards={cards}
-          initialCountLabel={l.t('catalog.resultCount', { count: products.length })}
+          initialCountLabel={l.t('catalog.resultCount', { count: shown.length })}
         />
       </LocaleProvider>
     </main>

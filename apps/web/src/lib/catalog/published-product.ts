@@ -1,6 +1,8 @@
 import type { ProductDocumentWire } from '@wewin/contract/catalog';
+import { toProduct } from '@wewin/contract/catalog';
+import type { Product } from '@wewin/core';
 
-import { productSlugTag } from '@/lib/reviews/tags';
+import { catalogTag, productSlugTag } from '@/lib/reviews/tags';
 import { reviewsApiBaseUrl } from '@/lib/reviews/api';
 
 /**
@@ -155,4 +157,81 @@ function decode(body: unknown): PublishedProduct | null {
     summaryTh,
     slug,
   };
+}
+
+/**
+ * ⭐ Every published product the fixtures do not contain, as domain products.
+ *
+ * For the catalogue list. `ProductCard` is a **server** component and takes a `Product`, so
+ * `toProduct` runs here and the bigints never approach a serialiser — the boundary problem
+ * that shapes the product page does not exist on this route.
+ *
+ * ⚠️ Returns an empty list on every failure, never a throw. A shop that cannot reach its API
+ * shows the 81 it has compiled in, which is a working catalogue; one that throws shows
+ * nothing at all.
+ *
+ * ⚠️ The endpoint answers with **every** published product, including the 81, and returns
+ * each one's full document — every option group and every rule. That is more than a list
+ * needs and it is unpaginated, which is a real cost the day this catalogue is thousands
+ * rather than eighty-two. Noted rather than fixed: adding a list projection to the API is a
+ * change to a contract two apps read.
+ */
+export async function loadProductsNotInFixtures(
+  knownSlugs: ReadonlySet<string>,
+): Promise<readonly Product[]> {
+  const base = reviewsApiBaseUrl();
+  if (base === null) {
+    warnOnce('unconfigured', 'NEXT_PUBLIC_API_BASE_URL is not set');
+    return [];
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/catalog/products`, {
+      headers: { accept: 'application/json' },
+      cache: 'force-cache',
+      next: { tags: [catalogTag()] },
+    });
+  } catch (cause) {
+    warnOnce('unreachable', cause instanceof Error ? cause.message : String(cause));
+    return [];
+  }
+
+  if (!response.ok) {
+    warnOnce('refused', `HTTP ${String(response.status)}`);
+    return [];
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    warnOnce('malformed', cause instanceof Error ? cause.message : String(cause));
+    return [];
+  }
+
+  if (typeof body !== 'object' || body === null) return [];
+  const list = (body as { products?: unknown }).products;
+  if (!Array.isArray(list)) {
+    warnOnce('malformed', 'the catalogue list is missing its products array');
+    return [];
+  }
+
+  const extra: Product[] = [];
+  for (const raw of list) {
+    const document = decode(raw);
+    /*
+     * ⛔ The fixtures win for any slug they know. Their pages are prerendered and
+     * byte-identical today; decoding the API's copy of the same product instead would put a
+     * second source of truth on the busiest page in the shop for no gain.
+     */
+    if (document === null || knownSlugs.has(document.slug)) continue;
+    try {
+      extra.push(toProduct(document.wire.product));
+    } catch (cause) {
+      /* One unreadable product must not cost the whole catalogue. */
+      warnOnce('malformed', `${document.slug}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+  return extra;
 }
