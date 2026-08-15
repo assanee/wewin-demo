@@ -324,6 +324,86 @@ describeWithPg('the catalogue write surface against Postgres', () => {
       });
     });
 
+    it('⭐ 0052 — writes a gallery and a video link, in order, and reads them back compiled', async () => {
+      /*
+       * `images` is rows in `product_images`, not a column, so it is the one field on this
+       * request that cannot be checked by reading the `products` row back. Every assertion
+       * below reads the **compiled document**, which is the only proof the rows were written
+       * AND that `loadRows` put them into the compile in the right order.
+       */
+      const patched = await asEditor('PATCH', `/admin/catalog/products/${PROBE_PRODUCT}/draft`, {
+        expectedDocumentHash: hash,
+        fields: {
+          images: ['/media/11111111-1111-4111-8111-111111111111', '/products/probe-b.svg'],
+          videoUrl: 'https://www.youtube.com/watch?v=probe',
+        },
+      });
+
+      expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+      hash = field(patched.body, 'documentHash');
+
+      expect(productField(patched.body, 'images')).toStrictEqual([
+        '/media/11111111-1111-4111-8111-111111111111',
+        '/products/probe-b.svg',
+      ]);
+      expect(productField(patched.body, 'videoUrl')).toBe('https://www.youtube.com/watch?v=probe');
+    });
+
+    it('⭐ reordering the gallery is a change, and the hash says so', async () => {
+      /*
+       * Order is content: the first picture is the one a customer sees first. A reorder that
+       * left the hash alone would be a change to the product that nothing downstream noticed.
+       */
+      const before = hash;
+      const reordered = await asEditor('PATCH', `/admin/catalog/products/${PROBE_PRODUCT}/draft`, {
+        expectedDocumentHash: hash,
+        fields: {
+          images: ['/products/probe-b.svg', '/media/11111111-1111-4111-8111-111111111111'],
+        },
+      });
+
+      expect(reordered.status).toBe(200);
+      hash = field(reordered.body, 'documentHash');
+      expect(hash).not.toBe(before);
+      expect(productField(reordered.body, 'images')).toStrictEqual([
+        '/products/probe-b.svg',
+        '/media/11111111-1111-4111-8111-111111111111',
+      ]);
+    });
+
+    it('⚠️ an empty list removes every picture, and null removes the video', async () => {
+      /*
+       * The two ways of saying "there is none", and both have to be distinguishable from
+       * silence — which is why `images` is replace-the-list and `videoUrl` is nullable rather
+       * than merely optional.
+       */
+      const cleared = await asEditor('PATCH', `/admin/catalog/products/${PROBE_PRODUCT}/draft`, {
+        expectedDocumentHash: hash,
+        fields: { images: [], videoUrl: null },
+      });
+
+      expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+      hash = field(cleared.body, 'documentHash');
+
+      /* Absent, not empty — the document is byte-identical to one written before 0052. */
+      expect(productField(cleared.body, 'images')).toBeUndefined();
+      expect(productField(cleared.body, 'videoUrl')).toBeUndefined();
+    });
+
+    it('⚠️ refuses a video link that is not a URL and a path that does not start with /', async () => {
+      const badVideo = await asEditor('PATCH', `/admin/catalog/products/${PROBE_PRODUCT}/draft`, {
+        expectedDocumentHash: hash,
+        fields: { videoUrl: 'youtube.com/watch?v=x' },
+      });
+      expect(badVideo.status).toBe(400);
+
+      const badPath = await asEditor('PATCH', `/admin/catalog/products/${PROBE_PRODUCT}/draft`, {
+        expectedDocumentHash: hash,
+        fields: { images: ['products/a.svg'] },
+      });
+      expect(badPath.status).toBe(400);
+    });
+
     it('refuses to throw away the only draft of a product that has never published', async () => {
       const discarded = await asEditor(
         'DELETE',

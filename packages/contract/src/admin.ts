@@ -87,6 +87,27 @@ const slugSchema = z
   .max(64)
   .regex(/^[a-z0-9-]+$/, 'slug must be lowercase kebab-case');
 
+/**
+ * ⭐ 0052. A picture is referred to by path, never by a media id.
+ *
+ * `schema/media.ts` states the contract: the reference between the media ledger and the
+ * catalogue is exactly the string `/media/<id>`. A path may also point at a static file, the
+ * way `products.hero_image` does today, so this checks the shape and not the namespace.
+ */
+const imagePathSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .regex(/^\/[A-Za-z0-9._/-]+$/u, 'an image path starts with / and has no spaces');
+
+/**
+ * ⚠️ Checked here rather than by a database CHECK. A constraint that accepted `https://…`
+ * would still accept `https://example.com/nothing`, buying the appearance of validation and
+ * none of the substance — so the shape is checked where a refusal can be a sentence.
+ */
+const videoUrlSchema = z.url('a video link must be a URL').max(500);
+
 const skuPrefixSchema = z
   .string()
   .min(1)
@@ -272,9 +293,25 @@ export interface ProductFieldsWire {
   readonly pricePerSqm: MoneyRateWire<'THB'>;
   readonly minBillableSqUm: AreaWire;
   readonly elevation: ElevationWire;
+  /** ⭐ 0052. The gallery, in display order. Absent and empty both mean no pictures. */
+  readonly images?: readonly string[] | undefined;
+  /** ⭐ 0052. One video link. `null` removes it; absent leaves it alone. */
+  readonly videoUrl?: string | null | undefined;
 }
 
-export const productFieldsWireSchema: z.ZodType<ProductFieldsWire> = z.object({
+/**
+ * ⛔ One shape, spread into both the whole-product schema and the patch schema below.
+ *
+ * Until 0052 the PATCH route restated all eight fields inline. zod strips keys it was not
+ * told about *silently*, so `images` and `videoUrl` — added to the schema above and to the
+ * repository, with a passing typecheck the whole way — arrived at the service as `{}` and
+ * were refused as a request that changes nothing. Nothing in the type system could see it:
+ * both objects satisfied their declared types, and neither knew the other existed.
+ *
+ * Sharing the shape is the same fix `draftMutationShape` already applies two screens down,
+ * and it means the next field somebody adds cannot be dropped by the half they forgot.
+ */
+const productFieldsShape = {
   nameTh: labelSchema,
   categoryId: z.string().min(1).max(64),
   summaryTh: proseSchema,
@@ -283,7 +320,22 @@ export const productFieldsWireSchema: z.ZodType<ProductFieldsWire> = z.object({
   pricePerSqm: pricePerSqmSchema,
   minBillableSqUm: positiveAreaSchema,
   elevation: elevationWireSchema,
-});
+  /**
+   * ⭐ 0052. The gallery, in the order it is shown, and one video link.
+   *
+   * ⚠️ `images` replaces the whole list rather than patching it. Order is content here — the
+   * first picture is the one a customer sees first — and a partial patch of an ordered list
+   * needs an index vocabulary (insert-at, move-from-to) that two clients will disagree about.
+   * Sending the list you want is unambiguous and idempotent.
+   *
+   * ⚠️ `videoUrl` is nullable so a link can be *removed*: with `optional` alone there is no
+   * way to say "no video" that is distinguishable from "leave it alone".
+   */
+  images: z.array(imagePathSchema).max(24).optional(),
+  videoUrl: z.union([videoUrlSchema, z.null()]).optional(),
+} as const;
+
+export const productFieldsWireSchema: z.ZodType<ProductFieldsWire> = z.object(productFieldsShape);
 
 /**
  * The same fields, any subset.
@@ -424,18 +476,8 @@ export const updateProductDraftRequestSchema: z.ZodType<UpdateProductDraftReques
   ...draftMutationShape,
   slug: slugSchema.optional(),
   skuPrefix: skuPrefixSchema.optional(),
-  fields: z
-    .object({
-      nameTh: labelSchema.optional(),
-      categoryId: z.string().min(1).max(64).optional(),
-      summaryTh: proseSchema.optional(),
-      heroImage: z.string().min(1).max(500).optional(),
-      leadTimeDays: z.tuple([z.int().min(0).max(3650), z.int().min(0).max(3650)]).optional(),
-      pricePerSqm: pricePerSqmSchema.optional(),
-      minBillableSqUm: positiveAreaSchema.optional(),
-      elevation: elevationWireSchema.optional(),
-    })
-    .optional(),
+  /* Every field of the product, each one optional — see `productFieldsShape`. */
+  fields: z.object(productFieldsShape).partial().optional(),
 });
 
 export interface PutDraftOptionRequestWire extends DraftMutationWire {

@@ -7,6 +7,7 @@ import { referencedGroupCodes, toDocRule } from '@wewin/db/compile';
 import {
   optionGroups,
   optionValues,
+  productImages,
   productVersionOptionValues,
   productVersionOptions,
   productVersionRules,
@@ -181,11 +182,27 @@ export class DraftRepository {
 
   async loadRows(tx: Tx, productId: string, versionId: string): Promise<DraftRows> {
     const product = await this.loadProductRow(tx, productId);
-    const [options, rules] = await Promise.all([
+    const [options, rules, images] = await Promise.all([
       this.loadOptionRows(tx, versionId),
       this.loadRuleRows(tx, versionId),
+      /*
+       * ⭐ 0052. Keyed by product and not by version, because `product_images` hangs off the
+       * editable row like every other product field — the version freezes a copy at publish.
+       */
+      this.loadImages(tx, productId),
     ]);
-    return { product, options, rules };
+    return { product, options, rules, images };
+  }
+
+  /** The gallery, in `sort_order`. The order is content: the first picture is seen first. */
+  async loadImages(tx: Tx, productId: string): Promise<readonly string[]> {
+    const rows = await tx
+      .select({ path: productImages.path })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
+      .orderBy(asc(productImages.sortOrder));
+
+    return rows.map((row) => row.path);
   }
 
   /** The product row, or `undefined`. `loadProductRow` is the same read that insists. */
@@ -204,6 +221,7 @@ export class DraftRepository {
         pricePerSqmMinor: products.pricePerSqmMinor,
         minBillableSqUm: products.minBillableSqUm,
         elevation: products.elevation,
+        videoUrl: products.videoUrl,
       })
       .from(products)
       .where(eq(products.id, productId))
@@ -392,8 +410,23 @@ export class DraftRepository {
         pricePerSqmMinor: decodePricePerSqmMinor(fields.pricePerSqm),
         minBillableSqUm: decodeMinBillableSqUm(fields.minBillableSqUm),
         elevation: decodeElevation(fields.elevation),
+        /* ⭐ 0052. `undefined` and `null` both mean no video on a brand-new product. */
+        videoUrl: fields.videoUrl ?? null,
       }),
     );
+
+    /*
+     * The gallery, if the caller sent one. Separate statement because it is a separate table;
+     * same transaction, so a product cannot exist with half its pictures.
+     */
+    const images = fields.images ?? [];
+    if (images.length > 0) {
+      await withTranslatedErrors(() =>
+        tx
+          .insert(productImages)
+          .values(images.map((path, index) => ({ productId: identity.id, path, sortOrder: index }))),
+      );
+    }
   }
 
   /**
@@ -436,9 +469,37 @@ export class DraftRepository {
         set['minBillableSqUm'] = decodeMinBillableSqUm(fields.minBillableSqUm);
       }
       if (fields.elevation !== undefined) set['elevation'] = decodeElevation(fields.elevation);
+      /*
+       * ⭐ 0052. `null` clears the link and `undefined` leaves it alone — which is why the wire
+       * type is `string | null | undefined` rather than merely optional. With optional alone
+       * there is no way to say "remove the video" that a patch can tell apart from silence.
+       */
+      if (fields.videoUrl !== undefined) set['videoUrl'] = fields.videoUrl;
     }
 
-    if (Object.keys(set).length === 0) return false;
+    /*
+     * ⭐ 0052. The gallery is rows, not a column, so it is replaced rather than merged — and it
+     * counts as a change even when no column moved, which is why it runs before the guard below.
+     * Sending `images: []` is how a person removes every picture.
+     *
+     * Delete-then-insert rather than a diff: `product_images_product_sort_key` is unique on
+     * `(product_id, sort_order)`, so re-inserting a moved picture before deleting whatever held
+     * its position is a constraint violation. It runs inside the caller's transaction, so a
+     * failed insert leaves the old gallery intact rather than an empty one.
+     */
+    const images = patch.fields?.images;
+    if (images !== undefined) {
+      await tx.delete(productImages).where(eq(productImages.productId, productId));
+      if (images.length > 0) {
+        await withTranslatedErrors(() =>
+          tx
+            .insert(productImages)
+            .values(images.map((path, index) => ({ productId, path, sortOrder: index }))),
+        );
+      }
+    }
+
+    if (Object.keys(set).length === 0) return images !== undefined;
 
     set['updatedAt'] = sql`now()`;
     await withTranslatedErrors(() =>
@@ -992,6 +1053,7 @@ export class DraftRepository {
         pricePerSqmMinor: products.pricePerSqmMinor,
         minBillableSqUm: products.minBillableSqUm,
         elevation: products.elevation,
+        videoUrl: products.videoUrl,
       })
       .from(products)
       .orderBy(asc(products.id));

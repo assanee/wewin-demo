@@ -37,6 +37,41 @@ describe('the product document', () => {
     }
   });
 
+  /*
+   * ⭐ 0052. The 81 catalogue products have no gallery, so the round trip above passes over
+   * `images` and `videoUrl` without ever touching them — which is exactly how `encodeProduct`
+   * came to drop both fields on the floor with a green suite and a clean typecheck. This is
+   * the test that makes the four separate spellings of "what a product has" agree.
+   */
+  it('⭐ round-trips a gallery and a video link, in order', () => {
+    const withMedia: Product = {
+      ...(products[0] as Product),
+      images: ['/media/11111111-1111-4111-8111-111111111111', '/products/b.svg'],
+      videoUrl: 'https://www.youtube.com/watch?v=abc',
+    };
+
+    const decoded = decodeProduct(wire(encodeProduct(withMedia)));
+
+    expect(decoded.images).toStrictEqual([
+      '/media/11111111-1111-4111-8111-111111111111',
+      '/products/b.svg',
+    ]);
+    expect(decoded.videoUrl).toBe('https://www.youtube.com/watch?v=abc');
+    expect(decoded).toEqual(withMedia);
+  });
+
+  it('⚠️ a product with no gallery encodes exactly as it did before 0052', () => {
+    /*
+     * Absent must stay absent rather than become `[]` or `null`. `documentHash` is computed
+     * over this shape, so an encoder that helpfully filled in an empty list would move the
+     * hash of all 81 published products and invalidate every stored catalogue reference.
+     */
+    const encoded = encodeProduct(products[0] as Product) as unknown as Record<string, unknown>;
+
+    expect('images' in encoded).toBe(false);
+    expect('videoUrl' in encoded).toBe(false);
+  });
+
   it('round-trips the categories', () => {
     for (const category of categories) {
       expect(toCategory(categoryWire(category))).toEqual(category);

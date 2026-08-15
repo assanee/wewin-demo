@@ -246,6 +246,13 @@ export class CatalogAdminService {
         pricePerSqmMinor: decodePricePerSqmMinor(request.fields.pricePerSqm),
         minBillableSqUm: decodeMinBillableSqUm(request.fields.minBillableSqUm),
         elevation: decodeElevation(request.fields.elevation),
+        /*
+         * ⭐ 0052. Never set at creation: `createProductRequestSchema` carries no gallery, and
+         * this seed is overwritten by `recompile` at the end of the same transaction anyway.
+         * Spelled `null` rather than left off so the row shape is the one every other reader
+         * of `DraftProductRow` sees.
+         */
+        videoUrl: null,
       });
 
       const versionId = await this.drafts.insertDraftVersion(tx, request.id, 1, {

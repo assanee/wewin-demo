@@ -216,6 +216,18 @@ export interface ProductWire {
   readonly groups: readonly OptionGroupWire[];
   readonly rules: readonly RuleWire[];
   readonly skuPrefix: string;
+  /**
+   * ⭐ 0052. The gallery and the video, carried to whoever renders the product.
+   *
+   * ⛔ These arrived late and the wire hop is where they were dropped: `Product` had them,
+   * the document had them, the repository wrote them, and `encodeProduct` — a hand-written
+   * list of thirteen keys — simply did not mention them. Nothing failed to compile, because
+   * an absent optional key is neither an excess property nor a missing one. The test that
+   * catches it now is the encode/decode round trip in `tests/catalog.test.ts`, given a
+   * product that actually has a gallery.
+   */
+  readonly images?: readonly string[] | undefined;
+  readonly videoUrl?: string | null | undefined;
 }
 
 export interface CategoryWire {
@@ -354,6 +366,8 @@ export const productWireSchema: z.ZodType<ProductWire> = z.object({
   groups: z.array(optionGroupWireSchema).min(1),
   rules: z.array(ruleWireSchema),
   skuPrefix: z.string().min(1),
+  images: z.array(z.string().min(1)).optional(),
+  videoUrl: z.union([z.string().min(1), z.null()]).optional(),
 });
 
 export const categoryWireSchema: z.ZodType<CategoryWire> = z.object({
@@ -568,6 +582,11 @@ export const encodeProduct = (product: Product): ProductWire => ({
   groups: product.groups.map((group) => encodeGroup(group, product.id)),
   rules: product.rules.map(encodeRule),
   skuPrefix: product.skuPrefix,
+  /* Absent stays absent: a product with no gallery encodes exactly as it did before 0052. */
+  ...(product.images === undefined ? {} : { images: [...product.images] }),
+  ...(product.videoUrl === undefined || product.videoUrl === null
+    ? {}
+    : { videoUrl: product.videoUrl }),
 });
 
 export const encodeCategory = (category: Category): CategoryWire => ({ ...category });
@@ -752,6 +771,10 @@ export function toProduct(wire: ProductWire): Product {
       when: decodeRuleExpr(rule.when),
     })),
     skuPrefix: wire.skuPrefix,
+    ...(wire.images === undefined ? {} : { images: [...wire.images] }),
+    ...(wire.videoUrl === undefined || wire.videoUrl === null
+      ? {}
+      : { videoUrl: wire.videoUrl }),
   };
 }
 

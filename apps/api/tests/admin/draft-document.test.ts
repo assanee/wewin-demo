@@ -103,8 +103,11 @@ function rowsFor(productId: string): DraftRows {
       pricePerSqmMinor: BigInt(product.pricePerSqm) * 100n,
       minBillableSqUm: product.minBillableSqUm,
       elevation: product.elevation,
+      videoUrl: product.videoUrl ?? null,
     },
     options,
+    /* ⭐ 0052. The fixtures carry none, which is the case the hash stability rests on. */
+    images: [...(product.images ?? [])],
     rules: product.rules.map((rule, index) => ({
       code: rule.id,
       severity: rule.severity,
@@ -287,6 +290,7 @@ describe('the digest is stable', () => {
       product: { ...rows.product },
       options: rows.options.map((option) => ({ ...option, values: [...option.values] })),
       rules: rows.rules.map((rule) => ({ ...rule })),
+      images: [...rows.images],
     };
 
     // The hash is what a storefront compares to decide whether it is stale, so two

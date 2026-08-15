@@ -65,6 +65,8 @@ export interface DraftProductRow {
   readonly pricePerSqmMinor: bigint;
   readonly minBillableSqUm: bigint;
   readonly elevation: Elevation;
+  /** ⭐ 0052. `null` and absent both mean this product has no video. */
+  readonly videoUrl: string | null;
 }
 
 export interface DraftOptionValueRow {
@@ -108,6 +110,8 @@ export interface DraftRows {
   readonly product: DraftProductRow;
   readonly options: readonly DraftOptionRow[];
   readonly rules: readonly DraftRuleRow[];
+  /** ⭐ 0052. The gallery, already in `sort_order`. Empty when the product has none. */
+  readonly images: readonly string[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -234,6 +238,14 @@ export function compileDraftDocument(rows: DraftRows): CatalogDocumentV1 {
     groups: rows.options.map(toDocGroup),
     rules: rows.rules.map(toDocRule),
     skuPrefix: product.skuPrefix,
+    /*
+     * ⚠️ Omitted when empty, matching `toDocument` in `@wewin/db`. An absent key and an empty
+     * array decode alike, but only the absent one leaves the canonical JSON — and therefore
+     * the hash — identical to a document frozen before 0052. `compile.test.ts` holds both
+     * halves of that.
+     */
+    ...(rows.images.length === 0 ? {} : { images: [...rows.images] }),
+    ...(product.videoUrl === null ? {} : { videoUrl: product.videoUrl }),
   };
 }
 
