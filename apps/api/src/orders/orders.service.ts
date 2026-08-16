@@ -527,14 +527,38 @@ export class OrdersService {
     return this.orders.transaction(async (tx) => {
       const { actor, mintedGuest } = await this.actorWithCart(tx, scope);
 
+      /*
+       * ⭐ WHO THE ORDER BELONGS TO, WHICH IS NOT ALWAYS WHO IS TYPING.
+       *
+       * A walk-in customer at the shop has no account and no browser in this transaction: a
+       * member of staff opens the order for them at the counter. Written the obvious way —
+       * `customerUserId: actor.actorUserId` — that order is recorded as belonging to **the
+       * salesperson**, which works until somebody asks what this customer has bought before,
+       * or that salesperson leaves and their account is closed.
+       *
+       * So a staff-opened order is owned by a freshly minted `guests` row: an anonymous
+       * customer, which is exactly what a walk-in is. Nobody is handed its secret, so nobody
+       * can authenticate as it — only staff can reach the order, through `orderReach`, which
+       * is the correct reach for an order taken at a counter. If that customer later signs
+       * up, plan 6's claim path is the same one a browser cart uses.
+       *
+       * ⚠️ The *actor* is still the staff member, and the `created` event still says so. The
+       * spine records who acted; `orders` records whose order it is. Conflating the two is the
+       * defect this comment is about.
+       */
+      const belongsTo =
+        actor.actorKind === 'staff'
+          ? { customerUserId: null, guestId: (await this.orders.createGuest(tx)).guestId }
+          : { customerUserId: actor.actorUserId, guestId: actor.actorGuestId };
+
       const orderId = await this.orders.createDraft(tx, {
         /*
          * Both ids when there are both. Signing in *adds* `customer_user_id` and leaves the
          * guest in place (plan 6's claim path), so a cart started in this browser stays
          * findable by the browser and becomes findable by the account.
          */
-        customerUserId: actor.actorUserId,
-        guestId: actor.actorGuestId,
+        customerUserId: belongsTo.customerUserId,
+        guestId: belongsTo.guestId,
         contactEmail: body.contact?.email ?? null,
         contactName: body.contact?.name ?? null,
         contactPhone: body.contact?.phone ?? null,

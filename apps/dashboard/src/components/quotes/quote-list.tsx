@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import type { Route } from 'next';
 import { useCallback, useEffect, useState } from 'react';
-import { Lock } from 'lucide-react';
+import { Lock, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { orderSummaryWireSchema } from '@wewin/contract/order';
 import type { OrderSummaryWire } from '@wewin/contract';
@@ -43,11 +46,20 @@ import { thbMinorOf } from './quote-wire';
  * away and this column is absent rather than approximate.
  */
 
-/** The three statuses a quote may still be edited in — a mirror, checked by the API's own guard. */
-const EDITABLE_STATUSES = ['draft', 'awaiting_payment', 'redesign'] as const;
+/**
+ * The statuses a quote may still be edited in — a mirror of `QUOTE_EDITABLE_ORDER_STATUSES`.
+ *
+ * ⛔ `awaiting_confirmation` was missing for one round, and it is the status this screen is now
+ * mostly *for*: since 0056 a customer's request lands there and waits for a member of staff to
+ * price it and agree it. The list filtered to three statuses, so the orders most in need of
+ * editing were the ones it did not show — and nothing failed, because a filter that omits a
+ * value looks exactly like a filter that found none.
+ */
+const EDITABLE_STATUSES = ['draft', 'awaiting_confirmation', 'awaiting_payment', 'redesign'] as const;
 
 const STATUS_LABEL_TH: Readonly<Record<string, string>> = {
   draft: 'ฉบับร่าง',
+  awaiting_confirmation: 'รอยืนยัน',
   awaiting_payment: 'รอชำระเงิน',
   redesign: 'ตีกลับมาแก้แบบ',
 };
@@ -67,6 +79,25 @@ const listQuotableOrders = (): Promise<readonly OrderSummaryWire[]> => {
 };
 
 /**
+ * Open an empty order for somebody at the counter, and answer with its id.
+ *
+ * ⚠️ `{}` and not a contact: `POST /orders` accepts an optional one, and the walk-in's details
+ * are collected at the submit, where they become part of a quotation rather than a note on a
+ * cart nobody has priced yet.
+ */
+const startWalkInOrder = async (): Promise<string> =>
+  apiJson(
+    '/orders',
+    (body) => {
+      if (typeof body !== 'object' || body === null || !('id' in body)) {
+        throw new TypeError('expected an order with an id');
+      }
+      return String((body as { id: unknown }).id);
+    },
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+  );
+
+/**
  * ⚠️ The header is rendered in **all four** states, not only when the rows arrived.
  *
  * It used to be an `<h1 className="text-xl font-semibold">` inside the ready branch, so a
@@ -77,9 +108,53 @@ const listQuotableOrders = (): Promise<readonly OrderSummaryWire[]> => {
 const HEADER = (
   <PageHeader
     title="ใบเสนอราคา"
-    description="ออร์เดอร์ที่ยังแก้ใบเสนอราคาได้ — ฉบับร่าง รอชำระเงิน และตีกลับมาแก้แบบ"
+    description="ออร์เดอร์ที่ยังแก้ใบเสนอราคาได้ — ฉบับร่าง รอยืนยัน รอชำระเงิน และตีกลับมาแก้แบบ"
+    actions={<WalkInButton />}
   />
 );
+
+/**
+ * ⭐ ลูกค้า walk-in — the customer standing at the counter, who has no account and no browser.
+ *
+ * Until now every order in this system began in a customer's own browser: the storefront minted
+ * a guest, filled a cart and submitted it. A salesperson taking an order face to face had no way
+ * in at all — the API accepted it, and no screen offered it.
+ *
+ * ⚠️ It opens an **empty order** and goes straight to the quote editor, which is where the work
+ * is. It does not ask for the customer's name first: a name typed into a dialog before anything
+ * exists is a name that is lost when the person changes their mind about the product, and the
+ * submit collects the contact anyway — that is the step where it becomes a quotation somebody
+ * can act on.
+ *
+ * ⚠️ The order is owned by a freshly minted anonymous customer, not by the salesperson. That is
+ * `OrdersService.createDraft`'s doing and it is the whole reason this button is safe to add; see
+ * its comment for what it used to record.
+ */
+function WalkInButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Button
+      size="sm"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void startWalkInOrder()
+          .then((orderId) => {
+            router.push(`/quotes/${orderId}` as Route);
+          })
+          .catch((error: unknown) => {
+            toast.error(failureMessage(error));
+            setBusy(false);
+          });
+      }}
+    >
+      <Plus className="size-4" />
+      เปิดใบเสนอราคาหน้าร้าน
+    </Button>
+  );
+}
 
 export function QuoteListScreen() {
   const [state, setState] = useState<
