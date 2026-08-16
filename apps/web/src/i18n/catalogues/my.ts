@@ -363,6 +363,7 @@ export const my: PartialUiCatalogue = {
     'စကားဝှက်အသစ်သည် လက်ရှိစကားဝှက်နှင့် ကွဲပြားရမည်။',
   'account.password.problem.mismatch': 'စကားဝှက်အသစ်နှင့် အတည်ပြုချက် မကိုက်ညီပါ။',
   'product.gallery.label': 'ကုန်ပစ္စည်း ဓာတ်ပုံနှင့် ဗီဒီယို',
+  'product.gallery.show': (p, f) => `ဓာတ်ပုံ ${f.integer(p.position)} ကြည့်ရန်`,
   'product.gallery.video.link': 'ဗီဒီယိုကြည့်ရန် (တက်ဘ်အသစ်ဖွင့်မည်)',
   'product.gallery.video.title': 'ကုန်ပစ္စည်း ဗီဒီယို',
   'account.checking': 'စစ်ဆေးနေသည်…',

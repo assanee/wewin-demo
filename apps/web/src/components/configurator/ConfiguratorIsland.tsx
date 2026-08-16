@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { getProductBySlug } from '@wewin/core/fixtures';
 import type { ProductDocumentWire } from '@wewin/contract/catalog';
@@ -97,6 +97,7 @@ export function ConfiguratorIsland({
   locale,
   slug,
   document,
+  gallery,
 }: {
   /** Narrowed from the `[locale]` segment by the server component. Never guessed. */
   readonly locale: Locale;
@@ -118,8 +119,25 @@ export function ConfiguratorIsland({
    * written here, which is how a money field quietly changes meaning.
    */
   readonly document?: ProductDocumentWire | undefined;
+  /**
+   * ⭐ The product's photographs, rendered on the server and handed in as an element.
+   *
+   * ⚠️ A `ReactNode` prop rather than a fetch in here, because `ProductGallery` is a server
+   * component: it talks to the API and holds the locale bundle, and neither belongs in a
+   * client bundle. React serialises an already-rendered server element across this boundary
+   * perfectly well — what it refuses is a *function*, which is a different thing.
+   *
+   * ⛔ It lives in the left column, above the drawing, and that placement is the point.
+   * Rendered as a sibling *above* this whole grid it took the full height of a laptop screen
+   * on its own: the customer saw a picture, and the product's name, size boxes and price
+   * were all below the fold with the right-hand half of the screen empty. Beside the
+   * configurator it is 380px wide, it shares the sticky column with the elevation drawing —
+   * the two things that show what the product looks like, together — and nothing is pushed
+   * anywhere.
+   */
+  readonly gallery?: ReactNode | undefined;
 }) {
-  return <ConfigureRoute locale={locale} slug={slug} document={document} />;
+  return <ConfigureRoute locale={locale} slug={slug} document={document} gallery={gallery} />;
 }
 
 /**
@@ -145,10 +163,12 @@ function ConfigureRoute({
   locale,
   slug,
   document,
+  gallery,
 }: {
   locale: Locale;
   slug: string;
   document?: ProductDocumentWire | undefined;
+  gallery?: ReactNode | undefined;
 }) {
   const search = useUrlSearch();
   const fromFixtures = getProductBySlug(slug);
@@ -191,6 +211,7 @@ function ConfigureRoute({
       product={product}
       editingLine={editingLine}
       shared={shared}
+      gallery={gallery}
     />
   );
 }
@@ -200,11 +221,14 @@ function ConfigureProduct({
   product,
   editingLine,
   shared,
+  gallery,
 }: {
   locale: Locale;
   product: Product;
   editingLine: QuoteLine | undefined;
   shared: SharedConfig | null;
+  /** The server-rendered photographs — see the note on `ConfiguratorIsland`. */
+  gallery?: ReactNode | undefined;
 }) {
   const config = useConfigurator(product, initialStateFrom(product, editingLine, shared));
   const isTablet = useMediaQuery('(min-width: 768px)');
@@ -350,8 +374,9 @@ function ConfigureProduct({
   return (
     <>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-8">
-        {/* ---- Left column: the drawing ---- */}
-        <div className="md:sticky md:top-22 md:self-start">
+        {/* ---- Left column: the photographs, then the drawing ---- */}
+        <div className="flex flex-col gap-4 md:sticky md:top-22 md:self-start">
+          {gallery}
           <div className="border border-line bg-panel p-3">
             <div className="h-55 w-full md:h-70 lg:h-80">
               {/* The drawing lays out in pixel space against its own measured box, and

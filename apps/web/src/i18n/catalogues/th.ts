@@ -339,6 +339,7 @@ export const th: UiCatalogue = {
   'account.password.problem.sameAsCurrent': 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม',
   'account.password.problem.mismatch': 'รหัสผ่านใหม่กับการยืนยันไม่ตรงกัน',
   'product.gallery.label': 'รูปและวิดีโอของสินค้า',
+  'product.gallery.show': (p, f) => `ดูรูปที่ ${f.integer(p.position)}`,
   'product.gallery.video.link': 'ดูวิดีโอ (เปิดหน้าต่างใหม่)',
   'product.gallery.video.title': 'วิดีโอแนะนำสินค้า',
   'account.checking': 'กำลังตรวจสอบ…',

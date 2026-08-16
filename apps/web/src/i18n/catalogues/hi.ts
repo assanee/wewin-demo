@@ -376,6 +376,7 @@ export const hi: PartialUiCatalogue = {
     'नया पासवर्ड मौजूदा से अलग होना चाहिए।',
   'account.password.problem.mismatch': 'नया पासवर्ड और उसकी पुष्टि मेल नहीं खाते।',
   'product.gallery.label': 'उत्पाद की तस्वीरें और वीडियो',
+  'product.gallery.show': (p, f) => `तस्वीर ${f.integer(p.position)} दिखाएँ`,
   'product.gallery.video.link': 'वीडियो देखें (नए टैब में खुलेगा)',
   'product.gallery.video.title': 'उत्पाद वीडियो',
   'account.checking': 'जाँचा जा रहा है…',

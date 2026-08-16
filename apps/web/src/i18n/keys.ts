@@ -337,6 +337,8 @@ export interface UiParamsByKey {
   'account.password.problem.mismatch': Plain;
   /** ⭐ 0052. The product gallery — the section label and the two things a video needs. */
   'product.gallery.label': Plain;
+  /** The thumbnail's accessible name — a strip of unlabelled buttons is unusable. */
+  'product.gallery.show': { position: number };
   'product.gallery.video.link': Plain;
   'product.gallery.video.title': Plain;
   'account.checking': Plain;

@@ -352,6 +352,7 @@ export const la: PartialUiCatalogue = {
   'account.password.problem.sameAsCurrent': 'ລະຫັດຜ່ານໃໝ່ຕ້ອງຕ່າງຈາກອັນປັດຈຸບັນ.',
   'account.password.problem.mismatch': 'ລະຫັດຜ່ານໃໝ່ ແລະ ການຢືນຢັນບໍ່ກົງກັນ.',
   'product.gallery.label': 'ຮູບ ແລະ ວິດີໂອສິນຄ້າ',
+  'product.gallery.show': (p, f) => `ເບິ່ງຮູບທີ ${f.integer(p.position)}`,
   'product.gallery.video.link': 'ເບິ່ງວິດີໂອ (ເປີດແທັບໃໝ່)',
   'product.gallery.video.title': 'ວິດີໂອສິນຄ້າ',
   'account.checking': 'ກຳລັງກວດ…',

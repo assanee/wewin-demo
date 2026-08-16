@@ -134,22 +134,18 @@ export default async function ProductConfiguratorPage({
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
       {/*
-        ⭐ 0052. The pictures, above the configurator, because somebody deciding whether to
-        configure a window wants to see the window first.
+        ⭐ The gallery is handed to the island rather than rendered above it, so it lands in
+        the sticky left column beside the drawing. As a sibling it filled a laptop screen on
+        its own and pushed the name, the size boxes and the price below the fold.
 
-        The second fetch on this storefront, and it follows the first exactly: `force-cache`
-        plus `product:<id>` — the tag `lib/reviews/tags.ts` has carried since plan 8.2 while
-        saying in its own comment that it was attached in advance for the day something read
-        a fetch keyed by it. So the page stays prerendered, all 648 of them, and a gallery
-        published from the dashboard arrives through the `revalidateTag` half that already
-        exists.
-
-        It renders **nothing** for a product with no pictures, which today is all 81 —
-        `ReviewBlock` below made the same call for the same reason: an empty state on 648
-        pages is a shop announcing what it does not have.
+        Still a server component — only the already-rendered element crosses the boundary.
       */}
-      <ProductGallery slug={slug} productId={identity.id} locale={locale} />
-      <ConfiguratorIsland locale={locale} slug={slug} document={identity.document} />
+      <ConfiguratorIsland
+        locale={locale}
+        slug={slug}
+        document={identity.document}
+        gallery={<ProductGallery slug={slug} productId={identity.id} locale={locale} />}
+      />
       {/*
         The reviews — plan section 9, and the first thing on this storefront that comes
         from a fetch rather than from `@wewin/core/fixtures`.

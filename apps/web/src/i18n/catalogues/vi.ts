@@ -359,6 +359,7 @@ export const vi: PartialUiCatalogue = {
     'Mật khẩu mới phải khác mật khẩu hiện tại.',
   'account.password.problem.mismatch': 'Mật khẩu mới và phần xác nhận không khớp.',
   'product.gallery.label': 'Hình ảnh và video sản phẩm',
+  'product.gallery.show': (p, f) => `Xem ảnh ${f.integer(p.position)}`,
   'product.gallery.video.link': 'Xem video (mở tab mới)',
   'product.gallery.video.title': 'Video sản phẩm',
   'account.checking': 'Đang kiểm tra…',

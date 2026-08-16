@@ -396,6 +396,7 @@ export const de: PartialUiCatalogue = {
   'account.password.problem.mismatch':
     'Das neue Passwort und die Bestätigung stimmen nicht überein.',
   'product.gallery.label': 'Produktfotos und Video',
+  'product.gallery.show': (p, f) => `Bild ${f.integer(p.position)} anzeigen`,
   'product.gallery.video.link': 'Video ansehen (öffnet neuen Tab)',
   'product.gallery.video.title': 'Produktvideo',
   'account.checking': 'Wird geprüft…',

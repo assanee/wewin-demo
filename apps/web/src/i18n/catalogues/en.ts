@@ -365,6 +365,7 @@ export const en: PartialUiCatalogue = {
   'account.password.problem.sameAsCurrent': 'The new password must differ from the current one.',
   'account.password.problem.mismatch': 'The new password and its confirmation do not match.',
   'product.gallery.label': 'Product photos and video',
+  'product.gallery.show': (p, f) => `Show picture ${f.integer(p.position)}`,
   'product.gallery.video.link': 'Watch the video (opens in a new tab)',
   'product.gallery.video.title': 'Product video',
   'account.checking': 'Checking…',
