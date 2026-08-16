@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AdminOptionGroupWire } from '@wewin/contract';
 
+import { encodeUm } from '@wewin/contract/measure';
+
 import {
   REQUIRED_CUSTOM_CODES,
+  choicesFromProduct,
+  optionWrites,
   blankChoice,
   buildOptions,
   fromUm,
@@ -332,5 +336,128 @@ describe('building the options a create request carries', () => {
     if (result.ok) return;
     /* The missing height AND the unreadable step. */
     expect(result.problems.length).toBeGreaterThan(1);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Editing a draft that already has options
+ * ------------------------------------------------------------------ */
+
+const skuGroupWire = (code: string, codes: readonly string[], defaultValue: string) =>
+  ({
+    kind: 'sku' as const,
+    code,
+    labelTh: code,
+    input: 'chip' as const,
+    required: true as const,
+    includeInSkuCode: true,
+    values: codes.map((c) => ({ code: c, labelTh: c, delta: { type: 'none' as const }, available: true })),
+    defaultValue,
+  });
+
+const customGroupWire = (code: string, min: string, max: string, step: string, def: string) =>
+  ({
+    kind: 'custom' as const,
+    code,
+    labelTh: code,
+    input: 'number' as const,
+    unit: 'cm' as const,
+    minUm: encodeUm(toUm(min, 'cm') as bigint),
+    maxUm: encodeUm(toUm(max, 'cm') as bigint),
+    stepUm: encodeUm(toUm(step, 'cm') as bigint),
+    defaultUm: encodeUm(toUm(def, 'cm') as bigint),
+  });
+
+describe('seeding the editor from a draft that already has options', () => {
+  it('⭐ shows the numbers back as the text a person would have typed', () => {
+    const seeded = choicesFromProduct(
+      [customGroupWire('width', '60', '400', '0.5', '180')],
+      [custom('width'), custom('height')],
+    );
+
+    const width = seeded.find((choice) => choice.code === 'width');
+    expect(width?.offered).toBe(true);
+    expect(width?.minText).toBe('60');
+    expect(width?.stepText).toBe('0.5');
+    expect(width?.defaultText).toBe('180');
+    /* A catalogue group the product does not offer comes back unticked and empty. */
+    expect(seeded.find((choice) => choice.code === 'height')?.offered).toBe(false);
+  });
+
+  it('carries a sku group’s offered values and its default', () => {
+    const seeded = choicesFromProduct(
+      [skuGroupWire('profile_color', ['SG', 'BK'], 'BK')],
+      [sku('profile_color', ['SG', 'WH', 'BK'])],
+    );
+    const colour = seeded.find((choice) => choice.code === 'profile_color');
+    expect(colour?.valueCodes).toStrictEqual(['SG', 'BK']);
+    expect(colour?.defaultValueCode).toBe('BK');
+  });
+
+  it('⚠️ keeps a group the catalogue no longer lists rather than dropping it', () => {
+    /*
+     * Dropping it would delete the product's option on the very next save, silently. The
+     * cost of being wrong in this direction is a group nobody can remove from this screen;
+     * in the other direction it is a product that quietly stops being configurable.
+     */
+    const seeded = choicesFromProduct([customGroupWire('legacy', '10', '20', '1', '10')], []);
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0]?.code).toBe('legacy');
+    expect(seeded[0]?.offered).toBe(true);
+  });
+});
+
+describe('planning the writes a save has to make', () => {
+  const current = [customGroupWire('width', '60', '400', '0.5', '180')];
+  const wantedSame = {
+    width: {
+      kind: 'custom' as const,
+      sortOrder: 0,
+      minUm: encodeUm(600_000n),
+      maxUm: encodeUm(4_000_000n),
+      stepUm: encodeUm(5_000n),
+      defaultUm: encodeUm(1_800_000n),
+    },
+  };
+
+  it('⭐ writes nothing when nothing changed', () => {
+    /*
+     * Re-putting every group would work and would also move `documentHash` on a save that
+     * changed nothing — turning a no-op into an edit that collides with a colleague's.
+     */
+    expect(optionWrites(current, wantedSame)).toStrictEqual([]);
+  });
+
+  it('puts the group whose numbers moved', () => {
+    const moved = {
+      width: { ...wantedSame.width, defaultUm: encodeUm(2_000_000n) },
+    };
+    const writes = optionWrites(current, moved);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.kind).toBe('put');
+    expect(writes[0]?.code).toBe('width');
+  });
+
+  it('⚠️ treats a reorder as a change, because order is what the configurator shows', () => {
+    const reordered = { width: { ...wantedSame.width, sortOrder: 3 } };
+    expect(optionWrites(current, reordered)).toHaveLength(1);
+  });
+
+  it('⛔ puts before deletes, so a rename never leaves the draft unpublishable', () => {
+    /*
+     * `productSchema` runs on every mutation, not only at publish. Deleting `width` first —
+     * even to add it straight back — is refused outright by the server.
+     */
+    const writes = optionWrites(current, {
+      height: { ...wantedSame.width, sortOrder: 0 },
+    });
+    expect(writes.map((write) => write.kind)).toStrictEqual(['put', 'delete']);
+    expect(writes[0]?.code).toBe('height');
+    expect(writes[1]?.code).toBe('width');
+  });
+
+  it('deletes a group that is no longer offered', () => {
+    const writes = optionWrites(current, {});
+    expect(writes).toStrictEqual([{ kind: 'delete', code: 'width' }]);
   });
 });

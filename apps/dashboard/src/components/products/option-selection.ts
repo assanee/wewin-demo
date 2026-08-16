@@ -1,4 +1,5 @@
-import type { AdminOptionGroupWire, DraftOptionWire } from '@wewin/contract';
+import type { AdminOptionGroupWire, DraftOptionWire, OptionGroupWire } from '@wewin/contract';
+import { decodeUm } from '@wewin/contract/measure';
 import { encodeLengthUm } from '@wewin/contract/admin';
 
 /**
@@ -340,4 +341,148 @@ export function buildOptions(
 
   if (problems.length > 0) return { ok: false, problems, errors };
   return { ok: true, options };
+}
+
+/* ------------------------------------------------------------------ *
+ * Editing the options of a draft that already has some
+ * ------------------------------------------------------------------ */
+
+/**
+ * ⭐ A draft's current option groups, as the editor holds them.
+ *
+ * The create screen starts from `blankChoice`; the draft editor starts from what the product
+ * already offers, so the same component can edit both. Every value is turned back into the
+ * text a person typed — micrometres to the group's authored unit — because that is what the
+ * boxes contain and because a round trip through them must not change the numbers.
+ *
+ * ⚠️ Driven by the **catalogue**, not by the product: a group the product offers that no
+ * longer exists in `option_groups` would otherwise vanish silently from the editor and be
+ * deleted by the very next save. Such a group is impossible today (the vocabulary is
+ * append-only in practice) and the cost of being wrong is losing a product's options, so it
+ * is carried through as offered rather than dropped.
+ */
+export function choicesFromProduct(
+  offered: readonly OptionGroupWire[],
+  catalogue: readonly AdminOptionGroupWire[],
+): readonly GroupChoice[] {
+  const byCode = new Map(offered.map((group) => [group.code, group]));
+
+  const fromCatalogue = catalogue.map((group): GroupChoice => {
+    const current = byCode.get(group.code);
+    if (current === undefined) return blankChoice(group);
+
+    if (current.kind === 'custom') {
+      const unit = current.unit;
+      return {
+        ...blankChoice(group),
+        offered: true,
+        minText: fromUm(decodeUm(current.minUm), unit),
+        maxText: fromUm(decodeUm(current.maxUm), unit),
+        stepText: fromUm(decodeUm(current.stepUm), unit),
+        defaultText: fromUm(decodeUm(current.defaultUm), unit),
+      };
+    }
+
+    return {
+      ...blankChoice(group),
+      offered: true,
+      valueCodes: current.values.map((value) => value.code),
+      defaultValueCode: current.defaultValue,
+    };
+  });
+
+  /* A group the product offers that the catalogue no longer lists — see the note above. */
+  const orphans = offered
+    .filter((group) => !catalogue.some((entry) => entry.code === group.code))
+    .map((group): GroupChoice => ({
+      code: group.code,
+      offered: true,
+      valueCodes: group.kind === 'sku' ? group.values.map((value) => value.code) : [],
+      defaultValueCode: group.kind === 'sku' ? group.defaultValue : '',
+      minText: group.kind === 'custom' ? fromUm(decodeUm(group.minUm), group.unit) : '',
+      maxText: group.kind === 'custom' ? fromUm(decodeUm(group.maxUm), group.unit) : '',
+      stepText: group.kind === 'custom' ? fromUm(decodeUm(group.stepUm), group.unit) : '',
+      defaultText: group.kind === 'custom' ? fromUm(decodeUm(group.defaultUm), group.unit) : '',
+    }));
+
+  return [...fromCatalogue, ...orphans];
+}
+
+export type OptionWrite =
+  | { readonly kind: 'put'; readonly code: string; readonly option: DraftOptionWire }
+  | { readonly kind: 'delete'; readonly code: string };
+
+/**
+ * ⭐ The writes that turn the draft's current options into the wanted ones.
+ *
+ * There is no batch endpoint: the API takes one `PUT …/options/:code` or
+ * `DELETE …/options/:code` at a time, each carrying the hash it expects. So a save is a
+ * sequence, and this is the part worth testing on its own — the ordering and the "nothing
+ * changed" case are both easy to get subtly wrong in a component.
+ *
+ * ⛔ **Puts before deletes.** Renaming a group is a put of the new one and a delete of the
+ * old; doing the delete first would, for the width or height group, leave the draft
+ * momentarily unpublishable — which the server refuses outright (`productSchema` runs on
+ * every mutation, not only at publish). Adding first is never refused for that reason.
+ *
+ * ⚠️ Groups that have not changed produce no write at all. Re-putting every group on every
+ * save would work, but each one is a round trip that moves `documentHash`, so an unchanged
+ * save would still count as an edit against a colleague's concurrent one.
+ */
+export function optionWrites(
+  current: readonly OptionGroupWire[],
+  wanted: Readonly<Record<string, DraftOptionWire>>,
+): readonly OptionWrite[] {
+  const puts: OptionWrite[] = [];
+  const deletes: OptionWrite[] = [];
+
+  const currentByCode = new Map(current.map((group, index) => [group.code, { group, index }]));
+
+  for (const [code, option] of Object.entries(wanted)) {
+    const existing = currentByCode.get(code);
+    if (existing === undefined || !sameOption(existing.group, existing.index, option)) {
+      puts.push({ kind: 'put', code, option });
+    }
+  }
+
+  for (const group of current) {
+    if (!(group.code in wanted)) deletes.push({ kind: 'delete', code: group.code });
+  }
+
+  return [...puts, ...deletes];
+}
+
+/**
+ * Whether the draft already says what the editor wants it to say.
+ *
+ * Compared through the values, never by object identity: the editor rebuilds every option on
+ * every keystroke, so identity is always different and would make every save rewrite
+ * everything.
+ *
+ * ⚠️ The **position** is part of it, and it has to be read from the array rather than from
+ * the group: `OptionGroupWire` carries no `sortOrder` because the order *is* the order of
+ * `product.groups`. That order is what the configurator lays the groups out by, so moving one
+ * is a change even when nothing else about it moved — and comparing only the values would
+ * silently drop a reorder on the floor.
+ */
+function sameOption(group: OptionGroupWire, index: number, option: DraftOptionWire): boolean {
+  if (index !== option.sortOrder) return false;
+
+  if (group.kind === 'custom') {
+    if (option.kind !== 'custom') return false;
+    return (
+      decodeUm(group.minUm) === decodeUm(option.minUm) &&
+      decodeUm(group.maxUm) === decodeUm(option.maxUm) &&
+      decodeUm(group.stepUm) === decodeUm(option.stepUm) &&
+      decodeUm(group.defaultUm) === decodeUm(option.defaultUm)
+    );
+  }
+
+  if (option.kind !== 'sku') return false;
+  const offered = group.values.map((value) => value.code);
+  return (
+    group.defaultValue === option.defaultValueCode &&
+    offered.length === option.valueCodes.length &&
+    offered.every((code, index) => code === option.valueCodes[index])
+  );
 }

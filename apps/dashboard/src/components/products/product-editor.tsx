@@ -19,12 +19,12 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { PageHeader } from '@/components/page-header';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { useSession } from '@/lib/auth/session';
 
 import { discardDraft, openDraft, publishDraft, updateDraft } from './catalog-api';
-import { diffDocuments, groupSummary } from './document-diff';
+import { diffDocuments } from './document-diff';
 import { FieldsForm } from './fields-form';
+import { DraftOptionsEditor } from './draft-options-editor';
 import { publishFocus } from './publish-focus';
 import { PublishStateBadges, formatTimestamp } from './publish-state';
 import { useProductEditor } from './use-product';
@@ -195,29 +195,18 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
 
           <Section
             title="ตัวเลือก"
-            descriptionTh="แก้ตัวเลือกยังทำที่หน้านี้ไม่ได้ — ตารางนี้แสดงสิ่งที่ฉบับร่างถืออยู่"
+            descriptionTh="เลือกกลุ่มจากคลังที่ใช้ร่วมกันทุกสินค้า — ความกว้างและความสูงบังคับ เพราะระบบคิดราคาจากสองค่านี้"
           >
-            {/* ⚠️ No Card. A `<Table>` is the case the house rule names outright. */}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableBody>
-                  {draft.product.groups.map((group) => (
-                    <TableRow key={group.code}>
-                      <TableCell className="type-body px-2 py-1.5 font-medium">
-                        {group.labelTh}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground type-caption px-2 py-1.5 font-mono">
-                        {group.code}
-                      </TableCell>
-                      {/* Slack to the last column — see `order-list.tsx`. */}
-                      <TableCell className="text-muted-foreground type-body w-full px-2 py-1.5">
-                        {groupSummary(group)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            {/*
+              ⭐ Editable since the endpoints that back it finally have a caller. The read-only
+              table this replaces said "แก้ตัวเลือกยังทำที่หน้านี้ไม่ได้", which meant the groups a
+              product was born with were the ones it kept for ever.
+            */}
+            <DraftOptionsEditor
+              product={draft.product}
+              disabled={editor.busy}
+              onSave={(run) => editor.withDraft('บันทึกชุดตัวเลือก', run)}
+            />
           </Section>
 
           <Section
