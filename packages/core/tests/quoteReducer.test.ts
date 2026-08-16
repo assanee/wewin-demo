@@ -389,6 +389,28 @@ describe('quote selectors', () => {
     expect(longestLeadTime([a, b], getProductById)).toEqual([14, 20]);
   });
 
+  test('⭐ longestLeadTime uses the line’s own snapshot, so a product outside the bundle counts', () => {
+    /*
+     * ⛔ The reason this exists. The lookup is fixture-backed, so a product created in the
+     * dashboard is not in it — and the old code did `if (!product) continue`, dropping the
+     * line. A cart holding only such products showed no lead time at all, and a mixed cart
+     * showed the longest of the *seeded* ones, understating the wait. A quote promising
+     * 14–21 days for an item that takes 20–30 is a promise the workshop cannot keep.
+     */
+    const fromDashboard = { ...a, productId: 'not-in-the-bundle', leadTimeDays: [20, 30] as [number, number] };
+
+    expect(longestLeadTime([fromDashboard], getProductById)).toEqual([20, 30]);
+    // And it wins over a seeded line that is quicker.
+    expect(longestLeadTime([a, b, fromDashboard], getProductById)).toEqual([20, 30]);
+  });
+
+  test('⚠️ a line stored before the snapshot existed still reads from the catalogue', () => {
+    /* Carts survive a deploy; the fallback is the old behaviour and no worse. */
+    const stored = { ...a };
+    delete (stored as { leadTimeDays?: [number, number] }).leadTimeDays;
+    expect(longestLeadTime([stored], getProductById)).toEqual([10, 14]);
+  });
+
   test('longestLeadTime is null for an empty quote', () => {
     expect(longestLeadTime([], getProductById)).toBeNull();
   });

@@ -7,11 +7,16 @@ import { quoteLineWireSchema } from '../src/quote.js';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * ⭐ `productId` IS A CATALOGUE SLUG, NOT A UUID.
+ * ⭐ `productId` IS A CATALOGUE PRODUCT ID, NOT A UUID.
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * `product_versions.product_id` is `text` and holds `awn-1`, `lvr-adj`, `sld-2p`. The wire
  * type has always said `string | null`; the schema beside it said `z.uuid()`.
+ *
+ * ⚠️ This heading said "a catalogue slug" until products could have an id and a slug that
+ * differ. It is the **id**. The two are equal for all eighty-one seeded products, which is
+ * how the wrong word survived — and a dashboard-created product has id `uoio`, slug
+ * `sdfghjkl`, so a reader who believed the old wording would build the wrong URL.
  *
  * ⚠️ **The two disagreed from the day they were written, and nothing noticed for months**,
  * because no order created through the storefront had ever reached this decoder — every

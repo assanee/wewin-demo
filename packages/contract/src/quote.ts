@@ -666,7 +666,14 @@ export const quoteLineWireSchema: z.ZodType<QuoteLineWire> = z.object({
   productVersionId: z.uuid().nullable(),
   documentHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
   /**
-   * ⚠️ A **catalogue slug**, and this was `z.uuid()` until a real order reached the dashboard.
+   * ⚠️ A **catalogue product id**, and this was `z.uuid()` until a real order reached the
+   * dashboard.
+   *
+   * ⛔ Called "a catalogue slug" here until products could have an id and a slug that differ.
+   * It is `products.id` — for the eighty-one seeded products those are the same string, which
+   * is why the wrong word survived, but a product created in the dashboard has an id like
+   * `uoio` and a slug like `sdfghjkl`, and a reader who trusted this sentence would build a
+   * storefront URL out of it and get the wrong page.
    *
    * `product_versions.product_id` is a `text` column holding `awn-1`, `lvr-adj`, `sld-2p`. The
    * interface beside this has always said `string | null`; the rule said uuid, and the two

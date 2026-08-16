@@ -288,6 +288,8 @@ function ConfigureProduct({
       enteredUnits: config.enteredUnits,
       qty: config.qty,
       priceSnapshot: config.price,
+      /* Locked with the price — the cart must not have to find the catalogue again. */
+      leadTimeDays: product.leadTimeDays,
       configHash: configHash(config.skuCode, config.measures),
       // Warnings ride along with the line so the sales team sees them when the
       // quote is issued (spec section 6).

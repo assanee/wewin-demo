@@ -27,8 +27,11 @@ export interface QuoteLine {
    * ⚠️ That coincidence is exactly what broke. `configureHref` relied on it and said so in
    * its own comment: *"if ids ever stop being slugs, this is the call site that breaks, and
    * it breaks as a 404"*. Products created in the dashboard set id and slug independently,
-   * so a customer who added one to their cart could not reopen it — the pencil button went
-   * to `/th/products/<id>` and answered 404.
+   * so a customer who added one to their cart could not reopen it.
+   *
+   * ⚠️ The fallback no longer 404s: the storefront route resolves a product **id** as well
+   * as a slug, precisely so links of that shape — old cart lines, bookmarks — keep working.
+   * This field is still what makes the URL canonical rather than merely resolvable.
    */
   productSlug?: string;
   /** Customer's own label, e.g. "หน้าต่างห้องนอน 1". Defaults to the product name. */
@@ -53,6 +56,19 @@ export interface QuoteLine {
   qty: number;
   /** Price locked at the moment the line was added — material prices move, quotes do not. */
   priceSnapshot: PriceBreakdown;
+  /**
+   * ⭐ The product's lead time, locked with the price and for the same reason.
+   *
+   * ⛔ It used to be read out of the compiled catalogue at render time, which silently
+   * skipped any product the bundle does not contain — every product created in the
+   * dashboard. A cart holding only those showed **no lead time at all**, and a mixed cart
+   * showed the longest of the *seeded* ones, which understates the wait. A quote that
+   * promises 14–21 days for an item that takes 20–30 is a promise the workshop cannot keep.
+   *
+   * ⚠️ Optional for lines already in a customer's `localStorage`; `longestLeadTime` falls
+   * back to the lookup for those, which is exactly the old behaviour and no worse.
+   */
+  leadTimeDays?: [number, number];
   configHash: string;
   addedAt: string;
   /**
@@ -201,10 +217,15 @@ export function longestLeadTime(
   let longest: [number, number] | null = null;
 
   for (const line of lines) {
-    const product = lookup(line.productId);
-    if (!product) continue;
+    /*
+     * ⛔ The line's own snapshot first, and the catalogue only as a fallback. The lookup is
+     * fixture-backed, so a product created in the dashboard is not in it — reading through
+     * the lookup alone silently dropped those lines and understated the wait.
+     */
+    const leadTimeDays = line.leadTimeDays ?? lookup(line.productId)?.leadTimeDays;
+    if (!leadTimeDays) continue;
 
-    if (!longest || product.leadTimeDays[1] > longest[1]) longest = product.leadTimeDays;
+    if (!longest || leadTimeDays[1] > longest[1]) longest = leadTimeDays;
   }
 
   return longest;
