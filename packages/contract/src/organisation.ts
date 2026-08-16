@@ -233,6 +233,19 @@ export interface PaymentInstructionsWire {
    * order encoder and the overview aggregate read, so there is no fourth definition of "live".
    */
   readonly orderIsLive: boolean;
+  /**
+   * ⭐ NOT PAYABLE **YET**, which is a different thing from not payable any more.
+   *
+   * `orderIsLive` is false for three quite different situations once `awaiting_confirmation`
+   * exists: cancelled, superseded, and a quotation waiting for a member of staff to agree it.
+   * The first two are over; the third has not started. A screen with one boolean tells the
+   * customer of a live quotation that their order is closed — which is what this field exists
+   * to stop, and what it did for exactly one commit.
+   *
+   * A second boolean rather than the status itself, so the storefront keeps deciding nothing
+   * about what a status means. It is the same arrangement `orderIsLive` documents above.
+   */
+  readonly awaitingConfirmation: boolean;
   readonly accounts: readonly BankAccountPublicWire[];
 }
 

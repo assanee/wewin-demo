@@ -429,6 +429,11 @@ export class OrdersService {
        * this is `false`.
        */
       orderIsLive: isLiveOrder(order.status),
+      /*
+       * ⭐ "Not payable yet" is a different sentence from "not payable any more", and one
+       * boolean cannot carry both — see `PaymentInstructionsWire.awaitingConfirmation`.
+       */
+      awaitingConfirmation: order.status === 'awaiting_confirmation',
       accounts: accounts.map(encodeAccountPublic),
     };
   }

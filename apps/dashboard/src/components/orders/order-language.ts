@@ -32,6 +32,8 @@
 
 export const ORDER_STATUSES = [
   'draft',
+  /** รอยืนยัน — the customer has asked for a price and staff have not agreed it yet. */
+  'awaiting_confirmation',
   'awaiting_payment',
   'production_confirmed',
   'in_production',
@@ -46,6 +48,7 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 const STATUS_TH: Record<OrderStatus, string> = {
   draft: 'ตะกร้า',
+  awaiting_confirmation: 'รอยืนยัน',
   awaiting_payment: 'รอชำระเงิน',
   production_confirmed: 'ยืนยันผลิตแล้ว',
   in_production: 'กำลังผลิต',
@@ -71,6 +74,12 @@ export function statusLabel(status: OrderStatus): string {
 /** How loud a status should be. `attention` is for the ones somebody is waiting on. */
 export function statusTone(status: OrderStatus): 'attention' | 'live' | 'done' | 'over' {
   switch (status) {
+    /*
+     * ⭐ `awaiting_confirmation` is the loudest of the three: it is the only status where the
+     * order is waiting on *this company* rather than on the customer or the factory, and
+     * nothing else moves until somebody here looks at it.
+     */
+    case 'awaiting_confirmation':
     case 'awaiting_payment':
     case 'redesign':
       return 'attention';

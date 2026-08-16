@@ -37,6 +37,8 @@ const panel = (over: Partial<PanelInput>): ReturnType<typeof describePaymentPane
   describePaymentPanel({
     /* Live unless a case says otherwise — only cancelled and superseded are not. */
     orderIsLive: true,
+    /* Confirmed unless a case says otherwise: the quotation has been agreed by staff. */
+    awaitingConfirmation: false,
     outstandingMinor: 1_035_418n,
     nextDueMinor: 1_035_418n,
     /*
@@ -282,5 +284,37 @@ describe('⭐ ⓸ an order whose remaining balance was written off', () => {
     const paid = panel({ outstandingMinor: 0n, nextDueMinor: 0n, writtenOffMinor: 0n });
 
     expect(paid.noteKey).toBe('payment.settled');
+  });
+});
+
+describe('a quotation nobody has confirmed yet', () => {
+  /*
+   * ⛔ THE STATE THAT READ "THIS ORDER IS CLOSED" FOR ONE COMMIT.
+   *
+   * `awaiting_confirmation` is not a live order — nobody has been asked to pay it — so the
+   * single `orderIsLive` boolean sent it down the cancelled branch, and a customer whose
+   * quotation was sitting with sales was told their order was over.
+   */
+
+  it('⭐ says it is being checked, and shows no figure and no form', () => {
+    const answer = panel({ awaitingConfirmation: true });
+
+    expect(answer.noteKey).toBe('payment.awaitingConfirmation');
+    expect(answer.showsForm).toBe(false);
+    /* No ยอดคงค้าง label: the price exists but nobody has agreed to it. */
+    expect(answer.figures).toStrictEqual([]);
+  });
+
+  it('⛔ comes BEFORE the closed branch, which it would otherwise fall into', () => {
+    /*
+     * The ordering is the fix, not the branch. Both booleans are what an unconfirmed order
+     * really sends: not live, and awaiting confirmation.
+     */
+    const answer = panel({ awaitingConfirmation: true, orderIsLive: false });
+    expect(answer.noteKey).toBe('payment.awaitingConfirmation');
+  });
+
+  it('⚠️ and a cancelled order still says closed — the two are not the same sentence', () => {
+    expect(panel({ orderIsLive: false }).noteKey).toBe('payment.closed');
   });
 });

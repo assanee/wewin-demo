@@ -56,6 +56,13 @@ export interface PanelInput {
    * every figure from.
    */
   readonly orderIsLive: boolean;
+  /**
+   * ⭐ `PaymentInstructionsWire.awaitingConfirmation` — staff have not agreed the price yet.
+   *
+   * Separate from `orderIsLive` because that one is false for cancelled orders too, and the
+   * two need opposite sentences: one is over, the other has not begun.
+   */
+  readonly awaitingConfirmation: boolean;
   readonly outstandingMinor: bigint;
   readonly nextDueMinor: bigint;
   /**
@@ -82,7 +89,11 @@ export interface PaymentPanel {
   /** One sentence in place of a demand, or `null` when the form itself is the answer. */
   readonly noteKey: Extract<
     UiKey,
-    'payment.closed' | 'payment.settled' | 'payment.writtenOff' | 'payment.account.none'
+    | 'payment.awaitingConfirmation'
+    | 'payment.closed'
+    | 'payment.settled'
+    | 'payment.writtenOff'
+    | 'payment.account.none'
   > | null;
   /** Whether the account picker and the slip form are rendered at all. */
   readonly showsForm: boolean;
@@ -172,7 +183,32 @@ export interface PaymentPanel {
  * the payment form away from somebody who is about to pay.
  */
 export function describePaymentPanel(input: PanelInput): PaymentPanel {
-  const { orderIsLive, outstandingMinor, nextDueMinor, writtenOffMinor, accountCount } = input;
+  const {
+    orderIsLive,
+    awaitingConfirmation,
+    outstandingMinor,
+    nextDueMinor,
+    writtenOffMinor,
+    accountCount,
+  } = input;
+
+  /*
+   * ⭐ ⓪ WAITING FOR STAFF, and it comes FIRST — before the closed branch, which it would
+   * otherwise fall into.
+   *
+   * `orderIsLive` is false for three unrelated situations now: cancelled, superseded, and a
+   * quotation nobody has confirmed. The first two are over; this one has not started. Ordered
+   * this way the customer of a live quotation reads "we are checking it and will tell you when
+   * you can pay" instead of "this order is closed" — which is what they read for exactly one
+   * commit, and is the same class of untruth as the ฿0 payment-confirmed email.
+   *
+   * No figures, and that is the point rather than an omission: the total exists and the
+   * customer can see it on their quotation, labelled ราคาประมาณ. A ยอดคงค้าง label here would
+   * be a demand for money against a price nobody has agreed to.
+   */
+  if (awaitingConfirmation) {
+    return { figures: [], noteKey: 'payment.awaitingConfirmation', showsForm: false };
+  }
 
   /* ⓵ Cancelled or superseded. No figures at any value — see `PaymentPanel.figures`. */
   if (!orderIsLive) {

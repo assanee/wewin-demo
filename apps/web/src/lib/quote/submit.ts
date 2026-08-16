@@ -278,7 +278,15 @@ export async function submitQuote(input: {
   }
   const orderId = draft['id'];
 
-  const submitted = await post(`/orders/${orderId}/transitions/awaiting_payment`, {
+  /*
+   * ⭐ `awaiting_confirmation`, not `awaiting_payment` — a quotation request no longer asks the
+   * customer for money. A member of staff checks the figures and confirms, and the mail that
+   * follows is what tells the customer they may pay.
+   *
+   * ⚠️ The API still rewrites `awaiting_payment` from a draft to this, for browser tabs loaded
+   * before the deploy (`OrdersService.transition`). That shim is temporary; this is the road.
+   */
+  const submitted = await post(`/orders/${orderId}/transitions/awaiting_confirmation`, {
     contact: input.contact,
     lines: input.lines,
   });

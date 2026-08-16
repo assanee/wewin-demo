@@ -583,6 +583,8 @@ export const en: PartialUiCatalogue = {
    */
   'payment.closed':
     'This order is no longer accepting payments. If you have a question about the amount, please contact our sales team.',
+  'payment.awaitingConfirmation': 
+    'Your quotation is being checked. The amount shown is still an estimate — our team will confirm it and let you know before any payment.',
   'payment.account.legend': 'Transfer to any one of these accounts',
   'payment.account.copy': (p) => `Copy account number ${p.accountDigits}`,
   'payment.account.copied': 'Account number copied',

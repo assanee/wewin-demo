@@ -591,6 +591,8 @@ export const hi: PartialUiCatalogue = {
   'payment.writtenOff': 'इस ऑर्डर की शेष राशि बट्टे खाते में डाल दी गई है — अब कुछ भी देय नहीं है',
   'payment.closed':
     'यह ऑर्डर अब भुगतान स्वीकार नहीं करता। राशि के बारे में कोई सवाल हो तो कृपया सेल्स टीम से संपर्क कीजिए।',
+  'payment.awaitingConfirmation': 
+    'आपका कोटेशन जाँचा जा रहा है। दिखाई गई राशि अभी अनुमानित है — हमारी टीम इसकी पुष्टि करके भुगतान से पहले आपको बताएगी।',
   'payment.account.legend': 'इनमें से किसी भी खाते में ट्रांसफर करें',
   'payment.account.copy': (p) => `खाता नंबर ${p.accountDigits} कॉपी करें`,
   'payment.account.copied': 'खाता नंबर कॉपी हो गया',

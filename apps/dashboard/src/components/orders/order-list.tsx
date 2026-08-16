@@ -82,6 +82,11 @@ type State =
 
 /** The statuses worth filtering by, in the order work moves through them. */
 const FILTERS: readonly OrderStatus[] = [
+  /*
+   * ⭐ First, because it is the only queue that is waiting on this company. An order here has a
+   * price nobody has agreed to yet and nothing else moves until somebody looks at it.
+   */
+  'awaiting_confirmation',
   'awaiting_payment',
   'production_confirmed',
   'in_production',

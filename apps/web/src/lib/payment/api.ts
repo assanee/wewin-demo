@@ -172,6 +172,8 @@ export interface PaymentInstructions {
    * See `PaymentInstructionsWire.orderIsLive` in `@wewin/contract` for the whole argument.
    */
   readonly orderIsLive: boolean;
+  /** ⭐ Waiting for a member of staff to agree the price — not payable *yet*. */
+  readonly awaitingConfirmation: boolean;
   readonly accounts: readonly PaymentAccount[];
 }
 
@@ -231,6 +233,14 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
    * back on. A missing value here does not degrade the screen, it un-fixes it.
    */
   const orderIsLive = body['orderIsLive'];
+  /*
+   * ⚠️ Defaulted to `false` rather than required, and this is the one place in this decoder
+   * where that is right. A web bundle carrying this line can meet an API that has not shipped
+   * the field yet; requiring it would make `decodePaymentInstructions` answer `null` for
+   * **every** order in that window, which is a blank payment screen for everybody. Absent means
+   * "the server does not know about this state", and the state it describes did not exist.
+   */
+  const awaitingConfirmation = body['awaitingConfirmation'] === true;
   const rawAccounts = body['accounts'];
   if (
     grandTotalThbMinor === null ||
@@ -256,6 +266,7 @@ function decodeInstructions(body: unknown): PaymentInstructions | null {
     nextDueThbMinor,
     writtenOffThbMinor,
     orderIsLive,
+    awaitingConfirmation,
     accounts,
   };
 }

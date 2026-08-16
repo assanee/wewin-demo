@@ -374,6 +374,8 @@ function PaymentForOrder({
    */
   const panel = describePaymentPanel({
     orderIsLive: data.orderIsLive,
+    /* ⭐ "Not payable yet", which `orderIsLive` alone cannot say — see `paymentPanel.ts`. */
+    awaitingConfirmation: data.awaitingConfirmation,
     outstandingMinor: data.outstandingThbMinor,
     nextDueMinor: data.nextDueThbMinor,
     /*

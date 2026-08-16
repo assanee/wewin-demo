@@ -559,6 +559,8 @@ export const la: PartialUiCatalogue = {
   'payment.writtenOff': 'ຍອດຄົງເຫຼືອຂອງອໍເດີນີ້ໄດ້ຮັບການອະນຸມັດໃຫ້ຕັດບັນຊີແລ້ວ — ບໍ່ມີສິ່ງທີ່ຕ້ອງຊຳລະເພີ່ມ',
   'payment.closed':
     'ອໍເດີນີ້ປິດຮັບການແຈ້ງຊຳລະເງິນແລ້ວ. ຫາກມີຂໍ້ສົງໄສກ່ຽວກັບຍອດເງິນ ກະລຸນາຕິດຕໍ່ທີມຂາຍ.',
+  'payment.awaitingConfirmation': 
+    'Pretium tuum recognoscitur. Summa ostensa adhuc aestimatio est — grex noster eam confirmabit teque ante solutionem certiorem faciet.',
   'payment.account.legend': 'ໂອນເຂົ້າບັນຊີໃດບັນຊີໜຶ່ງ',
   'payment.account.copy': (p) => `ສຳເນົາເລກບັນຊີ ${p.accountDigits}`,
   'payment.account.copied': 'ສຳເນົາເລກບັນຊີແລ້ວ',

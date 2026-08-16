@@ -792,6 +792,16 @@ export interface UiParamsByKey {
    * them. Like every other label in this block it names no amount.
    */
   'payment.closed': Plain;
+  /**
+   * ⭐ The quotation is with a member of staff, and the customer is told to wait rather than
+   * told their order is closed.
+   *
+   * Reached before `payment.closed`, which it would otherwise fall into: `orderIsLive` is false
+   * for a cancelled order and for a quotation nobody has confirmed, and those want opposite
+   * sentences. It names no amount — the total is on their quotation, labelled as approximate,
+   * and repeating it under a ยอดคงค้าง heading would make it a demand.
+   */
+  'payment.awaitingConfirmation': Plain;
   'payment.account.legend': Plain;
   'payment.account.copy': { accountDigits: string };
   'payment.account.copied': Plain;

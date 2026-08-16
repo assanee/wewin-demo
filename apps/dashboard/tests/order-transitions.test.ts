@@ -30,13 +30,17 @@ import {
  */
 
 describe('every status a person can be shown has Thai', () => {
-  it('labels all nine', () => {
+  it('labels all ten', () => {
     /*
-     * Nine, written out. The API's `ORDER_STATUSES_WIRE` is the definition and this app may
-     * not import it; asserting the count here is what makes a tenth status arriving from a
+     * Ten, written out. The API's `ORDER_STATUSES_WIRE` is the definition and this app may not
+     * import it; asserting the count here is what makes an eleventh status arriving from a
      * newer API a failing test rather than a raw enum on a screen.
+     *
+     * ⚠️ It did exactly that for `awaiting_confirmation`: the API grew a tenth status and this
+     * assertion is what said so, before anybody saw `awaiting_confirmation` rendered raw on the
+     * orders list.
      */
-    expect(ORDER_STATUSES).toHaveLength(9);
+    expect(ORDER_STATUSES).toHaveLength(10);
 
     for (const status of ORDER_STATUSES) {
       const label = statusLabel(status);

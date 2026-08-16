@@ -575,6 +575,8 @@ export const vi: PartialUiCatalogue = {
   'payment.writtenOff': 'Số dư còn lại của đơn hàng này đã được phê duyệt xoá nợ — không cần thanh toán thêm',
   'payment.closed':
     'Đơn hàng này không còn nhận thanh toán nữa. Nếu bạn có thắc mắc về số tiền, vui lòng liên hệ bộ phận kinh doanh.',
+  'payment.awaitingConfirmation': 
+    'Báo giá của bạn đang được kiểm tra. Số tiền hiển thị vẫn là ước tính — đội ngũ của chúng tôi sẽ xác nhận và thông báo cho bạn trước khi thanh toán.',
   'payment.account.legend': 'Chuyển vào một trong các tài khoản sau',
   'payment.account.copy': (p) => `Sao chép số tài khoản ${p.accountDigits}`,
   'payment.account.copied': 'Đã sao chép số tài khoản',
