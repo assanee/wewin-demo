@@ -421,6 +421,20 @@
       "when": 1786400000030,
       "tag": "0059_per_order_deposit",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1786400000031,
+      "tag": "0060_tax_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1786400000032,
+      "tag": "0061_next_document_no_conflict",
+      "breakpoints": true
     }
   ]
 }
