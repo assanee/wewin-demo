@@ -66,7 +66,13 @@ describe.skipIf(url === undefined || url === '')('publishing a forfeit policy', 
       (cell) => cell.fromStatus === 'production_confirmed' && cell.fault === 'customer',
     );
     expect(freeze?.editable).toBe(false);
-    expect(freeze?.whyLockedTh).toContain('ยังไม่ได้ตัดอะลูมิเนียม');
+    /*
+     * ⚠️ Asserted on the *shape* of the reason rather than on a material noun. The first version
+     * of this sentence named aluminium, on a surface every product shares — the rule the owner
+     * gave and two migrations have already enforced. `tests/i18n/no-material-nouns.test.ts` now
+     * fails on that class of wording wherever it is written.
+     */
+    expect(freeze?.whyLockedTh).toContain('ยังไม่เริ่มลงมือทำ');
 
     /* And the ones a person is here to set. */
     const inProduction = policy.cells.find(

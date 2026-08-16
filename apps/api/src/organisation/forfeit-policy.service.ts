@@ -148,13 +148,20 @@ export class ForfeitPolicyService {
  * The sentences are Thai and say the *reason* rather than "locked": somebody looking at a
  * greyed box wants to know whether it is a rule or an oversight, and the difference is the
  * whole content of these two lines.
+ *
+ * ⛔ **NO MATERIAL NOUN HERE.** The owner's rule, in their own words: *"มีคำว่า อะลูมิเนียม อยู่
+ * ในสถานะ หรือ หัวตาราง ซึ่งไม่ควรเป็นแบบนั้นเพราะวัสดุของสินค้าไม่เหมือนกัน"* — a material may
+ * sit in a product's own attributes and never on a surface every product shares. These two
+ * sentences are attached to a *status*, which is that surface exactly, and the first draft of
+ * the second one said "ยังไม่ได้ตัดอะลูมิเนียม". `no-material-nouns.test.ts` fails on it now;
+ * `apps/web`'s catalogue test could not see it, because this text does not live in a catalogue.
  */
 function lockOf(fromStatus: string, fault: string): string | null {
   if (fault === 'company') {
     return 'ความผิดของบริษัทไม่ริบเงินลูกค้า — เป็นข้อบังคับในฐานข้อมูล แก้ไม่ได้';
   }
   if (fromStatus === 'production_confirmed') {
-    return 'ยืนยันผลิตแล้วแต่ยังไม่ได้ตัดอะลูมิเนียม — ค่าใช้จ่ายจริงเริ่มที่ "กำลังผลิต"';
+    return 'ยืนยันผลิตแล้ว แต่ยังไม่เริ่มลงมือทำ — ค่าใช้จ่ายจริงเริ่มที่ "กำลังผลิต"';
   }
   return null;
 }
