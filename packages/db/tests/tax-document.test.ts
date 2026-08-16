@@ -136,6 +136,8 @@ describeDb('a tax document, as the database sees it', () => {
       order: { orderId: string; eventId: string },
       kind = 'invoice',
       series = 'INV',
+      /** ⚠️ Required for a credit note — `tax_documents_credit_note_cites` says so. */
+      replaces: string | null = null,
     ): Promise<string> => {
       const id = randomUUID();
       const numbered = await db.execute(sql`select * from next_document_no(${series}, now())`);
@@ -145,11 +147,13 @@ describeDb('a tax document, as the database sees it', () => {
         insert into tax_documents
           (id, kind, order_id, series_code, series_year, series_seq, document_no, document,
            document_hash, pinned_locale, pinned_vat_rate_bp, pinned_vat_treatment,
-           net_thb_minor, vat_thb_minor, grand_total_thb_minor, created_by_event_id)
+           net_thb_minor, vat_thb_minor, grand_total_thb_minor, created_by_event_id,
+           replaces_document_id)
         values (${id}::uuid, ${kind}, ${order.orderId}::uuid, ${series},
                 ${Number(no?.['series_year'])}, ${Number(no?.['series_seq'])}, ${String(no?.['document_no'])},
                 '{"probe":true}'::jsonb, ${'a'.repeat(64)}, 'th', 700, 'standard',
-                10000, 700, 10700, ${order.eventId}::uuid)
+                10000, 700, 10700, ${order.eventId}::uuid,
+                ${replaces}::uuid)
       `);
       return id;
     };
@@ -178,7 +182,8 @@ describeDb('a tax document, as the database sees it', () => {
       const order = await anOrder();
       if (order === null) return;
       const wrong = await issue(order);
-      const credit = await issue(order, 'credit_note', 'CN');
+      /* ⛔ A credit note names what it reduces, or the CHECK refuses it — see 0060. */
+      const credit = await issue(order, 'credit_note', 'CN', wrong);
 
       /* A void with no replacement named is refused: a document that vanished is not evidence. */
       await expectViolation(db.execute(sql`update tax_documents set status = 'voided', voided_at = now() where id = ${wrong}::uuid`), '23001');
@@ -192,9 +197,18 @@ describeDb('a tax document, as the database sees it', () => {
       const status = await scalar<string>(sql`select status from tax_documents where id = ${wrong}::uuid`);
       expect(status).toBe('voided');
 
-      /* ⚠️ And the number is still there. It is never reused and never freed. */
-      const no = await scalar<string>(sql`select document_no from tax_documents where id = ${wrong}::uuid`);
-      expect(no).toMatch(/^TAX-/u);
+      /*
+       * ⚠️ And the number is still there. It is never reused and never freed — the series it
+       * came from is read back from the row rather than named here, because which series the
+       * fixture used is not what this test is about, and asserting it was how this line came to
+       * fail on a fixture change.
+       */
+      const still = await db.execute(sql`
+        select document_no, series_code from tax_documents where id = ${wrong}::uuid
+      `);
+      const kept = ((still as { rows?: readonly Record<string, unknown>[] }).rows ?? [])[0];
+      expect(String(kept?.['document_no'])).toContain(String(kept?.['series_code']));
+      expect(String(kept?.['document_no'])).not.toBe('');
     });
 
     it('⛔ refuses a credit note that names nothing', async () => {
