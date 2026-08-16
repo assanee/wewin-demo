@@ -199,6 +199,30 @@ export class QuoteRepository {
    * ---------------------------------------------------------------- */
 
   /** The live quote, in display order. Removed lines are history and are not in it. */
+  /**
+   * Money the company holds against this order, in satang.
+   *
+   * ⚠️ `order_held_thb_minor()` and never `order_cash_thb_minor()` —
+   * `0011_payment_guards.sql:44-52` is explicit that held is *"the branch every 'have we been
+   * paid?' decision must ask"*, because a revision order carrying money forward from its
+   * ancestor has no cash leg of its own and reports zero cash for ever.
+   */
+  async heldThbMinor(tx: Tx, orderId: string): Promise<bigint> {
+    const result = await tx.execute(sql`select order_held_thb_minor(${orderId}::uuid) as held`);
+
+    /*
+     * Unwrapped the way every other raw fold in this codebase is: the driver hands back a
+     * `QueryResult`, and `bigint` arrives as a string on a column this wide.
+     */
+    const rows = (result as { rows?: readonly Record<string, unknown>[] }).rows ?? [];
+    const value = rows[0]?.['held'];
+    if (value === null || value === undefined) return 0n;
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'string' || typeof value === 'number') return BigInt(value);
+
+    throw new TypeError(`order_held_thb_minor returned ${typeof value}`);
+  }
+
   async listLines(orderId: string, tx?: Tx): Promise<QuoteLineRow[]> {
     return this.executor(tx)
       .select(LINE_COLUMNS)

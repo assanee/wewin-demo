@@ -71,6 +71,35 @@ export function quoteStale(sent: string, current: string): AppError {
   });
 }
 
+/**
+ * ⛔ The customer has already paid something, so the quotation is closed to edits.
+ *
+ * ── The owner's rule, and why it is enforced here rather than at the re-issue ────
+ *
+ * A discount written after the customer submitted does not reach them by itself: the amount
+ * they owe comes from `orders.grand_total_thb_minor`, which only a re-issue rewrites. Once
+ * money has arrived, a re-issue is refused outright — `ScheduleService.replace` throws on any
+ * instalment with an allocation, and the owner's decision is that this stays a refusal rather
+ * than becoming a refund or a carry-forward.
+ *
+ * ⚠️ If the refusal lived only at the re-issue, staff could still *write* the discount: it
+ * would be accepted, stored, shown in the editor, and be permanently unable to take effect —
+ * the same silent trap in a new place. So the refusal is here, at the write, where the person
+ * making the decision is still in the room.
+ *
+ * ⚠️ Measured with `order_held_thb_minor()`, which `0011_payment_guards.sql:44-52` names as
+ * *"the branch every 'have we been paid?' decision must ask"*. Not `order_cash_thb_minor()`:
+ * a revision carrying money forward from its ancestor has no cash leg of its own, so cash
+ * reports zero there for ever and would let a discount through on exactly the orders that
+ * already hold the most money.
+ */
+export function quoteHasMoney(heldThbMinor: bigint): AppError {
+  return AppError.conflict(message('error.quote.has_money'), {
+    reason: 'QUOTE_HAS_MONEY',
+    heldThbMinor: heldThbMinor.toString(),
+  });
+}
+
 /** A published version moved under the line being edited. The same body every other endpoint sends. */
 export function catalogStale(sent: CatalogRef, current: ProductDocument): AppError {
   return AppError.conflict(CATALOG_STALE_MESSAGE, {

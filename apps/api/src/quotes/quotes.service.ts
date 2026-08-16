@@ -41,7 +41,7 @@ import { ConcessionIntegrityError, measureMargin } from './authority/concession'
 import { DEFAULT_LEAD_TIME_DAYS, MAX_LEAD_TIME_DAYS, MAX_QUOTE_LINES } from './defaults';
 import { QuotationRateService } from '../fx/quotation-rate.service';
 import { encodeQuote, type QuoteAudience } from './encode';
-import { baselinesStale, catalogStale, destinationChanged, quoteStale } from './errors';
+import { baselinesStale, catalogStale, destinationChanged, quoteHasMoney, quoteStale } from './errors';
 import { EntryError, normaliseCharge, normaliseEntry } from './entry';
 import {
   applyOverrides,
@@ -907,6 +907,22 @@ export class QuotesService {
       if (precondition !== undefined && precondition.quoteRevision !== current) {
         throw quoteStale(precondition.quoteRevision, current);
       }
+
+      /*
+       * ⛔ ②a THE OWNER'S RULE: once the customer has paid anything, the quotation is closed.
+       *
+       * Enforced at the **write**, not at the re-issue that would carry it to the customer.
+       * A discount stored here changes nothing a customer owes until an order is re-issued,
+       * and a re-issue is refused outright once money has arrived (`ScheduleService.replace`
+       * throws on an allocated instalment). Refusing only there would let staff write a
+       * discount that is accepted, stored, displayed — and permanently unable to take effect.
+       * The refusal belongs where the person deciding is still in the room.
+       *
+       * ⚠️ Inside the transaction and after the lock, so a slip accepted a moment ago is
+       * visible and a slip arriving a moment later waits for this write to finish.
+       */
+      const held = await this.quotes.heldThbMinor(tx, order.id);
+      if (held > 0n) throw quoteHasMoney(held);
 
       const published = await this.publishedIndex();
 

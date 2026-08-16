@@ -105,6 +105,7 @@ export {
   baselinesStale,
   catalogStale,
   integrityAlarm,
+  quoteHasMoney,
   quoteStale,
 } from './errors';
 

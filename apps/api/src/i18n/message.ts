@@ -398,6 +398,12 @@ const PARAM_SHAPES = {
   'error.stale.catalog_while_configuring': {},
   'error.stale.catalog_while_editing_quote': {},
   'error.stale.quote_edited_by_someone_else': {},
+  /**
+   * ⛔ The owner's rule: once the customer has paid anything, the quotation is closed to edits.
+   * Raised at the write rather than at the re-issue, so a discount that could never take
+   * effect is never stored — see `quoteHasMoney`.
+   */
+  'error.quote.has_money': {},
   'error.stale.override_baselines': {},
   /**
    * The one cause `override_baselines` describes wrongly: the destination changed, not the
