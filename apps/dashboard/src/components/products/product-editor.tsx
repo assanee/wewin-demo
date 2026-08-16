@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -20,6 +20,7 @@ import { PageHeader } from '@/components/page-header';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSession } from '@/lib/auth/session';
+import { storefrontProductUrl } from '@/lib/api/config';
 
 import { discardDraft, openDraft, publishDraft, updateDraft } from './catalog-api';
 import { diffDocuments } from './document-diff';
@@ -114,6 +115,13 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
    */
   const diff = draft === null ? null : diffDocuments(publishedDocument, draft.product);
 
+  /*
+   * ⚠️ The **published** slug, not the draft's. Editing the slug in a draft does not move the
+   * customer's URL until it is published, so linking to the draft's would send somebody to a
+   * 404 and let them conclude the product had vanished.
+   */
+  const storefrontUrl = storefrontProductUrl(publishedDocument?.slug ?? product.slug);
+
   const focus = publishFocus({
     publishedVersion: product.published?.version ?? null,
     draftVersion: draft?.version ?? null,
@@ -132,6 +140,25 @@ export function ProductEditorScreen({ productId }: { readonly productId: string 
               {product.skuPrefix}
             </Badge>
             <PublishStateBadges product={product} />
+            {/*
+              ⭐ The link to what a customer actually sees.
+              ⚠️ Only when a version is published — before that there is no page to open, and
+              a link that 404s reads as a broken publish rather than as "not published yet".
+              ⛔ Built from the **slug**, never from the id in this page's own URL: they are
+              different strings, and the pair that prompted this were `uoio` here and
+              `sdfghjkl` there.
+            */}
+            {product.published !== null && storefrontUrl !== null && (
+              <a
+                href={storefrontUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-muted-foreground type-caption inline-flex items-center gap-1 hover:underline"
+              >
+                <ExternalLink className="size-3.5" />
+                ดูหน้าร้าน
+              </a>
+            )}
           </>
         }
       />

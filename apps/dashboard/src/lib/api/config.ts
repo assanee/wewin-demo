@@ -44,3 +44,44 @@ export const API_BASE_URL = resolveApiBaseUrl();
 export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
+
+/**
+ * ⭐ Where the customer-facing shop is, for linking a staff member to what they published.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────────
+ *
+ * Reported: "why is the product I added not on /th/products?" It was — under a name and a
+ * URL that look nothing like what the dashboard shows. The editor's address is
+ * `/products/<id>` and the shop's is `/<locale>/products/<slug>`, and **id and slug are
+ * different strings**: the product in question was `uoio` here and `sdfghjkl` there. With
+ * eighty-three cards on the page and no link between the two systems, the only way to check
+ * your own work was to know that distinction and go hunting.
+ *
+ * ⚠️ Falls back to the port `apps/web` listens on in dev, and to `null` in production rather
+ * than to a guess — a link to the wrong origin is worse than no link, because a staff member
+ * follows it, sees someone else's shop or a 404, and concludes their publish failed. No
+ * link, and they at least ask.
+ */
+const STOREFRONT_DEVELOPMENT_FALLBACK = 'http://localhost:3002';
+
+export function storefrontBaseUrl(): string | null {
+  const configured = process.env['NEXT_PUBLIC_STOREFRONT_BASE_URL'];
+  if (configured !== undefined && configured !== '') return configured.replace(/\/+$/, '');
+  return process.env.NODE_ENV === 'production' ? null : STOREFRONT_DEVELOPMENT_FALLBACK;
+}
+
+/**
+ * The page a customer sees for this product, or `null` when there is not one.
+ *
+ * ⛔ **By slug, never by id.** The two differ, and the dashboard's own URL uses the id — so
+ * building this from the wrong one produces a link that 404s for exactly the products
+ * somebody most wants to check.
+ *
+ * `th` because that is the catalogue's own language and the locale a Thai staff member is
+ * checking; the shop redirects an unknown first segment anyway, but a link that lands
+ * somewhere and then bounces is a link that looks broken.
+ */
+export function storefrontProductUrl(slug: string): string | null {
+  const base = storefrontBaseUrl();
+  return base === null ? null : `${base}/th/products/${encodeURIComponent(slug)}`;
+}
