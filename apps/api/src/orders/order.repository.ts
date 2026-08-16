@@ -661,6 +661,56 @@ export class OrderRepository {
   }
 
   /**
+   * ⭐ Re-issue: the columns a **revision** moves, and deliberately no others.
+   *
+   * ── Why this is not `applySubmission` with a flag ───────────────────────────────
+   *
+   * A submit and a re-issue write overlapping sets, and the difference is the whole safety
+   * argument — so it is a separate statement whose column list can be read at a glance rather
+   * than a branch inside one that cannot.
+   *
+   * ⛔ **What this must never touch, and why each one matters:**
+   *
+   * · `submittedAt` — `orders_frozen_after_submitted` compares it against `frozen_at`. Re-stamping
+   *   it with a later `now()` on an order already frozen makes the CHECK fail; on one not yet
+   *   frozen it silently moves the moment the contract began.
+   * · `orderNo` — minted from `nextval('order_no_seq')`. Re-minting gives the customer a second
+   *   number for the same order, and every slip, email and printed quotation already carries the
+   *   first.
+   * · `statusEventId` — names the event that put the order in its status. A re-issue does not
+   *   move the status, so it has no status event to name.
+   * · `depositFloorBp` — the company policy **as it stood at submit**. It bounds the forfeit
+   *   (`min(received, scheduled_deposit)`), so re-pinning it would retroactively change what a
+   *   customer forfeits on a cancellation they already agreed to.
+   *
+   * What it does move is the money and the document: a new pinned revision, the three totals it
+   * foots to, and the deposit obligation derived from the new total.
+   */
+  async applyReissue(
+    tx: Tx,
+    input: {
+      readonly orderId: string;
+      readonly documentId: string;
+      readonly netThbMinor: bigint;
+      readonly vatThbMinor: bigint;
+      readonly grandTotalThbMinor: bigint;
+      readonly scheduledDepositThbMinor: bigint;
+    },
+  ): Promise<void> {
+    await tx
+      .update(orders)
+      .set({
+        documentId: input.documentId,
+        netThbMinor: input.netThbMinor,
+        vatThbMinor: input.vatThbMinor,
+        grandTotalThbMinor: input.grandTotalThbMinor,
+        scheduledDepositThbMinor: input.scheduledDepositThbMinor,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, input.orderId));
+  }
+
+  /**
    * Freeze one revision of the quote — trap 3.
    *
    * Written before `orders` is updated and after the event is appended, and the order is not

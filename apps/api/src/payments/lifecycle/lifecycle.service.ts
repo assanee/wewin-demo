@@ -8,6 +8,7 @@ import {
   depositPercentTerms,
   payInFullTerms,
   type PlannedInstalment,
+  type ScheduleTerm,
 } from '../schedule';
 import { LifecycleRepository } from './lifecycle.repository';
 
@@ -169,6 +170,18 @@ export class PaymentLifecycleService {
    * document, and a second read here could see a different value from the one the gate measures
    * against — which is the ฿12,902 seam wearing a new hat.
    */
+  /**
+   * ⭐ The terms a given deposit policy produces — the one rule, named once.
+   *
+   * Extracted so a **re-issue** plans from exactly the same rule a submit did. Two spellings of
+   * "what a 30% deposit means" is how a revision comes to owe a different shape from the
+   * contract it replaces, and the comment inside `pinsForSubmit` is about a real case where
+   * two ways of writing the same policy produced a different row count.
+   */
+  termsFor(depositBp: number): readonly ScheduleTerm[] {
+    return depositBp === 10_000 ? payInFullTerms() : depositPercentTerms(depositBp);
+  }
+
   async pinsForSubmit(
     tx: LedgerTx,
     grandTotalThbMinor: bigint,
@@ -191,7 +204,7 @@ export class PaymentLifecycleService {
      */
     const instalments = this.schedule.plan(
       grandTotalThbMinor,
-      depositBp === 10_000 ? payInFullTerms() : depositPercentTerms(depositBp),
+      this.termsFor(depositBp),
     );
 
     /*
