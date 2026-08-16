@@ -102,6 +102,8 @@ export interface ScopedOrder {
    * itself reads it through `AuthorityRepository`, which has its own narrower select.
    */
   readonly depositFloorBp: number | null;
+  /** ⭐ The deposit share chosen for this order, or null when the company setting applies. */
+  readonly depositBpAuthored: number | null;
 
   /**
    * Still owed, and due now — computed by Postgres on this row, in this query.
@@ -260,6 +262,7 @@ export const ORDER_COLUMNS = {
   grandTotalThbMinor: orders.grandTotalThbMinor,
   scheduledDepositThbMinor: orders.scheduledDepositThbMinor,
   depositFloorBp: orders.depositFloorBp,
+  depositBpAuthored: orders.depositBpAuthored,
   /*
    * ⚠️ `.mapWith(BigInt)` and `::text`, not a bare `sql<bigint>` — the generic is a claim to
    * TypeScript and nothing more (`review.repository.ts` says it in those words). `int8` reaches

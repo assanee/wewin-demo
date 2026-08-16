@@ -718,6 +718,36 @@ export class OrderRepository {
   }
 
   /**
+   * ⭐ The deposit share somebody chose for this order, and the obligation it implies.
+   *
+   * Two columns in one statement, because they are one decision: `deposit_bp_authored` is what
+   * was chosen and `scheduled_deposit_thb_minor` is what it comes to against today's total. A
+   * writer that moved one without the other would leave the forfeit ceiling describing a share
+   * nobody picked — which is the shape of the ฿13,805.57 the red team found in `pinsForSubmit`.
+   *
+   * ⚠️ It does not touch `deposit_floor_bp`. That column records the policy this order was
+   * *measured against* at submit and is write-once by trigger; the concession is the gap between
+   * the two, and re-pinning the floor would erase the very thing the gate reads.
+   */
+  async applyDeposit(
+    tx: Tx,
+    input: {
+      readonly orderId: string;
+      readonly depositBpAuthored: number;
+      readonly scheduledDepositThbMinor: bigint;
+    },
+  ): Promise<void> {
+    await tx
+      .update(orders)
+      .set({
+        depositBpAuthored: input.depositBpAuthored,
+        scheduledDepositThbMinor: input.scheduledDepositThbMinor,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, input.orderId));
+  }
+
+  /**
    * Freeze one revision of the quote — trap 3.
    *
    * Written before `orders` is updated and after the event is appended, and the order is not

@@ -371,6 +371,12 @@ describeWithPg('RED TEAM 5a round two', () => {
      * the company's own address. It moves no status — the event it writes carries a null
      * `(from_status, to_status)` pair by design — so it is not one of the nine, and folding it in
      * would flip this assertion on a route whose policy this finding would *approve* of.
+     *
+     * ⚠️ And `/deposit` (0059) is the fourth, on the same terms. `PUT /orders/:orderId/deposit`
+     * sets how much of the total the customer is asked for up front and states
+     * `quotes.write` + `orders.read` + `orders.write`; a `principal` there would let a customer
+     * choose their own deposit. It moves no status — it re-cuts a schedule — so it is not one of
+     * the nine this finding is about, and its policy is the one this finding argues *for*.
      */
     const orderRoutes = registry
       .records()
@@ -380,7 +386,8 @@ describeWithPg('RED TEAM 5a round two', () => {
           !record.key.includes('/quote/') &&
           !record.key.includes('/customer-link') &&
           !record.key.includes('/write-offs') &&
-          !record.key.includes('/balance-reminders'),
+          !record.key.includes('/balance-reminders') &&
+          !record.key.includes('/deposit'),
       );
 
     expect(

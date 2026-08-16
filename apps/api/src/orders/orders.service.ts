@@ -21,6 +21,7 @@ import {
 } from '@wewin/contract/order';
 import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
 import { reissueQuoteRequestSchema } from '@wewin/contract/quote';
+import { setOrderDepositRequestSchema } from '@wewin/contract/order';
 
 import { AppError } from '../common/errors/app-error';
 import { parseAfterLock } from '../common/parse-after-lock';
@@ -1440,7 +1441,15 @@ export class OrdersService {
        * statement as the totals — which is why the schedule is planned by `replaceScheduleForReissue`
        * from the new total and its answer written a statement later.
        */
-      const depositBp = await this.depositPolicy.depositBp(tx);
+      /*
+       * ⛔ THE ORDER'S OWN SHARE FIRST, and the company setting only when nobody chose one.
+       *
+       * Reading the policy unconditionally here is how a deposit staff had authored would be
+       * silently reverted — along with the forfeit ceiling derived from it — the next time
+       * anybody edited the quotation and pressed send. `null` means nobody chose, which is a
+       * different fact from 0%.
+       */
+      const depositBp = order.depositBpAuthored ?? (await this.depositPolicy.depositBp(tx));
       const pins = this.payments.pinsForReissue(priced.grandTotalThbMinor, depositBp);
 
       await this.orders.applyReissue(tx, {
@@ -1470,6 +1479,108 @@ export class OrdersService {
       if (!reissued) throw new Error('orders: the order could not be read back after re-issue');
 
       return this.decorate(scope, reissued, tx);
+    });
+  }
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ การระบุยอดมัดจำ — the deposit for one order
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Set the deposit share for this order, and re-cut the schedule to match.
+   *
+   * The other half of what the owner asked staff to be able to do while a quotation is
+   * unconfirmed: *"การระบุยอดมัดจำ, การระบุส่วนลด"*. The discount was already possible — it is an
+   * override on the quote — and this was not: the deposit came from one company-wide number
+   * applied to every order at submit, with no route that could move it on a single one.
+   *
+   * ── The three refusals ──────────────────────────────────────────────────────────
+   *
+   * ⓵ Only while the order is still negotiable: `awaiting_confirmation` (the ordinary case) and
+   *    `awaiting_payment` (the customer has been asked but has not paid). A draft has no
+   *    contract to attach a share to — `orders_deposit_bp_authored_needs_a_contract` says so in
+   *    the schema — and anything later is being built.
+   *
+   * ⓶ Not once money has arrived, through `QuotesService.assertNoMoney`, the same call every
+   *    quote write makes. `ScheduleService.replacePlanned` would refuse an allocated schedule
+   *    anyway; this refusal comes first because it says *why* in the customer's terms and names
+   *    the amount held.
+   *
+   * ⓷ ⭐ Below the company standard only when the company has said staff may. That is the
+   *    owner's own decision — a setting rather than a rule in code — and the asymmetry is real:
+   *    asking a customer for *more* of their own money up front concedes nothing, while asking
+   *    for less is the company financing the difference. When it is permitted the gap goes
+   *    through `AuthorityService.gate` as a `cashflow` concession like any other.
+   */
+  async setDeposit(scope: Scope, orderId: string, rawBody: unknown): Promise<OrderWire> {
+    return this.orders.transaction(async (tx) => {
+      requireActor(scope);
+      const order = await this.scoped.lockOrFail(tx, scope, orderId, 'act');
+      const body = parseAfterLock(setOrderDepositRequestSchema, rawBody);
+
+      if (order.status !== 'awaiting_confirmation' && order.status !== 'awaiting_payment') {
+        throw AppError.conflict(message('error.deposit.not_editable'), {
+          reason: 'deposit_not_editable',
+          status: order.status,
+        });
+      }
+
+      await this.quotes.assertNoMoney(tx, order.id);
+
+      const [profile] = await this.organisation.profile(tx);
+      if (!profile) throw new Error('orders: the organisation profile is missing');
+
+      if (body.depositBp < profile.depositBp && !profile.depositBelowFloorAllowed) {
+        throw AppError.conflict(message('error.deposit.below_company_floor'), {
+          reason: 'deposit_below_company_floor',
+          companyDepositBp: profile.depositBp,
+          requestedDepositBp: body.depositBp,
+        });
+      }
+
+      /*
+       * ⚠️ The grand total the schedule foots against is the one on the row, not a re-priced
+       * one: this endpoint changes how the money is *split*, never how much of it there is.
+       * A null total would mean an order with no contract, which ⓵ has already refused.
+       */
+      const grandTotal = order.grandTotalThbMinor;
+      if (grandTotal === null) throw new Error('orders: a contracted order has a grand total');
+
+      const pins = this.payments.pinsForReissue(grandTotal, body.depositBp);
+
+      await this.orders.applyDeposit(tx, {
+        orderId: order.id,
+        depositBpAuthored: body.depositBp,
+        scheduledDepositThbMinor: pins.scheduledDepositThbMinor,
+      });
+
+      await this.payments.replaceScheduleForReissue(tx, {
+        orderId: order.id,
+        status: order.status,
+        grandTotalThbMinor: grandTotal,
+        instalments: pins.instalments,
+      });
+
+      /*
+       * ⭐ Last, and only measurable now: a `cashflow` concession is the gap between what this
+       * schedule gates and the floor the order was pinned to at submit, and neither the new
+       * schedule nor the new obligation existed until the two statements above.
+       *
+       * ⚠️ With `authority_limits` empty — how this ships — a deposit at or above the floor
+       * concedes nothing and passes, and one below it is refused for want of a ceiling nobody
+       * has granted. That is fail-closed and is the intended behaviour, not an oversight: the
+       * setting says staff *may* ask, the ceiling says who may agree.
+       */
+      await this.authority.gate(tx, { orderId: order.id, scope });
+
+      const updated = await this.scoped.lock(
+        tx,
+        systemScope('order re-read after a deposit change'),
+        orderId,
+        'act',
+      );
+      if (!updated) throw new Error('orders: the order could not be read back');
+      return this.decorate(scope, updated, tx);
     });
   }
 

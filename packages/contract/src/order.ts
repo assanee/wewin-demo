@@ -1099,6 +1099,27 @@ export const authoriseUnpaidRequestSchema: z.ZodType<AuthoriseUnpaidRequestWire>
   reason: reasonSchema,
 });
 
+/**
+ * ⭐ The deposit share for one order — "การระบุยอดมัดจำ".
+ *
+ * Basis points, like `organisation_profile.deposit_bp` it overrides: 3 000 is 30%. A percentage
+ * and not an amount, deliberately — a share follows the price when staff edit the quotation,
+ * where a typed amount would stay put and quietly become a different percentage of a different
+ * total. It is also the only form in which the concession can be measured against the company
+ * floor at all.
+ *
+ * ⚠️ Not money on the wire, so the rule this contract's header states is untouched: no request
+ * here carries a figure the server would otherwise have computed. The server multiplies.
+ */
+export interface SetOrderDepositRequestWire {
+  readonly depositBp: number;
+}
+
+export const setOrderDepositRequestSchema: z.ZodType<SetOrderDepositRequestWire> = z.strictObject({
+  /* 1..10 000, matching the CHECK on both columns: 0% is not a deposit, it is no deposit. */
+  depositBp: z.int().min(1).max(10_000),
+});
+
 /** A transition whose payload kind is `none` takes an empty body — and refuses a full one. */
 export const emptyTransitionRequestSchema: z.ZodType<Record<string, never>> = z.strictObject({});
 

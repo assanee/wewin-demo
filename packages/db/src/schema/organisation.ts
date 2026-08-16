@@ -144,6 +144,16 @@ export const organisationProfile = pgTable(
      * refusal at the layer where it is cheap instead of at submit.
      */
     depositBp: smallint('deposit_bp').notNull(),
+    /**
+     * ⭐ May staff set a deposit BELOW `depositBp` on an individual order?
+     *
+     * The owner's decision was that this is a setting rather than a rule in code. `false` by
+     * default, and the asymmetry is the reason: raising a deposit asks the customer for more of
+     * their own money up front and concedes nothing, while lowering it is the company financing
+     * the difference — `AuthorityService`'s `cashflow` dimension, which needs a ceiling
+     * somebody granted.
+     */
+    depositBelowFloorAllowed: boolean('deposit_below_floor_allowed').notNull().default(false),
     ...timestamps,
   },
   (table) => [

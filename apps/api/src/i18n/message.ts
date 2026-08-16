@@ -411,6 +411,10 @@ const PARAM_SHAPES = {
    * order rather than a re-issue. See `OrdersService.reissueQuote`.
    */
   'error.quote.not_awaiting_payment': {},
+  /** ⛔ A deposit below the company standard, with the setting that permits it switched off. */
+  'error.deposit.below_company_floor': {},
+  /** The order is past the point where a deposit may be chosen — money has arrived or work has. */
+  'error.deposit.not_editable': {},
   'error.stale.override_baselines': {},
   /**
    * The one cause `override_baselines` describes wrongly: the destination changed, not the

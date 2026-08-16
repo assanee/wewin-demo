@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -412,6 +413,29 @@ export class OrdersController {
     @Body() body: unknown,
   ): Promise<OrderWire> {
     return this.orders.reissueQuote(scope, orderId, body);
+  }
+
+  /**
+   * ⭐ การระบุยอดมัดจำ — the deposit for this order.
+   *
+   * `PUT` rather than `POST`: the share is a property of the order and setting it twice leaves
+   * the same order, which is what idempotent means here. The schedule is re-cut as a
+   * consequence, and that is a consequence rather than a second request — one number decides
+   * both, and two endpoints could disagree about which was authoritative.
+   *
+   * `quotes.write` alongside the order grants, like the re-issue: whoever may not change what
+   * the customer is quoted may not change what they are asked for up front either.
+   */
+  @Put(':orderId/deposit')
+  @HttpCode(200)
+  @contractVersion()
+  @RequirePermissions('quotes.write', 'orders.read', 'orders.write')
+  async setDeposit(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+    @Body() body: unknown,
+  ): Promise<OrderWire> {
+    return this.orders.setDeposit(scope, orderId, body);
   }
 
   /**

@@ -595,6 +595,19 @@ export const orders = pgTable(
      * nullabilities, and every already-submitted row would violate it.
      */
     depositFloorBp: smallint('deposit_floor_bp'),
+    /**
+     * ⭐ The deposit share somebody chose for **this** order — null when nobody did.
+     *
+     * Null is not 0%: it means the company setting applies. `PaymentLifecycleService`'s
+     * re-issue reads this in preference to `organisation_profile.deposit_bp`, which is what
+     * stops an authored deposit being reverted the next time staff edit and re-send a
+     * quotation — the defect this column was added to prevent.
+     *
+     * ⚠️ Not write-once, unlike `depositFloorBp` above: that one records the policy the order
+     * was *measured against* and must never move, while this is a decision staff may revisit
+     * while the quotation is still being negotiated. Money is what closes it — see 0059.
+     */
+    depositBpAuthored: smallint('deposit_bp_authored'),
 
     /**
      * The forfeit policy in force **when this contract was made** — plan 7.13's seventh pin.

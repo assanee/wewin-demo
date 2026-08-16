@@ -577,6 +577,7 @@ describe('boot-time route audit', () => {
       'PUT /admin/organisation/tax-countries/:code/availability [permissions]',
       'PUT /admin/users/:userId/groups [permissions]',
       'PUT /me/preferences [authenticated]',
+      'PUT /orders/:orderId/deposit [permissions]',
       'PUT /quotes/authority/limits [permissions]',
     ]);
   });
