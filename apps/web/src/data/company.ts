@@ -88,17 +88,28 @@ export const company: Company = {
 /**
  * The spec sheet shown on every product page (spec section 7 fixes these four rows).
  *
- * ⚠️ Three of the four are unconfirmed and therefore not displayed. An earlier draft
- * filled them in with "มอก. 284-2530 · ทดสอบแรงลม 2,000 Pa" and "โครงสร้าง 5 ปี ·
- * อุปกรณ์ 2 ปี", all of which were invented. A fabricated certification is a claim
- * about a test that never happened, and a fabricated warranty is a contract term —
- * both are worse to guess at than a price.
+ * ⚠️ **All four are unconfirmed and none is displayed.** An earlier draft filled three of
+ * them in with "มอก. 284-2530 · ทดสอบแรงลม 2,000 Pa" and "โครงสร้าง 5 ปี · อุปกรณ์ 2 ปี",
+ * all invented. A fabricated certification is a claim about a test that never happened and a
+ * fabricated warranty is a contract term — both are worse to guess at than a price.
  *
- * Fill these in from the real product documentation; rows with a null value are
- * simply not rendered, so nothing breaks while they are missing.
+ * ⛔ `spec.material` was the one row still showing, reading "อะลูมิเนียมอัดรีด" on **every**
+ * product page. It was true of the eighty-one seeded profiles, and that is exactly why it
+ * was easy to leave: it is not a fact about any product, it is a sentence about the
+ * catalogue as it happened to be. A product added through the dashboard — which can now be
+ * anything the owner sells — inherited the claim silently, and nothing on the create screen
+ * mentions a material at all. Removed on the owner's instruction.
+ *
+ * Fill these in from the real product documentation; rows with a null value are simply not
+ * rendered, so nothing breaks while they are missing. Keeping all four declared is what
+ * tells the next reader which four the spec asks for.
+ *
+ * ⚠️ The honest fix, if a material should be shown, is a field on the product rather than a
+ * line in this file — the same shape `videoUrl` took: a column, a box on the edit screen, and
+ * a key on the frozen document. A shared constant cannot describe products that differ.
  */
 export const productSpecs: { termKey: PlainKey; valueKey: PlainKey | null }[] = [
-  { termKey: 'spec.material', valueKey: 'spec.material.value' },
+  { termKey: 'spec.material', valueKey: null },
   { termKey: 'spec.profileThickness', valueKey: null },
   { termKey: 'spec.standards', valueKey: null },
   { termKey: 'spec.warranty', valueKey: null },

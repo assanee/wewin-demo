@@ -356,6 +356,13 @@ function ConfigureProduct({
   // Rendered in exactly one of two places depending on viewport — never both.
   const specTable = (
     <div className="mt-3 border border-line bg-panel">
+      {/*
+        ⚠️ No `<dl>` when there is nothing to describe. Every row is unconfirmed today, so an
+        unguarded list emits an empty description list into the page — invalid to a screen
+        reader, which announces a list of nothing. The note below stands on its own and is
+        the whole point of the card while the rows are missing.
+      */}
+      {knownSpecs.length > 0 && (
       <dl>
         {knownSpecs.map((row) => (
           <div
@@ -367,6 +374,7 @@ function ConfigureProduct({
           </div>
         ))}
       </dl>
+      )}
       <p className="px-3 py-2 text-caption text-chalk-3">{t('configure.spec.note')}</p>
     </div>
   );
