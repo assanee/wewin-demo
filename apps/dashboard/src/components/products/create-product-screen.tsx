@@ -32,7 +32,7 @@ import {
 import { MediaPicker } from './media-picker';
 import { createRequestFrom, identityProblems } from './new-product';
 import { OptionSelectionEditor } from './option-selection-editor';
-import { blankChoice, buildOptions, type GroupChoice } from './option-selection';
+import { blankChoice, buildOptions, type GroupChoice, type OptionErrors } from './option-selection';
 
 /**
  * ⭐ เพิ่มสินค้า — one screen, two ways in.
@@ -133,6 +133,8 @@ function CreateForm({
   const [id, setId] = useState('');
   const [form, setForm] = useState<FormState>(blankFormState);
   const [errors, setErrors] = useState<Errors>({});
+  /* Per-box refusals for the option groups — see `OptionSelectionEditor`. */
+  const [optionErrors, setOptionErrors] = useState<OptionErrors>({});
   const [choices, setChoices] = useState<readonly GroupChoice[]>(() =>
     loaded.groups.map((group) => ({
       ...blankChoice(group),
@@ -197,8 +199,13 @@ function CreateForm({
     const validated = validateFields(form);
     const built = buildOptions(choices, loaded.groups);
 
-    if (!isValidated(validated)) setErrors(validated);
-    else setErrors({});
+    setErrors(isValidated(validated) ? {} : validated);
+    /*
+     * ⚠️ Cleared on every attempt, not merged. A box that was fixed must stop being red the
+     * moment it is fixed and resubmitted — errors that outlive their cause are the reason
+     * people stop reading them.
+     */
+    setOptionErrors(built.ok ? {} : built.errors);
 
     if (!isValidated(validated) || !built.ok) {
       if (!built.ok) setProblem(built.problems.join(' · '));
@@ -346,6 +353,7 @@ function CreateForm({
           <OptionSelectionEditor
             groups={loaded.groups}
             choices={choices}
+            errors={optionErrors}
             disabled={busy}
             onChange={(code, next) =>
               setChoices((current) =>

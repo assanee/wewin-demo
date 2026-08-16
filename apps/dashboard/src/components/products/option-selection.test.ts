@@ -102,7 +102,6 @@ describe('the measurement grid, which the server answers with one sentence for e
       ...(over.def === undefined ? {} : { defaultText: over.def }),
     });
     return measurementProblems(
-      'ความกว้าง',
       'cm',
       toUm(c.minText, 'cm'),
       toUm(c.maxText, 'cm'),
@@ -119,31 +118,32 @@ describe('the measurement grid, which the server answers with one sentence for e
     /* 0.001 cm = 10 µm. Reporting the four consequences too would bury the cause. */
     const found = problems({ step: '0.001' });
     expect(found).toHaveLength(1);
-    expect(found[0]).toContain('จำนวนเท่าของ');
+    expect(found[0]?.field).toBe('stepText');
+    expect(found[0]?.messageTh).toContain('จำนวนเท่าของ');
   });
 
   it('⛔ refuses a min that is not on the zero-anchored grid', () => {
     /* step 0.5 cm, min 60.3 cm — 603000 µm is not divisible by 5000. */
-    expect(problems({ min: '60.3' }).join(' ')).toContain('ค่าต่ำสุดต้องลงตัวกับสเต็ป');
+    expect(problems({ min: '60.3' }).map((p) => p.messageTh).join(' ')).toContain('ค่าต่ำสุดต้องลงตัวกับสเต็ป');
   });
 
   it('⛔ refuses a max that is not a whole number of steps above min', () => {
-    expect(problems({ max: '400.3' }).join(' ')).toContain('ค่าสูงสุดต้องห่างจากค่าต่ำสุด');
+    expect(problems({ max: '400.3' }).map((p) => p.messageTh).join(' ')).toContain('ค่าสูงสุดต้องห่างจากค่าต่ำสุด');
   });
 
   it('⛔ refuses a default off the min-anchored grid', () => {
-    expect(problems({ def: '180.3' }).join(' ')).toContain('ค่าเริ่มต้นต้องห่างจากค่าต่ำสุด');
+    expect(problems({ def: '180.3' }).map((p) => p.messageTh).join(' ')).toContain('ค่าเริ่มต้นต้องห่างจากค่าต่ำสุด');
   });
 
   it('refuses a default outside the range, and says that rather than the grid', () => {
     const found = problems({ def: '500' });
-    expect(found.join(' ')).toContain('ต้องอยู่ระหว่าง');
-    expect(found.join(' ')).not.toContain('จำนวนเท่าของสเต็ป');
+    expect(found.map((p) => p.messageTh).join(' ')).toContain('ต้องอยู่ระหว่าง');
+    expect(found.map((p) => p.messageTh).join(' ')).not.toContain('จำนวนเท่าของสเต็ป');
   });
 
   it('refuses zero and negative bounds', () => {
-    expect(problems({ min: '0' }).join(' ')).toContain('ค่าต่ำสุดต้องมากกว่า 0');
-    expect(problems({ step: '0' }).join(' ')).toContain('สเต็ปต้องมากกว่า 0');
+    expect(problems({ min: '0' }).map((p) => p.messageTh).join(' ')).toContain('ค่าต่ำสุดต้องมากกว่า 0');
+    expect(problems({ step: '0' }).map((p) => p.messageTh).join(' ')).toContain('สเต็ปต้องมากกว่า 0');
   });
 
   it('⚠️ accepts min equal to max — a product offered in exactly one size is legal', () => {
@@ -155,8 +155,16 @@ describe('the measurement grid, which the server answers with one sentence for e
     expect(problems({ min: '180', max: '180', def: '180' })).toStrictEqual([]);
   });
 
-  it('names the group, so a person with two size boxes knows which one broke', () => {
-    expect(problems({ min: '60.3' })[0]).toMatch(/^ความกว้าง: /u);
+  it('⭐ names the BOX, so the control that is wrong is the one that turns red', () => {
+    /*
+     * The reason this returns objects rather than sentences. A person filling eight boxes
+     * across two groups had to read a paragraph at the foot of the page and work out which
+     * of the eight it meant.
+     */
+    expect(problems({ min: '60.3' })[0]?.field).toBe('minText');
+    expect(problems({ max: '400.3' })[0]?.field).toBe('maxText');
+    expect(problems({ def: '500' })[0]?.field).toBe('defaultText');
+    expect(problems({ step: '0.001' })[0]?.field).toBe('stepText');
   });
 });
 
@@ -259,6 +267,55 @@ describe('building the options a create request carries', () => {
     if (!result.ok) return;
     expect(result.options['width']?.sortOrder).toBe(0);
     expect(result.options['height']?.sortOrder).toBe(1);
+  });
+
+  it('⭐ addresses each refusal to the box that can fix it, keyed by group', () => {
+    /*
+     * The exact case from the screenshot that prompted this: a default below the minimum,
+     * in both required groups. Before, it was one sentence at the foot of a long page
+     * naming neither box.
+     */
+    const result = buildOptions(
+      [
+        measured('width', { minText: '30', maxText: '100', stepText: '10', defaultText: '20' }),
+        measured('height', { minText: '30', maxText: '120', stepText: '10', defaultText: '20' }),
+      ],
+      GROUPS,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors['width']?.defaultText).toContain('ต้องอยู่ระหว่าง');
+    expect(result.errors['height']?.defaultText).toContain('ต้องอยู่ระหว่าง');
+    /* And nothing else is marked — the other three boxes in each group are fine. */
+    expect(Object.keys(result.errors['width'] ?? {})).toStrictEqual(['defaultText']);
+  });
+
+  it('⚠️ one box shows one message, not a paragraph', () => {
+    /* A field with several faults gets the first; the rest reappear as they are fixed. */
+    const result = buildOptions([measured('width', { minText: 'x' })], GROUPS);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(Object.values(result.errors['width'] ?? {}).every((m) => !m.includes('·'))).toBe(true);
+  });
+
+  it('marks a sku group on the control that is wrong', () => {
+    const colour = sku('profile_color', ['SG', 'WH']);
+    const empty: GroupChoice = { ...blankChoice(colour), offered: true };
+    const noDefault: GroupChoice = {
+      ...blankChoice(colour),
+      offered: true,
+      valueCodes: ['SG'],
+      defaultValueCode: 'WH',
+    };
+
+    const a = buildOptions([...BOTH, empty], [...GROUPS, colour]);
+    expect(a.ok).toBe(false);
+    if (!a.ok) expect(a.errors['profile_color']?.valueCodes).toBeDefined();
+
+    const b = buildOptions([...BOTH, noDefault], [...GROUPS, colour]);
+    expect(b.ok).toBe(false);
+    if (!b.ok) expect(b.errors['profile_color']?.defaultValueCode).toBeDefined();
   });
 
   it('a group left unticked is simply absent', () => {

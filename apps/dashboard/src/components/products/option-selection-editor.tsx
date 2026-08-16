@@ -7,7 +7,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { FieldGroup } from '@/components/ui/field';
 import { SelectField, TextField } from './form-field';
 
-import { REQUIRED_CUSTOM_CODES, displayRank, type GroupChoice } from './option-selection';
+import {
+  REQUIRED_CUSTOM_CODES,
+  displayRank,
+  type GroupChoice,
+  type GroupErrors,
+  type OptionErrors,
+} from './option-selection';
 
 /**
  * ⭐ ชุดตัวเลือกของสินค้า — which groups this product offers, and on what terms.
@@ -28,11 +34,18 @@ import { REQUIRED_CUSTOM_CODES, displayRank, type GroupChoice } from './option-s
 export function OptionSelectionEditor({
   groups,
   choices,
+  errors,
   disabled,
   onChange,
 }: {
   readonly groups: readonly AdminOptionGroupWire[];
   readonly choices: readonly GroupChoice[];
+  /**
+   * ⭐ Keyed by group code — see `buildOptions`. Empty until somebody presses สร้าง: an
+   * untouched form is not a form full of mistakes, and marking it red on arrival teaches
+   * people that red means nothing.
+   */
+  readonly errors: OptionErrors;
   readonly disabled: boolean;
   readonly onChange: (code: string, next: Partial<GroupChoice>) => void;
 }) {
@@ -48,12 +61,19 @@ export function OptionSelectionEditor({
         const choice = choiceOf(group.code);
         if (choice === undefined) return null;
         const required = isRequired(group.code);
+        const groupErrors: GroupErrors = errors[group.code] ?? {};
+        const wrong = Object.keys(groupErrors).length > 0;
 
         return (
           <div
             key={group.code}
+            /*
+             * ⚠️ The card itself turns red, not only the box inside it. With nine groups
+             * stacked down the page the box that is wrong can be off-screen; a red edge is
+             * findable while scrolling, which is what "easy to find" actually means here.
+             */
             className={`flex flex-col gap-3 rounded border p-3 ${
-              choice.offered ? '' : 'bg-muted/20'
+              wrong ? 'border-destructive' : choice.offered ? '' : 'bg-muted/20'
             }`}
           >
             <label className="flex items-start gap-3">
@@ -87,13 +107,20 @@ export function OptionSelectionEditor({
               <MeasurementFields
                 group={group}
                 choice={choice}
+                errors={groupErrors}
                 disabled={disabled}
                 onChange={onChange}
               />
             )}
 
             {choice.offered && group.kind === 'sku' && (
-              <ValueChoices group={group} choice={choice} disabled={disabled} onChange={onChange} />
+              <ValueChoices
+                group={group}
+                choice={choice}
+                errors={groupErrors}
+                disabled={disabled}
+                onChange={onChange}
+              />
             )}
           </div>
         );
@@ -116,11 +143,13 @@ const isRequired = (code: string): boolean =>
 function MeasurementFields({
   group,
   choice,
+  errors,
   disabled,
   onChange,
 }: {
   readonly group: AdminOptionGroupWire;
   readonly choice: GroupChoice;
+  readonly errors: GroupErrors;
   readonly disabled: boolean;
   readonly onChange: (code: string, next: Partial<GroupChoice>) => void;
 }) {
@@ -132,6 +161,7 @@ function MeasurementFields({
         label="ต่ำสุด"
         value={choice.minText}
         onChange={(next) => onChange(group.code, { minText: next })}
+        error={errors.minText}
         disabled={disabled}
         suffix={unit}
         mono
@@ -140,6 +170,7 @@ function MeasurementFields({
         label="สูงสุด"
         value={choice.maxText}
         onChange={(next) => onChange(group.code, { maxText: next })}
+        error={errors.maxText}
         disabled={disabled}
         suffix={unit}
         mono
@@ -148,6 +179,7 @@ function MeasurementFields({
         label="สเต็ป"
         value={choice.stepText}
         onChange={(next) => onChange(group.code, { stepText: next })}
+        error={errors.stepText}
         disabled={disabled}
         suffix={unit}
         mono
@@ -162,6 +194,7 @@ function MeasurementFields({
         label="ค่าเริ่มต้น"
         value={choice.defaultText}
         onChange={(next) => onChange(group.code, { defaultText: next })}
+        error={errors.defaultText}
         disabled={disabled}
         suffix={unit}
         mono
@@ -174,11 +207,13 @@ function MeasurementFields({
 function ValueChoices({
   group,
   choice,
+  errors,
   disabled,
   onChange,
 }: {
   readonly group: AdminOptionGroupWire;
   readonly choice: GroupChoice;
+  readonly errors: GroupErrors;
   readonly disabled: boolean;
   readonly onChange: (code: string, next: Partial<GroupChoice>) => void;
 }) {
@@ -199,6 +234,9 @@ function ValueChoices({
 
   return (
     <div className="flex flex-col gap-3">
+      {errors.valueCodes !== undefined && (
+        <p className="text-destructive type-caption">{errors.valueCodes}</p>
+      )}
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         {group.values.map((value) => (
           <label key={value.code} className="flex items-center gap-2">
@@ -224,6 +262,7 @@ function ValueChoices({
         options={group.values
           .filter((value) => choice.valueCodes.includes(value.code))
           .map((value) => ({ value: value.code, labelTh: value.labelTh }))}
+        error={errors.defaultValueCode}
         description="ตัวเลือกที่หน้าสินค้าเปิดมา — ต้องเป็นหนึ่งในที่ติ๊กไว้"
       />
     </div>

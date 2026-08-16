@@ -82,7 +82,13 @@ export function displayRank(group: { readonly code: string; readonly kind: 'sku'
 
 export type OptionsResult =
   | { readonly ok: true; readonly options: Readonly<Record<string, DraftOptionWire>> }
-  | { readonly ok: false; readonly problems: readonly string[] };
+  | {
+      readonly ok: false;
+      /** The summary, for the alert. Every entry is also in `errors` unless it names no field. */
+      readonly problems: readonly string[];
+      /** ⭐ The same refusals, addressed to the control that can fix each one. */
+      readonly errors: OptionErrors;
+    };
 
 /** A fresh, empty choice for one catalogue group. */
 export const blankChoice = (group: AdminOptionGroupWire): GroupChoice => ({
@@ -127,47 +133,67 @@ export function fromUm(um: bigint, unit: 'cm' | 'mm'): string {
 }
 
 /**
+ * ⭐ Which box a refusal belongs to — the whole point of not returning bare strings.
+ *
+ * The names match `GroupChoice`'s own fields so a caller can hand the message straight to
+ * the control that holds that value. A person filling in eight boxes across two groups had
+ * to read a paragraph at the bottom of the page and work out which of the eight it meant;
+ * now the box goes red and the sentence sits under it.
+ */
+export type MeasurementField = 'minText' | 'maxText' | 'stepText' | 'defaultText';
+
+export interface MeasurementProblem {
+  readonly field: MeasurementField;
+  readonly messageTh: string;
+}
+
+/** Every message for one group, keyed by the field it belongs to. First one per field wins. */
+export type GroupErrors = Partial<Record<MeasurementField | 'valueCodes' | 'defaultValueCode', string>>;
+
+/** Keyed by option-group code. */
+export type OptionErrors = Readonly<Record<string, GroupErrors>>;
+
+/**
  * Every reason one measurement group's numbers would be refused, in the person's words.
  *
  * Exported for its test. The order matters: a bad step makes every other check meaningless,
  * so it is reported alone rather than alongside four consequences of itself.
  */
 export function measurementProblems(
-  labelTh: string,
   unit: 'cm' | 'mm',
   min: bigint | null,
   max: bigint | null,
   step: bigint | null,
   fallback: bigint | null,
-): readonly string[] {
-  const problems: string[] = [];
-  const say = (what: string): void => {
-    problems.push(`${labelTh}: ${what}`);
+): readonly MeasurementProblem[] {
+  const problems: MeasurementProblem[] = [];
+  const say = (field: MeasurementField, messageTh: string): void => {
+    problems.push({ field, messageTh });
   };
 
-  if (min === null) say('ค่าต่ำสุดต้องเป็นตัวเลข');
-  if (max === null) say('ค่าสูงสุดต้องเป็นตัวเลข');
-  if (step === null) say('สเต็ปต้องเป็นตัวเลข');
-  if (fallback === null) say('ค่าเริ่มต้นต้องเป็นตัวเลข');
+  if (min === null) say('minText', 'ค่าต่ำสุดต้องเป็นตัวเลข');
+  if (max === null) say('maxText', 'ค่าสูงสุดต้องเป็นตัวเลข');
+  if (step === null) say('stepText', 'สเต็ปต้องเป็นตัวเลข');
+  if (fallback === null) say('defaultText', 'ค่าเริ่มต้นต้องเป็นตัวเลข');
   if (min === null || max === null || step === null || fallback === null) return problems;
 
   if (step <= 0n) {
-    say('สเต็ปต้องมากกว่า 0');
+    say('stepText', 'สเต็ปต้องมากกว่า 0');
     /* Everything below divides by the step. */
     return problems;
   }
   if (step % LATTICE_UM !== 0n) {
-    say(`สเต็ปต้องเป็นจำนวนเท่าของ ${fromUm(LATTICE_UM, unit)} ${unit}`);
+    say('stepText', `สเต็ปต้องเป็นจำนวนเท่าของ ${fromUm(LATTICE_UM, unit)} ${unit}`);
     return problems;
   }
 
-  if (min <= 0n) say('ค่าต่ำสุดต้องมากกว่า 0');
+  if (min <= 0n) say('minText', 'ค่าต่ำสุดต้องมากกว่า 0');
   /*
    * ⚠️ `>` and not `>=`. min === max is legal at every layer — the DB says `min_um <= max_um`
    * and core says `if (group.minUm > group.maxUm) fail(...)`. A product offered in exactly
    * one size is a real thing, and refusing it here would refuse something the server accepts.
    */
-  if (min > max) say('ค่าต่ำสุดต้องไม่เกินค่าสูงสุด');
+  if (min > max) say('minText', 'ค่าต่ำสุดต้องไม่เกินค่าสูงสุด');
 
   /*
    * ⛔ Two different anchors, and this is the trap the DB CHECK hides. `min` sits on a grid
@@ -175,16 +201,16 @@ export function measurementProblems(
    * only one of them accepts numbers the server refuses.
    */
   if (min > 0n && min % step !== 0n) {
-    say(`ค่าต่ำสุดต้องลงตัวกับสเต็ป (${fromUm(step, unit)} ${unit})`);
+    say('minText', `ค่าต่ำสุดต้องลงตัวกับสเต็ป (${fromUm(step, unit)} ${unit})`);
   }
   if (min <= max && (max - min) % step !== 0n) {
-    say('ค่าสูงสุดต้องห่างจากค่าต่ำสุดเป็นจำนวนเท่าของสเต็ป');
+    say('maxText', 'ค่าสูงสุดต้องห่างจากค่าต่ำสุดเป็นจำนวนเท่าของสเต็ป');
   }
 
   if (fallback < min || fallback > max) {
-    say('ค่าเริ่มต้นต้องอยู่ระหว่างค่าต่ำสุดกับค่าสูงสุด');
+    say('defaultText', 'ค่าเริ่มต้นต้องอยู่ระหว่างค่าต่ำสุดกับค่าสูงสุด');
   } else if ((fallback - min) % step !== 0n) {
-    say('ค่าเริ่มต้นต้องห่างจากค่าต่ำสุดเป็นจำนวนเท่าของสเต็ป');
+    say('defaultText', 'ค่าเริ่มต้นต้องห่างจากค่าต่ำสุดเป็นจำนวนเท่าของสเต็ป');
   }
 
   return problems;
@@ -201,6 +227,12 @@ export function buildOptions(
   groups: readonly AdminOptionGroupWire[],
 ): OptionsResult {
   const byCode = new Map(groups.map((group) => [group.code, group]));
+  const errors: Record<string, GroupErrors> = {};
+  const mark = (code: string, field: keyof GroupErrors, messageTh: string): void => {
+    /* First message per box. A field with three faults gets the first, not a paragraph. */
+    const forGroup = errors[code] ?? {};
+    if (forGroup[field] === undefined) errors[code] = { ...forGroup, [field]: messageTh };
+  };
   /*
    * Sorted by the same rule the editor renders with, so `sortOrder` — which the configurator
    * lays the groups out by — matches the order the person just filled in.
@@ -241,9 +273,13 @@ export function buildOptions(
       const step = toUm(choice.stepText, unit);
       const fallback = toUm(choice.defaultText, unit);
 
-      const found = measurementProblems(group.labelTh, unit, min, max, step, fallback);
+      const found = measurementProblems(unit, min, max, step, fallback);
       if (found.length > 0) {
-        problems.push(...found);
+        for (const problem of found) {
+          mark(choice.code, problem.field, problem.messageTh);
+          /* The group is named in the summary because the boxes are not, up there. */
+          problems.push(`${group.labelTh}: ${problem.messageTh}`);
+        }
         return;
       }
       if (min === null || max === null || step === null || fallback === null) return;
@@ -263,10 +299,12 @@ export function buildOptions(
     const chosenValues = choice.valueCodes.filter((code) => catalogueCodes.has(code));
 
     if (chosenValues.length === 0) {
+      mark(choice.code, 'valueCodes', 'เลือกอย่างน้อยหนึ่งตัวเลือก');
       problems.push(`${group.labelTh}: เลือกอย่างน้อยหนึ่งตัวเลือก`);
       return;
     }
     if (!chosenValues.includes(choice.defaultValueCode)) {
+      mark(choice.code, 'defaultValueCode', 'ค่าเริ่มต้นต้องเป็นหนึ่งในตัวเลือกที่เสนอ');
       problems.push(`${group.labelTh}: ค่าเริ่มต้นต้องเป็นหนึ่งในตัวเลือกที่เสนอ`);
       return;
     }
@@ -282,9 +320,9 @@ export function buildOptions(
         .filter((value) => chosenValues.includes(value.code) && !value.swatchHex)
         .map((value) => value.code);
       if (missing.length > 0) {
-        problems.push(
-          `${group.labelTh}: ตัวเลือก ${missing.join(', ')} ยังไม่มีรหัสสี — แก้ได้ที่หน้าชุดตัวเลือก`,
-        );
+        const messageTh = `ตัวเลือก ${missing.join(', ')} ยังไม่มีรหัสสี — แก้ได้ที่หน้าชุดตัวเลือก`;
+        mark(choice.code, 'valueCodes', messageTh);
+        problems.push(`${group.labelTh}: ${messageTh}`);
         return;
       }
     }
@@ -300,6 +338,6 @@ export function buildOptions(
     };
   });
 
-  if (problems.length > 0) return { ok: false, problems };
+  if (problems.length > 0) return { ok: false, problems, errors };
   return { ok: true, options };
 }
