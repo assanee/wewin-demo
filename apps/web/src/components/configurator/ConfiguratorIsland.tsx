@@ -276,6 +276,8 @@ function ConfigureProduct({
 
     const draft = {
       productId: product.id,
+      /* Recorded so "edit this line" can reach the route, which is keyed by slug. */
+      productSlug: product.slug,
       nickname: config.nickname.trim() || product.nameTh,
       skuCode: config.skuCode,
       selections: config.selections,

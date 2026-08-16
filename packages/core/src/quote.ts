@@ -15,6 +15,22 @@ import { isLengthUnit, type LengthUnit } from './units.js';
 export interface QuoteLine {
   lineId: string;
   productId: string;
+  /**
+   * ⭐ The product's slug, because the configurator route is keyed by slug and this line
+   * has to be able to get back there.
+   *
+   * ⛔ Optional, and only because lines already sitting in a customer's `localStorage` were
+   * written before this field existed. A missing one falls back to `productId`, which is
+   * correct for every seeded product — `data/products.ts` builds them with `id: row.slug` —
+   * and is the best guess available for anything else.
+   *
+   * ⚠️ That coincidence is exactly what broke. `configureHref` relied on it and said so in
+   * its own comment: *"if ids ever stop being slugs, this is the call site that breaks, and
+   * it breaks as a 404"*. Products created in the dashboard set id and slug independently,
+   * so a customer who added one to their cart could not reopen it — the pencil button went
+   * to `/th/products/<id>` and answered 404.
+   */
+  productSlug?: string;
   /** Customer's own label, e.g. "หน้าต่างห้องนอน 1". Defaults to the product name. */
   nickname: string;
   skuCode: string;

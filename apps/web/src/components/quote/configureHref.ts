@@ -21,14 +21,22 @@ import type { Locale } from '../../i18n/locales';
  * Vite app put it plainly: pinning a language into a link means a German customer sending
  * a drawing to a Thai installer and the installer getting German.
  *
- * ## `productId`, not `slug`
+ * ## The slug, and the 404 this used to be
  *
- * A stored line records `productId`; the configurator route is keyed by slug. They are the
- * same string — `packages/core/src/data/products.ts` builds every product with
- * `id: row.slug` — and this is the only place in the quote screen that depends on it. Said
- * out loud here because it is the kind of coincidence that stops being true quietly: if
- * ids ever stop being slugs, this is the call site that breaks, and it breaks as a 404
- * rather than as a wrong window.
+ * ⛔ This used to build the path from `line.productId`, with a comment saying the two were
+ * the same string because `data/products.ts` builds every seeded product with
+ * `id: row.slug` — and warning, in as many words, that *"if ids ever stop being slugs, this
+ * is the call site that breaks, and it breaks as a 404"*.
+ *
+ * They stopped. A product created in the dashboard sets its id and its slug independently,
+ * and a customer who added one to their cart could not reopen it: the pencil button went to
+ * `/th/products/<id>` and got 404 · ไม่พบหน้านี้. The line now records `productSlug` when it
+ * is added, and this reads it.
+ *
+ * ⚠️ The fallback to `productId` is for lines written into a customer's `localStorage`
+ * before the field existed. It is right for all 81 seeded products and is the only guess
+ * available for anything else — a cart that survives this deploy keeps working, and a line
+ * added after it is correct whatever the slug is.
  *
  * ## A template literal, so `typedRoutes` can check it — and no cast
  *
@@ -47,4 +55,4 @@ export const configureHref = (
   locale: Locale,
   line: QuoteLine,
 ): `/${Locale}/products/${string}?line=${string}` =>
-  `/${locale}/products/${line.productId}?line=${line.lineId}`;
+  `/${locale}/products/${line.productSlug ?? line.productId}?line=${line.lineId}`;
