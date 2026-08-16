@@ -23,7 +23,7 @@ vi.mock('next/cache', () => ({ revalidateTag: (tag: string, profile: string) => 
 const { POST, REVALIDATE_TOKEN_HEADER, MAX_PRODUCT_IDS, productIdsFrom } = await import(
   '@/app/api/revalidate/route'
 );
-const { tagsForProduct } = await import('@/lib/reviews/tags');
+const { catalogTag, tagsForProduct } = await import('@/lib/reviews/tags');
 
 const TOKEN = 'a-token-with-some-length';
 
@@ -74,14 +74,47 @@ describe('the invalidation endpoint', () => {
     expect(revalidateTag.mock.calls.map(([tag]) => tag)).toEqual([
       ...tagsForProduct('awn-4t'),
       ...tagsForProduct('fold-nt-12'),
+      /*
+       * ⭐ Always, and not the caller's to send: any product changing changes the single
+       * entry the catalogue list is built from, so a caller cannot forget it.
+       */
+      catalogTag(),
     ]);
     // Next 16 requires the `cacheLife` profile argument; `max` is "this changed, for
     // everybody" rather than "for readers who are at most a minute behind".
     expect(revalidateTag.mock.calls.every(([, profile]) => profile === 'max')).toBe(true);
 
     expect(await response.json()).toEqual({
-      revalidated: [...tagsForProduct('awn-4t'), ...tagsForProduct('fold-nt-12')],
+      revalidated: [...tagsForProduct('awn-4t'), ...tagsForProduct('fold-nt-12'), catalogTag()],
     });
+  });
+
+  it('⭐ pokes the slug tag too, because the catalogue reads by slug and reviews read by id', async () => {
+    /*
+     * `loadPublishedProduct` fetches `/catalog/products/:slug` and must tag that entry by
+     * slug — a `fetch` declares its tags before the body carrying the id exists. A caller
+     * that sent only ids would refresh a product's reviews while its page stayed frozen.
+     */
+    const { productSlugTag } = await import('@/lib/reviews/tags');
+    const response = await POST(post({ productIds: ['awn-4t'], slugs: ['awn-4t-slug'] }));
+
+    expect(response.status).toBe(200);
+    expect(revalidateTag.mock.calls.map(([tag]) => tag)).toEqual([
+      ...tagsForProduct('awn-4t'),
+      productSlugTag('awn-4t-slug'),
+      catalogTag(),
+    ]);
+  });
+
+  it('⚠️ slugs are optional, so every caller written before them still works', async () => {
+    expect((await POST(post({ productIds: ['awn-4t'] }))).status).toBe(200);
+  });
+
+  it('refuses a malformed slugs list rather than ignoring it', async () => {
+    /* Silently dropping it would let a caller believe it invalidated a page it had not. */
+    expect((await POST(post({ productIds: ['awn-4t'], slugs: 'a' }))).status).toBe(400);
+    expect((await POST(post({ productIds: ['awn-4t'], slugs: [''] }))).status).toBe(400);
+    expect((await POST(post({ productIds: ['awn-4t'], slugs: [7] }))).status).toBe(400);
   });
 
   it('never caches its own answer', async () => {
@@ -91,7 +124,8 @@ describe('the invalidation endpoint', () => {
 
   it('de-duplicates rather than poking the same tag twice', async () => {
     await POST(post({ productIds: ['awn-4t', 'awn-4t'] }));
-    expect(revalidateTag.mock.calls).toHaveLength(2);
+    /* Two product tags plus the catalogue tag — the repeated id contributes nothing. */
+    expect(revalidateTag.mock.calls).toHaveLength(3);
   });
 
   it('refuses a body it does not recognise instead of guessing', async () => {

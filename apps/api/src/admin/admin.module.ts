@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { CatalogAdminController } from './catalog-admin.controller';
 import { CatalogAdminService } from './catalog-admin.service';
 import { DraftRepository } from './draft.repository';
+import { StorefrontRevalidateService } from './storefront-revalidate';
 import { OptionCatalogController } from './option-catalog.controller';
 import { OptionCatalogService } from './option-catalog.service';
 
@@ -22,6 +23,6 @@ import { OptionCatalogService } from './option-catalog.service';
  */
 @Module({
   controllers: [CatalogAdminController, OptionCatalogController],
-  providers: [CatalogAdminService, OptionCatalogService, DraftRepository],
+  providers: [CatalogAdminService, OptionCatalogService, DraftRepository, StorefrontRevalidateService],
 })
 export class AdminModule {}

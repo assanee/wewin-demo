@@ -1,6 +1,6 @@
 import { revalidateTag } from 'next/cache';
 
-import { tagsForProduct } from '@/lib/reviews/tags';
+import { catalogTag, productSlugTag, tagsForProduct } from '@/lib/reviews/tags';
 
 /**
  * The write half of plan 9.5 — **and it is written in the commit that also calls it.**
@@ -79,6 +79,20 @@ function tokensMatch(presented: string, expected: string): boolean {
 }
 
 /** The ids in a body, or `null` if the body is not the shape this route accepts. */
+/**
+ * The optional `slugs` list. `[]` and absent both mean "none"; anything else malformed is
+ * `null`, which the handler answers 400 for rather than ignoring — a caller that misspells
+ * this field would otherwise believe it had invalidated a page it had not.
+ */
+export function slugsFrom(body: unknown): readonly string[] | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
+  const value = (body as Readonly<Record<string, unknown>>)['slugs'];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_PRODUCT_IDS) return null;
+  if (!value.every((entry) => typeof entry === 'string' && entry.trim() !== '')) return null;
+  return [...new Set(value as readonly string[])];
+}
+
 export function productIdsFrom(body: unknown): readonly string[] | null {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
   const value = (body as Readonly<Record<string, unknown>>)['productIds'];
@@ -145,7 +159,39 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const tags = productIds.flatMap((productId) => [...tagsForProduct(productId)]);
+  /*
+   * ⭐ Slugs as well as ids, because the catalogue reads by slug and the reviews read by id.
+   *
+   * `loadPublishedProduct` fetches `/catalog/products/:slug` and must therefore tag that
+   * entry by slug — a `fetch` declares its tags before the body that carries the id exists.
+   * A caller that sent only ids would refresh the reviews of a product whose *page* stayed
+   * frozen, which is the confusing half of a half-invalidation.
+   *
+   * ⚠️ Optional, so every existing caller and test keeps working unchanged.
+   */
+  const slugs = slugsFrom(body);
+  if (slugs === null) {
+    return json({ error: 'malformed', message: 'slugs must be an array of non-empty strings' }, 400);
+  }
+
+  const tags = [
+    ...productIds.flatMap((productId) => [...tagsForProduct(productId)]),
+    ...slugs.map((slug) => productSlugTag(slug)),
+    /*
+     * Always, and unconditionally. Any product changing — added, renamed, repriced,
+     * unpublished — changes the one cache entry the catalogue list is built from, and there
+     * is nothing finer to invalidate. A caller cannot forget it because it is not theirs to
+     * send.
+     */
+    catalogTag(),
+  ];
+
+  /*
+   * De-duplicated across the whole list, not just within the ids. Two products in one call
+   * share the catalogue tag, and poking it twice would be two invalidations of one entry —
+   * harmless, and still the kind of thing the echoed response should not claim happened.
+   */
+  const poked = [...new Set(tags)];
   /*
    * `'max'` is Next 16's `cacheLife` profile argument, which became **required** in 16.0 —
    * `revalidateTag(tag)` on its own no longer compiles. It is the widest profile, which is
@@ -155,12 +201,12 @@ export async function POST(request: Request): Promise<Response> {
    * Not `updateTag`, which is the Server Action spelling for read-your-writes — the caller
    * here is another service, and the thing it is about to read is not this response.
    */
-  for (const tag of tags) revalidateTag(tag, 'max');
+  for (const tag of poked) revalidateTag(tag, 'max');
 
   /*
    * The tags are echoed back. A caller that pokes a product id the storefront has never
    * heard of gets a 200 and a list it can compare — `revalidateTag` has no notion of a tag
    * that was never used, so this response is the only place a typo can be seen at all.
    */
-  return json({ revalidated: tags }, 200);
+  return json({ revalidated: poked }, 200);
 }

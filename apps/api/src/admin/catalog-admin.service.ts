@@ -28,6 +28,7 @@ import { code, message } from '../i18n';
 import { DRIZZLE } from '../database/database.tokens';
 import { availabilityOf, type CompiledDraft, type DraftProductRow } from './draft-document';
 import { DraftRepository, type Tx, type VersionRow } from './draft.repository';
+import { StorefrontRevalidateService } from './storefront-revalidate';
 
 /**
  * What "editing a product" means when published documents are frozen.
@@ -156,6 +157,7 @@ export class CatalogAdminService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly drafts: DraftRepository,
+    private readonly storefront: StorefrontRevalidateService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -543,6 +545,22 @@ export class CatalogAdminService {
         `admin: version ${result.publishedVersionId} vanished immediately after publishing it`,
       );
     }
+
+    /*
+     * ⭐ Tell the storefront, after the commit and after the read-back.
+     *
+     * ⛔ Awaited but never allowed to fail — `productChanged` swallows everything into a log
+     * line. The version is frozen and correct by this point; a storefront that is down is a
+     * stale cache, and turning that into a failed publish would lose the work and lie about
+     * why. Awaited rather than floated so the process cannot exit mid-request and so a test
+     * can observe it.
+     *
+     * The slug comes from the product row rather than the frozen document because it is what
+     * the storefront's own fetch is keyed by, and the two are equal by construction — the
+     * document is compiled from that row.
+     */
+    const row = await this.db.transaction((tx) => this.drafts.findProductRow(tx, productId));
+    if (row !== undefined) await this.storefront.productChanged(productId, row.slug);
 
     return {
       productVersionId: result.publishedVersionId,
