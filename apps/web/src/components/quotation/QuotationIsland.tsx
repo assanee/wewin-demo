@@ -6,7 +6,7 @@ import { printableQuotation, type PrintableQuotation } from '@wewin/core/quotati
 
 import { currentSession } from '../../lib/auth/account';
 import type { OrderActions as OrderActionOffers } from '../../lib/orders/actions';
-import { acceptsPayment } from '../../lib/payment/payable';
+import { acceptsPayment, isApproximatePrice } from '../../lib/payment/payable';
 import { fetchQuotation, quotationSource, type QuotationFailure, type Seller } from '../../lib/quotation/api';
 import { localeHref } from '../../lib/routing';
 import type { Locale } from '../../i18n/locales';
@@ -217,6 +217,14 @@ export function QuotationIsland(): ReactElement {
        * "finished, nothing to pay".
        */
       payOrderId={acceptsPayment(phase.status) ? phase.orderId : null}
+      /*
+       * ⭐ Whether these figures are final — the owner's "ราคาประมาณ".
+       *
+       * Resolved here for the same reason `payOrderId` is: `Sheet` prints a pinned document and
+       * has no business knowing what a status means. It is not the negation of the line above —
+       * a cancelled order is unpayable and its figures are not estimates.
+       */
+      isApproximate={isApproximatePrice(phase.status)}
       locale={locale}
       t={t}
     />
@@ -247,6 +255,7 @@ function Sheet({
   orderNo,
   seller,
   payOrderId,
+  isApproximate,
   locale,
   t,
 }: {
@@ -255,6 +264,8 @@ function Sheet({
   readonly seller: Seller | null;
   /** The order to pay, or `null` when this quotation offers no payment. See the call site. */
   readonly payOrderId: string | null;
+  /** ⭐ Staff have not confirmed these figures yet — label the total, and say so under it. */
+  readonly isApproximate: boolean;
   readonly locale: Locale;
   readonly t: Translate;
 }): ReactElement {
@@ -267,8 +278,13 @@ function Sheet({
    * deposit *and* when the deposit is the whole total (a pay-in-full policy), where a second
    * identical figure under "ชำระมัดจำก่อน" would read as a second obligation.
    */
+  /*
+   * ⛔ No deposit line while the quotation is an estimate. "ชำระมัดจำก่อน ฿X" is a demand for a
+   * specific amount, and the amount is precisely what staff are still deciding — it is the
+   * figure most likely to move between here and the confirmation.
+   */
   const depositRow =
-    quotation.depositThbText === null ? null : (
+    quotation.depositThbText === null || isApproximate ? null : (
       <Row label={t('quotation.fx.deposit')} value={quotation.depositThbText} />
     );
 
@@ -385,8 +401,23 @@ function Sheet({
           }`}
           value={quotation.vatText}
         />
-        <Row label={t('quotation.total')} value={quotation.grandTotalText} strong />
+        <Row
+          label={t(isApproximate ? 'quotation.totalApproximate' : 'quotation.total')}
+          value={quotation.grandTotalText}
+          strong
+        />
       </dl>
+
+      {/*
+       * ⚠️ Under the total and inside the same block, not in a footer. A reader who takes one
+       * thing from this page takes the figure, and a caveat further down is one they will not
+       * have read when they quote the number back on the telephone.
+       */}
+      {isApproximate ? (
+        <p className="mt-3 ml-auto max-w-[420px] text-caption text-chalk-2">
+          {t('quotation.approximateNote')}
+        </p>
+      ) : null}
 
       {/*
        * ⭐ THE RATE, AND WHY IT IS THE ONLY THING ON THIS PAGE THAT MENTIONS BAHT.

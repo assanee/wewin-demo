@@ -412,6 +412,8 @@ export const zh: PartialUiCatalogue = {
   'quotation.vat': '增值税',
   'quotation.vatIncluded': '已含在价格中',
   'quotation.total': '总计',
+  'quotation.totalApproximate': '合计（估算）',
+  'quotation.approximateNote': '此金额尚非最终金额 — 我们的团队正在核对，会在付款前确认。此阶段请勿转账。',
   'quotation.fx.rate': ({ currency, rateText }) => `汇率 1 ${currency} = ${rateText} 泰铢`,
   'quotation.fx.observedAt': ({ observedAt }) => `汇率日期 ${observedAt}`,
   'quotation.fx.manual': '公司指定汇率',

@@ -497,6 +497,16 @@ export interface UiParamsByKey {
   'quotation.vatIncluded': Plain;
   'quotation.total': Plain;
   /**
+   * ⭐ The same row, while staff have not confirmed the quotation — the owner's "ราคาประมาณ".
+   *
+   * A label rather than a note beside the figure, because a reader who takes one thing from this
+   * page takes the total, and a caveat somewhere else on the sheet is a caveat they will not
+   * have read when they quote it back on the telephone.
+   */
+  'quotation.totalApproximate': Plain;
+  /** The sentence under it: what happens next, and that nothing should be transferred yet. */
+  'quotation.approximateNote': Plain;
+  /**
    * ⭐ The exchange rate the quotation was frozen at.
    *
    * `currency` is an ISO code and `rateText` a decimal the API already rendered — neither is

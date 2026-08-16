@@ -450,6 +450,9 @@ export const en: PartialUiCatalogue = {
   'quotation.vat': 'VAT',
   'quotation.vatIncluded': 'included in the price',
   'quotation.total': 'Total',
+  'quotation.totalApproximate': 'Total (estimate)',
+  'quotation.approximateNote': 
+    'This is not the final amount yet — our team is checking it and will confirm before any payment. Please do not transfer anything at this stage.',
   'quotation.fx.rate': ({ currency, rateText }) => `Exchange rate 1 ${currency} = ${rateText} THB`,
   'quotation.fx.observedAt': ({ observedAt }) => `Rate observed ${observedAt}`,
   'quotation.fx.manual': 'Company-set rate',

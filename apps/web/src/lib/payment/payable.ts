@@ -127,3 +127,21 @@ export const PAYABLE_ORDER_STATUSES: readonly string[] = [
 export function acceptsPayment(status: string): boolean {
   return PAYABLE_ORDER_STATUSES.includes(status);
 }
+
+/**
+ * ⭐ Whether the figures on a quotation are still an estimate — the owner's "ราคาประมาณ".
+ *
+ * A quotation the customer has asked for and staff have not yet agreed carries a real total,
+ * pinned to a real document: they may read it, print it and think about it. What it is not is a
+ * number anybody has committed to, and the owner's decision was that the customer should see it
+ * *labelled as such* rather than not see it at all.
+ *
+ * ⚠️ Deliberately NOT the negation of `acceptsPayment`. Cancelled and superseded orders are also
+ * unpayable and their figures are not estimates — they are what was agreed, and the order ended.
+ * One list answers "may they pay?", this answers "is this final?", and the day those two
+ * questions get one implementation between them is the day a cancelled order starts telling a
+ * customer its total was a guess.
+ */
+export function isApproximatePrice(status: string): boolean {
+  return status === 'awaiting_confirmation';
+}

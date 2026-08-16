@@ -45,6 +45,8 @@ import { RefundButton } from './refund-dialog';
 import { WriteOffButton } from './write-off-dialog';
 import { BalanceReminderButton } from './balance-reminder-button';
 import { balanceNoticeFor } from './transition-balance';
+import { DepositButton } from './deposit-button';
+import { formatDepositPercent } from './deposit-entry';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -413,7 +415,24 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
                    * recalculated it from today's price would be showing a different number
                    * from the one the customer agreed to.
                    */}
-                  <span className="text-muted-foreground type-caption ml-2">ตรึงไว้ตั้งแต่ตอนส่ง</span>
+                  <span className="text-muted-foreground type-caption ml-2">
+                    {order.money.depositBpAuthored === null
+                      ? 'ตรึงไว้ตั้งแต่ตอนส่ง'
+                      : `ตั้งไว้ ${formatDepositPercent(order.money.depositBpAuthored)} สำหรับออร์เดอร์นี้`}
+                  </span>
+                  {/*
+                   * ⭐ The owner's "การระบุยอดมัดจำ", beside the figure it changes rather than in
+                   * a settings screen: the decision is about this customer and this quotation,
+                   * and it is taken while looking at the total above it.
+                   */}
+                  <div className="mt-2">
+                    <DepositButton
+                      orderId={order.id}
+                      status={order.status}
+                      depositBpAuthored={order.money.depositBpAuthored}
+                      onChanged={reload}
+                    />
+                  </div>
                 </dd>
 
                 {/*

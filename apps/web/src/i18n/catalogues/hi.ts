@@ -468,6 +468,9 @@ export const hi: PartialUiCatalogue = {
   'quotation.vat': 'वैट',
   'quotation.vatIncluded': 'कीमत में शामिल',
   'quotation.total': 'कुल',
+  'quotation.totalApproximate': 'कुल (अनुमानित)',
+  'quotation.approximateNote': 
+    'यह अभी अंतिम राशि नहीं है — हमारी टीम इसकी जाँच कर रही है और भुगतान से पहले पुष्टि करेगी। कृपया इस चरण में कोई राशि न भेजें।',
   'quotation.fx.rate': ({ currency, rateText }) => `विनिमय दर 1 ${currency} = ${rateText} THB`,
   'quotation.fx.observedAt': ({ observedAt }) => `दर की तिथि ${observedAt}`,
   'quotation.fx.manual': 'कंपनी द्वारा निर्धारित दर',

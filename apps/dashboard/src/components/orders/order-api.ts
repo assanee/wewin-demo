@@ -130,6 +130,8 @@ export interface OrderDetail extends OrderSummary {
     readonly vatThbMinor: bigint;
     readonly grandTotalThbMinor: bigint;
     readonly scheduledDepositThbMinor: bigint;
+    /** ⭐ The share chosen for this order, in basis points — null while the company's applies. */
+    readonly depositBpAuthored: number | null;
   } | null;
   readonly documentRevision: number | null;
   readonly supersedesOrderId: string | null;
@@ -309,6 +311,8 @@ export const decodeDetail = (raw: unknown): OrderDetail => {
             netThbMinor: asSatang(money['netThbMinor'], 'money.netThbMinor'),
             vatThbMinor: asSatang(money['vatThbMinor'], 'money.vatThbMinor'),
             grandTotalThbMinor: asSatang(money['grandTotalThbMinor'], 'money.grandTotalThbMinor'),
+            depositBpAuthored:
+              typeof money['depositBpAuthored'] === 'number' ? money['depositBpAuthored'] : null,
             scheduledDepositThbMinor: asSatang(
               money['scheduledDepositThbMinor'],
               'money.scheduledDepositThbMinor',
@@ -420,6 +424,27 @@ export const transition = async (
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+  });
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return decodeDetail(await response.json());
+};
+
+/**
+ * ⭐ Set the deposit share for this order — `PUT /orders/:id/deposit`.
+ *
+ * Basis points, because that is what the API takes and what the company setting it overrides is
+ * stored in. What a person typed is turned into one by `deposit-entry.ts`; nothing between that
+ * function and this line does arithmetic, and this line does none either.
+ *
+ * Answers with the whole order, like a transition, so the screen re-renders from the server's
+ * figures rather than from its own guess at what the new deposit came to.
+ */
+export const setDeposit = async (orderId: string, depositBp: number): Promise<OrderDetail> => {
+  const response = await apiFetch(`/orders/${orderId}/deposit`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ depositBp }),
   });
 
   if (!response.ok) throw await apiErrorFromResponse(response);

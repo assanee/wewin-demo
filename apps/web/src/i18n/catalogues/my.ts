@@ -452,6 +452,9 @@ export const my: PartialUiCatalogue = {
   'quotation.vat': 'VAT',
   'quotation.vatIncluded': 'ဈေးနှုန်းတွင် ထည့်သွင်းပြီးဖြစ်သည်',
   'quotation.total': 'စုစုပေါင်း',
+  'quotation.totalApproximate': 'စုစုပေါင်း (ခန့်မှန်း)',
+  'quotation.approximateNote': 
+    'ဤပမာဏမှာ နောက်ဆုံးပမာဏ မဟုတ်သေးပါ — ကျွန်ုပ်တို့အဖွဲ့မှ စစ်ဆေးနေပြီး ငွေမပေးချေမီ အတည်ပြုပေးပါမည်။ ဤအဆင့်တွင် ငွေမလွှဲပါနှင့်။',
   'quotation.fx.rate': ({ currency, rateText }) => `ငွေလဲနှုန်း ၁ ${currency} = ${rateText} THB`,
   'quotation.fx.observedAt': ({ observedAt }) => `နှုန်းထား ${observedAt}`,
   'quotation.fx.manual': 'ကုမ္ပဏီသတ်မှတ်နှုန်း',

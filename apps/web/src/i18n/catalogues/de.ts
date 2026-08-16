@@ -491,6 +491,9 @@ export const de: PartialUiCatalogue = {
   'quotation.vat': 'MwSt.',
   'quotation.vatIncluded': 'im Preis enthalten',
   'quotation.total': 'Gesamt',
+  'quotation.totalApproximate': 'Gesamt (Schätzung)',
+  'quotation.approximateNote': 
+    'Dies ist noch nicht der endgültige Betrag — unser Team prüft ihn und bestätigt vor einer Zahlung. Bitte überweisen Sie in dieser Phase noch nichts.',
   'quotation.fx.rate': ({ currency, rateText }) => `Wechselkurs 1 ${currency} = ${rateText} THB`,
   'quotation.fx.observedAt': ({ observedAt }) => `Kurs vom ${observedAt}`,
   'quotation.fx.manual': 'Vom Unternehmen festgelegter Kurs',

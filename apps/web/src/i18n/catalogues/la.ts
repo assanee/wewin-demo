@@ -438,6 +438,9 @@ export const la: PartialUiCatalogue = {
   'quotation.vat': 'VAT',
   'quotation.vatIncluded': 'ລວມຢູ່ໃນລາຄາແລ້ວ',
   'quotation.total': 'ລວມທັງໝົດ',
+  'quotation.totalApproximate': 'Summa (aestimata)',
+  'quotation.approximateNote': 
+    'Haec nondum summa ultima est — grex noster eam recognoscit et ante solutionem confirmabit. Quaesumus ne quid hoc gradu transferas.',
   'quotation.fx.rate': ({ currency, rateText }) => `ອັດຕາແລກປ່ຽນ 1 ${currency} = ${rateText} THB`,
   'quotation.fx.observedAt': ({ observedAt }) => `ອັດຕາ ວັນທີ ${observedAt}`,
   'quotation.fx.manual': 'ອັດຕາທີ່ບໍລິສັດກຳນົດ',

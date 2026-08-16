@@ -424,6 +424,8 @@ export const th: UiCatalogue = {
   'quotation.vat': 'ภาษีมูลค่าเพิ่ม',
   'quotation.vatIncluded': 'รวมอยู่ในราคาแล้ว',
   'quotation.total': 'ยอดรวมทั้งสิ้น',
+  'quotation.totalApproximate': 'ยอดรวมสุทธิ (ราคาประมาณ)',
+  'quotation.approximateNote': 'ยอดนี้ยังไม่ใช่ยอดสุดท้าย — ทีมงานกำลังตรวจสอบและจะยืนยันให้ท่านทราบก่อนชำระเงิน กรุณายังไม่โอนเงินในขั้นตอนนี้',
   'quotation.fx.rate': ({ currency, rateText }) => `อัตราแลกเปลี่ยน 1 ${currency} = ${rateText} บาท`,
   'quotation.fx.observedAt': ({ observedAt }) => `อ้างอิงอัตรา ณ ${observedAt}`,
   'quotation.fx.manual': 'อัตราที่บริษัทกำหนด',

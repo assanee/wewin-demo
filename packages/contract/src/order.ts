@@ -570,6 +570,19 @@ export interface OrderMoneyWire {
    * number is the ceiling on what may ever be forfeited.
    */
   readonly scheduledDepositThbMinor: MoneyWire<'THB'>;
+  /**
+   * ⭐ The deposit share somebody chose for this order, in basis points — `null` when nobody did
+   * and the company setting applies.
+   *
+   * Null is not 0%, and the difference is what a staff screen needs: "30% because that is the
+   * company's number" and "30% because somebody decided so for this customer" are different
+   * facts, and only the second is a decision anybody can be asked about later.
+   *
+   * ⚠️ Not money, so it is a plain integer rather than a `MoneyWire`. `scheduledDepositThbMinor`
+   * beside it is what the share came to against the pinned total; that one is the ceiling a
+   * cancellation forfeits against and is the figure to print.
+   */
+  readonly depositBpAuthored: number | null;
 }
 
 export interface OrderSummaryWire {

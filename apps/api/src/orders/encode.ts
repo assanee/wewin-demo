@@ -179,6 +179,8 @@ export function encodeOrder(row: ScopedOrder, context: OrderContext): OrderWire 
           vatThbMinor: encodeThb(row.vatThbMinor),
           grandTotalThbMinor: encodeThb(row.grandTotalThbMinor),
           scheduledDepositThbMinor: encodeThb(row.scheduledDepositThbMinor),
+          /* Null when nobody chose a share for this order — see the wire. */
+          depositBpAuthored: row.depositBpAuthored,
         };
 
   return {

@@ -74,6 +74,8 @@ const WIRE: OrderWire = {
     netThbMinor: encodeThb(1722617n),
     vatThbMinor: encodeThb(120583n),
     grandTotalThbMinor: encodeThb(1843200n),
+    /* Null: nobody chose a share for this order, so the company setting applies. */
+    depositBpAuthored: null,
     scheduledDepositThbMinor: encodeThb(1843200n),
   },
   documentRevision: 1,

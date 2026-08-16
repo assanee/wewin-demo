@@ -450,6 +450,9 @@ export const vi: PartialUiCatalogue = {
   'quotation.vat': 'VAT',
   'quotation.vatIncluded': 'đã bao gồm trong giá',
   'quotation.total': 'Tổng cộng',
+  'quotation.totalApproximate': 'Tổng cộng (ước tính)',
+  'quotation.approximateNote': 
+    'Đây chưa phải số tiền cuối cùng — đội ngũ của chúng tôi đang kiểm tra và sẽ xác nhận trước khi thanh toán. Vui lòng chưa chuyển khoản ở bước này.',
   'quotation.fx.rate': ({ currency, rateText }) => `Tỷ giá 1 ${currency} = ${rateText} THB`,
   'quotation.fx.observedAt': ({ observedAt }) => `Tỷ giá ngày ${observedAt}`,
   'quotation.fx.manual': 'Tỷ giá do công ty ấn định',
