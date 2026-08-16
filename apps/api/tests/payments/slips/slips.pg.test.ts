@@ -158,7 +158,7 @@ describeWithPg('payment slips — upload, review, acceptance, rejection', () => 
   const minor = (wire: MoneyWire<'THB'>): bigint => toBigInt(wire);
 
   const orderOf = async (who: string): Promise<OrderWire> =>
-    submittedOrder(call, customer, line, contactFor(who));
+    submittedOrder(db, call, customer, line, contactFor(who));
 
   const uploadFor = async (
     orderId: string,

@@ -286,9 +286,15 @@ describeWithPg('RED TEAM 5: getting at an order that is not yours', () => {
       expect(JSON.stringify(cancelled.body)).not.toContain(contactFor('writeonly-write').email);
       expect(JSON.stringify(cancelled.body)).not.toContain(order.orderNo);
 
-      /* And the order did not move: the refusal is the whole outcome. */
+      /*
+       * And the order did not move: the refusal is the whole outcome.
+       *
+       * `awaiting_confirmation` since 0056 — where a submitted quotation waits for staff. The
+       * assertion is about the status being *unchanged*, so it is read from the fixture rather
+       * than named twice.
+       */
       const asVictim = await call('GET', `/orders/${order.id}`, { token: victim.token });
-      expect((asVictim.body as OrderWire).status).toBe('awaiting_payment');
+      expect((asVictim.body as OrderWire).status).toBe(order.status);
     });
 
     it('and a holder of both codes still can — the read-only clerk is what the split was for', async () => {

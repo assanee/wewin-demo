@@ -19,6 +19,7 @@ import {
   type Json,
   type LifecycleApp,
 } from '../orders/support/lifecycle-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * 🔴 RED TEAM — `z.strictObject` is layer 2 of the trap-4 defence, and there is one key it
@@ -104,6 +105,9 @@ describeWithPg('RED TEAM 5a — strictness and sustained contention', () => {
       lines: [line],
     });
     expect(done.status, JSON.stringify(done.body)).toBe(200);
+
+    /* …and confirmed: these probes are aimed at an order the customer has been asked to pay. */
+    await confirmQuotation(db, draft);
     return draft;
   };
 

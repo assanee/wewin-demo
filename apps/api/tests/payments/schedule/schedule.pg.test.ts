@@ -24,6 +24,7 @@ import type { Tx } from '../../../src/orders/order.repository';
 import { ScheduleRepository } from '../../../src/payments/schedule/schedule.repository';
 import { ScheduleService } from '../../../src/payments/schedule/schedule.service';
 import { depositPercentTerms, payInFullTerms } from '../../../src/payments/schedule/terms';
+import { confirmQuotation } from '../../support/confirm-quotation';
 
 /**
  * The schedule service against a real Postgres, because the properties it is built on are
@@ -111,7 +112,8 @@ const submittedOrder = async (grand: bigint = GRAND): Promise<Order> => {
       orderId,
       eventType: 'submitted_for_payment',
       fromStatus: 'draft',
-      toStatus: 'awaiting_payment',
+      /* See the note in the sibling fixture: the submit lands unconfirmed since 0056. */
+      toStatus: 'awaiting_confirmation',
       actorKind: 'guest',
       actorGuestId: guest.id,
     });
@@ -138,7 +140,7 @@ const submittedOrder = async (grand: bigint = GRAND): Promise<Order> => {
     await tx
       .update(orders)
       .set({
-        status: 'awaiting_payment',
+        status: 'awaiting_confirmation',
         statusEventId: submitEventId,
         // The database clock, not this process one: the freeze trigger stamps frozen_at
         // with now(), orders_frozen_after_submitted compares the two, and a Node timestamp
@@ -162,6 +164,9 @@ const submittedOrder = async (grand: bigint = GRAND): Promise<Order> => {
       })
       .where(eq(orders.id, orderId));
   });
+
+  /* …and confirmed, because every caller of this fixture wants a payable order. */
+  await confirmQuotation(db, orderId);
 
   return { orderId, guestId: guest.id };
 };
@@ -345,8 +350,17 @@ describeWithPg('the instalment schedule, against Postgres', () => {
     const other = await submittedOrder();
     const frozen = await failureOf(() => open(other, payInFullTerms(), 'in_production'));
     expect(detailsOf(frozen)['reason']).toBe('order_not_editable');
-    /* `redesign` is in the editable list, and that is the one plan 7.5(ง) says gets forgotten. */
-    expect(detailsOf(frozen)['editableStatuses']).toEqual(['draft', 'awaiting_payment', 'redesign']);
+    /*
+     * `redesign` is in the editable list, and that is the one plan 7.5(ง) says gets forgotten.
+     * `awaiting_confirmation` joined it in 0055: after the flip a schedule is *born* there —
+     * the submit plans the instalments in the transaction that moves the order out of `draft`.
+     */
+    expect(detailsOf(frozen)['editableStatuses']).toEqual([
+      'draft',
+      'awaiting_confirmation',
+      'awaiting_payment',
+      'redesign',
+    ]);
   });
 
   it('replaces a schedule with a 30/70 that foots to the satang', async () => {

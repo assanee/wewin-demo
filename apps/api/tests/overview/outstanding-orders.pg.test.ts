@@ -120,7 +120,7 @@ describeWithPg('the overview — which orders owe the money', () => {
      * other suites in this run left unpaid. Its *rank* is still not assumed — see the helper
      * below, and the file header for why a capped list cannot promise membership.
      */
-    const order = await submittedOrder(call, customer, { ...line, qty: 60 }, contactFor('big'));
+    const order = await submittedOrder(db, call, customer, { ...line, qty: 60 }, contactFor('big'));
     const expected = await outstandingFold(db, order.id);
     expect(expected).toBeGreaterThan(0n);
 
@@ -164,7 +164,7 @@ describeWithPg('the overview — which orders owe the money', () => {
   });
 
   it('drops an order the moment it is paid in full, and never lists a cart', async () => {
-    const paid = await submittedOrder(call, customer, line, contactFor('settled'));
+    const paid = await submittedOrder(db, call, customer, line, contactFor('settled'));
     const grandTotal = toBigInt(paid.grandTotalThbMinor ?? never('a submitted order has a grand total'));
 
     const before = await owing();
@@ -205,7 +205,7 @@ describeWithPg('the overview — which orders owe the money', () => {
      * a column where every value is equal would pass a monotonicity check without being sorted.
      */
     for (const qty of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
-      await submittedOrder(call, customer, { ...line, qty }, contactFor(`cap-${qty}`));
+      await submittedOrder(db, call, customer, { ...line, qty }, contactFor(`cap-${qty}`));
     }
 
     const { total, orders } = await owing();

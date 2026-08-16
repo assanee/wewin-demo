@@ -76,7 +76,7 @@ describeWithPg('the ledger', () => {
   });
 
   const anOrder = async (who: string): Promise<OrderWire> =>
-    submittedOrder(call, customer, line, {
+    submittedOrder(db, call, customer, line, {
       email: `ledger-${who}-${tag}@probe.invalid`,
       name: `ledger probe ${tag}`,
     });

@@ -355,8 +355,14 @@ describeWithPg('the destination, pinned into the document and its columns', () =
     await submitExisting(orderId, { contact: { email: 'a@b.co' } });
     expect((await documentRow(orderId)).pinnedVatRateBp, 'the predecessor').toBe(900);
 
-    /* The only route to `superseded`: freeze it, redesign it, then replace it. */
-    await staffMove(orderId, 'production_confirmed');
+    /*
+     * The only route to `superseded`: freeze it, redesign it, then replace it.
+     *
+     * ⚠️ From `awaiting_confirmation` the freeze is `production_authorised_unpaid` — releasing
+     * production on an order nobody has paid for — which requires a written `reason`. That is
+     * the honest edge added in 0054; the old one recorded the same act as a confirmed payment.
+     */
+    await staffMove(orderId, 'production_confirmed', { reason: 'ทดสอบ: อนุมัติผลิตก่อนรับชำระ' });
     await staffMove(orderId, 'redesign', { reason: 'ส่วนต่างสูงเกินกว่าจะรับไว้เอง' });
     const superseded = await staffMove(orderId, 'superseded', {
       reason: 'ออกใบใหม่ให้ลูกค้าอนุมัติ',

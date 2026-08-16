@@ -91,7 +91,7 @@ describeWithPg('⭐ a quotation link is read by somebody carrying nothing', () =
   });
 
   const order = (who: string): Promise<OrderWire> =>
-    submittedOrder(call, customer, line, contactFor(who));
+    submittedOrder(db, call, customer, line, contactFor(who));
 
   const byLink = (token: string): Promise<Json> => call('GET', `/orders/documents/${token}`);
 

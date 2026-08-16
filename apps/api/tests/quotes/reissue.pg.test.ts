@@ -7,6 +7,7 @@ import type { QuoteWire } from '@wewin/contract/quote';
 import { createPgHarness } from '../support/pg-harness';
 import { client, makeActor, type Json } from '../orders/support/lifecycle-app';
 import { giveOrderHeldMoney } from '../payments/support/money-fixture';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * ⭐ POST /orders/:id/quote/reissue — the step that was missing between an edit and the customer.
@@ -83,6 +84,13 @@ describe.skipIf(url === undefined || url === '')('re-issuing an edited quotation
         },
       });
       if (submitted.status !== 200) throw new Error(JSON.stringify(submitted.body));
+
+      /*
+       * Confirmed, so these tests keep testing what they were written for: a re-issue *after*
+       * the customer has been asked to pay. Re-issuing from `awaiting_confirmation` is now the
+       * ordinary case and has its own coverage.
+       */
+      await confirmQuotation(db, orderId);
       return orderId;
     };
 

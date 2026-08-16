@@ -27,6 +27,7 @@ import {
   type Json,
   type LifecycleApp,
 } from './support/lifecycle-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * The nine statuses, every legal move, and the four traps that are this module's — over real
@@ -135,7 +136,11 @@ describeWithPg('the order lifecycle end to end', () => {
 
     const submitted = await submit(draft.id, { token: customerA.token }, who);
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
-    return submitted.body as OrderWire;
+
+    /* A submit lands unconfirmed since 0056; these blocks are about a payable order. */
+    await confirmQuotation(db, draft.id);
+    const confirmed = await call('GET', `/orders/${draft.id}`, { token: customerA.token });
+    return confirmed.body as OrderWire;
   };
 
   const eventsOf = async (orderId: string): Promise<readonly OrderEventWire[]> => {
@@ -315,11 +320,18 @@ describeWithPg('the order lifecycle end to end', () => {
      * is no call for a service to forget and no rollback that can leave one behind.
      */
     expect(queued.length).toBeGreaterThanOrEqual(2);
-    expect(queued.map((row) => row.recipientKind).sort()).toStrictEqual(['customer', 'sales_queue']);
-    expect(queued.every((row) => row.eventId === event.id)).toBe(true);
+
+    /*
+     * ⚠️ Scoped to the submit's own event since 0056. The fixture now also confirms the
+     * quotation, which fans out its own customer mail — so the order carries three
+     * notifications and only these two belong to the event this test is about. Comparing every
+     * row on the order would make this assertion drift every time the flow gains a step.
+     */
+    const forSubmit = queued.filter((row) => row.eventId === event.id);
+    expect(forSubmit.map((row) => row.recipientKind).sort()).toStrictEqual(['customer', 'sales_queue']);
     expect(queued.every((row) => row.status === 'pending')).toBe(true);
 
-    const customerRow = queued.find((row) => row.recipientKind === 'customer');
+    const customerRow = forSubmit.find((row) => row.recipientKind === 'customer');
     expect(customerRow?.recipientKey).toBe(`email:${contactFor('outbox').email}`);
 
     /* The same transaction, as a fact rather than as a comment. */

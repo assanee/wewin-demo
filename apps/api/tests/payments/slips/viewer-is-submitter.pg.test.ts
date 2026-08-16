@@ -20,6 +20,7 @@ import {
 } from '../support/payments-app';
 import { makePng } from '../../media/fixtures';
 import { bootSlipsApp, type SlipsApp } from './support/slips-app';
+import { confirmQuotation } from '../../support/confirm-quotation';
 
 /**
  * 🔒 `SlipReviewWire.viewerIsSubmitter` — whose slip the review screen is looking at.
@@ -182,7 +183,9 @@ describeWithPg('🔒 whose slip is this — the review wire answers, the screen 
     });
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
 
-    const order = submitted.body as OrderWire;
+    /* A slip may only be attached to a confirmed order — `payment_slips_live_orders_only`. */
+    await confirmQuotation(db, draft.id);
+    const order = (await call('GET', `/orders/${draft.id}`, { cookie })).body as OrderWire;
     if (order.money === null) throw new Error('a submitted order has money');
     return { id: order.id, cookie, grand: minor(order.money.grandTotalThbMinor) };
   }

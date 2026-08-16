@@ -18,6 +18,7 @@ import { AllExceptionsFilter } from '../../../src/common/errors/all-exceptions.f
 import { parseEnv, type Env } from '../../../src/config/env';
 import type { PermissionCode } from '../../../src/rbac';
 import { testSessionConfig , testMfaSecretKey } from '../../support/app';
+import { confirmQuotation } from '../../support/confirm-quotation';
 
 /**
  * The real application graph. Nothing added, and that is the change.
@@ -207,7 +208,20 @@ export async function liveLine(call: ReturnType<typeof client>): Promise<OrderLi
  * row. `scheduled_deposit_thb_minor` is the ceiling on every forfeit in this phase, and a
  * fabricated one would be a ceiling the fixture chose rather than the one the contract did.
  */
+/**
+ * A cart, submitted, and **confirmed by staff** — an order the customer may actually pay.
+ *
+ * ⚠️ The confirmation step is new and it is the reason `db` is the first argument now. A submit
+ * lands in `awaiting_confirmation` since 0056: the customer asks for a price and a member of
+ * staff decides when they may pay it. Every caller of this helper wants an order past that
+ * point — they accept slips, confirm payments, walk the lifecycle — so the step is done here
+ * rather than in fifteen files, through `confirmQuotation`, which writes the same event and the
+ * same row the real transition writes.
+ *
+ * A test that is *about* the confirmation should not use this helper.
+ */
 export async function submittedOrder(
+  db: Database,
   call: ReturnType<typeof client>,
   customer: Actor,
   line: OrderLineRequestWire,
@@ -223,5 +237,14 @@ export async function submittedOrder(
   });
 
   if (submitted.status !== 200) throw new Error(`could not submit: ${JSON.stringify(submitted.body)}`);
-  return submitted.body as OrderWire;
+
+  await confirmQuotation(db, draft.id);
+
+  /*
+   * Re-read rather than returning the submit's own body: that one describes the order as it was
+   * one status ago, and callers branch on `status`.
+   */
+  const confirmed = await call('GET', `/orders/${draft.id}`, { token: customer.token });
+  if (confirmed.status !== 200) throw new Error(`could not re-read: ${JSON.stringify(confirmed.body)}`);
+  return confirmed.body as OrderWire;
 }

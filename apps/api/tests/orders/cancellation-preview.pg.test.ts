@@ -120,7 +120,7 @@ describeWithPg('what cancelling costs, stated before it is done', () => {
 
   /** A submitted order holding the whole contract in cash, priced by the real submit. */
   async function orderHoldingMoney(label: string): Promise<{ order: OrderWire; grandTotal: bigint }> {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `preview-${label}-${tag}@probe.invalid`,
       name: `preview ${label} ${tag}`,
     });

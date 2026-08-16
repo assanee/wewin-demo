@@ -20,6 +20,7 @@ import {
   type LifecycleApp,
 } from '../orders/support/lifecycle-app';
 import { RouteRegistryService, type RouteRecord } from '../../src/rbac/route-registry.service';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * RED TEAM 5a, round two — the attacks the obvious ones did not cover.
@@ -95,7 +96,13 @@ describeWithPg('RED TEAM 5a round two', () => {
     const draft = created.body as OrderWire;
     const done = await submit(draft.id, { token: customerA.token }, who);
     expect(done.status, JSON.stringify(done.body)).toBe(200);
-    return done.body as OrderWire;
+
+    /*
+     * …through the staff confirmation. Every block below is about an order the customer has
+     * been asked to pay: the freeze, the bounce, the objection, the absence of a timeout.
+     */
+    await confirmQuotation(db, draft.id);
+    return (await call('GET', `/orders/${draft.id}`, { token: customerA.token })).body as OrderWire;
   };
 
   const frozen = async (who: string): Promise<OrderWire> => {
@@ -315,6 +322,7 @@ describeWithPg('RED TEAM 5a round two', () => {
       body: { contact: contactFor('b5'), lines: [line] },
     });
     expect(submitted.status).toBe(200);
+    await confirmQuotation(db, orderId);
 
     const cancelled = await call('POST', `/orders/${orderId}/transitions/cancelled`, {
       cookie: stolen,

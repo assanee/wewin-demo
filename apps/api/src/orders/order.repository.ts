@@ -625,12 +625,19 @@ export class OrderRepository {
        * has the value in hand — it read it to plan the schedule.
        */
       readonly depositFloorBp: number;
+      /**
+       * ⭐ Where the submit lands — passed in, because it is the transition row's to say.
+       *
+       * It was `'awaiting_payment'` written here, which is how "the customer asks for a price"
+       * and "the customer is asked to pay" became the same act. See `OrdersService.submit`.
+       */
+      readonly status: OrderStatus;
     },
   ): Promise<void> {
     await tx
       .update(orders)
       .set({
-        status: 'awaiting_payment',
+        status: input.status,
         statusEventId: input.statusEventId,
         /*
          * The database's clock, not this process's.

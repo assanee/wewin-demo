@@ -67,6 +67,13 @@ export const MAX_INSTALMENTS = 24;
  */
 export const SCHEDULE_EDITABLE_STATUSES: readonly OrderStatus[] = [
   'draft',
+  /*
+   * ⭐ Where a schedule is now *born*: the submit plans the instalments in the same transaction
+   * that moves the order out of `draft`, and after the flip that lands here. It is also the
+   * status in which staff re-cut a deposit before asking the customer for anything.
+   * `order_instalments_live_orders_only` (0055) carries the same list.
+   */
+  'awaiting_confirmation',
   'awaiting_payment',
   'redesign',
 ];

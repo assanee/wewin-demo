@@ -18,6 +18,7 @@ import {
   type Json,
   type LifecycleApp,
 } from './support/lifecycle-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * ONE TEST PER TRAP — plan 7.4's seven, each one red the moment its fix is removed.
@@ -101,7 +102,11 @@ describeWithPg('plan 7.4 — the seven traps, one test each', () => {
       lines: [line],
     });
     expect(done.status, JSON.stringify(done.body)).toBe(200);
-    return done.body as OrderWire;
+
+    /* A submit lands unconfirmed since 0056; the traps below are about a payable order. */
+    await confirmQuotation(db, draft);
+    const confirmed = await call('GET', `/orders/${draft}`, { token: actor.token });
+    return confirmed.body as OrderWire;
   };
 
   const frozenOf = async (actor: Actor, who: string): Promise<OrderWire> => {

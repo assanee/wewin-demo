@@ -592,12 +592,31 @@ export class OrdersService {
       /* ① The lock, scoped by ownership. Everything below reads `order.status` from it. */
       const order = await this.scoped.lockOrFail(tx, scope, orderId, 'act');
 
-      /* ② The move, as data. Not found means this order cannot go there from where it is. */
-      const row = await this.orders.findTransition(tx, order.status, toStatus);
+      /*
+       * ② The move, as data. Not found means this order cannot go there from where it is.
+       *
+       * ⭐ …with one rewrite, for one pair, for one release. `0056_retire_direct_submit.sql`
+       * deleted `draft → awaiting_payment`: a quotation request now lands in
+       * `awaiting_confirmation` and a member of staff decides when the customer may pay. But
+       * `apps/web/src/lib/quote/submit.ts` posts the destination **by name**, so a browser tab
+       * loaded before the deploy asks for the old one — and would get a 409 about statuses on
+       * the customer's primary action, having filled in the form.
+       *
+       * The rewrite is here rather than a second transition row on purpose: a row would be a
+       * second way for an order to arrive in `awaiting_payment` without ever being confirmed,
+       * which is precisely what this round removes. This is a compatibility shim with an end
+       * date and a test (`submit-lands-unconfirmed.pg.test.ts`), not a supported alias.
+       */
+      const requested =
+        order.status === 'draft' && toStatus === 'awaiting_payment'
+          ? ('awaiting_confirmation' as OrderStatus)
+          : toStatus;
+
+      const row = await this.orders.findTransition(tx, order.status, requested);
       if (!row) {
         throw AppError.conflict('ออร์เดอร์นี้ไปยังสถานะที่ขอไม่ได้จากสถานะปัจจุบัน', {
           from: order.status,
-          to: toStatus,
+          to: requested,
         });
       }
 
@@ -1092,7 +1111,17 @@ export class OrdersService {
       orderId: order.id,
       eventType: row.eventType,
       fromStatus: order.status,
-      toStatus: 'awaiting_payment',
+      /*
+       * ⭐ From the transition row, not a literal, and that is the whole of the flip.
+       *
+       * A submit used to land in `awaiting_payment` — the customer was asked to transfer money
+       * against a figure no member of staff had seen. It now lands in `awaiting_confirmation`,
+       * and this line stopped naming either: the destination is a column of the row this
+       * transition was loaded from, so moving it again is a migration and not a search for
+       * string literals. There were three of them, in two files, and the third was invisible to
+       * every test because it only reached a status *assertion*.
+       */
+      toStatus: row.toStatus,
       actorKind: actor.actorKind,
       actorUserId: actor.actorUserId,
       actorGuestId: actor.actorGuestId,
@@ -1187,6 +1216,8 @@ export class OrdersService {
       orderId: order.id,
       statusEventId: eventId,
       documentId,
+      /* Where this transition says it goes — see the event above. */
+      status: row.toStatus,
       /*
        * ⚠️ `?? order.contactEmail`, like the other two, now that an address is optional.
        *
@@ -1222,7 +1253,14 @@ export class OrdersService {
      */
     await this.payments.onSubmitted(tx, {
       orderId: order.id,
-      status: 'awaiting_payment',
+      /*
+       * ⚠️ The status the order was actually just moved to — the third literal, and the one that
+       * would not have failed a test. It becomes `ScheduleContext.status`, which
+       * `assertEditable` compares against `SCHEDULE_EDITABLE_STATUSES`; both statuses are on
+       * that list, so a stale literal here would have gone on passing while telling the schedule
+       * module something untrue about the order it was writing.
+       */
+      status: row.toStatus,
       grandTotalThbMinor: priced.grandTotalThbMinor,
       instalments: pins.instalments,
       forfeitPolicyId: pins.forfeitPolicyId,
@@ -1295,15 +1333,19 @@ export class OrdersService {
       const body = parseAfterLock(reissueQuoteRequestSchema, rawBody);
 
       /*
-       * ⛔ `awaiting_payment` and nothing else.
+       * ⛔ The two statuses in which a quotation is a live document nobody has been paid for.
        *
        * A `draft` has never been quoted — the route for that is a submit, which does more than
        * this (an order number, `submitted_at`, the forfeit policy, the customer's first mail).
        * Anything past `awaiting_payment` has money on it or is in production, and re-pricing a
-       * contract being built is not a re-issue but a change order. The refusal names both
-       * statuses so a dashboard can say which.
+       * contract being built is not a re-issue but a change order.
+       *
+       * ⭐ `awaiting_confirmation` joined it with the flip, and it is now the *ordinary* case:
+       * staff edit the quotation before anybody is asked to pay, and pressing send there is what
+       * carries the new figures onto the order the customer is looking at. Re-issuing from
+       * `awaiting_payment` — after the customer has been asked — is the exceptional one.
        */
-      if (order.status !== 'awaiting_payment') {
+      if (order.status !== 'awaiting_payment' && order.status !== 'awaiting_confirmation') {
         throw AppError.conflict(message('error.quote.not_awaiting_payment'), {
           reason: 'order_not_awaiting_payment',
           status: order.status,

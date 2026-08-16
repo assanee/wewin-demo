@@ -146,7 +146,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
   });
 
   it('answers 404 — never 403 — when the order exists but belongs to somebody else', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('boundary'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('boundary'));
 
     const asOwner = await call('GET', `/orders/${order.id}/payment-instructions`, {
       token: customerA.token,
@@ -176,7 +176,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
   });
 
   it('answers 401 for a caller with no principal at all', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('anon'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('anon'));
     const answer = await call('GET', `/orders/${order.id}/payment-instructions`, {});
     expect(answer.status).toBe(401);
   });
@@ -186,7 +186,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
    * ---------------------------------------------------------------- */
 
   it('gives the owner the grand total, the outstanding balance, and only active accounts', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('owner'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('owner'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
 
     const answer = await call('GET', `/orders/${order.id}/payment-instructions`, {
@@ -217,7 +217,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
   });
 
   it('serves the accounts in `sort_order`, faithfully forwarding what `activeAccounts()` returns', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('sort-order'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('sort-order'));
 
     const first = (await call('POST', '/admin/organisation/bank-accounts', {
       token: writer.token,
@@ -262,7 +262,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
     'reads the same fold the staff slip-review wire reads: the balance owed after only the ' +
       'deposit instalment is settled, not zero and not a per-slip subtraction',
     async () => {
-      const order = await submittedOrder(call, customerA, line, contactFor('fold'));
+      const order = await submittedOrder(db, call, customerA, line, contactFor('fold'));
       const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
 
       const schedule = await writeThirtySeventy(db, app, order.id, grandTotal);
@@ -312,7 +312,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
      * `isLiveOrder` that lost its list — would pass the cancellation assertion below and be
      * a screen that never lets anybody pay.
      */
-    const order = await submittedOrder(call, customerA, line, contactFor('live'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('live'));
 
     const answer = await call('GET', `/orders/${order.id}/payment-instructions`, {
       token: customerA.token,
@@ -346,7 +346,7 @@ describeWithPg('GET /orders/:orderId/payment-instructions', () => {
        * cruel one: there is real money on the order, a real unpaid balance behind it, and the
        * company is the party that owes.
        */
-      const order = await submittedOrder(call, customerA, line, contactFor('cancelled'));
+      const order = await submittedOrder(db, call, customerA, line, contactFor('cancelled'));
       const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
       const schedule = await writeThirtySeventy(db, app, order.id, grandTotal);
 

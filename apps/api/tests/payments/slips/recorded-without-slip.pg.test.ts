@@ -164,7 +164,7 @@ describeWithPg('a payment recorded with no slip', () => {
   const minor = (wire: MoneyWire<'THB'>): bigint => toBigInt(wire);
 
   const orderOf = async (who: string): Promise<OrderWire> =>
-    submittedOrder(call, customer, line, contactFor(who));
+    submittedOrder(db, call, customer, line, contactFor(who));
 
   /** An order with a 30/70 schedule, and the two figures it wants. */
   const scheduled = async (

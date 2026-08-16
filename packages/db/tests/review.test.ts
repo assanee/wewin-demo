@@ -242,7 +242,8 @@ const submitOrder = async (orderId: string, guestId: string): Promise<void> => {
       orderId,
       eventType: 'submitted_for_payment',
       fromStatus: 'draft',
-      toStatus: 'awaiting_payment',
+      /* The submit's destination since 0056; the staff confirmation follows below. */
+      toStatus: 'awaiting_confirmation',
       actorKind: 'guest',
       actorGuestId: guestId,
     });
@@ -269,7 +270,7 @@ const submitOrder = async (orderId: string, guestId: string): Promise<void> => {
     await tx
       .update(orders)
       .set({
-        status: 'awaiting_payment',
+        status: 'awaiting_confirmation',
         statusEventId: submitEvent,
         // The database clock, not this process one: the freeze trigger stamps frozen_at
         // with now(), orders_frozen_after_submitted compares the two, and a Node timestamp
@@ -282,6 +283,28 @@ const submitOrder = async (orderId: string, guestId: string): Promise<void> => {
         grandTotalThbMinor: GRAND,
         scheduledDepositThbMinor: DEPOSIT,
       })
+      .where(eq(orders.id, orderId));
+
+    /*
+     * …and the staff confirmation. Every order this fixture builds is carried on to
+     * `delivered`, which since 0056 goes through `awaiting_confirmation → awaiting_payment`.
+     */
+    const [confirmation] = await tx
+      .insert(orderEvents)
+      .values({
+        orderId,
+        eventType: 'quotation_confirmed',
+        fromStatus: 'awaiting_confirmation',
+        toStatus: 'awaiting_payment',
+        actorKind: 'staff',
+        actorUserId: moderator,
+      })
+      .returning({ id: orderEvents.id });
+    if (!confirmation) throw new Error('could not confirm the quotation');
+
+    await tx
+      .update(orders)
+      .set({ status: 'awaiting_payment', statusEventId: confirmation.id })
       .where(eq(orders.id, orderId));
   });
 };

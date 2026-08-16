@@ -21,6 +21,7 @@ import {
   type Json,
   type LifecycleApp,
 } from '../orders/support/lifecycle-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * RED TEAM — phase 5a lifecycle. Reproductions only; nothing here is a fix.
@@ -101,7 +102,11 @@ describeWithPg('RED TEAM 5a — the order lifecycle', () => {
     const draft = created.body as OrderWire;
     const done = await submit(draft.id, { token: customerA.token }, who);
     expect(done.status, JSON.stringify(done.body)).toBe(200);
-    return done.body as OrderWire;
+
+    /* A submit lands unconfirmed since 0056; this fixture wants an order at `awaiting_payment`. */
+    await confirmQuotation(db, draft.id);
+    const confirmed = await call('GET', `/orders/${draft.id}`, { token: customerA.token });
+    return confirmed.body as OrderWire;
   };
 
   /** A frozen order (`production_confirmed`) owned by customer A. */
@@ -184,8 +189,10 @@ describeWithPg('RED TEAM 5a — the order lifecycle', () => {
 
     if (cancel.status === 200 && confirm.status === 200) {
       /* The confirm went first: the cancellation is the legal post-freeze one. */
+      /* `quotation_confirmed` since 0056: the fixture goes through the staff confirmation. */
       expect(moves.map((e) => e.event_type), note).toStrictEqual([
         'submitted_for_payment',
+        'quotation_confirmed',
         'payment_confirmed',
         'cancelled',
       ]);
@@ -194,6 +201,7 @@ describeWithPg('RED TEAM 5a — the order lifecycle', () => {
       expect(codes.sort(), note).toStrictEqual([200, 409]);
       expect(moves.map((e) => e.event_type), note).toStrictEqual([
         'submitted_for_payment',
+        'quotation_confirmed',
         'cancelled',
       ]);
     }
@@ -212,7 +220,18 @@ describeWithPg('RED TEAM 5a — the order lifecycle', () => {
       submit(draft, { token: customerA.token }, 'a1c'),
     ]);
 
-    expect([one.status, two.status].sort(), JSON.stringify([one.body, two.body])).toEqual([200, 409]);
+    /*
+     * ⚠️ 403 and not 409 for the loser since 0056, and the difference is the feature.
+     *
+     * Both requests ask for `awaiting_payment`. The winner's is rewritten to the submit and
+     * lands the order in `awaiting_confirmation`; the loser then arrives at an order that is no
+     * longer a draft, where `awaiting_confirmation → awaiting_payment` is a real transition —
+     * the staff confirmation — that a **customer may not make**. So the refusal is now about
+     * authority rather than about the status, which is the more precise of the two.
+     *
+     * What this test is for is unchanged and is asserted below: one order number, one document.
+     */
+    expect([one.status, two.status].sort(), JSON.stringify([one.body, two.body])).toEqual([200, 403]);
 
     const [docs] = await rows<{ n: string }>(
       sql`select count(*)::text as n from order_documents where order_id = ${draft}`,

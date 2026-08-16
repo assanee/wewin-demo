@@ -19,6 +19,7 @@ import {
   type Json,
   type LifecycleApp,
 } from '../orders/support/lifecycle-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /** RED TEAM 5a, round three — stress, malformed input, and the cost of the anonymous funnel. */
 
@@ -86,7 +87,10 @@ describeWithPg('RED TEAM 5a round three', () => {
       lines: [line],
     });
     expect(done.status, JSON.stringify(done.body)).toBe(200);
-    return done.body as OrderWire;
+
+    /* Confirmed by staff — since 0056 a submit stops one status short of payable. */
+    await confirmQuotation(db, draft);
+    return (await call('GET', `/orders/${draft}`, { token: customerA.token })).body as OrderWire;
   };
 
   /* ================================================================= *

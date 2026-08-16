@@ -127,7 +127,8 @@ const submit = async (order: Order, deposit = DEPOSIT): Promise<void> => {
       orderId: order.orderId,
       eventType: 'submitted_for_payment',
       fromStatus: 'draft',
-      toStatus: 'awaiting_payment',
+      /* The submit's destination since 0056; the staff confirmation follows. */
+      toStatus: 'awaiting_confirmation',
       actorKind: 'guest',
       actorGuestId: order.guestId,
     });
@@ -154,7 +155,7 @@ const submit = async (order: Order, deposit = DEPOSIT): Promise<void> => {
     await tx
       .update(orders)
       .set({
-        status: 'awaiting_payment',
+        status: 'awaiting_confirmation',
         statusEventId: eventId,
         // The database clock, not this process one: the freeze trigger stamps frozen_at
         // with now(), orders_frozen_after_submitted compares the two, and a Node timestamp
@@ -167,6 +168,29 @@ const submit = async (order: Order, deposit = DEPOSIT): Promise<void> => {
         grandTotalThbMinor: GRAND,
         scheduledDepositThbMinor: deposit,
       })
+      .where(eq(orders.id, order.orderId));
+
+    /*
+     * …and the staff confirmation, which is what makes the order payable since 0056. Every
+     * fixture here goes on to attach a slip, and `payment_slips_live_orders_only` refuses one
+     * against a quotation nobody has agreed to — deliberately, and that refusal is a feature.
+     */
+    const [confirmation] = await tx
+      .insert(orderEvents)
+      .values({
+        orderId: order.orderId,
+        eventType: 'quotation_confirmed',
+        fromStatus: 'awaiting_confirmation',
+        toStatus: 'awaiting_payment',
+        actorKind: 'staff',
+        actorUserId: staffA,
+      })
+      .returning({ id: orderEvents.id });
+    if (!confirmation) throw new Error('could not confirm the quotation');
+
+    await tx
+      .update(orders)
+      .set({ status: 'awaiting_payment', statusEventId: confirmation.id })
       .where(eq(orders.id, order.orderId));
   });
 };
@@ -447,6 +471,8 @@ beforeAll(async () => {
       (
         [
           'draft',
+          /* Cancellable since 0054, and priced like `awaiting_payment`: nothing committed yet. */
+          'awaiting_confirmation',
           'awaiting_payment',
           'production_confirmed',
           'in_production',
@@ -463,6 +489,7 @@ beforeAll(async () => {
             fault === 'company' ||
             fromStatus === 'production_confirmed' ||
             fromStatus === 'draft' ||
+            fromStatus === 'awaiting_confirmation' ||
             fromStatus === 'awaiting_payment'
               ? 0
               : 10_000,

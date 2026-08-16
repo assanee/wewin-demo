@@ -152,7 +152,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
    * ---------------------------------------------------------------- */
 
   it('on a 30/70 order with nothing paid, states the whole total and asks for the deposit', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('unpaid'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('unpaid'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
     const schedule = await writeThirtySeventy(db, app, order.id, grandTotal);
 
@@ -171,7 +171,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
     'after the deposit is accepted on a 30/70 order, both figures become the balance — ' +
       'not zero, and not the deposit again',
     async () => {
-      const order = await submittedOrder(call, customerA, line, contactFor('deposit-paid'));
+      const order = await submittedOrder(db, call, customerA, line, contactFor('deposit-paid'));
       const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
       const schedule = await writeThirtySeventy(db, app, order.id, grandTotal);
 
@@ -200,7 +200,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
   );
 
   it('on an order paid in full, both figures are ฿0.00 — present, and zero', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('paid-in-full'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('paid-in-full'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
 
     /* The submit's own schedule: one `remainder` instalment for the whole total. */
@@ -261,7 +261,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
      * on which the company may owe them a refund. `GET /overview`, which filters with
      * `LIVE_ORDERS`, said ฿0 about the same order at the same moment.
      */
-    const order = await submittedOrder(call, customerA, line, contactFor('cancelled'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('cancelled'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
 
     /* While it is live, the whole contract is owed — otherwise this proves nothing. */
@@ -312,7 +312,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
    * ---------------------------------------------------------------- */
 
   it('agrees, figure for figure, with what `payment-instructions` answers for the same order', async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('agreement'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('agreement'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
     const schedule = await writeThirtySeventy(db, app, order.id, grandTotal);
 
@@ -382,7 +382,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
    * ---------------------------------------------------------------- */
 
   it("never carries another customer's order, and so never carries their balance", async () => {
-    const order = await submittedOrder(call, customerA, line, contactFor('scope'));
+    const order = await submittedOrder(db, call, customerA, line, contactFor('scope'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
     await writeThirtySeventy(db, app, order.id, grandTotal);
 
@@ -431,9 +431,9 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
        *   cancelled    a real balance, and a dead contract; `isLiveOrder` excludes it
        *   cart         never submitted, so both figures are null rather than zero
        */
-      const owing = await submittedOrder(call, customerA, line, contactFor('filter-owing'));
-      const settled = await submittedOrder(call, customerA, line, contactFor('filter-settled'));
-      const cancelled = await submittedOrder(call, customerA, line, contactFor('filter-cancelled'));
+      const owing = await submittedOrder(db, call, customerA, line, contactFor('filter-owing'));
+      const settled = await submittedOrder(db, call, customerA, line, contactFor('filter-settled'));
+      const cancelled = await submittedOrder(db, call, customerA, line, contactFor('filter-cancelled'));
 
       await giveOrderHeldMoney(db, {
         orderId: settled.id,
@@ -474,7 +474,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
        * member would have made "in production **and** owing" — the question a production manager
        * actually asks — unaskable. Two parameters compose; one parameter cannot.
        */
-      const owing = await submittedOrder(call, customerA, line, contactFor('filter-and'));
+      const owing = await submittedOrder(db, call, customerA, line, contactFor('filter-and'));
 
       const both = idsOf(await listFor(customerA, '?status=awaiting_payment&payment=outstanding&limit=100'));
       expect(both).toContain(owing.id);
@@ -495,8 +495,9 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
        * Two orders of the same product differ only by quantity, so the larger is deterministically
        * the larger debt — no fixture arithmetic here, and nothing to keep in step with pricing.
        */
-      const small = await submittedOrder(call, customerB, line, contactFor('filter-small'));
+      const small = await submittedOrder(db, call, customerB, line, contactFor('filter-small'));
       const large = await submittedOrder(
+        db,
         call,
         customerB,
         { ...line, qty: 5 },
@@ -518,7 +519,7 @@ describeWithPg('GET /orders — the per-order outstanding and next-due figures',
        * argued, because "a new filter widened the scope" is the shape of defect that reads as a
        * feature working.
        */
-      const theirs = await submittedOrder(call, customerA, line, contactFor('filter-not-yours'));
+      const theirs = await submittedOrder(db, call, customerA, line, contactFor('filter-not-yours'));
 
       const asOwner = idsOf(await listFor(customerA, '?payment=outstanding&limit=100'));
       expect(asOwner).toContain(theirs.id);

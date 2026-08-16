@@ -145,7 +145,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
       readonly pinnedDepositThbMinor?: bigint;
     } = {},
   ): Promise<{ readonly order: OrderWire; readonly grandTotal: bigint; readonly slipId: string }> => {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `refund-${who}-${tag}@probe.invalid`,
       name: `refund probe ${tag}`,
     });
@@ -604,7 +604,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
      * cash instead of by the obligation makes this test fail by a factor of more than three.
      */
     it('bounds the forfeit by the pinned deposit, not by the cash that happened to arrive', async () => {
-      const grandTotalGuess = toBigInt((await submittedOrder(call, customer, line, {
+      const grandTotalGuess = toBigInt((await submittedOrder(db, call, customer, line, {
         email: `refund-ceiling-probe-${tag}@probe.invalid`,
         name: `refund probe ${tag}`,
       })).grandTotalThbMinor ?? never());
@@ -635,7 +635,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
      * customer's cost. Nothing in the request could have produced this difference.
      */
     it('reads `fault` from the cancellation event, and a company-fault cancellation forfeits nothing', async () => {
-      const order = await submittedOrder(call, customer, line, {
+      const order = await submittedOrder(db, call, customer, line, {
         email: `refund-company-fault-${tag}@probe.invalid`,
         name: `refund probe ${tag}`,
       });
@@ -691,7 +691,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
    * ================================================================ */
 
   it('refuses a live order — refunds are for cancellations, and 5c owns over-payment', async () => {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `refund-live-${tag}@probe.invalid`,
       name: `refund probe ${tag}`,
     });
@@ -718,7 +718,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
   });
 
   it('refuses an order that holds nothing', async () => {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `refund-empty-${tag}@probe.invalid`,
       name: `refund probe ${tag}`,
     });
@@ -758,7 +758,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
    * nobody decides otherwise, because a missing account reads like a missing default.
    */
   it('refuses to invent a destination when no accepted slip names an account', async () => {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `refund-no-payee-${tag}@probe.invalid`,
       name: `refund probe ${tag}`,
     });
@@ -802,7 +802,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
    * has not received — and the customer's transfer may still fail.
    */
   it('will not pay a refund while a remittance is still in transit', async () => {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `refund-transit-${tag}@probe.invalid`,
       name: `refund probe ${tag}`,
     });
@@ -953,7 +953,7 @@ describeWithPg('refunds by ordinary bank transfer', () => {
    * where it was.
    */
   it('cancels an order that has taken a deposit, and closes its schedule in the same transaction', async () => {
-    const order = await submittedOrder(call, customer, line, {
+    const order = await submittedOrder(db, call, customer, line, {
       email: `refund-cancel-gap-${tag}@probe.invalid`,
       name: `refund probe ${tag}`,
     });

@@ -112,7 +112,18 @@ const inList = (values: readonly string[]) =>
  * production statuses are absent for a less obvious one: aluminium has been cut, so a
  * price change there is a credit note or a refund (plan 7.12), not an edit to a quote.
  */
-export const QUOTE_EDITABLE_ORDER_STATUSES = ['draft', 'awaiting_payment', 'redesign'] as const;
+export const QUOTE_EDITABLE_ORDER_STATUSES = [
+  'draft',
+  /*
+   * ⭐ Where a quotation is *meant* to be edited since 0056: the customer has asked for a price
+   * and staff adjust it — a discount, a different deposit, a conversation that has not finished
+   * — before anybody is asked to pay. `quote_lines_live_orders_only` and
+   * `quote_overrides_live_orders_only` carry the same list (0055).
+   */
+  'awaiting_confirmation',
+  'awaiting_payment',
+  'redesign',
+] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Quote lines — plan 7.9(ค) and 7.9(ง)(3)

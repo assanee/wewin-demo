@@ -4,6 +4,7 @@ import type { QuoteWire } from '@wewin/contract/quote';
 import { createPgHarness } from '../support/pg-harness';
 import { client, makeActor, type Json } from '../orders/support/lifecycle-app';
 import { giveOrderHeldMoney } from '../payments/support/money-fixture';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * ⛔ THE OWNER'S RULE: once the customer has paid anything, the quotation is closed to edits.
@@ -69,6 +70,13 @@ describe.skipIf(url === undefined || url === '')('a quotation the customer has p
         body: { contact: { email: `paid-quote-${orderId.slice(0, 8)}@probe.invalid`, name: 'ลูกค้าทดสอบ' } },
       });
       if (done.status !== 200) throw new Error(JSON.stringify(done.body));
+
+      /*
+       * ⭐ …and confirmed. A submit lands in `awaiting_confirmation` since 0056; money cannot be
+       * put on an order until a member of staff has agreed the figures, which is the state these
+       * tests are about.
+       */
+      await confirmQuotation(db, orderId);
     };
 
     const quote = async (orderId: string): Promise<QuoteWire> => {

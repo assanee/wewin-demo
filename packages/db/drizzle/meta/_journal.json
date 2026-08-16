@@ -386,6 +386,34 @@
       "when": 1786400000025,
       "tag": "0054_confirmation_transitions",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1786400000026,
+      "tag": "0055_confirmation_child_writes",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1786400000027,
+      "tag": "0056_retire_direct_submit",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1786400000028,
+      "tag": "0057_objection_before_confirmation",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1786400000029,
+      "tag": "0058_quote_guard_covers_updates_again",
+      "breakpoints": true
     }
   ]
 }

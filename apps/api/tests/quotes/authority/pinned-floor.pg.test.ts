@@ -166,7 +166,7 @@ describeWithPg('the cashflow floor is pinned to the contract, not read from toda
   it('measures a historical order against the floor it was submitted under, not today’s', async () => {
     await setDeposit(CONTRACT_FLOOR_BP);
 
-    const order: OrderWire = await submittedOrder(call, customer, line, {
+    const order: OrderWire = await submittedOrder(db, call, customer, line, {
       email: `pinned-floor-${tag}@probe.invalid`,
       name: `ลูกค้าเพดานมัดจำ ${tag}`,
     });

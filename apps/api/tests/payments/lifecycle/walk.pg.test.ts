@@ -18,6 +18,7 @@ import {
   type PaymentsApp,
 } from '../support/payments-app';
 import { uploadImage } from '../slips/support/slips-app';
+import { confirmQuotation } from '../../support/confirm-quotation';
 
 /** THE WALK — one order, ฿8,791 net, from quote to a cancellation that keeps nothing. */
 
@@ -92,7 +93,11 @@ describeWithPg('WALK', () => {
       },
     });
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
-    const order = submitted.body as OrderWire;
+
+    /* A submit lands unconfirmed since 0056; the walk starts from a payable order. */
+    await confirmQuotation(db, draft.id);
+    const order = (await call('GET', `/orders/${draft.id}`, { token: customer.token }))
+      .body as OrderWire;
     const id = order.id;
 
     const money = await db.execute<{ net: string; vat: string; grand: string; rate: number; deposit: string; policy: string }>(sql`

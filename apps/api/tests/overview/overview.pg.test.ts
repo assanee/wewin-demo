@@ -227,7 +227,7 @@ describeWithPg('the overview', () => {
       const before = (await overview(everything)).orders?.['awaitingPayment'] ?? -1;
 
       const line = await liveLine(call);
-      await submittedOrder(call, customer, line, {
+      await submittedOrder(db, call, customer, line, {
         email: `overview-${tag}@probe.invalid`,
         name: `overview probe ${tag}`,
       });
@@ -254,7 +254,7 @@ describeWithPg('the overview', () => {
        * thing. Seeding a submitted slip is what puts a number on both sides.
        */
       const line = await liveLine(call);
-      const order = await submittedOrder(call, customer, line, {
+      const order = await submittedOrder(db, call, customer, line, {
         email: `overview-slip-${tag}@probe.invalid`,
         name: `overview slip ${tag}`,
       });
@@ -370,7 +370,7 @@ describeWithPg('the overview', () => {
        * move at all.
        */
       const line = await liveLine(call);
-      const order = await submittedOrder(call, customer, line, {
+      const order = await submittedOrder(db, call, customer, line, {
         email: `overview-money-${tag}@probe.invalid`,
         name: `overview money ${tag}`,
       });
@@ -396,7 +396,7 @@ describeWithPg('the overview', () => {
 
     it('leaves out a payment accepted 30 minutes before the Thai month began', async () => {
       const line = await liveLine(call);
-      const order = await submittedOrder(call, customer, line, {
+      const order = await submittedOrder(db, call, customer, line, {
         email: `overview-lastmonth-${tag}@probe.invalid`,
         name: `overview last month ${tag}`,
       });

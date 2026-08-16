@@ -14,6 +14,7 @@ import {
   type Actor,
   type PaymentsApp,
 } from './support/payments-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * The company's deposit percentage, once it governs both things it is supposed to govern.
@@ -136,6 +137,9 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
 
     if (submitted.status !== 200) throw new Error(`could not submit: ${JSON.stringify(submitted.body)}`);
 
+    /* Confirmed, because this suite measures what the customer is asked to pay. */
+    await confirmQuotation(db, draft.id);
+
     const order = submitted.body as OrderWire;
     const [row] = (
       await db.execute<{ grand: string }>(
@@ -143,7 +147,17 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
       )
     ).rows;
 
-    return { orderId: order.id, grand: BigInt(row?.grand ?? '0'), status: order.status };
+    /*
+     * ⚠️ The status is re-read rather than taken off the submit's response body: that one
+     * describes the order one status ago, before the confirmation above.
+     */
+    const [now] = (
+      await db.execute<{ status: OrderWire['status'] }>(
+        sql`select status from orders where id = ${order.id}::uuid`,
+      )
+    ).rows;
+
+    return { orderId: order.id, grand: BigInt(row?.grand ?? '0'), status: now?.status ?? order.status };
   };
 
   const instalmentsOf = async (
@@ -200,6 +214,7 @@ describeWithPg('the deposit percentage governs the schedule and the approval flo
     const { orderId, grand, status } = await submit();
     const rows = await instalmentsOf(orderId);
 
+    /* Confirmed by the fixture above — the deposit is what the customer is asked for. */
     expect(status).toBe('awaiting_payment');
     expect(rows).toHaveLength(2);
     /*

@@ -20,6 +20,7 @@ import type { Tx } from '../../../src/orders/order.repository';
 import { ScheduleRepository } from '../../../src/payments/schedule/schedule.repository';
 import { ScheduleService } from '../../../src/payments/schedule/schedule.service';
 import { depositPercentTerms, payInFullTerms } from '../../../src/payments/schedule/terms';
+import { confirmQuotation } from '../../support/confirm-quotation';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -101,7 +102,12 @@ describeWithPg('⭐ what the payment screen asks a customer for', () => {
         orderId,
         eventType: 'submitted_for_payment',
         fromStatus: 'draft',
-        toStatus: 'awaiting_payment',
+        /*
+         * ⚠️ `awaiting_confirmation`, because `draft → awaiting_payment` is no longer a legal
+         * pair (0056) and `order_events_guard_insert` refuses an event for a transition that
+         * does not exist. The fixture then confirms, which is what a member of staff does.
+         */
+        toStatus: 'awaiting_confirmation',
         actorKind: 'guest',
         actorGuestId: guest.id,
       });
@@ -128,7 +134,7 @@ describeWithPg('⭐ what the payment screen asks a customer for', () => {
       await tx
         .update(orders)
         .set({
-          status: 'awaiting_payment',
+          status: 'awaiting_confirmation',
           statusEventId: submitEventId,
           submittedAt: sql`now()`,
           orderNo: sql`'WW-' || nextval('order_no_seq')`,
@@ -140,6 +146,9 @@ describeWithPg('⭐ what the payment screen asks a customer for', () => {
         })
         .where(eq(orders.id, orderId));
     });
+
+    /* …and confirmed: every caller of this fixture is asking about money owed. */
+    await confirmQuotation(db, orderId);
 
     return orderId;
   };

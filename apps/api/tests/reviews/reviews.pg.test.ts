@@ -20,6 +20,7 @@ import type {
 import { REVIEW_INVITATION_RULE } from '../../src/reviews';
 import { client, makeActor, type Actor, type Json } from '../orders/support/lifecycle-app';
 import { bootReviewsApp, reviewsEnv, type ReviewsApp } from './support/reviews-app';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * Reviews end to end — over real HTTP, against a real Postgres, with nothing stubbed.
@@ -97,6 +98,9 @@ describeWithPg('customer reviews after delivery', () => {
       lines: [line],
     });
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
+
+    /* Through the confirmation, which is where a quotation becomes payable since 0056. */
+    await confirmQuotation(db, draft.id);
 
     for (const next of ['production_confirmed', 'in_production', 'awaiting_installation', 'delivered'] as const) {
       const moved = await move(draft.id, next, staff);

@@ -122,7 +122,13 @@ const submit = async (draft: Draft, revision = 1): Promise<string> => {
       orderId: draft.orderId,
       eventType: 'submitted_for_payment',
       fromStatus: 'draft',
-      toStatus: 'awaiting_payment',
+      /*
+       * ⚠️ `awaiting_confirmation` since 0056 — `draft → awaiting_payment` is no longer a legal
+       * pair and `order_events_guard_insert` refuses an event for a transition that does not
+       * exist. The staff confirmation follows below, because everything built on this fixture
+       * is about an order the customer has been asked to pay.
+       */
+      toStatus: 'awaiting_confirmation',
       actorKind: 'guest',
       actorGuestId: draft.guestId,
     });
@@ -149,7 +155,7 @@ const submit = async (draft: Draft, revision = 1): Promise<string> => {
     await tx
       .update(orders)
       .set({
-        status: 'awaiting_payment',
+        status: 'awaiting_confirmation',
         statusEventId: eventId,
         /*
          * Postgres's clock, matching `order.repository.ts`.
@@ -168,6 +174,25 @@ const submit = async (draft: Draft, revision = 1): Promise<string> => {
         grandTotalThbMinor: GRAND,
         scheduledDepositThbMinor: DEPOSIT,
       })
+      .where(eq(orders.id, draft.orderId));
+
+    /* …and the staff confirmation, which is what makes the order payable. */
+    const [confirmation] = await tx
+      .insert(orderEvents)
+      .values({
+        orderId: draft.orderId,
+        eventType: 'quotation_confirmed',
+        fromStatus: 'awaiting_confirmation',
+        toStatus: 'awaiting_payment',
+        actorKind: 'staff',
+        actorUserId: staffUserId,
+      })
+      .returning({ id: orderEvents.id });
+    if (!confirmation) throw new Error('could not confirm the quotation');
+
+    await tx
+      .update(orders)
+      .set({ status: 'awaiting_payment', statusEventId: confirmation.id })
       .where(eq(orders.id, draft.orderId));
   });
 
@@ -332,16 +357,17 @@ describeDb('nine statuses, stored as text, with the legal moves as rows', () => 
     expect(fromDatabase).toEqual([...POST_FREEZE_STATUSES].sort());
   });
 
-  it('splits cancellation at the freeze, in six rows and two payload kinds', async () => {
+  it('splits cancellation at the freeze, in seven rows and two payload kinds', async () => {
     const cancels = await db
       .select()
       .from(orderStatusTransitions)
       .where(eq(orderStatusTransitions.toStatus, 'cancelled'));
 
-    // Trap 4's premise: `cancel` is not one transition. Six of them, and the split is
+    // Trap 4's premise: `cancel` is not one transition. Seven of them, and the split is
     // exactly the freeze — which is why choosing the payload schema before loading the
-    // order cannot be done correctly.
-    expect(cancels).toHaveLength(6);
+    // order cannot be done correctly. The seventh, `awaiting_confirmation → cancelled`,
+    // arrived with 0054: a customer may walk away from a quotation nobody has confirmed.
+    expect(cancels).toHaveLength(7);
 
     const post = cancels.filter((row) => row.payloadKind === 'cancel_post_freeze');
     expect(post.map((row) => row.fromStatus).sort()).toEqual([
@@ -1253,10 +1279,12 @@ describeDb('order_events is append-only, the way a published document is', () =>
       .where(eq(orderEvents.orderId, draft.orderId))
       .orderBy(orderEvents.seq);
 
-    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+    /* `quotation_confirmed` since 0056: the submit fixture goes through the staff step. */
     expect(events.map((event) => event.type)).toEqual([
       'created',
       'submitted_for_payment',
+      'quotation_confirmed',
       'payment_confirmed',
       'production_started',
     ]);
@@ -1336,12 +1364,22 @@ describeDb('the outbox is written by the event, in the event’s own transaction
 
     const queued = await outboxFor(draft.orderId);
 
-    // Plan 10.3, as data: the customer is told, and sales is told, and neither is a call
-    // site anybody could forget to add.
-    expect(queued.map((row) => row.recipientKind)).toEqual(['customer', 'sales_queue']);
-    expect(queued[0]?.recipientKey).toBe(`email:outbox-${tag}@example.test`);
-    expect(queued[0]?.status).toBe('pending');
-    expect(queued[0]?.templateKey).toBe('order.submitted_for_payment.customer');
+    /*
+     * Plan 10.3, as data: the customer is told, and sales is told, and neither is a call site
+     * anybody could forget to add.
+     *
+     * ⚠️ A third row now follows from the staff confirmation the fixture makes
+     * (`order.quotation_confirmed.customer`), so this asserts the *submit's* own two rather
+     * than every row on the order — a list that would drift each time the flow gains a step.
+     */
+    const forSubmit = queued.filter((row) => row.templateKey.includes('submitted_for_payment'));
+    expect(forSubmit.map((row) => row.recipientKind)).toEqual(['customer', 'sales_queue']);
+    expect(forSubmit[0]?.recipientKey).toBe(`email:outbox-${tag}@example.test`);
+    expect(forSubmit[0]?.status).toBe('pending');
+    expect(forSubmit[0]?.templateKey).toBe('order.submitted_for_payment.customer');
+
+    /* And the confirmation reaches them too — the mail that says they may now pay. */
+    expect(queued.map((row) => row.templateKey)).toContain('order.quotation_confirmed.customer');
   });
 
   it('commits with the event or not at all', async () => {
@@ -1387,7 +1425,8 @@ describeDb('the outbox is written by the event, in the event’s own transaction
         orderId: draft.orderId,
         eventType: 'submitted_for_payment',
         fromStatus: 'draft',
-        toStatus: 'awaiting_payment',
+        /* The submit's destination since 0056 — see the fixture at the top of this file. */
+        toStatus: 'awaiting_confirmation',
         actorKind: 'guest',
         actorGuestId: draft.guestId,
       });
@@ -1414,7 +1453,7 @@ describeDb('the outbox is written by the event, in the event’s own transaction
       await tx
         .update(orders)
         .set({
-          status: 'awaiting_payment',
+          status: 'awaiting_confirmation',
           statusEventId: eventId,
           // The database's clock, for the reason given on the `submit` helper above.
           submittedAt: sql`now()`,

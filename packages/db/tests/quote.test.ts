@@ -123,7 +123,8 @@ const submit = async (draft: Draft): Promise<void> => {
       orderId: draft.orderId,
       eventType: 'submitted_for_payment',
       fromStatus: 'draft',
-      toStatus: 'awaiting_payment',
+      /* The submit's destination since 0056; the staff confirmation follows. */
+      toStatus: 'awaiting_confirmation',
       actorKind: 'guest',
       actorGuestId: draft.guestId,
     });
@@ -150,7 +151,7 @@ const submit = async (draft: Draft): Promise<void> => {
     await tx
       .update(orders)
       .set({
-        status: 'awaiting_payment',
+        status: 'awaiting_confirmation',
         statusEventId: eventId,
         // The database clock, not this process one: the freeze trigger stamps frozen_at
         // with now(), orders_frozen_after_submitted compares the two, and a Node timestamp
@@ -163,6 +164,25 @@ const submit = async (draft: Draft): Promise<void> => {
         grandTotalThbMinor: GRAND,
         scheduledDepositThbMinor: DEPOSIT,
       })
+      .where(eq(orders.id, draft.orderId));
+
+    /* …and the staff confirmation, which is what makes the order payable since 0056. */
+    const [confirmation] = await tx
+      .insert(orderEvents)
+      .values({
+        orderId: draft.orderId,
+        eventType: 'quotation_confirmed',
+        fromStatus: 'awaiting_confirmation',
+        toStatus: 'awaiting_payment',
+        actorKind: 'staff',
+        actorUserId: sales,
+      })
+      .returning({ id: orderEvents.id });
+    if (!confirmation) throw new Error('could not confirm the quotation');
+
+    await tx
+      .update(orders)
+      .set({ status: 'awaiting_payment', statusEventId: confirmation.id })
       .where(eq(orders.id, draft.orderId));
   });
 };

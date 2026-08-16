@@ -141,7 +141,7 @@ describeWithPg('⭐ write-offs — forgiving a balance the customer owes', () =>
   }
 
   const quote = async (who: string): Promise<OrderWire> =>
-    submittedOrder(call, customer, line, {
+    submittedOrder(db, call, customer, line, {
       email: `writeoff-${who}-${tag}@probe.invalid`,
       name: `writeoff probe ${tag}`,
     });

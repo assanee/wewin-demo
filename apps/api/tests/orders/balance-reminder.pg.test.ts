@@ -30,6 +30,7 @@ import {
   type PaymentsApp,
 } from '../payments/support/payments-app';
 import { giveOrderHeldMoney } from '../payments/support/money-fixture';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -239,7 +240,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
    * ---------------------------------------------------------------- */
 
   it('writes one event with no status pair, and queues one message, from one HTTP call', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('asks'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('asks'));
     await quiesce();
 
     const owed = await outstandingOf(order.id);
@@ -285,7 +286,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
    * ---------------------------------------------------------------- */
 
   it('⭐ names the balance as it stands when the message is SENT, not as it stood when asked', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('moves'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('moves'));
     await quiesce();
 
     const atAsk = await outstandingOf(order.id);
@@ -348,7 +349,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
    * moves a balance to zero as readily as a slip does.
    */
   it('⭐ sends nothing at all when the balance was settled before the worker reached it', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('settled-late'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('settled-late'));
     await quiesce();
 
     const answer = await remind(clerk, order.id);
@@ -419,7 +420,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
      * already render: the actionable figure leads, the total supports it. This asserts the email
      * is the third surface following it rather than the fourth inventing one.
      */
-    const order = await submittedOrder(call, customer, line, contactFor('deposit'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('deposit'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
     const deposit = await splitIntoDeposit(order.id, grandTotal);
     await quiesce();
@@ -474,6 +475,9 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
       body: { contact: { phone: '+66812345678', name: `สมชาย ${tag}` }, lines: [line] },
     });
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
+
+    /* Confirmed: a reminder is about a balance the customer has been asked for. */
+    await confirmQuotation(db, draft.id);
     const order = submitted.body as OrderWire;
     await quiesce();
 
@@ -493,7 +497,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
    * ---------------------------------------------------------------- */
 
   it('refuses a second reminder inside the cooldown, and says when the next one may go', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('twice'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('twice'));
     await quiesce();
 
     const first = await remind(clerk, order.id);
@@ -558,7 +562,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
   });
 
   it('refuses when the order owes nothing', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('settled'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('settled'));
     const grandTotal = toBigInt(order.grandTotalThbMinor ?? never('a submitted order has a grand total'));
 
     await giveOrderHeldMoney(db, {
@@ -591,7 +595,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
   });
 
   it('refuses a caller who does not hold both codes', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('unauthorised'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('unauthorised'));
 
     /* The customer's own token: an order cannot ask itself for money. */
     const asCustomer = await remind(customer, order.id);
@@ -604,7 +608,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
    * ---------------------------------------------------------------- */
 
   it('⭐ the database refuses a balance_reminded written by anybody but staff', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('actor-guard'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('actor-guard'));
 
     /*
      * Written directly, past every line of TypeScript in this application — which is the only
@@ -629,7 +633,7 @@ describeWithPg('⭐ POST /orders/:orderId/balance-reminders', () => {
   });
 
   it('⭐ the database refuses a balance_reminded with no amount in its payload', async () => {
-    const order = await submittedOrder(call, customer, line, contactFor('payload-guard'));
+    const order = await submittedOrder(db, call, customer, line, contactFor('payload-guard'));
 
     /*
      * `required_payload_keys` is a column on `order_status_transitions`, and this event has no

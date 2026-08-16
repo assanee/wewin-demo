@@ -160,7 +160,7 @@ describeWithPg('authority — who may reduce what the customer pays', () => {
   }
 
   const quote = async (who: string): Promise<OrderWire> =>
-    submittedOrder(call, customer, line, {
+    submittedOrder(db, call, customer, line, {
       email: `authority-${who}-${tag}@probe.invalid`,
       name: `authority probe ${tag}`,
     });

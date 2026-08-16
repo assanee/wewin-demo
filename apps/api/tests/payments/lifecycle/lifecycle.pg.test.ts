@@ -94,7 +94,7 @@ describeWithPg('the order lifecycle and the money are one transaction', () => {
    * ------------------------------------------------------------------ */
 
   const order = async (who: string): Promise<{ id: string; grand: bigint }> => {
-    const wire = await submittedOrder(call, customer, line, {
+    const wire = await submittedOrder(db, call, customer, line, {
       email: `lifecycle-${who}-${tag}@probe.invalid`,
       name: `lifecycle probe ${tag}`,
     });

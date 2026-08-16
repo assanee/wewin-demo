@@ -25,6 +25,7 @@ import {
   type Json,
 } from '../payments/support/payments-app';
 import { cancelWithScheduleClosed, expectRejection } from '../payments/support/money-fixture';
+import { confirmQuotation } from '../support/confirm-quotation';
 
 /**
  * RED TEAM 5b — money that has actually moved.
@@ -192,6 +193,9 @@ describeWithPg('RED TEAM 5b — moving money you are not allowed to move', () =>
       body: { contact: contactFor(who), lines: [line] },
     });
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
+
+    /* A submit lands unconfirmed since 0056; a slip may only be attached once staff confirm. */
+    await confirmQuotation(db, draft.id);
 
     const order = submitted.body as OrderWire;
     if (order.money === null) throw new Error('a submitted order has money');
@@ -367,6 +371,9 @@ describeWithPg('RED TEAM 5b — moving money you are not allowed to move', () =>
       body: { contact: contactFor('a1b'), lines: [line] },
     });
     expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
+    /* A submit lands unconfirmed since 0056; a slip may only be attached once staff confirm. */
+    await confirmQuotation(db, draft.id);
+
     const order = submitted.body as OrderWire;
     if (order.money === null) throw new Error('a submitted order has money');
     const grand = minor(order.money.grandTotalThbMinor);
