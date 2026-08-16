@@ -262,3 +262,70 @@ export function catalogueOrder<T>(
 ): readonly T[] {
   return [...fromDatabase, ...seeded];
 }
+
+/**
+ * ⭐ A published product looked up by its **id** rather than its slug.
+ *
+ * ── Why the storefront answers to both ──────────────────────────────────────────
+ *
+ * A product's id and its slug are independent strings, and links built from the id exist in
+ * the wild: a cart line saved before the slug was recorded, a bookmark, a message somebody
+ * pasted to a colleague. Every one of them used to answer **404 · ไม่พบหน้านี้**, which reads
+ * as "this product is gone" rather than "that is the other name for it".
+ *
+ * ⛔ The specific case this was built for: a cart in a customer's `localStorage` from before
+ * `QuoteLine.productSlug` existed. `configureHref` falls back to the id for those lines, and
+ * the fallback landed on a 404 — a fallback that fails is not a fallback. Now the page
+ * resolves the id, the configurator reads `?line=` from the query on the client as it always
+ * has, and the line opens.
+ *
+ * ⚠️ The canonical URL stays the slug. `generateMetadata` builds it from the resolved
+ * product, so the id URL is reachable but never the one a crawler is told to index.
+ *
+ * ⚠️ Scans the published list rather than asking for one product, because the public API has
+ * no by-id route — `/catalog/products/:slug` is the only single-product endpoint. The list is
+ * the same `force-cache` entry the catalogue page already warms, so this costs nothing on a
+ * page that has been visited and one request on one that has not.
+ */
+export async function loadPublishedProductById(productId: string): Promise<PublishedProduct | null> {
+  const base = reviewsApiBaseUrl();
+  if (base === null) {
+    warnOnce('unconfigured', 'NEXT_PUBLIC_API_BASE_URL is not set');
+    return null;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/catalog/products`, {
+      headers: { accept: 'application/json' },
+      cache: 'force-cache',
+      next: { tags: [catalogTag()] },
+    });
+  } catch (cause) {
+    warnOnce('unreachable', cause instanceof Error ? cause.message : String(cause));
+    return null;
+  }
+
+  if (!response.ok) {
+    warnOnce('refused', `HTTP ${String(response.status)}`);
+    return null;
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    warnOnce('malformed', cause instanceof Error ? cause.message : String(cause));
+    return null;
+  }
+
+  if (typeof body !== 'object' || body === null) return null;
+  const list = (body as { products?: unknown }).products;
+  if (!Array.isArray(list)) return null;
+
+  for (const raw of list) {
+    const document = decode(raw);
+    if (document !== null && document.productId === productId) return document;
+  }
+  return null;
+}

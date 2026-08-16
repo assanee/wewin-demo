@@ -3,7 +3,11 @@ import { notFound } from 'next/navigation';
 import { getProductBySlug, products } from '@wewin/core/fixtures';
 
 import { ConfiguratorIsland } from '@/components/configurator/ConfiguratorIsland';
-import { loadPublishedProduct, type PublishedProduct } from '@/lib/catalog/published-product';
+import {
+  loadPublishedProduct,
+  loadPublishedProductById,
+  type PublishedProduct,
+} from '@/lib/catalog/published-product';
 import { ProductGallery } from '@/components/catalog/ProductGallery';
 import { ReviewBlock } from '@/components/reviews/ReviewBlock';
 import { localeBundle } from '@/i18n/server';
@@ -131,6 +135,16 @@ export default async function ProductConfiguratorPage({
   const identity = await identify(slug);
   if (identity === null) notFound();
 
+  /*
+   * ⛔ Everything below is handed `identity.slug`, never the raw `[slug]` segment.
+   *
+   * That segment can be a product **id** — the page resolves those too, so a cart line or a
+   * bookmark written before slugs were recorded still opens. But the children do real work
+   * with it: `ProductGallery` fetches `/catalog/products/<it>`, and the island looks the
+   * product up in the fixtures and builds share links from it. Passing the segment straight
+   * through meant a product reached by its id rendered with **no photographs at all**,
+   * because that fetch 404'd. Seen in a screenshot, not by any test.
+   */
   return (
     <main className="container-page py-6 md:py-8 lg:py-10">
       {/*
@@ -142,9 +156,9 @@ export default async function ProductConfiguratorPage({
       */}
       <ConfiguratorIsland
         locale={locale}
-        slug={slug}
+        slug={identity.slug}
         document={identity.document}
-        gallery={<ProductGallery slug={slug} productId={identity.id} locale={locale} />}
+        gallery={<ProductGallery slug={identity.slug} productId={identity.id} locale={locale} />}
       />
       {/*
         The reviews — plan section 9, and the first thing on this storefront that comes
@@ -195,13 +209,23 @@ async function identify(slug: string): Promise<{
   }
 
   const published = await loadPublishedProduct(slug);
-  if (published === null) return null;
+  /*
+   * ⭐ Then by **id**, because links built from one exist in the wild: a cart line saved
+   * before `QuoteLine.productSlug` existed, a bookmark, a pasted message. Each of those used
+   * to answer 404 · ไม่พบหน้านี้, which reads as "this product is gone".
+   *
+   * ⚠️ Second, never first. A slug is what this route is for, and checking it first means a
+   * product whose *slug* happens to equal another product's *id* still resolves to the one
+   * the URL is actually naming.
+   */
+  const found = published ?? (await loadPublishedProductById(slug));
+  if (found === null) return null;
 
   return {
-    id: published.productId,
-    slug: published.slug,
-    nameTh: published.nameTh,
-    summaryTh: published.summaryTh,
-    document: published.wire,
+    id: found.productId,
+    slug: found.slug,
+    nameTh: found.nameTh,
+    summaryTh: found.summaryTh,
+    document: found.wire,
   };
 }
