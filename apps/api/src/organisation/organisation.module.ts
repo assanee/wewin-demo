@@ -9,6 +9,8 @@ import { Module, type Provider } from '@nestjs/common';
 import { DEPOSIT_POLICY, type DepositPolicyPort } from '../quotes/authority/deposit-policy.port';
 import { DestinationsController } from './destinations.controller';
 import { OrganisationController } from './organisation.controller';
+import { ForfeitPolicyRepository } from './forfeit-policy.repository';
+import { ForfeitPolicyService } from './forfeit-policy.service';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
 import { TaxCountryRepository } from './tax-country.repository';
@@ -74,6 +76,8 @@ const depositPolicyProvider: Provider = {
     OrganisationRepository,
     TaxCountryService,
     TaxCountryRepository,
+    ForfeitPolicyService,
+    ForfeitPolicyRepository,
     depositPolicyProvider,
   ],
   exports: [OrganisationRepository, TaxCountryService, DEPOSIT_POLICY],

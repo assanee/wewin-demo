@@ -27,8 +27,15 @@ import {
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
 import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
+import {
+  publishForfeitPolicyRequestSchema,
+  type ForfeitPolicyWire,
+  type PublishForfeitPolicyRequestWire,
+} from '@wewin/contract/forfeit';
+
 import { CurrentScope, RequirePermissions, type Scope } from '../rbac';
 import { encodeAccount, encodeChange, encodeProfile } from './encode';
+import { ForfeitPolicyService } from './forfeit-policy.service';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
 import { TaxCountryService } from './tax-country.service';
@@ -78,6 +85,7 @@ export class OrganisationController {
     private readonly organisation: OrganisationService,
     private readonly repository: OrganisationRepository,
     private readonly taxCountries: TaxCountryService,
+    private readonly forfeit: ForfeitPolicyService,
   ) {}
 
   @Get()
@@ -87,6 +95,36 @@ export class OrganisationController {
     const [row] = await this.repository.profile();
     if (row === undefined) throw AppError.notFound(message('error.organisation.profile_missing'));
     return encodeProfile(row);
+  }
+
+  /**
+   * ⭐ อัตราริบมัดจำ — what a cancellation costs, read as it stands today.
+   *
+   * On this controller because it is a company setting, beside the deposit percentage it works
+   * with: the two together are the whole of "what happens to money when something goes wrong",
+   * and splitting them across screens is how one gets set and the other forgotten.
+   */
+  @Get('forfeit-policy')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async forfeitPolicy(): Promise<ForfeitPolicyWire> {
+    return this.forfeit.current();
+  }
+
+  /**
+   * …and publishing the next version, which is the only way a rate ever changes.
+   *
+   * `POST` and not `PUT`: this creates a new policy rather than replacing one. An order pins the
+   * policy it was submitted under, so nothing that already exists is touched — the verb says so.
+   */
+  @Post('forfeit-policy')
+  @HttpCode(201)
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async publishForfeitPolicy(
+    @Body(new ZodBodyPipe(publishForfeitPolicyRequestSchema)) body: PublishForfeitPolicyRequestWire,
+  ): Promise<ForfeitPolicyWire> {
+    return this.forfeit.publish(body);
   }
 
   @Put()

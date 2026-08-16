@@ -321,6 +321,7 @@ describe('boot-time route audit', () => {
        * did.
        */
       'GET /admin/organisation/changes [permissions]',
+      'GET /admin/organisation/forfeit-policy [permissions]',
       'GET /admin/organisation/tax-countries [permissions]',
       'GET /admin/organisation/tax-countries/:code/changes [permissions]',
 
@@ -465,6 +466,7 @@ describe('boot-time route audit', () => {
       'POST /admin/media [permissions]',
       'POST /admin/notifications/:notificationId/retry [permissions]',
       'POST /admin/organisation/bank-accounts [permissions]',
+      'POST /admin/organisation/forfeit-policy [permissions]',
       'POST /admin/organisation/tax-countries [permissions]',
       'POST /admin/reviews/:reviewId/hide [permissions]',
       'POST /admin/reviews/:reviewId/publish [permissions]',

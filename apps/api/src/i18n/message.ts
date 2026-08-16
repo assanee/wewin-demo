@@ -415,6 +415,12 @@ const PARAM_SHAPES = {
   'error.deposit.below_company_floor': {},
   /** The order is past the point where a deposit may be chosen — money has arrived or work has. */
   'error.deposit.not_editable': {},
+  /* ── อัตราริบมัดจำ — src/organisation/forfeit-policy.service.ts ──────────────── */
+  /** ⛔ No policy is in force at all: no order can be submitted either. A broken installation. */
+  'error.forfeit.no_effective_policy': {},
+  'error.forfeit.status_not_cancellable': {},
+  'error.forfeit.cell_is_locked': {},
+  'error.forfeit.cell_sent_twice': {},
   'error.stale.override_baselines': {},
   /**
    * The one cause `override_baselines` describes wrongly: the destination changed, not the

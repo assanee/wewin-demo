@@ -19,6 +19,7 @@ import {
 } from '@wewin/contract/tax';
 
 import { apiJson } from '@/lib/api/client';
+import type { ForfeitPolicyWire, PublishForfeitPolicyRequestWire } from '@wewin/contract/forfeit';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -416,3 +417,53 @@ export const setTaxCountryAvailability = (code: string, isActive: boolean): Prom
     decodeTaxCountry,
     withBody('PUT', { isActive } satisfies TaxCountryAvailabilityRequest),
   );
+
+/* ------------------------------------------------------------------ *
+ * ⭐ อัตราริบมัดจำ — the forfeit policy
+ * ------------------------------------------------------------------ */
+
+/**
+ * The policy in force, cells and all.
+ *
+ * ⚠️ Decoded loosely on purpose — `asObject` and then field-by-field — like every other read in
+ * this file. The contract's own type is the shape this app expects; a `zod` parse here would be
+ * a second schema for a payload the API already validates against the shared one.
+ */
+export const getForfeitPolicy = (): Promise<ForfeitPolicyWire> =>
+  apiJson('/admin/organisation/forfeit-policy', (body) => {
+    const row = asObject(body, 'forfeit policy response');
+    const cells = row['cells'];
+    if (!Array.isArray(cells)) throw new TypeError('forfeit policy response has no cells array');
+
+    return {
+      code: String(row['code']),
+      descriptionTh: String(row['descriptionTh']),
+      effectiveFrom: String(row['effectiveFrom']),
+      cells: cells.map((raw) => {
+        const cell = asObject(raw, 'forfeit policy cell');
+        return {
+          fromStatus: String(cell['fromStatus']),
+          fault: cell['fault'] === 'company' ? 'company' : 'customer',
+          forfeitBp: Number(cell['forfeitBp']),
+          editable: cell['editable'] === true,
+          whyLockedTh: typeof cell['whyLockedTh'] === 'string' ? cell['whyLockedTh'] : null,
+        };
+      }),
+    } as ForfeitPolicyWire;
+  });
+
+/**
+ * Publish a new version — the only way a rate changes.
+ *
+ * ⚠️ `POST`, because it creates a policy rather than replacing one: every order already
+ * submitted stays pinned to the version it agreed to. The screen's "save" button is publishing,
+ * and its copy says so.
+ */
+export const publishForfeitPolicy = (
+  request: PublishForfeitPolicyRequestWire,
+): Promise<ForfeitPolicyWire> =>
+  apiJson('/admin/organisation/forfeit-policy', (body) => body as ForfeitPolicyWire, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+  });

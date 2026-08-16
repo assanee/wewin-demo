@@ -29,6 +29,7 @@ import {
   type ProfileFields,
 } from './profile-form';
 import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
+import { ForfeitPolicySection } from './forfeit-policy-section';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -181,6 +182,18 @@ export function OrganisationScreen() {
           table. Promoted with it rather than left below the two blocks that have nothing to do
           with an exchange rate. */}
       <TaxCountriesSection state={taxCountriesState} editable={editable} onChanged={reloadTaxCountries} />
+
+      {/*
+       * ⭐ อัตราริบมัดจำ, beside the deposit percentage rather than on a page of its own: the two
+       * are one subject — what happens to money when something goes wrong — and a person setting
+       * the deposit is the same person who has an opinion about the forfeit.
+       *
+       * It loads itself rather than taking state from here, unlike its neighbours. It is the only
+       * section whose write *publishes a new version* instead of editing a row, so it owns its
+       * own reload; threading it through this component's state would suggest the parent could
+       * refresh it, which would be a refresh of the wrong thing.
+       */}
+      <ForfeitPolicySection />
       <AccountsSection state={accountsState} editable={editable} onChanged={reloadAccounts} />
       {/* Last, and it is the slowest-moving thing here: a row somebody edits a few times a year.
           Being last also puts the most distance between the page's title and the heading that

@@ -23,7 +23,8 @@
     "./pricing": "./dist/pricing.js",
     "./errors": "./dist/errors.js",
     "./version": "./dist/version.js",
-    "./organisation": "./dist/organisation.js"
+    "./organisation": "./dist/organisation.js",
+    "./forfeit": "./dist/forfeit.js"
   },
   "files": [
     "dist"

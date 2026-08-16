@@ -168,6 +168,9 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
    * route that can say who moved it — the table had a writer and no reader until task 12's review.
    */
   ['GET /admin/organisation/changes', ['organisation.read']],
+  /* ⭐ อัตราริบมัดจำ: reading is a settings read, publishing a new version is a settings write. */
+  ['GET /admin/organisation/forfeit-policy', ['organisation.read']],
+  ['POST /admin/organisation/forfeit-policy', ['organisation.write']],
   ['GET /admin/organisation/bank-accounts', ['organisation.read']],
   ['POST /admin/organisation/bank-accounts', ['organisation.write']],
   ['PATCH /admin/organisation/bank-accounts/:id', ['organisation.write']],
