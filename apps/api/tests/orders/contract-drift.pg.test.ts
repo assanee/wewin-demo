@@ -75,13 +75,13 @@ describeWithPg('the closed sets agree across the three places they are declared'
     await pool.end();
   });
 
-  it('states the nine statuses identically in the schema and on the wire', () => {
+  it('states the ten statuses identically in the schema and on the wire', () => {
     /*
      * Order and all: these lists are read side by side by anybody comparing them, and two
      * lists with the same members in a different order is the shape a reviewer skims past.
      */
     expect([...ORDER_STATUSES_WIRE]).toStrictEqual([...ORDER_STATUSES]);
-    expect(ORDER_STATUSES_WIRE).toHaveLength(9);
+    expect(ORDER_STATUSES_WIRE).toHaveLength(10);
   });
 
   it('states the event types, actor kinds and payload kinds identically too', () => {
@@ -160,13 +160,26 @@ describeWithPg('the closed sets agree across the three places they are declared'
       ).toBe(row.is_live);
     }
 
-    /* Three, and which three: `draft`, `cancelled`, `superseded`. Named, so a widened list fails. */
+    /*
+     * Four, and which four. Named, so a widened list fails rather than passing quietly.
+     *
+     * `awaiting_confirmation` joined them in 0053: an unconfirmed quotation is not a debt,
+     * because nobody has been asked to pay it. That also keeps *live* and *payable* the same
+     * set, which `attachable.ts` reads to refuse a slip against an order nobody was invited
+     * to pay.
+     */
     expect(rows.filter((row) => !row.is_live).map((row) => row.status).sort()).toEqual([
+      'awaiting_confirmation',
       'cancelled',
       'draft',
       'superseded',
     ]);
-    expect([...NON_LIVE_ORDER_STATUSES].sort()).toEqual(['cancelled', 'draft', 'superseded']);
+    expect([...NON_LIVE_ORDER_STATUSES].sort()).toEqual([
+      'awaiting_confirmation',
+      'cancelled',
+      'draft',
+      'superseded',
+    ]);
     /* ⚠️ `delivered` is live in both, which is the one `attachable.ts` and 0046 argue about. */
     expect(rows.find((row) => row.status === 'delivered')?.is_live).toBe(true);
   });
@@ -276,6 +289,9 @@ describeWithPg('every seeded transition is one this API can actually serve', () 
       none: [],
       submit: ['document_hash', 'line_count'],
       confirm_payment: ['note_th'],
+      /* ⛔ `reason` is required, not optional: production released against an unpaid invoice is
+         a decision somebody has to be able to defend. See 0054. */
+      authorise_unpaid: ['reason'],
       cancel_pre_freeze: ['reason'],
       cancel_post_freeze: ['reason', 'fault'],
       bounce: ['reason'],

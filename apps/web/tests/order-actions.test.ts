@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -157,30 +157,47 @@ describe('the cancellation a customer is offered', () => {
  * ================================================================ */
 
 /**
- * ⭐ THE SIX CANCELLATIONS, READ OUT OF THE MIGRATION RATHER THAN RETYPED.
+ * ⭐ THE CANCELLATIONS, READ OUT OF THE MIGRATIONS RATHER THAN RETYPED.
  *
  * `cancellationOffer` recognises exactly two payload kinds. That is only correct while the
- * transitions table grants customers exactly those two, so this reads
- * `0007_order_guards.sql` — the file that seeds the table — and checks the claim against it.
+ * transitions table grants customers exactly those two, so this reads the migrations that seed
+ * the table and checks the claim against them.
  *
  * The failure this is for: somebody adds a `('delivered', 'cancelled', …, 'cancel_after_delivery')`
  * row with `customer` in its actor kinds. The API would then offer that edge, `cancellationOffer`
  * would answer `'none'`, and the customer would silently lose a right the database granted them.
  * A list of statuses in this app would not have noticed at all.
+ *
+ * ⛔ IT READ ONLY `0007_order_guards.sql` FOR A WHOLE ROUND, AND THAT WAS THE HOLE.
+ *
+ * The seed lived there when this was written, so the file was named directly — and 0054 then
+ * added `awaiting_confirmation → cancelled` with `{customer,guest,staff}` in another file, which
+ * this test could not see. The rights it exists to protect had grown by one and it still said
+ * six. Every migration is scanned now, because "the file the seed lives in" is not a fact that
+ * stays true; "every file that inserts into this table" is.
  */
 describe('the transitions table, as the source of the two kinds', () => {
-  const sql = readFileSync(
-    resolve(process.cwd(), '../../packages/db/drizzle/0007_order_guards.sql'),
-    'utf8',
-  );
-
-  /** The `INSERT INTO order_status_transitions … VALUES (…)` tuples, one string each. */
+  /** Every `INSERT INTO order_status_transitions … VALUES (…)` tuple, from every migration. */
   const tuples = (() => {
-    const start = sql.indexOf('INSERT INTO order_status_transitions');
-    expect(start, 'the transitions seed moved out of 0007').toBeGreaterThan(-1);
+    const folder = resolve(process.cwd(), '../../packages/db/drizzle');
+    const files = readdirSync(folder).filter((name) => name.endsWith('.sql')).sort();
 
-    const body = sql.slice(start, sql.indexOf('--> statement-breakpoint', start));
-    return body.split('\n  (').slice(1);
+    const found = files.flatMap((name) => {
+      const sql = readFileSync(resolve(folder, name), 'utf8');
+      const start = sql.indexOf('INSERT INTO order_status_transitions');
+      if (start === -1) return [];
+
+      /*
+       * To the end of the statement, not to the next breakpoint: a migration may end its INSERT
+       * with `ON CONFLICT …` on its own line, and slicing at the semicolon keeps the tuples
+       * whole either way.
+       */
+      const end = sql.indexOf(';', start);
+      return sql.slice(start, end === -1 ? undefined : end).split('\n  (').slice(1);
+    });
+
+    expect(found.length, 'no migration seeds order_status_transitions any more').toBeGreaterThan(0);
+    return found;
   })();
 
   /** Only the cancellations a customer or a guest is granted. */
@@ -191,14 +208,15 @@ describe('the transitions table, as the source of the two kinds', () => {
       tuple.includes('cancel_'),
   );
 
-  it('grants a customer or guest exactly six cancellations', () => {
+  it('grants a customer or guest exactly seven cancellations', () => {
     /*
-     * Six, and the brief that asked for this work said the table grants six transitions in
-     * total — it grants **seven**. The seventh is `draft → awaiting_payment`, the submit, which
-     * `lib/quote/submit.ts` has posted since the funnel was built. Six is the number of
-     * *cancellations*, which is what had no caller.
+     * Was six until 0054 added `awaiting_confirmation → cancelled`: a customer may walk away
+     * from a quotation nobody has confirmed, on the same terms as one nobody has paid.
+     *
+     * ⚠️ The number is *cancellations*, not transitions. The submit is granted to customers
+     * too and is not one of these.
      */
-    expect(customerCancellations).toHaveLength(6);
+    expect(customerCancellations).toHaveLength(7);
   });
 
   it('uses only the two payload kinds this app knows how to build a body for', () => {
@@ -233,6 +251,7 @@ describe('the transitions table, as the source of the two kinds', () => {
       .sort();
 
     expect(from).toStrictEqual([
+      'awaiting_confirmation',
       'awaiting_installation',
       'awaiting_payment',
       'draft',

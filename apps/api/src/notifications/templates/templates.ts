@@ -270,6 +270,42 @@ const TH: Readonly<Record<string, Renderer>> = {
       documentLink(c, 'ใบเสนอราคาฉบับที่แก้ไขแล้ว อยู่ที่ลิงก์นี้ — โปรดตรวจสอบก่อนโอนเงิน'),
   ),
 
+  /**
+   * ⭐ THE MAIL THAT MAKES THE NEW STATUS A DOOR RATHER THAN A ROOM.
+   *
+   * Between the customer asking for a price and being asked to pay it there is now a member of
+   * staff. This is what tells them that step is over — without it, somebody who was shown a
+   * price labelled ราคาประมาณ would be waiting for a confirmation nobody said had happened.
+   */
+  'order.quotation_confirmed.customer': customer(
+    (c) => `ยืนยันใบเสนอราคาแล้ว — ${orderLabel(c)}`,
+    (c) =>
+      `ทีมงานตรวจสอบและยืนยันใบเสนอราคาของท่านเรียบร้อยแล้ว (${orderLabel(c)})\n` +
+      'ยอดที่แจ้งไว้เป็นยอดสุดท้ายแล้ว ไม่ใช่ราคาประมาณอีกต่อไป — ท่านชำระเงินและอัปโหลดสลิปได้เลย' +
+      documentLink(c, 'ใบเสนอราคาที่ยืนยันแล้ว อยู่ที่ลิงก์นี้'),
+  ),
+
+  /**
+   * ⛔ THE SENTENCE THAT REPLACES A LIE.
+   *
+   * Staff may release production before any money arrives — the owner asks for it. What used to
+   * happen is that the act was recorded as `payment_confirmed`, so this customer received
+   * "เราตรวจสอบและยืนยันการชำระเงินของท่านแล้ว" having transferred ฿0. They then had every
+   * reason to believe they owed nothing.
+   *
+   * ⚠️ It names no figure, on purpose. `templates.ts` keeps money in exactly one message — the
+   * balance reminder — so that a customer never has two mails quoting amounts that were true at
+   * different moments. What this one must carry instead is the fact the old one hid: nothing has
+   * been paid yet, and an invoice is coming.
+   */
+  'order.production_authorised_unpaid.customer': customer(
+    (c) => `เริ่มผลิตแล้ว — ยังไม่ได้รับชำระเงิน (${orderLabel(c)})`,
+    (c) =>
+      `ทีมงานอนุมัติให้เริ่มผลิตงานตาม ${orderLabel(c)} แล้ว โดยยังไม่ได้รับชำระเงินสำหรับงานนี้\n` +
+      'ยอดที่ต้องชำระยังคงค้างอยู่ทั้งจำนวน ทีมงานจะติดต่อเรื่องการชำระเงินกับท่านอีกครั้ง' +
+      documentLink(c, 'รายละเอียดงานและยอดที่ต้องชำระ อยู่ที่ลิงก์นี้'),
+  ),
+
   'order.payment_confirmed.customer': customer(
     (c) => `ยืนยันการชำระเงินแล้ว — ${orderLabel(c)}`,
     (c) =>

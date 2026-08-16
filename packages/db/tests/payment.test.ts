@@ -558,7 +558,7 @@ describeDb('the nine accounts, and the count of two-person rules', () => {
     expect([...APPROVAL_DIMENSIONS]).toEqual(['margin', 'cashflow']);
   });
 
-  it("ships plan 13's forfeit default: 0 bp in every one of the twelve cells", async () => {
+  it("ships plan 13's forfeit default: 0 bp in every one of the fourteen cells", async () => {
     const rows = await db.execute<{ n: number; nonzero: number }>(sql`
       select count(*)::int as n,
              count(*) filter (where forfeit_bp <> 0)::int as nonzero
@@ -567,9 +567,11 @@ describeDb('the nine accounts, and the count of two-person rules', () => {
        where p.code = 'plan13_default'
     `);
 
-    // Six cancellable statuses × two faults. `redesign` is in there — plan 7.8 calls it
-    // the one everybody forgets.
-    expect(rows.rows[0]?.n).toBe(12);
+    // Seven cancellable statuses × two faults. `redesign` is in there — plan 7.8 calls it the
+    // one everybody forgets — and `awaiting_confirmation` joined it in 0053, where the rows are
+    // copied from each policy's own `awaiting_payment` cells because the two mean the same thing
+    // to a cancelling customer: nothing has been committed to the factory.
+    expect(rows.rows[0]?.n).toBe(14);
     expect(rows.rows[0]?.nonzero).toBe(0);
     expect(FORFEIT_BPS_DEFAULT).toBe(0);
   });

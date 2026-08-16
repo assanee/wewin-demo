@@ -49,7 +49,7 @@ import { sql, type SQL } from '@wewin/db/sql';
  *
  * So the arrangement is now exactly `POST_FREEZE_STATUSES`'s: **one list here, one function
  * there, and a test that fails when they disagree** —
- * `tests/orders/contract-drift.pg.test.ts` asks Postgres about all nine statuses and compares
+ * `tests/orders/contract-drift.pg.test.ts` asks Postgres about all ten statuses and compares
  * every answer against `isLiveOrder`. Which of the two is "the definition" is a question this
  * file no longer needs to answer, because a mirror with a drift test cannot silently be wrong.
  *
@@ -72,11 +72,11 @@ import { sql, type SQL } from '@wewin/db/sql';
  * paragraph used to end on ("it makes it a phone call") is no longer true and has gone.
  *
  * ⚠️ That change means `isLiveOrder` and `acceptsPayment`
- * (`src/payments/slips/attachable.ts`) now answer identically for all nine statuses;
+ * (`src/payments/slips/attachable.ts`) now answer identically for all ten statuses;
  * `tests/payments/slips/attachable.test.ts` enumerates them and asserts it. The two lists stay
  * separate because they are pinned to different things — that one is a mirror of a Postgres
  * trigger and this one, since 0049, is mirrored by `order_status_is_live()` and pinned by a
- * drift test over all nine statuses in `tests/orders/contract-drift.pg.test.ts` — and that
+ * drift test over all ten statuses in `tests/orders/contract-drift.pg.test.ts` — and that
  * file's header carries the argument.
  *
  * ⚠️ This paragraph said "a definition with no database counterpart" until 0049 gave it one, and
@@ -87,6 +87,17 @@ import { sql, type SQL } from '@wewin/db/sql';
  */
 export const NON_LIVE_ORDER_STATUSES = [
   'draft',
+  /**
+   * ⭐ An unconfirmed quotation is not a debt — the whole point of the status.
+   *
+   * Nobody has been asked to pay it, so it does not belong in the company's ค้างชำระ total,
+   * `?payment=outstanding` must not return it, and a write-off cannot be requested against it.
+   * It also keeps *live* and *payable* the same set of statuses, which
+   * `payments/slips/attachable.ts` reads to refuse a slip against an order nobody was invited
+   * to pay. `0053_awaiting_confirmation_status.sql` carries the same decision in SQL and names
+   * the one case this hides — a revision standing here holding its ancestor's money.
+   */
+  'awaiting_confirmation',
   'cancelled',
   'superseded',
 ] as const satisfies readonly OrderStatus[];

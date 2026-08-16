@@ -16,7 +16,7 @@ import { DESTINATION_TAX_BASES, FX_CURRENCIES_WIRE } from './tax.js';
  * Three things about this module are decisions rather than style, and each of them is a
  * decision the plan forced:
  *
- *   **The nine statuses are restated here, not imported.** `@wewin/db` is server-only by
+ *   **The ten statuses are restated here, not imported.** `@wewin/db` is server-only by
  *   construction (its package note says so, and `turbo boundaries` enforces it), so the
  *   union a browser reads cannot be the union Postgres holds. Restating is therefore
  *   unavoidable; what is avoidable is *drifting*. `apps/api/tests/orders/contract-drift.test.ts`
@@ -50,6 +50,8 @@ import { DESTINATION_TAX_BASES, FX_CURRENCIES_WIRE } from './tax.js';
 
 export const ORDER_STATUSES_WIRE = [
   'draft',
+  /** รอยืนยัน — quoted, not yet agreed by staff, and deliberately not payable. */
+  'awaiting_confirmation',
   'awaiting_payment',
   'production_confirmed',
   'in_production',
@@ -92,6 +94,12 @@ export const ORDER_EVENT_TYPES_WIRE = [
   'created',
   'quote_revised',
   'submitted_for_payment',
+  /** เจ้าหน้าที่ยืนยันใบเสนอราคา — the price becomes payable. */
+  'quotation_confirmed',
+  /** …and pulled back to renegotiate, nothing having been paid. */
+  'quotation_reopened',
+  /** ⛔ Production released with ฿0 received, named so the row cannot be misread. */
+  'production_authorised_unpaid',
   'payment_confirmed',
   'production_started',
   'installation_scheduled',
@@ -115,6 +123,8 @@ export const ORDER_PAYLOAD_KINDS_WIRE = [
   'none',
   'submit',
   'confirm_payment',
+  /** Carries the written `reason` production was released against an unpaid order. */
+  'authorise_unpaid',
   'cancel_pre_freeze',
   'cancel_post_freeze',
   'bounce',
@@ -916,6 +926,19 @@ export interface StaffCancelOrderRequestWire extends CancelOrderRequestWire {
   readonly attributeFaultToCompany?: boolean | undefined;
 }
 
+/**
+ * ⛔ Releasing production on an order nobody has paid for.
+ *
+ * `reason` is required and free text, which is the difference between this and confirming a
+ * payment that actually arrived: money that came in explains itself, and a factory started
+ * against an unpaid invoice is a decision somebody has to be able to defend six months later.
+ * The transition row carries `required_payload_keys = {reason}`, so Postgres refuses the event
+ * without it for every writer, not only for this one.
+ */
+export interface AuthoriseUnpaidRequestWire {
+  readonly reason: string;
+}
+
 export interface BounceOrderRequestWire {
   readonly reason: string;
 }
@@ -1070,6 +1093,10 @@ export const supersedeOrderRequestSchema: z.ZodType<SupersedeOrderRequestWire> =
 
 export const confirmPaymentRequestSchema: z.ZodType<ConfirmPaymentRequestWire> = z.strictObject({
   noteTh: noteSchema.optional(),
+});
+
+export const authoriseUnpaidRequestSchema: z.ZodType<AuthoriseUnpaidRequestWire> = z.strictObject({
+  reason: reasonSchema,
 });
 
 /** A transition whose payload kind is `none` takes an empty body — and refuses a full one. */

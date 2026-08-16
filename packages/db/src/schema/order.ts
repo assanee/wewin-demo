@@ -60,7 +60,7 @@ const inList = (values: readonly string[]) =>
   sql.raw(`(${values.map((value) => `'${value}'`).join(', ')})`);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The nine statuses — plan 7.1
+// The ten statuses — plan 7.1
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -83,6 +83,15 @@ const inList = (values: readonly string[]) =>
  */
 export const ORDER_STATUSES = [
   'draft',
+  /**
+   * ⭐ รอยืนยัน — the customer has asked for a quotation and nobody has agreed to anything yet.
+   *
+   * Between `draft` and `awaiting_payment` because that is where the gap always was: a request
+   * for a price used to land straight in "please transfer money", against a figure no member of
+   * staff had looked at. An order here has a number, a pinned document and a total — the
+   * customer sees it, labelled as approximate — and cannot be paid.
+   */
+  'awaiting_confirmation',
   'awaiting_payment',
   'production_confirmed',
   'in_production',
@@ -105,7 +114,7 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
  * ⚠️ This list is a **mirror**. The definition Postgres uses is
  * `order_status_is_post_freeze()` in `drizzle/0007_order_guards.sql`, because a CHECK
  * constraint cannot be written against a TypeScript array. `tests/order.test.ts` asks the
- * database about all nine statuses and fails if the two ever disagree — the same drift
+ * database about all ten statuses and fails if the two ever disagree — the same drift
  * test `tests/enums.test.ts` does for the catalogue's unions.
  *
  * `cancelled` and `superseded` are deliberately absent: both are reachable from either
@@ -158,6 +167,28 @@ export const ORDER_EVENT_TYPES = [
   'created',
   'quote_revised',
   'submitted_for_payment',
+  /**
+   * ⭐ เจ้าหน้าที่ยืนยันใบเสนอราคาแล้ว — the act that makes a quoted price payable.
+   *
+   * The half of the flow that never existed: a customer's request used to arrive already
+   * asking them for money. This is a member of staff saying the figures are agreed.
+   */
+  'quotation_confirmed',
+  /** …and taking it back to renegotiate, while nothing has been paid. */
+  'quotation_reopened',
+  /**
+   * ⛔ Production started with nothing received, said out loud.
+   *
+   * The owner's flow allows it ("ยังไม่ต้องชำระก็ได้ ... ข้ามไปที่ขั้นตอนเริ่มผลิตเลย"); what was
+   * wrong was recording it as `payment_confirmed` and emailing the customer that their payment
+   * had been verified when ฿0 had arrived. One (from, to) pair may carry exactly one event
+   * type — `order_events_guard_insert()` refuses any other — so the honest name needed an
+   * edge of its own, which is `awaiting_confirmation → production_confirmed` in 0054.
+   *
+   * Deliberately ugly, like `balance_written_off`: somebody reading this row in six months
+   * needs to see that no money was received, and a polite name is how that gets lost.
+   */
+  'production_authorised_unpaid',
   'payment_confirmed',
   'production_started',
   'installation_scheduled',
@@ -196,6 +227,16 @@ export const ORDER_PAYLOAD_KINDS = [
   'none',
   'submit',
   'confirm_payment',
+  /**
+   * ⭐ Authorising production on an unpaid order, which requires a written `reason`.
+   *
+   * Its own kind rather than `confirm_payment` with an optional note, because the two acts are
+   * different and the required key is the difference: confirming money that arrived needs no
+   * justification, and releasing the factory against an invoice nobody has paid is a decision
+   * somebody must be able to defend later. `required_payload_keys = {reason}` on the
+   * transition row is what enforces it, in Postgres, for every writer.
+   */
+  'authorise_unpaid',
   'cancel_pre_freeze',
   'cancel_post_freeze',
   'bounce',

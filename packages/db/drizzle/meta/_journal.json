@@ -372,6 +372,20 @@
       "when": 1786400000023,
       "tag": "0052_product_gallery",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1786400000024,
+      "tag": "0053_awaiting_confirmation_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1786400000025,
+      "tag": "0054_confirmation_transitions",
+      "breakpoints": true
     }
   ]
 }

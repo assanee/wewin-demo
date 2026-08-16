@@ -3,6 +3,7 @@ import {
   approveRedesignRequestSchema,
   bounceOrderRequestSchema,
   cancelOrderRequestSchema,
+  authoriseUnpaidRequestSchema,
   confirmPaymentRequestSchema,
   emptyTransitionRequestSchema,
   staffCancelOrderRequestSchema,
@@ -11,6 +12,7 @@ import {
   type ApproveRedesignRequestWire,
   type BounceOrderRequestWire,
   type CancelOrderRequestWire,
+  type AuthoriseUnpaidRequestWire,
   type ConfirmPaymentRequestWire,
   type OrderActorKindWire,
   type OrderEventTypeWire,
@@ -89,6 +91,7 @@ export type TransitionBody =
   | { readonly payloadKind: 'none'; readonly body: Record<string, never> }
   | { readonly payloadKind: 'submit'; readonly body: SubmitOrderRequestWire }
   | { readonly payloadKind: 'confirm_payment'; readonly body: ConfirmPaymentRequestWire }
+  | { readonly payloadKind: 'authorise_unpaid'; readonly body: AuthoriseUnpaidRequestWire }
   | { readonly payloadKind: 'cancel_pre_freeze'; readonly body: CancelOrderRequestWire }
   | { readonly payloadKind: 'cancel_post_freeze'; readonly body: StaffCancelOrderRequestWire }
   | { readonly payloadKind: 'bounce'; readonly body: BounceOrderRequestWire }
@@ -114,6 +117,8 @@ export function payloadSchemaFor(
       return submitOrderRequestSchema;
     case 'confirm_payment':
       return confirmPaymentRequestSchema;
+    case 'authorise_unpaid':
+      return authoriseUnpaidRequestSchema;
     case 'cancel_pre_freeze':
       return cancelOrderRequestSchema;
     case 'cancel_post_freeze':

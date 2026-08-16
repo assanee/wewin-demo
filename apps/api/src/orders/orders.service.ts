@@ -849,6 +849,31 @@ export class OrdersService {
           payload: parsed.body.noteTh === undefined ? {} : { note_th: parsed.body.noteTh },
         });
 
+      case 'authorise_unpaid':
+        /*
+         * ⛔ THE SAME FREEZE POINT, REACHED WITH NOTHING RECEIVED — and said so.
+         *
+         * The owner asks for this move ("ยังไม่ต้องชำระก็ได้ ... ข้ามไปที่ขั้นตอนเริ่มผลิตเลยแล้ว
+         * ค่อยชำระทีเดียว"), so what was wrong was never that it happened. It was that it went
+         * onto the spine as `payment_confirmed` and mailed the customer that their payment had
+         * been verified when ฿0 had arrived.
+         *
+         * ⚠️ No money check here, deliberately: this branch *is* the unpaid case, and refusing
+         * it would remove the thing the owner asked for. What guards the other side — an order
+         * in `awaiting_payment` being confirmed as paid when nothing came in — belongs on
+         * `confirm_payment`, where the claim being made is about money.
+         *
+         * `reason` is required by `order_status_transitions.required_payload_keys` and checked
+         * in `order_events_guard_insert()`, so it is on the row for every writer rather than
+         * only for this one. It goes on the payload verbatim; nothing parses it later.
+         */
+        return this.record(tx, {
+          order,
+          row,
+          actor,
+          payload: { reason: parsed.body.reason },
+        });
+
       case 'none': {
         const eventId = await this.record(tx, { order, row, actor, payload: {} });
 

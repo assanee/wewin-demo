@@ -61,6 +61,24 @@ export const DELIBERATELY_SILENT_EVENTS: Readonly<Partial<Record<OrderEventType,
     'a forgiven debt is the end of a negotiation a person had; the staff who agreed it confirm it ' +
     'in their own terms. The customer already sees payment.writtenOff on their order screen and ' +
     'the reminders stop on their own. Owner decided not to push a message as well.',
+  /*
+   * ⚠️ SILENT BECAUSE THE NEXT EVENT IS THE MESSAGE, not because nobody thought about it.
+   *
+   * `quotation_reopened` is staff pulling an unpaid quotation back to adjust it — a discount, a
+   * different deposit, or a conversation that has not finished. Telling the customer at that
+   * moment would say only that something is being changed, which invites the question the change
+   * has not answered yet. The thing worth sending is the *result*, and that has its own event and
+   * its own mail: `quotation_confirmed` reaches them the moment the figures are agreed.
+   *
+   * ⛔ The silence is affordable only while the pair holds. If a reopening could ever be
+   * abandoned — the order left unconfirmed indefinitely — the customer would be waiting for a
+   * confirmation nobody is going to send, and this entry would have to become a rule with a
+   * "we are revising your quotation" message. There is no timeout on the status today; that is
+   * the condition to watch, not the event count.
+   */
+  quotation_reopened:
+    'the customer hears the result rather than the intention: quotation_confirmed carries its own ' +
+    'mail the moment staff finish adjusting. Revisit if an order can sit reopened indefinitely.',
 };
 
 export function isDeliberatelySilent(eventType: string): boolean {

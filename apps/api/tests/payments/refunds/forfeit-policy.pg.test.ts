@@ -31,10 +31,13 @@ const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL'];
 const describeWithPg = url === undefined ? describe.skip : describe;
 
 /**
- * ⚠️ A number, on purpose. `draft · awaiting_payment · production_confirmed · in_production ·
- * awaiting_installation · redesign`. `redesign` is the one plan 7.8 says everybody forgets.
+ * ⚠️ A number, on purpose. `draft · awaiting_confirmation · awaiting_payment ·
+ * production_confirmed · in_production · awaiting_installation · redesign`. `redesign` is the
+ * one plan 7.8 says everybody forgets; `awaiting_confirmation` arrived with 0053, which copies
+ * each policy's `awaiting_payment` rates into it because the two mean the same thing to a
+ * cancelling customer — nothing has been committed to the factory.
  */
-const CANCELLABLE_STATUSES = 6;
+const CANCELLABLE_STATUSES = 7;
 const FAULT_PARTIES = 2;
 
 describeWithPg('the forfeit table is dense, or the policy is not usable', () => {
@@ -56,12 +59,13 @@ describeWithPg('the forfeit table is dense, or the policy is not usable', () => 
     return Array.isArray(value) ? (value as T[]) : [];
   };
 
-  it('has exactly six cancellable statuses, and `redesign` is one of them', async () => {
+  it('has exactly seven cancellable statuses, and `redesign` is one of them', async () => {
     const found = await rows<{ from_status: string }>(sql`
       select distinct t.from_status from order_status_transitions t where t.to_status = 'cancelled'
     `);
 
     expect(found.map((row) => row.from_status).sort()).toEqual([
+      'awaiting_confirmation',
       'awaiting_installation',
       'awaiting_payment',
       'draft',
