@@ -64,7 +64,12 @@ describe('every status a person can be shown has Thai', () => {
 
 describe('⭐ each transition asks for exactly the body its endpoint demands', () => {
   it('covers every payload kind the API can send', () => {
-    expect(PAYLOAD_KINDS).toHaveLength(8);
+    /*
+     * Nine since 0054's `authorise_unpaid`. The count is what turns "the API grew a payload
+     * kind this dashboard cannot build a body for" into a failing test rather than a greyed-out
+     * button somebody reports weeks later — which is exactly how that kind was noticed.
+     */
+    expect(PAYLOAD_KINDS).toHaveLength(9);
 
     for (const kind of PAYLOAD_KINDS) {
       expect(transitionForm(kind), `${kind} has no form`).toBeDefined();

@@ -179,6 +179,14 @@ export const PAYLOAD_KINDS = [
   'none',
   'submit',
   'confirm_payment',
+  /**
+   * ⭐ Releasing production on an order nobody has paid for — the honest edge added in 0054.
+   *
+   * Its own kind rather than `confirm_payment` with a note, because `reason` is **required**:
+   * confirming money that arrived explains itself, and starting the factory against an unpaid
+   * invoice is a decision somebody has to be able to defend later.
+   */
+  'authorise_unpaid',
   'cancel_pre_freeze',
   'cancel_post_freeze',
   'bounce',
@@ -304,6 +312,7 @@ const FORMS: Record<PayloadKind, TransitionForm> = {
   }),
 
   confirm_payment: form([note]),
+  authorise_unpaid: form([reason]),
   cancel_pre_freeze: form([reason]),
   cancel_post_freeze: form([reason, fault]),
   bounce: form([reason]),
