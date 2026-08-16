@@ -241,6 +241,8 @@ export class QuotesService {
        * missing rate would make the editor itself unopenable, including for the salesperson
        * trying to correct the order that caused it. */
       fxPreview: await this.fxRate.preview(resolvedDestination.fx, undefined),
+      /* From the row this read already loaded — see `EncodeQuoteInput.issued`. */
+      issued: { status: order.status, grandTotalThbMinor: order.grandTotalThbMinor },
       audience,
     });
   }
@@ -1016,6 +1018,12 @@ export class QuotesService {
         /* Same transaction as everything else in this write, so the preview a write answers
          * with is resolved against the same connection and instant as the money beside it. */
         fxPreview: await this.fxRate.preview(resolvedDestination.fx, tx),
+        /*
+         * ⚠️ The order as it was when this transaction locked it, which is exactly right: a
+         * write cannot have moved it. The only thing that does is a re-issue, and that answers
+         * with the order rather than with a quote.
+         */
+        issued: { status: order.status, grandTotalThbMinor: order.grandTotalThbMinor },
         audience: 'sales',
       });
     }), operation);

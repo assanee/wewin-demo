@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Route } from 'next';
-import { CircleAlert, Globe, RefreshCw, ShieldAlert } from 'lucide-react';
+import { CircleAlert, Globe, RefreshCw, Send, ShieldAlert } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -141,6 +141,68 @@ export function StaleBaselineBanner({ view }: { readonly view: QuoteView }) {
             </li>
           )}
         </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/**
+ * ⭐ THE EDIT HAS NOT REACHED THE CUSTOMER — and the button that sends it.
+ *
+ * Every write on this screen changes the quote. **None of them changes what the customer is
+ * asked for**: that figure lives on the order and is written only by a submit or a re-issue. So
+ * a salesperson could take ฿20,000 off, watch every total here agree, and the customer's
+ * payment page would go on asking for the old amount — with nothing anywhere saying so.
+ *
+ * Both figures, side by side and labelled, because "ยังไม่ได้ส่ง" on its own leaves the reader
+ * to work out what the customer is looking at. The one they are being asked for comes first: it
+ * is the number a person on the telephone is about to be told, and the reason this banner is
+ * the loudest thing on the screen when it appears.
+ *
+ * ⚠️ In a status the API will not re-issue from, the sentence stays and the button goes. A
+ * difference the customer cannot be told about is more alarming than one they can — hiding the
+ * banner because there is no button would hide the problem, not solve it.
+ */
+export function IssuedBehindBanner({
+  view,
+  busy,
+  onReissue,
+}: {
+  readonly view: QuoteView;
+  readonly busy: boolean;
+  readonly onReissue: () => void;
+}) {
+  const behind = view.issuedBehind;
+  if (behind === null) return null;
+
+  return (
+    <Alert variant="destructive">
+      <Send />
+      <AlertTitle>ลูกค้ายังเห็นยอดเดิม — การแก้ไขนี้ยังไม่ถูกส่งออกไป</AlertTitle>
+      <AlertDescription className="flex flex-col items-start gap-3">
+        <dl className="grid grid-cols-[auto_auto] gap-x-6 gap-y-1">
+          <dt>ยอดที่ลูกค้าถูกเรียกเก็บอยู่</dt>
+          <dd className="text-right tabular-nums">{baht(behind.issuedThbMinor)}</dd>
+          <dt>ยอดตามใบที่แก้แล้ว</dt>
+          <dd className="text-right tabular-nums font-medium">{baht(behind.liveThbMinor)}</dd>
+        </dl>
+
+        {behind.mayReissue ? (
+          <>
+            <p>
+              กด <strong>ออกใบเสนอราคาใหม่</strong> เพื่อให้ยอดใหม่มีผลกับลูกค้า —
+              ระบบจะบันทึกลงประวัติออร์เดอร์ แจ้งลูกค้า และคิดยอดมัดจำใหม่ตามยอดล่าสุด
+            </p>
+            <Button size="sm" onClick={onReissue} disabled={busy}>
+              ออกใบเสนอราคาใหม่
+            </Button>
+          </>
+        ) : (
+          <p>
+            ออร์เดอร์นี้อยู่สถานะ <strong>{behind.status}</strong> จึงออกใบใหม่จากหน้านี้ไม่ได้ —
+            ออกใบใหม่ได้เฉพาะตอนรอชำระเงินเท่านั้น
+          </p>
+        )}
       </AlertDescription>
     </Alert>
   );

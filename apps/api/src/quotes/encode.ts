@@ -85,6 +85,16 @@ export interface EncodeQuoteInput {
    * once. It arrives as a value; this file only converts and renders it.
    */
   readonly fxPreview: QuotationRatePreview;
+  /**
+   * ⭐ The order as the customer currently has it — its status, and the total it was last
+   * quoted at. `null` for a draft, which has been quoted to nobody.
+   *
+   * Read from the order row the caller has already locked rather than re-read here, for the
+   * reason this encoder resolves nothing else: two reads of one row inside one transaction is
+   * two instants, and the whole value of this field is that it is compared with the money
+   * beside it.
+   */
+  readonly issued: { readonly status: string; readonly grandTotalThbMinor: bigint | null };
   readonly audience: QuoteAudience;
 }
 
@@ -93,9 +103,23 @@ export function encodeQuote(input: EncodeQuoteInput): QuoteWire {
     input.effective.lines.map((line) => [line.lineId, line.effectiveTotalThbMinor]),
   );
 
+  const issuedTotal = input.issued.grandTotalThbMinor;
+
   return {
     orderId: input.orderId,
     quoteRevision: input.quoteRevision,
+    /*
+     * ⚠️ Compared as `bigint`, here, once. A client doing this subtraction would be doing it on
+     * whatever JSON gave it, and the two totals are satang: `'11770000' !== '11770000.0'` and
+     * `11770000.1 - 11770000` is not zero in a float. The one comparison that decides whether a
+     * salesperson is told their edit has not reached the customer is made where the values are
+     * still exact.
+     */
+    issued: {
+      status: input.issued.status,
+      grandTotalThbMinor: issuedTotal === null ? null : encodeThb(issuedTotal),
+      isBehind: issuedTotal !== null && issuedTotal !== input.effective.money.grandTotalThbMinor,
+    },
     currency: 'THB',
     /* Outside `sales`, so a customer sees it too: an unresolvable country is a fact about
      * their own order that only they can correct, not the company's negotiating position. */

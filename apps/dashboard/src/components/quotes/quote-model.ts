@@ -171,6 +171,22 @@ export interface QuoteView {
    */
   readonly unrecognisedDestination: string | null;
   /**
+   * ⭐ The edit has not reached the customer yet — `null` when it has, or when there is nothing
+   * to reach them with.
+   *
+   * The gap this describes is the one nothing on this screen used to admit to. A quote write
+   * moves `quote_lines` and `quote_overrides`; the figure the customer is asked for lives on
+   * the order and is written only by a submit or a re-issue. Between the two, the editor showed
+   * a discount that the payment page knew nothing about.
+   *
+   * ⚠️ `isBehind` is **the server's answer, relayed** — the same discipline as
+   * `unrecognisedDestination` above and for the same reason: the two totals are satang, this
+   * module holds them as `bigint` only after a decode, and a second comparison here would be a
+   * second definition of "the same amount". What this module adds is `mayReissue`, which is a
+   * fact about which button to draw and not about the money.
+   */
+  readonly issuedBehind: IssuedBehindView | null;
+  /**
    * Whether a catalogue publish landed under a promise on this quote.
    *
    * The **only** send-blocker this module knows about, and deliberately so: whether the
@@ -220,6 +236,23 @@ function indexOverrides(
 
 const first = (bucket: readonly QuoteOverrideWire[] | undefined): QuoteOverrideWire | null =>
   bucket === undefined ? null : (bucket[0] ?? null);
+
+/**
+ * What the customer is currently asked for, beside what the quote now says.
+ *
+ * `mayReissue` is false in every status but `awaiting_payment`, because that is the only one
+ * the API will re-issue from — a draft's route is a submit, and an order in production is
+ * changed by a change order. The banner still appears when it is false: a difference the
+ * customer cannot be told about is more alarming than one they can, not less.
+ */
+export interface IssuedBehindView {
+  /** What the customer sees today. */
+  readonly issuedThbMinor: bigint;
+  /** What this quote now comes to. */
+  readonly liveThbMinor: bigint;
+  readonly status: string;
+  readonly mayReissue: boolean;
+}
 
 export function foldQuote(wire: QuoteWire): QuoteView {
   const sales = wire.sales;
@@ -355,6 +388,15 @@ export function foldQuote(wire: QuoteWire): QuoteView {
      * concession-shaped one, and the API puts it outside the sales block for that reason.
      */
     unrecognisedDestination: wire.destination.recognised ? null : wire.destination.country,
+    issuedBehind:
+      !wire.issued.isBehind || wire.issued.grandTotalThbMinor === null
+        ? null
+        : {
+            issuedThbMinor: thbMinorOf(wire.issued.grandTotalThbMinor),
+            liveThbMinor: thbMinorOf(wire.money.grandTotalThbMinor),
+            status: wire.issued.status,
+            mayReissue: wire.issued.status === 'awaiting_payment',
+          },
     /*
      * The server's own list, not a rule this module invented. An alarm is deliberately not
      * folded in beside it: an alarm does not block the API, and a screen that refused on top

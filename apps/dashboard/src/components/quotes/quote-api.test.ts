@@ -134,6 +134,8 @@ describe('decoding', () => {
 const SAMPLE = {
   orderId: '00000000-0000-4000-8000-000000000001',
   quoteRevision: '0123456789abcdef',
+  /* What the customer is currently asked for — a draft, so nobody has been quoted anything. */
+  issued: { status: 'draft', grandTotalThbMinor: null, isBehind: false },
   currency: 'THB',
   /* Required by `quoteWireSchema`, so `decodeQuote` refuses a payload without it — which is the
    * point: `money.vat` names a rate but cannot say whether it is this country's. */

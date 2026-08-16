@@ -20,6 +20,7 @@ import { OverrideDialog } from './override-dialog';
 import { ProvenanceLegend } from './provenance';
 import {
   ConflictBanner,
+  IssuedBehindBanner,
   IntegrityAlarms,
   StaleBaselineBanner,
   UnrecognisedDestinationBanner,
@@ -188,6 +189,12 @@ export function QuoteEditorScreen({ orderId }: { readonly orderId: string }) {
           onReload={editor.reload}
         />
       )}
+      {/*
+       * First of all of them, because it is the only one that is true of the customer's side of
+       * the screen: the others describe a quote that cannot be sent, and this one describes a
+       * quote that has not been.
+       */}
+      <IssuedBehindBanner view={view} busy={editor.busy} onReissue={() => void editor.reissue()} />
       {/* First of the three, because it is the only one that says the quote cannot be sent
           *at all* — the others are about lines to re-confirm on a quote that otherwise can. */}
       <UnrecognisedDestinationBanner view={view} />

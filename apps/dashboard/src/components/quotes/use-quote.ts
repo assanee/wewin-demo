@@ -4,7 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { QuotePreconditionWire, QuoteWire } from '@wewin/contract/quote';
 
-import { conflictOf, failureMessage, getQuote, isForbidden, preconditionOf, type ConflictKind } from './quote-api';
+import {
+  conflictOf,
+  failureMessage,
+  getQuote,
+  isForbidden,
+  preconditionOf,
+  reissueQuote,
+  type ConflictKind,
+} from './quote-api';
 import { foldQuote, type QuoteView } from './quote-model';
 
 /**
@@ -63,6 +71,15 @@ export interface QuoteEditor {
     label: string,
     run: (expect: QuotePreconditionWire) => Promise<QuoteWire>,
   ) => Promise<boolean>;
+  /**
+   * ⭐ Send the edited quotation to the customer.
+   *
+   * Not a `write`, and the difference is the whole reason it has a method of its own: every
+   * other action here answers with a quote and this one answers with an **order**. There is
+   * nothing to apply, so it reloads — which is also what fetches the `issued` block this call
+   * exists to move.
+   */
+  readonly reissue: () => Promise<boolean>;
 }
 
 export function useQuoteEditor(orderId: string): QuoteEditor {
@@ -152,7 +169,35 @@ export function useQuoteEditor(orderId: string): QuoteEditor {
     [apply, busy, fail, state],
   );
 
+  const reissue = useCallback(async (): Promise<boolean> => {
+    if (busy) return false;
+    if (state.status !== 'ready') {
+      toast.error('ยังโหลดใบเสนอราคาไม่เสร็จ');
+      return false;
+    }
+
+    setBusy(true);
+    try {
+      await reissueQuote(orderId, preconditionOf(state.view.wire));
+      setConflict(null);
+      toast.success('ออกใบเสนอราคาใหม่แล้ว — ลูกค้าเห็นยอดใหม่');
+      /*
+       * Reloaded rather than patched. The re-issue moves the order's totals, its pinned
+       * document and its instalments; the only thing this screen can say about that afterwards
+       * is what the server says, and the `issued` block it comes back with is the assertion
+       * that the send actually landed.
+       */
+      reload();
+      return true;
+    } catch (error: unknown) {
+      fail(error);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, fail, orderId, reload, state]);
+
   const dismissConflict = useCallback(() => setConflict(null), []);
 
-  return { state, busy, conflict, dismissConflict, reload, write };
+  return { state, busy, conflict, dismissConflict, reload, write, reissue };
 }

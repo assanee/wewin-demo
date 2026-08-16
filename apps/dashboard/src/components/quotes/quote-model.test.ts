@@ -111,6 +111,8 @@ const quote = (over: Partial<QuoteWire> = {}): QuoteWire => {
   return {
     orderId: '00000000-0000-4000-8000-000000000001',
     quoteRevision: '0123456789abcdef',
+    /* A draft by default: quoted to nobody, so nothing can be behind. */
+    issued: { status: 'draft', grandTotalThbMinor: null, isBehind: false },
     currency: 'THB',
     /* A domestic order, resolved. `recognised: false` means the money block above is the
      * default rule rather than this country's — see `QuoteDestinationWire`. */
@@ -431,5 +433,63 @@ describe('the concession, and what this module refuses to decide about it', () =
     expect(view.concession?.concessionThbMinor).toBe(0n);
     expect(view.hasStaleBaselines).toBe(false);
     expect(view.alarms).toHaveLength(0);
+  });
+});
+
+describe('the gap between this quote and the contract the customer holds', () => {
+  /*
+   * ⛔ The bug this view exists for. Editing a quote writes `quote_lines` and
+   * `quote_overrides`; the figure a customer is asked for lives on the order and is written
+   * only by a submit or a re-issue. Between the two, the editor agreed with a discount the
+   * payment page had never heard of — and nothing on the screen said so.
+   */
+
+  it('⭐ says nothing while the quote and the contract agree', () => {
+    const view = foldQuote(
+      quote({ issued: { status: 'awaiting_payment', grandTotalThbMinor: thb(940_637n), isBehind: false } }),
+    );
+    expect(view.issuedBehind).toBeNull();
+  });
+
+  it('⭐ carries both figures when the edit has not been sent', () => {
+    const view = foldQuote(
+      quote({ issued: { status: 'awaiting_payment', grandTotalThbMinor: thb(940_637n), isBehind: true } }),
+    );
+
+    expect(view.issuedBehind?.issuedThbMinor).toBe(940_637n);
+    /* The live figure comes off the quote's own money block — the two are shown side by side. */
+    expect(view.issuedBehind?.liveThbMinor).toBe(thbMinorOf(quote().money.grandTotalThbMinor));
+    expect(view.issuedBehind?.mayReissue).toBe(true);
+  });
+
+  it('⚠️ relays the server\u2019s verdict and never re-decides it', () => {
+    /*
+     * The totals here are plainly different and the server says they are not. The screen
+     * believes the server: "the same amount" is a question about money, the API compares the
+     * two as `bigint` inside the transaction that owns both, and a second comparison here
+     * would be a second definition — the class of thing this file's header forbids.
+     */
+    const view = foldQuote(
+      quote({ issued: { status: 'awaiting_payment', grandTotalThbMinor: thb(1n), isBehind: false } }),
+    );
+    expect(view.issuedBehind).toBeNull();
+  });
+
+  it('⚠️ still reports the gap in a status that cannot be re-issued, but not the button', () => {
+    /*
+     * A difference the customer cannot be told about is more alarming than one they can, so the
+     * banner stays and the action goes. `mayReissue` is `awaiting_payment` alone because that
+     * is the only status the API re-issues from.
+     */
+    const view = foldQuote(
+      quote({ issued: { status: 'in_production', grandTotalThbMinor: thb(940_637n), isBehind: true } }),
+    );
+
+    expect(view.issuedBehind).not.toBeNull();
+    expect(view.issuedBehind?.mayReissue).toBe(false);
+  });
+
+  it('says nothing about a draft, which has been quoted to nobody', () => {
+    expect(foldQuote(quote()).issuedBehind).toBeNull();
   });
 });

@@ -587,9 +587,34 @@ export interface QuoteDestinationWire {
   readonly basis: DestinationTaxBasis;
 }
 
+/**
+ * ⭐ What the customer is being asked for **right now**, beside what the quote now says.
+ *
+ * The two are different numbers more often than anybody expects, and nothing on the screen used
+ * to say so. Editing a quote writes `quote_lines` and `quote_overrides`; the figure a customer
+ * is shown comes from the order, and only a submit or a re-issue writes that. A salesperson
+ * could take ฿20,000 off, watch the editor agree, and the customer's payment page would go on
+ * asking for the old amount.
+ *
+ * `isBehind` is decided by the server rather than by subtracting on the client, because "the
+ * same number" is a question about money: the two totals are `bigint` satang on the wire, and a
+ * client comparing them as strings or as floats is a client that will one day say a ฿0.01
+ * difference is none.
+ */
+export interface QuoteIssuedWire {
+  /** The order's status, so a screen can tell "not sent yet" from "sent and now edited". */
+  readonly status: string;
+  /** Null until the first submit: a draft has been quoted to nobody. */
+  readonly grandTotalThbMinor: MoneyWire<'THB'> | null;
+  /** True when the quote below differs from the figure above — the edit has not been sent. */
+  readonly isBehind: boolean;
+}
+
 export interface QuoteWire {
   readonly orderId: string;
   readonly quoteRevision: string;
+  /** ⭐ The gap between this quote and the contract the customer holds. See `QuoteIssuedWire`. */
+  readonly issued: QuoteIssuedWire;
   readonly currency: 'THB';
   readonly destination: QuoteDestinationWire;
   readonly lines: readonly QuoteLineWire[];
@@ -791,9 +816,16 @@ export const quoteFxPreviewWireSchema: z.ZodType<QuoteFxPreviewWire> = z.object(
   reason: z.string().min(1).nullable(),
 });
 
+export const quoteIssuedWireSchema: z.ZodType<QuoteIssuedWire> = z.object({
+  status: z.string().min(1),
+  grandTotalThbMinor: thb.nullable(),
+  isBehind: z.boolean(),
+});
+
 export const quoteWireSchema: z.ZodType<QuoteWire> = z.object({
   orderId: z.uuid(),
   quoteRevision: z.string().regex(QUOTE_REVISION_PATTERN),
+  issued: quoteIssuedWireSchema,
   currency: z.literal('THB'),
   destination: quoteDestinationWireSchema,
   lines: z.array(quoteLineWireSchema),

@@ -156,6 +156,27 @@ export function setOverride(
 }
 
 /**
+ * ⭐ Send the edited quotation to the customer — `POST …/quote/reissue`.
+ *
+ * The one write in this file that does not answer with a quote, because what it changes is the
+ * **order**: the pinned document, the totals a payment screen reads, and the instalments. The
+ * response is deliberately not decoded here — the screen has to re-read the quote afterwards
+ * anyway (its `issued` block is exactly what this call moves), and decoding an order into a
+ * module whose entire subject is quotes would put a second reading of `OrderWire` in the app
+ * for the sake of a value nothing uses.
+ *
+ * ⚠️ Still carries `expect`. A re-issue reads the whole quote and changes none of it, so it is
+ * the one act where a colleague's edit arriving between the read and the send would go out to
+ * the customer unseen by anybody.
+ */
+export const reissueQuote = async (
+  orderId: string,
+  expect: QuotePreconditionWire,
+): Promise<void> => {
+  await apiJson(quotePath(orderId, '/reissue'), () => null, post({ expect }));
+};
+
+/**
  * Withdraw a promise so the computed figure applies again.
  *
  * Also the way sales *confirms* a price after the catalogue moved: an override equal to
