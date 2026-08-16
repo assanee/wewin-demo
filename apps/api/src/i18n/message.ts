@@ -404,6 +404,13 @@ const PARAM_SHAPES = {
    * effect is never stored — see `quoteHasMoney`.
    */
   'error.quote.has_money': {},
+  /**
+   * ⛔ Only an order waiting to be paid may be re-quoted. A draft's route is a submit — which
+   * does more (an order number, `submitted_at`, the forfeit policy, the customer's first
+   * mail) — and anything past `awaiting_payment` is being built, where a new price is a change
+   * order rather than a re-issue. See `OrdersService.reissueQuote`.
+   */
+  'error.quote.not_awaiting_payment': {},
   'error.stale.override_baselines': {},
   /**
    * The one cause `override_baselines` describes wrongly: the destination changed, not the

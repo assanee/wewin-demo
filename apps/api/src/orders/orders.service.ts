@@ -20,8 +20,10 @@ import {
   type ResolveChangeRequestWire,
 } from '@wewin/contract/order';
 import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
+import { reissueQuoteRequestSchema } from '@wewin/contract/quote';
 
 import { AppError } from '../common/errors/app-error';
+import { parseAfterLock } from '../common/parse-after-lock';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { message } from '../i18n';
@@ -1220,6 +1222,183 @@ export class OrdersService {
     await this.authority.gate(tx, { orderId: order.id, scope: input.scope });
 
     return eventId;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * ⭐ ออกใบเสนอราคาใหม่ — carrying an edited quote to the customer
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Re-pin the document, the totals and the schedule from the quote as it now stands.
+   *
+   * ── The bug this closes ─────────────────────────────────────────────────────────
+   *
+   * Every write in `QuotesService` moves `quote_lines` and `quote_overrides`. **None of them
+   * moves what the customer is asked for**: that is `orders.grand_total_thb_minor`, and until
+   * this method existed only a submit ever wrote it. So sales could take ฿20,000 off an order
+   * in `awaiting_payment`, watch the editor agree, and the customer's payment page would go on
+   * asking for the old figure — with the order's own timeline saying nothing had happened. The
+   * discount was real in one table and invisible in every other.
+   *
+   * ── Why it is a separate request and not a consequence of the edit ──────────────
+   *
+   * Sending a customer a new contract is a decision, and it is not the same decision as
+   * changing a number in an editor. Sales usually make several edits and then send once; a
+   * re-issue on every write would send three versions of a negotiation that had one outcome,
+   * and each one appends to the spine and mails the customer.
+   *
+   * ── The sequence, which is `submit`'s and deliberately so ───────────────────────
+   *
+   * Price → append `quote_revised` → pin → move the order row → replace the schedule → gate.
+   * Every ordering constraint `submit` documents applies here for the same reasons: the
+   * destination is resolved before pricing, the event exists before the document that names it,
+   * the totals are on the row before the instalments that foot against them, and the gate runs
+   * last because a concession can only be measured once the revision exists.
+   *
+   * ── What it deliberately does NOT touch ─────────────────────────────────────────
+   *
+   * `submitted_at`, `order_no`, `status_event_id` and `depositFloorBp` — see `applyReissue`.
+   * The order does not move status, does not get a second number, and is not re-pinned to a
+   * policy floor it was not measured against.
+   */
+  async reissueQuote(scope: Scope, orderId: string, rawBody: unknown): Promise<OrderWire> {
+    return this.orders.transaction(async (tx) => {
+      const actor = requireActor(scope);
+      const order = await this.scoped.lockOrFail(tx, scope, orderId, 'act');
+
+      /* Parsed after the lock, like every quote write's body — see `parseAfterLock`. */
+      const body = parseAfterLock(reissueQuoteRequestSchema, rawBody);
+
+      /*
+       * ⛔ `awaiting_payment` and nothing else.
+       *
+       * A `draft` has never been quoted — the route for that is a submit, which does more than
+       * this (an order number, `submitted_at`, the forfeit policy, the customer's first mail).
+       * Anything past `awaiting_payment` has money on it or is in production, and re-pricing a
+       * contract being built is not a re-issue but a change order. The refusal names both
+       * statuses so a dashboard can say which.
+       */
+      if (order.status !== 'awaiting_payment') {
+        throw AppError.conflict(message('error.quote.not_awaiting_payment'), {
+          reason: 'order_not_awaiting_payment',
+          status: order.status,
+        });
+      }
+
+      /*
+       * The two refusals, from `QuotesService` so that they are the same two refusals every
+       * quote write makes: a baseline somebody else has moved, and money already received.
+       * Money first would be the wrong order — a stale editor is the more likely mistake and
+       * the cheaper one to explain.
+       */
+      await this.quotes.assertRevision(tx, order.id, body.expect.quoteRevision);
+      await this.quotes.assertNoMoney(tx, order.id);
+
+      const previousGrandTotal = order.grandTotalThbMinor;
+
+      /* From here down, `submit`'s own sequence — see that method for every "why this order". */
+      const resolved = await this.taxCountries.resolveForSubmit(order.destinationCountry, tx);
+      const destination = resolved.tax;
+
+      const { document } = await this.quotes.assertSubmittable(tx, order, destination);
+
+      const priced = priceOrderDocument({
+        lines: document.lines,
+        charges: document.charges,
+        overrides: document.overrides,
+        leadTimeDays: document.leadTimeDays,
+        catalog: await this.catalogIndex(),
+        vat: destination.rule,
+        destinationCountry: destination.code,
+        taxBasis: destination.basis,
+        fx: await this.fxRate.fromSettings(resolved.fx, tx),
+        locale: order.contactLocale,
+        coreVersion: this.env.SERVICE_VERSION,
+        revision: (await this.orders.latestRevision(tx, order.id)) + 1,
+      });
+
+      /*
+       * ⚠️ Status-less, like `change_requested`: the order stays exactly where it is and the
+       * re-issue is the fact. `quote_revised` has been a permitted event type and a customer
+       * mail template since 0051 with **no producer at all** — this is the producer.
+       *
+       * Both totals on the payload, because "what changed?" is the first question anybody asks
+       * of this row, and reconstructing the old one means reading the previous document.
+       */
+      const eventId = await this.orders.appendEvent(tx, {
+        orderId: order.id,
+        eventType: 'quote_revised',
+        fromStatus: null,
+        toStatus: null,
+        actorKind: actor.actorKind,
+        actorUserId: actor.actorUserId,
+        actorGuestId: actor.actorGuestId,
+        payload: {
+          document_hash: priced.documentHash,
+          line_count: priced.document.lines.length,
+          grand_total_thb_minor: priced.grandTotalThbMinor.toString(),
+          previous_grand_total_thb_minor: previousGrandTotal?.toString() ?? null,
+        },
+      });
+
+      const documentId = await this.orders.pinDocument(tx, {
+        orderId: order.id,
+        revision: priced.document.revision,
+        document: priced.document,
+        documentHash: priced.documentHash,
+        pinnedCoreVersion: this.env.SERVICE_VERSION,
+        pinnedVatRateBp: destination.rule.rateBp,
+        pinnedVatTreatment: destination.rule.treatment,
+        pinnedLocale: priced.document.pinnedLocale,
+        netThbMinor: priced.netThbMinor,
+        vatThbMinor: priced.vatThbMinor,
+        grandTotalThbMinor: priced.grandTotalThbMinor,
+        createdByEventId: eventId,
+        productVersionIds: priced.productVersionIds,
+      });
+
+      /*
+       * ⚠️ THE DEPOSIT COMES FROM THE SCHEDULE THAT WAS ACTUALLY WRITTEN — the same rule, and
+       * the same reason, as the submit twenty lines up: two spellings of "what a 30% deposit
+       * means" is how a revision comes to owe a different shape from the contract it replaces.
+       *
+       * ⚠️ The order row is updated **before** the schedule is replaced, because
+       * `assert_order_schedule()` foots the instalments against the total on the row. The
+       * deposit that goes on the row therefore has to be planned first and pinned in the same
+       * statement as the totals — which is why the schedule is planned by `replaceScheduleForReissue`
+       * from the new total and its answer written a statement later.
+       */
+      const depositBp = await this.depositPolicy.depositBp(tx);
+      const pins = this.payments.pinsForReissue(priced.grandTotalThbMinor, depositBp);
+
+      await this.orders.applyReissue(tx, {
+        orderId: order.id,
+        documentId,
+        netThbMinor: priced.netThbMinor,
+        vatThbMinor: priced.vatThbMinor,
+        grandTotalThbMinor: priced.grandTotalThbMinor,
+        scheduledDepositThbMinor: pins.scheduledDepositThbMinor,
+      });
+
+      await this.payments.replaceScheduleForReissue(tx, {
+        orderId: order.id,
+        status: order.status,
+        grandTotalThbMinor: priced.grandTotalThbMinor,
+        instalments: pins.instalments,
+      });
+
+      await this.authority.gate(tx, { orderId: order.id, scope });
+
+      const reissued = await this.scoped.lock(
+        tx,
+        systemScope('order re-read after re-issue'),
+        orderId,
+        'act',
+      );
+      if (!reissued) throw new Error('orders: the order could not be read back after re-issue');
+
+      return this.decorate(scope, reissued, tx);
+    });
   }
 
   /* ---------------------------------------------------------------- *

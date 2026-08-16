@@ -210,6 +210,24 @@ export interface RemoveLineRequestWire {
   readonly reasonTh?: string | undefined;
 }
 
+/**
+ * ⭐ Carry the edited quote to the customer — the request that answers "แก้แล้ว ลูกค้าเห็นเมื่อไหร่".
+ *
+ * Every write above changes `quote_lines` and `quote_overrides` and **nothing the customer is
+ * asked for**: the amount they owe is `orders.grand_total_thb_minor`, which only a submit
+ * writes. So an order sitting in `awaiting_payment` could be discounted, have a charge added
+ * and a line removed, and the payment page would go on asking for the old figure — the whole
+ * point of this request is that a person has to decide to send it.
+ *
+ * The body carries the precondition and nothing else. What is re-issued is whatever the quote
+ * says at the moment the transaction reads it; a request that could also *change* something
+ * would be an edit and a send in one click, and the two refusals — a stale baseline and an
+ * unapproved concession — mean different things and must be able to happen separately.
+ */
+export interface ReissueQuoteRequestWire {
+  readonly expect: QuotePreconditionWire;
+}
+
 /* ------------------------------------------------------------------ *
  * Requests — overrides
  * ------------------------------------------------------------------ */
@@ -603,6 +621,10 @@ export const addFreeformLineRequestSchema: z.ZodType<AddFreeformLineRequestWire>
   customerDescriptionTh: descriptionSchema,
   amountText: enteredValueTextSchema,
   isVatApplicable: z.boolean().optional(),
+});
+
+export const reissueQuoteRequestSchema: z.ZodType<ReissueQuoteRequestWire> = z.strictObject({
+  expect: quotePreconditionSchema,
 });
 
 export const reviseLineRequestSchema: z.ZodType<ReviseLineRequestWire> = z.strictObject({

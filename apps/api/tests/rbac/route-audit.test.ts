@@ -538,6 +538,7 @@ describe('boot-time route audit', () => {
       'POST /orders/:orderId/quote/lines/:lineId/revision [permissions]',
       'POST /orders/:orderId/quote/overrides [permissions]',
       'POST /orders/:orderId/quote/overrides/:overrideId/revocation [permissions]',
+      'POST /orders/:orderId/quote/reissue [permissions]',
       'POST /orders/:orderId/quote/verification [permissions]',
       'POST /orders/:orderId/transitions/:toStatus [principal]',
       /*

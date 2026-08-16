@@ -171,6 +171,37 @@ export class ScheduleService {
   }
 
   /**
+   * Replace with instalments that have already been planned — `replace` as `openPlanned` is to
+   * `open`, and for the identical reason.
+   *
+   * A re-issue has to pin `orders.scheduled_deposit_thb_minor` in the *same statement* that
+   * moves the totals, because `assert_order_schedule()` foots the instalments against the row —
+   * so the row must be written before these instalments and the deposit must be known before
+   * the row. Planning here as well as at the pin would be the two evaluations of one schedule
+   * this module exists to prevent.
+   */
+  async replacePlanned(
+    context: ScheduleContext,
+    instalments: readonly PlannedInstalment[],
+  ): Promise<readonly PlannedInstalment[]> {
+    this.assertEditable(context);
+
+    return withTranslatedOrderErrors(async () => {
+      await this.repository.ensureSchedule(context.tx, context.orderId);
+
+      const existing = await this.repository.load(context.tx, context.orderId);
+      const paid = existing.filter((row) => row.allocatedThbMinor > 0n);
+      if (paid.length > 0) throw scheduleHasMoneyError(paid);
+
+      await this.repository.deleteAll(context.tx, context.orderId);
+      await this.repository.insertAll(context.tx, context.orderId, instalments);
+      await this.repository.verifySchedule(context.tx, context.orderId);
+
+      return instalments;
+    });
+  }
+
+  /**
    * The total moved. Lock what money has touched, re-derive the rest, let the remainder
    * absorb the difference — plan 7.5(ง).
    *

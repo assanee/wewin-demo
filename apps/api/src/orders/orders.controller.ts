@@ -388,6 +388,33 @@ export class OrdersController {
   }
 
   /**
+   * ⭐ ออกใบเสนอราคาใหม่ — send the edited quote to the customer.
+   *
+   * Here rather than on `QuotesController`, whose prefix this path sits under, because the work
+   * is `OrdersService`'s: it prices, pins a document, moves the order's totals and replaces the
+   * schedule. Injecting `OrdersService` into that controller would close a module cycle —
+   * `OrdersService` already depends on `QuotesService` — and the alternative, moving the pin
+   * into the quotes module, would put two services in the business of writing `orders`.
+   *
+   * `quotes.write` and not just `orders.write`: this is the last step of an edit, and whoever
+   * may not change a quote may not decide which version of it the customer is billed for.
+   *
+   * 200 and not 201 — the same order, re-quoted. Nothing is created that a client could go and
+   * fetch at a new address.
+   */
+  @Post(':orderId/quote/reissue')
+  @HttpCode(200)
+  @contractVersion()
+  @RequirePermissions('quotes.write', 'orders.read', 'orders.write')
+  async reissueQuote(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+    @Body() body: unknown,
+  ): Promise<OrderWire> {
+    return this.orders.reissueQuote(scope, orderId, body);
+  }
+
+  /**
    * The customer objects — plan 10.4.
    *
    * Reachable by the customer and the guest because it is theirs to raise; while it is open

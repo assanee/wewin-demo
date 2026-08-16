@@ -13,10 +13,10 @@ import {
   type SetOverrideRequestWire,
   type StaleBaselineWire,
 } from '@wewin/contract/quote';
-import type { ZodType } from 'zod';
 
 import { CatalogRepository, type PublishedProduct } from '../catalog/catalog.repository';
 import { AppError } from '../common/errors/app-error';
+import { parseAfterLock as parse } from '../common/parse-after-lock';
 import { message } from '../i18n';
 /*
  * `DEFAULT_VAT_RULE` is deliberately no longer imported here, exactly as `orders.service.ts`
@@ -264,6 +264,41 @@ export class QuotesService {
    * chance for the figure this gate approves to differ from the figure that gets frozen — and
    * `tax_countries` is mutable, so "the same code twice" is not "the same rate twice".
    */
+  /**
+   * ⛔ THE OWNER'S RULE, in one place: ลูกค้าจ่ายมัดจำแล้ว ต้องใส่ส่วนลดไม่ได้แล้ว.
+   *
+   * `write` asks it of every mutation and `OrdersService.reissueQuote` asks it again before it
+   * re-pins. Two callers and one definition on purpose — "has this customer paid?" has exactly
+   * one right answer (`order_held_thb_minor()`, never cash: a revision carries its ancestor's
+   * money with no cash leg of its own), and a second spelling of it in the re-issue is how the
+   * two would come to disagree about an order that is part-paid.
+   *
+   * Always inside the caller's transaction and after its lock, so a slip accepted a moment ago
+   * is visible and a slip arriving a moment later waits.
+   */
+  async assertNoMoney(tx: Tx, orderId: string): Promise<void> {
+    const held = await this.quotes.heldThbMinor(tx, orderId);
+    if (held > 0n) throw quoteHasMoney(held);
+  }
+
+  /**
+   * ⭐ The precondition, for a caller that is not `write`.
+   *
+   * A re-issue is the one act that reads the whole quote without changing any of it, so it
+   * cannot reach `write`'s comparison — and it is the act where a stale baseline matters most.
+   * Sales opens the editor, a colleague adds a line, sales presses "ออกใบใหม่": without this the
+   * customer would be sent a total neither of them has looked at.
+   */
+  async assertRevision(tx: Tx, orderId: string, expected: string): Promise<void> {
+    const [lines, overrides] = await Promise.all([
+      this.quotes.listLines(orderId, tx),
+      this.quotes.listLiveOverrides(orderId, tx),
+    ]);
+
+    const current = quoteRevision(lines, overrides);
+    if (expected !== current) throw quoteStale(expected, current);
+  }
+
   async assertSubmittable(
     tx: Tx,
     order: ScopedOrder,
@@ -921,8 +956,7 @@ export class QuotesService {
        * ⚠️ Inside the transaction and after the lock, so a slip accepted a moment ago is
        * visible and a slip arriving a moment later waits for this write to finish.
        */
-      const held = await this.quotes.heldThbMinor(tx, order.id);
-      if (held > 0n) throw quoteHasMoney(held);
+      await this.assertNoMoney(tx, order.id);
 
       const published = await this.publishedIndex();
 
@@ -1416,19 +1450,6 @@ function requireUser(scope: Scope): UserScope {
   return scope;
 }
 
-/** `ZodBodyPipe`'s parse, performed here instead — after the lock. Same error, same shape. */
-function parse<T>(schema: ZodType<T>, body: unknown): T {
-  const parsed = schema.safeParse(body);
-  if (parsed.success) return parsed.data;
-
-  throw AppError.badRequest('รูปแบบข้อมูลที่ส่งมาไม่ถูกต้อง', {
-    source: 'body',
-    issues: parsed.error.issues.map((issue) => ({
-      path: issue.path.map((segment) => String(segment)).join('.'),
-      message: issue.message,
-    })),
-  });
-}
 
 /** The precondition, read structurally. See step ② of `write` for why it is not parsed. */
 function readPrecondition(body: unknown): QuotePreconditionWire | undefined {

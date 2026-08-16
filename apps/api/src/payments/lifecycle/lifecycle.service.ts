@@ -265,6 +265,74 @@ export class PaymentLifecycleService {
     return this.carryForward(tx, input.supersedesOrderId, input.orderId);
   }
 
+  /**
+   * ⭐ The schedule a **re-issue** leaves behind, planned from the same rule a submit planned.
+   *
+   * `replace` and not `recompute`, and the two are genuinely different answers:
+   *
+   *   `recompute` keeps the instalments that exist and moves the difference into the remainder
+   *   — the right behaviour when the total changes under a schedule somebody is *paying*.
+   *
+   *   `replace` re-derives the whole schedule from the deposit policy, which is what a re-issue
+   *   means: the customer has not paid, the contract is being written again, and the deposit
+   *   they are about to be asked for is a share of the new total rather than of the old one.
+   *
+   * A 30% deposit on a ฿100,000 quote that becomes ฿80,000 is ฿24,000 — `recompute` would have
+   * left the ฿30,000 deposit standing and taken the whole ฿20,000 off the balance, which is a
+   * deposit of 37.5% nobody chose.
+   *
+   * ⚠️ `replace` itself refuses when any instalment has an allocation. That refusal stays where
+   * it is and is not the one a caller should rely on: `QuotesService.assertNoMoney` runs first,
+   * says *why* in the customer's terms, and names the amount held. This one is the backstop for
+   * a caller that forgets — and the schedule module's own invariant, which is not this feature's
+   * to weaken.
+   *
+   * ⚠️ Split in two — `pinsForReissue` plans and `replaceScheduleForReissue` writes — for the
+   * reason `plan`/`openPlanned` are split on the submit path: the deposit has to be pinned in
+   * the same statement that moves the totals, and the instalments can only be written after
+   * that statement, so the caller plans once and hands the answer to both. Planning twice would
+   * be two evaluations of one schedule, which is the arithmetic `pinsForSubmit`'s comment
+   * records a red team finding ฿13,805.57 of disagreement in.
+   */
+  pinsForReissue(
+    grandTotalThbMinor: bigint,
+    depositBp: number,
+  ): {
+    readonly instalments: readonly PlannedInstalment[];
+    readonly scheduledDepositThbMinor: bigint;
+  } {
+    const instalments = this.schedule.plan(grandTotalThbMinor, this.termsFor(depositBp));
+    return { instalments, scheduledDepositThbMinor: this.schedule.depositMinor(instalments) };
+  }
+
+  /**
+   * Write what `pinsForReissue` planned, after the order row has moved.
+   *
+   * No forfeit policy is re-pinned and no money is carried: neither of those is a thing a
+   * re-issue does. The policy an order was accepted under is a term of the contract that was
+   * made when it was submitted, and there is no ancestor here — a re-issue revises *this*
+   * order rather than superseding it.
+   */
+  async replaceScheduleForReissue(
+    tx: LedgerTx,
+    input: {
+      readonly orderId: string;
+      readonly status: OrderStatus;
+      readonly grandTotalThbMinor: bigint;
+      readonly instalments: readonly PlannedInstalment[];
+    },
+  ): Promise<void> {
+    await this.schedule.replacePlanned(
+      {
+        tx,
+        orderId: input.orderId,
+        status: input.status,
+        grandTotalThbMinor: input.grandTotalThbMinor,
+      },
+      input.instalments,
+    );
+  }
+
   /* ---------------------------------------------------------------- *
    * Carrying money to a revision — plan 7.8
    * ---------------------------------------------------------------- */
