@@ -14,7 +14,7 @@ interface FilterPanelProps {
   filters: CatalogFilters;
   onChange: (next: CatalogFilters) => void;
   categories: Category[];
-  colorFacets: ProfileColorFacet[];
+  colorFacets: readonly ProfileColorFacet[];
   bounds: { min: number; max: number };
 }
 

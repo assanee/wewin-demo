@@ -235,3 +235,30 @@ export async function loadProductsNotInFixtures(
   }
   return extra;
 }
+
+/**
+ * ⭐ The catalogue a customer sees: what the dashboard has added, then the seeded eighty-one.
+ *
+ * ⛔ **Added products come first, and that ordering is the whole point of this function.**
+ * They used to be appended, which put every product the owner had just created at position
+ * 83 of 83 — the least reachable card on the page. Reported as "the product I added is not
+ * here"; it was, at the very bottom, past eighty-two others. A shop that hides its newest
+ * item behind its entire back catalogue is not showing it.
+ *
+ * It serves the customer as well as the owner: surfacing new arrivals is what shops do, and
+ * the seeded products are the ones a returning visitor has already scrolled past.
+ *
+ * ⚠️ "From the database" is standing in for "new" here, and it is only a good stand-in while
+ * the eighty-one live in the bundle. The day the whole catalogue is read from the API this
+ * split has nothing to sort by and the order becomes a real decision — most likely
+ * `products.created_at`, which is not on the wire today.
+ *
+ * ⚠️ Relative order inside each group is preserved. The seeded list is arranged by hand and
+ * re-sorting it would be a change to the shop nobody asked for.
+ */
+export function catalogueOrder<T>(
+  seeded: readonly T[],
+  fromDatabase: readonly T[],
+): readonly T[] {
+  return [...fromDatabase, ...seeded];
+}

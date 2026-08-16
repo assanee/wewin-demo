@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
-import { categories, products } from '@wewin/core/fixtures';
+import { categories } from '@wewin/core/fixtures';
+import { emptyFilters, isFilterActive, type CatalogFilters } from '@wewin/core/filters';
+
 import {
-  emptyFilters,
-  filterProducts,
-  isFilterActive,
-  priceBounds,
-  profileColorFacets,
-  type CatalogFilters,
-} from '@wewin/core/filters';
+  colorFacetsFrom,
+  filterRows,
+  priceBoundsFrom,
+  type FacetRow,
+} from '@/lib/catalog/facet-rows';
 
 import { Button } from '../common/Button';
 import { BottomSheet } from '../common/BottomSheet';
@@ -25,8 +25,15 @@ export interface CatalogCard {
 }
 
 interface CatalogBrowserProps {
-  /** All 81 cards, server-rendered, in catalogue order. */
+  /** Every card, server-rendered, in catalogue order. */
   readonly cards: readonly CatalogCard[];
+  /**
+   * ⭐ One row per card, in the same order — what the filter panel reasons over.
+   *
+   * Handed in rather than imported, so a product that exists only in the database is
+   * filtered, faceted and counted exactly like a seeded one. See `facet-rows.ts`.
+   */
+  readonly rows: readonly FacetRow[];
   /**
    * `catalog.resultCount` for the unfiltered catalogue, rendered on the server.
    *
@@ -76,7 +83,7 @@ interface CatalogBrowserProps {
  * bookmark of an interaction here, not a request for a different document, and a router
  * navigation would ask the server for a page it already has.
  */
-export function CatalogBrowser({ cards, initialCountLabel }: CatalogBrowserProps): ReactElement {
+export function CatalogBrowser({ cards, rows, initialCountLabel }: CatalogBrowserProps): ReactElement {
   const { t, f } = useLocale();
   const isDesktop = useIsDesktop();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -100,15 +107,27 @@ export function CatalogBrowser({ cards, initialCountLabel }: CatalogBrowserProps
     window.history.replaceState(null, '', query === '' ? window.location.pathname : `?${query}`);
   };
 
-  const colorFacets = useMemo(() => profileColorFacets(products), []);
-  const bounds = useMemo(() => priceBounds(products), []);
+  const colorFacets = useMemo(() => colorFacetsFrom(rows), [rows]);
+  const bounds = useMemo(() => priceBoundsFrom(rows), [rows]);
 
-  // `filterProducts` is core's, called on core's own array — the fixture is imported here
-  // rather than handed across the server/client boundary, because a `Product` carries
-  // `bigint` micrometres and a `bigint` does not serialise. Reimplementing the predicate
-  // over a flattened copy would have put a second definition of "what matches" in the app,
-  // which is the failure `@wewin/core` exists to prevent.
-  const results = useMemo(() => filterProducts(products, filters), [filters]);
+  /*
+   * ⛔ Filtered over the **rows the page handed in**, not over `@wewin/core/fixtures`.
+   *
+   * This used to import the fixture array directly, and the reason given was sound while the
+   * catalogue was only that array: a `Product` holds `bigint` micrometres, a `bigint` does
+   * not serialise, and a second predicate would be a second definition of "what matches".
+   *
+   * What it also did, once the page started adding products from the database, was render
+   * **only the 81 seeded ones** — the rest were serialised into the payload and never shown,
+   * while the count label, computed on the server from the real list, said 83. Reported as
+   * "the product I added is not on this page", and it genuinely was not.
+   *
+   * A `FacetRow` carries the four fields the predicate reads and no `bigint`. The second
+   * definition does now exist, and `facet-rows.test.ts` runs it and core's over every seeded
+   * product across a matrix of filters and asserts identical selections — so drift fails the
+   * suite instead of quietly hiding stock.
+   */
+  const results = useMemo(() => filterRows(rows, filters), [rows, filters]);
 
   const cardsById = useMemo(
     () => new Map(cards.map((entry) => [entry.id, entry.card])),
@@ -193,9 +212,9 @@ export function CatalogBrowser({ cards, initialCountLabel }: CatalogBrowserProps
         <div className="min-w-0">
           {results.length > 0 ? (
             <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {results.map((product) => (
-                <li key={product.id} className="min-w-0">
-                  {cardsById.get(product.id)}
+              {results.map((row) => (
+                <li key={row.id} className="min-w-0">
+                  {cardsById.get(row.id)}
                 </li>
               ))}
             </ul>

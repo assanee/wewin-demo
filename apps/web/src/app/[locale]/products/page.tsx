@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { products } from '@wewin/core/fixtures';
 
-import { loadProductsNotInFixtures } from '@/lib/catalog/published-product';
+import { catalogueOrder, loadProductsNotInFixtures } from '@/lib/catalog/published-product';
+import { facetRowsFrom } from '@/lib/catalog/facet-rows';
 
 import { CatalogBrowser, type CatalogCard } from '@/components/catalog/CatalogBrowser';
 import { ProductCard } from '@/components/catalog/ProductCard';
@@ -95,7 +96,8 @@ export default async function CatalogPage({
    * product it will happily sell is a shop that does not sell it.
    */
   const fromDatabase = await loadProductsNotInFixtures(new Set(products.map((p) => p.slug)));
-  const shown = [...products, ...fromDatabase];
+  /* Newest first — `catalogueOrder` carries the argument and the test that pins it. */
+  const shown = catalogueOrder(products, fromDatabase);
 
   const cards: readonly CatalogCard[] = shown.map((product) => ({
     id: product.id,
@@ -112,8 +114,15 @@ export default async function CatalogPage({
        * disagree across hydration.
        */}
       <LocaleProvider locale={locale}>
+        {/*
+          `rows` is one entry per card, in the same order. The browser filters over these
+          rather than over `@wewin/core/fixtures`, which is what it used to do — and which
+          meant a product added through the dashboard was serialised into the payload and
+          never rendered, while the count above it said otherwise. See `facet-rows.ts`.
+        */}
         <CatalogBrowser
           cards={cards}
+          rows={facetRowsFrom(shown)}
           initialCountLabel={l.t('catalog.resultCount', { count: shown.length })}
         />
       </LocaleProvider>
