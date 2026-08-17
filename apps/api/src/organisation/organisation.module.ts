@@ -11,6 +11,7 @@ import { DestinationsController } from './destinations.controller';
 import { OrganisationController } from './organisation.controller';
 import { ForfeitPolicyRepository } from './forfeit-policy.repository';
 import { ForfeitPolicyService } from './forfeit-policy.service';
+import { TaxDocumentSettingsService } from './tax-document-settings.service';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
 import { TaxCountryRepository } from './tax-country.repository';
@@ -78,6 +79,7 @@ const depositPolicyProvider: Provider = {
     TaxCountryRepository,
     ForfeitPolicyService,
     ForfeitPolicyRepository,
+    TaxDocumentSettingsService,
     depositPolicyProvider,
   ],
   exports: [OrganisationRepository, TaxCountryService, DEPOSIT_POLICY],

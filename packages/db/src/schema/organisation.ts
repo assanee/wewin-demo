@@ -154,6 +154,30 @@ export const organisationProfile = pgTable(
      * somebody granted.
      */
     depositBelowFloorAllowed: boolean('deposit_below_floor_allowed').notNull().default(false),
+
+    /*
+     * ⭐ เอกสารภาษี — whether and how this company issues tax documents (0060).
+     *
+     * ⛔ These are NOT on `OrganisationProfileWire`. That wire is the letterhead and is read by
+     * the storefront and by anybody holding a document link; whether this company issues a tax
+     * invoice per instalment is nobody's business but its own. A field added to the profile is
+     * a field published to every customer by construction.
+     *
+     * All false as shipped except `taxDocCombinedReceipt`, whose value only matters once
+     * `taxDocEnabled` is on and which encodes the commoner Thai practice of one combined
+     * ใบเสร็จรับเงิน/ใบกำกับภาษี.
+     */
+    taxDocEnabled: boolean('tax_doc_enabled').notNull().default(false),
+    taxDocOnInstalment: boolean('tax_doc_on_instalment').notNull().default(false),
+    /**
+     * ⚠️ Independent of `taxDocOnInstalment` at the owner's explicit instruction — they were
+     * told this alone can under-declare output VAT when a deposit was taken before delivery,
+     * and chose to keep both switches free. See 0060's note beside the column.
+     */
+    taxDocOnDelivery: boolean('tax_doc_on_delivery').notNull().default(false),
+    taxDocCombinedReceipt: boolean('tax_doc_combined_receipt').notNull().default(true),
+    taxDocInvoiceOnDemand: boolean('tax_doc_invoice_on_demand').notNull().default(false),
+    taxDocAbbreviatedAllowed: boolean('tax_doc_abbreviated_allowed').notNull().default(false),
     ...timestamps,
   },
   (table) => [

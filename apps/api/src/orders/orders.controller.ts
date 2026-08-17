@@ -31,6 +31,7 @@ import {
   type ResolveChangeRequestWire,
 } from '@wewin/contract/order';
 import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
+import { putOrderBillToSchema, type OrderBillToWire } from '@wewin/contract/forfeit';
 import type { OrderStatus } from '@wewin/db/schema';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
@@ -45,6 +46,7 @@ import {
   serialiseGuestCookie,
   type Scope,
 } from '../rbac';
+import { BillToService } from './bill-to.service';
 import { OrdersService } from './orders.service';
 
 /**
@@ -105,6 +107,10 @@ const contractVersion = (): MethodDecorator =>
  * is somebody else's order served to the next person through the proxy.
  */
 const privateToTheCaller = (): MethodDecorator => Header('Cache-Control', 'no-store');
+
+/** The signed-in user's id, or `null` for a guest. An audit crumb on the bill-to row. */
+const staffUserIdOf = (scope: Scope): string | null =>
+  scope.kind === 'user' ? scope.userId : null;
 
 /**
  * How long a cart survives in a browser. 180 days.
@@ -196,6 +202,7 @@ export class OrdersController {
      * bare name.
      */
     @Inject(ENV) private readonly env: Env,
+    private readonly billToService: BillToService,
   ) {}
 
   /**
@@ -436,6 +443,41 @@ export class OrdersController {
     @Body() body: unknown,
   ): Promise<OrderWire> {
     return this.orders.setDeposit(scope, orderId, body);
+  }
+
+  /**
+   * ⭐ ผู้ซื้อ — the name, address and tax id a tax document is made out to.
+   *
+   * `RequirePrincipal` and not a permission, because it is the customer's own detail as much as
+   * staff's: somebody at the counter dictates it to a salesperson, and somebody at home types it
+   * themselves. Which rows either may touch is `orderReach`'s answer, not a guard's.
+   */
+  @Get(':orderId/bill-to')
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePrincipal()
+  async billTo(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+  ): Promise<OrderBillToWire | null> {
+    return this.billToService.read(scope, orderId);
+  }
+
+  @Put(':orderId/bill-to')
+  @HttpCode(200)
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePrincipal()
+  async putBillTo(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+    @Body(new ZodBodyPipe(putOrderBillToSchema)) body: Omit<OrderBillToWire, 'updatedAt'>,
+  ): Promise<OrderBillToWire> {
+    /*
+     * ⚠️ `null` for a guest, which is most walk-ins: the column records *which member of staff*
+     * last touched it, and a guest is not one. It is an audit crumb, not an owner.
+     */
+    return this.billToService.write(scope, orderId, body, staffUserIdOf(scope));
   }
 
   /**

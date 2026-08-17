@@ -325,6 +325,7 @@ describe('boot-time route audit', () => {
       'GET /admin/organisation/tax-countries [permissions]',
       'GET /admin/organisation/tax-countries/:code/changes [permissions]',
 
+      'GET /admin/organisation/tax-documents [permissions]',
       'GET /admin/reviews/queue [permissions]',
       'GET /admin/users [permissions]',
       'GET /auth/oauth/:provider/callback [anonymous]',
@@ -359,6 +360,7 @@ describe('boot-time route audit', () => {
        * company-fault claim — so there is no parameter here through which somebody could price a
        * refund they are not entitled to.
        */
+      'GET /orders/:orderId/bill-to [principal]',
       'GET /orders/:orderId/cancellation-preview [principal]',
       /*
        * ⚠️ The route that *mints* the anonymous link route below, and therefore the opposite policy.
@@ -577,8 +579,10 @@ describe('boot-time route audit', () => {
       'PUT /admin/organisation [permissions]',
       'PUT /admin/organisation/bank-accounts/:id/availability [permissions]',
       'PUT /admin/organisation/tax-countries/:code/availability [permissions]',
+      'PUT /admin/organisation/tax-documents [permissions]',
       'PUT /admin/users/:userId/groups [permissions]',
       'PUT /me/preferences [authenticated]',
+      'PUT /orders/:orderId/bill-to [principal]',
       'PUT /orders/:orderId/deposit [permissions]',
       'PUT /quotes/authority/limits [permissions]',
     ]);

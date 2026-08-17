@@ -170,6 +170,9 @@ const ADMIN_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map(
   ['GET /admin/organisation/changes', ['organisation.read']],
   /* ⭐ อัตราริบมัดจำ: reading is a settings read, publishing a new version is a settings write. */
   ['GET /admin/organisation/forfeit-policy', ['organisation.read']],
+  /* ⭐ เอกสารภาษี — reading the switches is a settings read; flipping one is a settings write. */
+  ['GET /admin/organisation/tax-documents', ['organisation.read']],
+  ['PUT /admin/organisation/tax-documents', ['organisation.write']],
   ['POST /admin/organisation/forfeit-policy', ['organisation.write']],
   ['GET /admin/organisation/bank-accounts', ['organisation.read']],
   ['POST /admin/organisation/bank-accounts', ['organisation.write']],

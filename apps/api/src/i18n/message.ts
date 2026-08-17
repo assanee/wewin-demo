@@ -421,6 +421,10 @@ const PARAM_SHAPES = {
   'error.forfeit.status_not_cancellable': {},
   'error.forfeit.cell_is_locked': {},
   'error.forfeit.cell_sent_twice': {},
+  /* ── เอกสารภาษี ─────────────────────────────────────────────────────────────── */
+  /** ⛔ Tax documents switched on with no moment chosen: on, and never issuing. */
+  'error.taxdoc.no_moment_chosen': {},
+  'error.billto.juristic_needs_tax_id': {},
   'error.stale.override_baselines': {},
   /**
    * The one cause `override_baselines` describes wrongly: the destination changed, not the

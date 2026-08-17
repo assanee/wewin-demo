@@ -29,6 +29,8 @@ import { AppError } from '../common/errors/app-error';
 import { message } from '../i18n';
 import {
   publishForfeitPolicyRequestSchema,
+  taxDocumentSettingsSchema,
+  type TaxDocumentSettingsWire,
   type ForfeitPolicyWire,
   type PublishForfeitPolicyRequestWire,
 } from '@wewin/contract/forfeit';
@@ -36,6 +38,7 @@ import {
 import { CurrentScope, RequirePermissions, type Scope } from '../rbac';
 import { encodeAccount, encodeChange, encodeProfile } from './encode';
 import { ForfeitPolicyService } from './forfeit-policy.service';
+import { TaxDocumentSettingsService } from './tax-document-settings.service';
 import { OrganisationRepository } from './organisation.repository';
 import { OrganisationService } from './organisation.service';
 import { TaxCountryService } from './tax-country.service';
@@ -86,6 +89,7 @@ export class OrganisationController {
     private readonly repository: OrganisationRepository,
     private readonly taxCountries: TaxCountryService,
     private readonly forfeit: ForfeitPolicyService,
+    private readonly taxDocs: TaxDocumentSettingsService,
   ) {}
 
   @Get()
@@ -125,6 +129,29 @@ export class OrganisationController {
     @Body(new ZodBodyPipe(publishForfeitPolicyRequestSchema)) body: PublishForfeitPolicyRequestWire,
   ): Promise<ForfeitPolicyWire> {
     return this.forfeit.publish(body);
+  }
+
+  /**
+   * ⭐ เอกสารภาษี — the switches.
+   *
+   * A wire of its own rather than fields on the profile: the profile is the letterhead and is
+   * read by the storefront and by document links, and whether this company issues a tax invoice
+   * per instalment is nobody's business but its own.
+   */
+  @Get('tax-documents')
+  @contractVersion()
+  @RequirePermissions('organisation.read')
+  async taxDocumentSettings(): Promise<TaxDocumentSettingsWire> {
+    return this.taxDocs.read();
+  }
+
+  @Put('tax-documents')
+  @contractVersion()
+  @RequirePermissions('organisation.write')
+  async putTaxDocumentSettings(
+    @Body(new ZodBodyPipe(taxDocumentSettingsSchema)) body: TaxDocumentSettingsWire,
+  ): Promise<TaxDocumentSettingsWire> {
+    return this.taxDocs.write(body);
   }
 
   @Put()
