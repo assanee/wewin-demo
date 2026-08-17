@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Loader2, Plus } from 'lucide-react';
+import { AlertTriangle, Plus } from 'lucide-react';
 import type { AdminOptionGroupWire, AdminProductSummaryWire, ProductWire } from '@wewin/contract';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { FieldGroup, FieldSeparator } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -374,7 +375,7 @@ function CreateForm({
 
       <div className="flex items-center gap-2">
         <Button onClick={() => void submit()} disabled={!ready || busy || loadingSource}>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Plus data-icon="inline-start" />}
+          {busy ? <Spinner /> : <Plus data-icon="inline-start" />}
           สร้างเป็นฉบับร่าง
         </Button>
         <span className="text-muted-foreground type-caption">

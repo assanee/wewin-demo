@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Loader2, Undo2 } from 'lucide-react';
+import { AlertTriangle, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -221,7 +222,7 @@ function RefundDialog({
             ยกเลิก
           </Button>
           <Button onClick={() => void submit()} disabled={!form.ok || busy}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             ยื่นคำขอคืนเงิน
           </Button>
         </DialogFooter>

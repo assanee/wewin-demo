@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useId, useState, type FormEvent } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -197,7 +198,7 @@ export function ResetPasswordForm() {
           </div>
 
           <Button type="submit" className="w-full" disabled={busy || !ready}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             ตั้งรหัสผ่านใหม่
           </Button>
         </form>

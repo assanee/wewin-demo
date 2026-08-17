@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Copy, ImageOff, Loader2, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Copy, ImageOff, ShieldCheck, Trash2, Upload } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -206,7 +207,7 @@ export function MediaLibrary() {
             onChange={(event) => void onFiles(event.target.files)}
           />
           <Button onClick={() => fileInput.current?.click()} disabled={uploading}>
-            {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            {uploading ? <Spinner /> : <Upload className="size-4" />}
             อัปโหลดรูป
           </Button>
           <p className="text-muted-foreground type-body">JPEG · PNG · WebP — สูงสุด 8 MB ต่อไฟล์</p>
@@ -418,7 +419,7 @@ function MediaRow({
           {editable && dirty && (
             <div>
               <Button size="sm" onClick={() => void saveAlt()} disabled={savingAlt}>
-                {savingAlt && <Loader2 className="size-4 animate-spin" />}
+                {savingAlt && <Spinner />}
                 บันทึกคำบรรยาย
               </Button>
             </div>
@@ -460,7 +461,7 @@ function MediaRow({
               onClick={() => void destroy()}
               disabled={deleting}
             >
-              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              {deleting ? <Spinner /> : <Trash2 className="size-4" />}
               ลบ
             </Button>
           )}

@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, Save, Undo2 } from 'lucide-react';
+import { AlertTriangle, Save, Undo2 } from 'lucide-react';
 import type { AdminOptionGroupWire, ProductWire } from '@wewin/contract';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -169,7 +170,7 @@ export function DraftOptionsEditor({
 
       <div className="flex items-center gap-2">
         <Button onClick={() => void save()} disabled={disabled || busy || !dirty}>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Save data-icon="inline-start" />}
+          {busy ? <Spinner /> : <Save data-icon="inline-start" />}
           บันทึกชุดตัวเลือก
         </Button>
         <Button

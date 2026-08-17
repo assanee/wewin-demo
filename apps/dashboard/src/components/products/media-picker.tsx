@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ImageOff, Loader2, Upload } from 'lucide-react';
+import { ImageOff, Upload } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -135,7 +136,7 @@ export function MediaPicker({
               disabled={uploading}
               onClick={() => fileInput.current?.click()}
             >
-              {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+              {uploading ? <Spinner /> : <Upload className="size-4" />}
               อัปโหลดรูปใหม่
             </Button>
           </div>

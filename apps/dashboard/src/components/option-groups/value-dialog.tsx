@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import type { AdminOptionValueWire } from '@wewin/contract/admin';
 import type { PriceDeltaWire } from '@wewin/contract';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -223,7 +224,7 @@ export function ValueDialog({
             ยกเลิก
           </Button>
           <Button onClick={() => void submit()} disabled={busy || !ready}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             {editing ? 'บันทึก' : 'เพิ่มตัวเลือก'}
           </Button>
         </DialogFooter>

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Loader2, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, Pencil, Plus } from 'lucide-react';
 import type { AdminOptionGroupWire, AdminOptionValueWire } from '@wewin/contract/admin';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
@@ -174,7 +175,7 @@ export function OptionGroupSection({
                         disabled={pendingCode === value.code}
                         onClick={() => void toggle(value)}
                       >
-                        {pendingCode === value.code && <Loader2 className="size-4 animate-spin" />}
+                        {pendingCode === value.code && <Spinner />}
                         {value.available ? 'ปิดการขาย' : 'เปิดขาย'}
                       </Button>
                     </div>

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -135,7 +136,7 @@ export function GroupsPanel({
                 })
               }
             >
-              {busyId === 'new' && <Loader2 className="size-4 animate-spin" />}
+              {busyId === 'new' && <Spinner />}
               สร้าง
             </Button>
             <Button variant="ghost" onClick={() => setCreating(false)}>
@@ -276,7 +277,7 @@ function GroupRow({
       {editable && dirty && (
         <div>
           <Button onClick={() => onSave([...selected])} disabled={busy}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             บันทึกสิทธิ์
           </Button>
         </div>

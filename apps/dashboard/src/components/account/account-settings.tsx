@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Monitor, ShieldAlert, Unlink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Monitor, ShieldAlert, Unlink } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { MfaPanel } from './mfa-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -307,7 +308,7 @@ export function AccountSettings() {
                 )
               }
             >
-              {busy === 'password' && <Loader2 className="size-4 animate-spin" />}
+              {busy === 'password' && <Spinner />}
               {account.hasPassword ? 'เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่าน'}
             </Button>
           </div>
@@ -352,7 +353,7 @@ export function AccountSettings() {
                   }
                 >
                   {busy === provider.provider ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <Spinner />
                   ) : (
                     <Unlink className="size-4" />
                   )}
@@ -397,7 +398,7 @@ export function AccountSettings() {
                     void act(session.id, () => revokeMySession(session.id), 'ออกจากระบบอุปกรณ์นั้นแล้ว')
                   }
                 >
-                  {busy === session.id && <Loader2 className="size-4 animate-spin" />}
+                  {busy === session.id && <Spinner />}
                   ออกจากระบบ
                 </Button>
               )}
@@ -418,7 +419,7 @@ export function AccountSettings() {
                   )
                 }
               >
-                {busy === 'others' && <Loader2 className="size-4 animate-spin" />}
+                {busy === 'others' && <Spinner />}
                 ออกจากระบบอุปกรณ์อื่นทั้งหมด
               </Button>
             </div>

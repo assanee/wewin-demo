@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, History, Loader2, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, History, Pencil, Plus } from 'lucide-react';
 import type { TaxCountryWire } from '@wewin/contract/tax';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -187,7 +188,7 @@ export default function TaxCountriesSection({
                             disabled={pendingCode === country.code}
                             onClick={() => void toggle(country)}
                           >
-                            {pendingCode === country.code && <Loader2 className="size-4 animate-spin" />}
+                            {pendingCode === country.code && <Spinner />}
                             {country.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
                           </Button>
                         </>

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -106,7 +107,7 @@ export function SuspendDialog({
             onClick={() => void submit()}
             disabled={busy || reason.trim().length < 4}
           >
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             ระงับบัญชี
           </Button>
         </DialogFooter>

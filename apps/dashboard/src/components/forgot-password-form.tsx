@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useId, useState, type FormEvent } from 'react';
-import { Loader2, MailCheck } from 'lucide-react';
+import { MailCheck } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -117,7 +118,7 @@ export function ForgotPasswordForm() {
           </div>
 
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             ส่งลิงก์ตั้งรหัสผ่านใหม่
           </Button>
 

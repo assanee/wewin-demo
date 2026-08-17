@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import type { TaxCountryWire } from '@wewin/contract/tax';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -296,7 +297,7 @@ export function TaxCountryDialog({
             ยกเลิก
           </Button>
           <Button onClick={() => void submit()} disabled={busy || !ready}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             {creating ? 'เพิ่มประเทศ' : 'บันทึก'}
           </Button>
         </DialogFooter>

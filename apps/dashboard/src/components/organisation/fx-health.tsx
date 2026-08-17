@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Loader2, MailX, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, MailX, RefreshCw } from 'lucide-react';
 import type { FxConfiguredRateWire, FxManualSyncBudgetWire, FxManualSyncResultWire, FxRateHealthWire } from '@wewin/contract/organisation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
@@ -559,7 +560,7 @@ function SyncNowPanel({
           disabled={busy || blocked !== null}
           onClick={() => void sync()}
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          {busy ? <Spinner /> : <RefreshCw className="size-4" />}
           ซิงก์อัตราแลกเปลี่ยนเดี๋ยวนี้
         </Button>
       </div>

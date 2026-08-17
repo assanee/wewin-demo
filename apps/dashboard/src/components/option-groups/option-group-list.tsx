@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Plus, Search } from 'lucide-react';
+import { AlertTriangle, Check, Plus, Search } from 'lucide-react';
 import type { AdminOptionGroupWire } from '@wewin/contract/admin';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
@@ -255,7 +256,7 @@ export function GroupKindBadges({ group }: { readonly group: AdminOptionGroupWir
 export function Busy({ busy, children }: { readonly busy: boolean; readonly children: string }) {
   return (
     <>
-      {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+      {busy ? <Spinner /> : <Check className="size-4" />}
       {children}
     </>
   );

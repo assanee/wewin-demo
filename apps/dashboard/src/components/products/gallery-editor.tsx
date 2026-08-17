@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { ArrowDown, ArrowUp, ImagePlus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { apiUrl } from '@/lib/api/config';
 
 import { GALLERY_MAX, addImage, moveImage, removeImageAt } from './gallery';
@@ -121,15 +123,20 @@ export function GalleryEditor({
         )}
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="type-body font-medium" htmlFor="product-video-url">
-          วิดีโอ (ไม่บังคับ)
-        </label>
-        <span className="type-caption text-muted-foreground">
+      {/*
+        ⚠️ `Field` rather than a label, a span and a hand-classed input.
+        The three parts were built by hand with the focus ring copied out of `Input`'s own class
+        list, which meant a ring that stops matching the moment that component is regenerated —
+        and an error message in a `<span>` that no `aria-describedby` points at, so a screen
+        reader reads the box and never the reason it is red.
+      */}
+      <Field data-invalid={videoError !== undefined}>
+        <FieldLabel htmlFor="product-video-url">วิดีโอ (ไม่บังคับ)</FieldLabel>
+        <FieldDescription>
           ลิงก์ YouTube หรือ Vimeo หนึ่งลิงก์ — จะแสดงเป็นลำดับแรกก่อนรูปทั้งหมด
           ลบลิงก์ออกเพื่อเอาวิดีโอออก
-        </span>
-        <input
+        </FieldDescription>
+        <Input
           id="product-video-url"
           type="url"
           inputMode="url"
@@ -137,13 +144,10 @@ export function GalleryEditor({
           disabled={disabled}
           onChange={(event) => onVideoUrl(event.target.value)}
           placeholder="https://www.youtube.com/watch?v=…"
-          className="border-input focus-visible:ring-ring h-11 rounded-md border px-3 focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
           aria-invalid={videoError !== undefined}
         />
-        {videoError !== undefined && (
-          <span className="text-destructive type-caption">{videoError}</span>
-        )}
-      </div>
+        {videoError !== undefined && <FieldError>{videoError}</FieldError>}
+      </Field>
 
       {picking && (
         <MediaPicker

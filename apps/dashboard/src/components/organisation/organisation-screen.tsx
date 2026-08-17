@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, History, Loader2, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, History, Pencil, Plus } from 'lucide-react';
 import type { BankAccountWire, OrganisationProfileWire } from '@wewin/contract/organisation';
 import { isPromptPayId } from '@wewin/core/promptpay';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
@@ -437,7 +438,7 @@ function ProfileForm({
       {editable && (
         <div>
           <Button onClick={() => void submit()} disabled={busy || !ready}>
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <Spinner />}
             บันทึก
           </Button>
         </div>
@@ -604,7 +605,7 @@ function AccountsSection({
                             disabled={pendingId === account.id}
                             onClick={() => void toggle(account)}
                           >
-                            {pendingId === account.id && <Loader2 className="size-4 animate-spin" />}
+                            {pendingId === account.id && <Spinner />}
                             {account.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
                           </Button>
                         </>

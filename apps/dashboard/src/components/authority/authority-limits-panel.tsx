@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, History, Loader2, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, History, Pencil, Plus } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -269,7 +270,7 @@ export default function AuthorityLimitsPanel({
                                 onClick={() => void withdraw(limit)}
                               >
                                 {pendingKey === keyOf(limit) && (
-                                  <Loader2 className="size-4 animate-spin" />
+                                  <Spinner />
                                 )}
                                 ยกเลิกอำนาจ
                               </Button>
