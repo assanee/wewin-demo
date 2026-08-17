@@ -79,6 +79,30 @@ export const DELIBERATELY_SILENT_EVENTS: Readonly<Partial<Record<OrderEventType,
   quotation_reopened:
     'the customer hears the result rather than the intention: quotation_confirmed carries its own ' +
     'mail the moment staff finish adjusting. Revisit if an order can sit reopened indefinitely.',
+  /*
+   * ⚠️ SILENT BECAUSE THE DECISION HAS NOT BEEN MADE, not because it was made against.
+   *
+   * A customer who asked for a ใบกำกับภาษี wants to know it exists, so this is a likely mail —
+   * but how a document reaches them is an open question the owner has not answered: emailed as
+   * an attachment, linked to a page behind their own order, or handed over at the counter and
+   * never sent at all. Announcing a document with no way to open it is worse than silence, and
+   * the print pages do not exist yet.
+   *
+   * ⛔ Unlike `balance_written_off`, this entry is NOT a settled "no". When the print route
+   * lands, this pair comes back to the owner as one question, and the work is two rows in
+   * `notification_rules` plus two templates.
+   */
+  tax_document_issued:
+    'a document the customer cannot yet open is not worth announcing; how documents reach them ' +
+    'is an open question for the owner, to be asked once the print pages exist.',
+  /*
+   * And this one more carefully still: a void without its replacement in the same breath reads
+   * as "your invoice has been cancelled" and prompts a telephone call. The message worth
+   * sending is the credit note and the new document together, which is one mail, not two.
+   */
+  tax_document_voided:
+    'a strike-through alone reads as bad news; the message worth sending is the credit note and ' +
+    'its replacement together, and that mail does not exist yet.',
 };
 
 export function isDeliberatelySilent(eventType: string): boolean {

@@ -55,7 +55,7 @@ export const CATALOG_STALE_MESSAGE = message('error.stale.catalog_while_configur
  * trigger the order lifecycle rests on, and each of them then reaches the caller as an
  * untranslated 500 — the guard fires, the data is safe, and the client is told nothing.
  */
-function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
+export function postgresErrorOf(error: unknown): PostgresErrorLike | undefined {
   for (let current: unknown = error, depth = 0; depth < 8; depth += 1) {
     if (typeof current !== 'object' || current === null) return undefined;
 

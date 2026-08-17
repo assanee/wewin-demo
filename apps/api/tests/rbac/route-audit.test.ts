@@ -381,6 +381,8 @@ describe('boot-time route audit', () => {
        * the response carries any provenance at all. Every *write* below states a permission.
        */
       'GET /orders/:orderId/quote [principal]',
+      /* Reading the documents raised against your own order — the buyer is entitled to theirs. */
+      'GET /orders/:orderId/tax-documents [principal]',
       /*
        * ⭐ `[anonymous]`, and this line is the one to stop on.
        *
@@ -544,6 +546,14 @@ describe('boot-time route audit', () => {
       'POST /orders/:orderId/quote/overrides/:overrideId/revocation [permissions]',
       'POST /orders/:orderId/quote/reissue [permissions]',
       'POST /orders/:orderId/quote/verification [permissions]',
+      /*
+       * ⚠️ `permissions` and not `principal`, unlike almost every other route under /orders.
+       *
+       * Raising one consumes a number from a series that may not have holes and writes a row
+       * `tax_documents_freeze()` makes uncorrectable. A principal policy here would let a
+       * signed-in customer mint a ใบกำกับภาษี made out to themselves.
+       */
+      'POST /orders/:orderId/tax-documents [permissions]',
       'POST /orders/:orderId/transitions/:toStatus [principal]',
       /*
        * ⭐ ขออนุมัติตัดยอดค้างทิ้ง — ask for a customer's outstanding balance to be forgiven.

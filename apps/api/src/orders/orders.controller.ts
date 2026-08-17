@@ -31,7 +31,13 @@ import {
   type ResolveChangeRequestWire,
 } from '@wewin/contract/order';
 import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
-import { putOrderBillToSchema, type OrderBillToWire } from '@wewin/contract/forfeit';
+import {
+  issueTaxDocumentSchema,
+  putOrderBillToSchema,
+  type OrderBillToWire,
+  type TaxDocumentKindWire,
+  type TaxDocumentWire,
+} from '@wewin/contract/forfeit';
 import type { OrderStatus } from '@wewin/db/schema';
 
 import { ZodBodyPipe } from '../admin/zod-body.pipe';
@@ -47,6 +53,7 @@ import {
   type Scope,
 } from '../rbac';
 import { BillToService } from './bill-to.service';
+import { TaxDocumentService } from './tax-document.service';
 import { OrdersService } from './orders.service';
 
 /**
@@ -203,6 +210,7 @@ export class OrdersController {
      */
     @Inject(ENV) private readonly env: Env,
     private readonly billToService: BillToService,
+    private readonly taxDocuments: TaxDocumentService,
   ) {}
 
   /**
@@ -478,6 +486,38 @@ export class OrdersController {
      * last touched it, and a guest is not one. It is an audit crumb, not an owner.
      */
     return this.billToService.write(scope, orderId, body, staffUserIdOf(scope));
+  }
+
+  /**
+   * เอกสารภาษี — the numbered documents raised against this order.
+   *
+   * ⚠️ Readable by whoever may read the order, staff and customer alike: a buyer is entitled to
+   * see the tax invoice made out to them. Raising one is `orders.write`, because it consumes a
+   * number from a series that cannot have holes.
+   */
+  @Get(':orderId/tax-documents')
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePrincipal()
+  async taxDocumentList(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+  ): Promise<readonly TaxDocumentWire[]> {
+    return this.taxDocuments.list(scope, orderId);
+  }
+
+  @Post(':orderId/tax-documents')
+  @HttpCode(201)
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePermissions('orders.write')
+  async taxDocumentIssue(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+    @Body(new ZodBodyPipe(issueTaxDocumentSchema))
+    body: { kind: TaxDocumentKindWire; instalmentId: string | null },
+  ): Promise<TaxDocumentWire> {
+    return this.taxDocuments.issue(scope, orderId, body);
   }
 
   /**

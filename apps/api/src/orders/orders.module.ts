@@ -15,6 +15,7 @@ import { FunnelThrottleMiddleware } from './funnel-throttle.middleware';
 import { OrderRepository } from './order.repository';
 import { OrdersController } from './orders.controller';
 import { BillToService } from './bill-to.service';
+import { TaxDocumentService } from './tax-document.service';
 import { OrdersService } from './orders.service';
 import { OrderScopeModule } from './scope';
 
@@ -88,7 +89,13 @@ import { OrderScopeModule } from './scope';
     AuthorityModule,
   ],
   controllers: [OrdersController],
-  providers: [OrdersService, BillToService, OrderRepository, FunnelThrottleMiddleware],
+  providers: [
+    OrdersService,
+    BillToService,
+    TaxDocumentService,
+    OrderRepository,
+    FunnelThrottleMiddleware,
+  ],
 })
 export class OrdersModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

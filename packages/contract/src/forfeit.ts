@@ -176,3 +176,128 @@ export const putOrderBillToSchema: z.ZodType<
     message: 'ลูกค้านิติบุคคลต้องมีเลขประจำตัวผู้เสียภาษี',
     path: ['taxId'],
   });
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * เอกสารภาษี — the frozen body of an issued document.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A **copy**, not a view. Everything a printed page needs is written into this object at
+ * issue and never read live again: the seller's own block, the buyer's block, the lines, the
+ * rate. `organisation_profile` says a letterhead is not frozen, which is right for a quotation
+ * — a reprint should carry today's telephone number — and wrong here, where the page is
+ * evidence of what was filed and the company's registered name on the day it was filed is part
+ * of what was filed.
+ *
+ * ⚠️ Every amount is POSITIVE, a credit note's included. The direction is the `kind`. A sign
+ * in a money field is a sign somebody eventually forgets to apply.
+ */
+export const TAX_DOCUMENT_KINDS_WIRE = [
+  'invoice',
+  'tax_invoice',
+  'abbreviated_tax_invoice',
+  'receipt',
+  'tax_invoice_receipt',
+  'credit_note',
+] as const;
+
+export type TaxDocumentKindWire = (typeof TAX_DOCUMENT_KINDS_WIRE)[number];
+
+/** The company's own block, as it stood at issue. */
+export interface TaxDocumentPartyWire {
+  readonly legalName: string;
+  readonly taxId: string | null;
+  /** `null` prints as สำนักงานใหญ่. */
+  readonly branchCode: string | null;
+  readonly addressLine: string;
+  readonly postalCode: string | null;
+  readonly country: string;
+}
+
+export interface TaxDocumentLineWire {
+  readonly descriptionTh: string;
+  readonly quantity: number;
+  readonly unitThbMinor: string;
+  readonly amountThbMinor: string;
+}
+
+/**
+ * What money this document is about.
+ *
+ * ⚠️ The distinction the whole feature turns on. A document raised at a payment covers ONE
+ * instalment; a document raised at delivery covers the order once. Both modes may be switched
+ * on at the same time by the owner's instruction, so three partial unique indexes — not a
+ * service — are what stop the same supply being tax-invoiced twice.
+ */
+export type TaxDocumentSubjectWire =
+  | { readonly kind: 'instalment'; readonly instalmentNo: number; readonly labelTh: string }
+  | { readonly kind: 'whole_order' };
+
+export interface TaxDocumentBodyWire {
+  readonly bodySchemaVersion: 1;
+  readonly kind: TaxDocumentKindWire;
+  readonly documentNo: string;
+  readonly issuedAt: string;
+  readonly orderNo: string | null;
+  readonly seller: TaxDocumentPartyWire;
+  /**
+   * ⚠️ Nullable only for `abbreviated_tax_invoice` — ใบกำกับภาษีอย่างย่อ, which by design
+   * carries no buyer name or address. Every other kind has one, and the issuing service refuses
+   * to make one without.
+   */
+  readonly buyer: TaxDocumentPartyWire | null;
+  readonly subject: TaxDocumentSubjectWire;
+  readonly lines: readonly TaxDocumentLineWire[];
+  readonly vat: { readonly rateBp: number; readonly treatment: string };
+  readonly netThbMinor: string;
+  readonly vatThbMinor: string;
+  readonly grandTotalThbMinor: string;
+  /** The document this one reduces. Set on a credit note and on nothing else. */
+  readonly citesDocumentNo: string | null;
+  readonly reasonTh: string | null;
+  readonly documentHash: string;
+}
+
+/** One issued document, as a list or a screen reads it. */
+export interface TaxDocumentWire {
+  readonly id: string;
+  readonly kind: TaxDocumentKindWire;
+  readonly status: 'issued' | 'voided';
+  readonly documentNo: string;
+  readonly issuedAt: string;
+  readonly voidedAt: string | null;
+  readonly voidReasonTh: string | null;
+  readonly instalmentId: string | null;
+  readonly netThbMinor: string;
+  readonly vatThbMinor: string;
+  readonly grandTotalThbMinor: string;
+  readonly body: TaxDocumentBodyWire;
+}
+
+/**
+ * ออกเอกสาร — what staff send to raise one by hand.
+ *
+ * ⚠️ `kind` is chosen by the caller rather than derived, because the same moment can legitimately
+ * produce different documents at different companies: some issue ใบแจ้งหนี้ before payment, some
+ * a combined ใบเสร็จรับเงิน/ใบกำกับภาษี after it. What the settings decide is which kinds are
+ * *permitted*; what this field decides is which permitted kind to raise now.
+ */
+export const issueTaxDocumentSchema: z.ZodType<{
+  kind: TaxDocumentKindWire;
+  instalmentId: string | null;
+}> = z.strictObject({
+  kind: z.literal(TAX_DOCUMENT_KINDS_WIRE),
+  /** `null` means the whole order — the delivery-mode document. */
+  instalmentId: z.uuid().nullable(),
+});
+
+/**
+ * ยกเลิกเอกสาร — striking one out.
+ *
+ * ⛔ Not a delete and not an edit: an issued document is frozen by `tax_documents_freeze()`,
+ * which compares every other column. A void sets two fields and says why, and the replacement
+ * is a new numbered document.
+ */
+export const voidTaxDocumentSchema: z.ZodType<{ reasonTh: string }> = z.strictObject({
+  reasonTh: z.string().trim().min(1, 'ระบุเหตุผลที่ยกเลิก').max(500),
+});

@@ -424,6 +424,15 @@ const PARAM_SHAPES = {
   /* ── เอกสารภาษี ─────────────────────────────────────────────────────────────── */
   /** ⛔ Tax documents switched on with no moment chosen: on, and never issuing. */
   'error.taxdoc.no_moment_chosen': {},
+  'error.taxdoc.disabled': {},
+  'error.taxdoc.kind_not_permitted': {},
+  'error.taxdoc.credit_note_via_void': {},
+  'error.taxdoc.no_seller_profile': {},
+  'error.taxdoc.no_quotation': {},
+  'error.taxdoc.no_bill_to': {},
+  'error.taxdoc.instalment_unknown': {},
+  'error.taxdoc.no_series': {},
+  'error.taxdoc.already_issued': {},
   'error.billto.juristic_needs_tax_id': {},
   'error.stale.override_baselines': {},
   /**

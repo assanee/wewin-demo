@@ -377,6 +377,13 @@ describeWithPg('RED TEAM 5a round two', () => {
      * `quotes.write` + `orders.read` + `orders.write`; a `principal` there would let a customer
      * choose their own deposit. It moves no status — it re-cuts a schedule — so it is not one of
      * the nine this finding is about, and its policy is the one this finding argues *for*.
+     *
+     * ⚠️ And `POST /orders/:orderId/tax-documents` (0060–0062) is the fifth, on the same terms
+     * and more sharply. It consumes a number from a series that may not have holes and writes a
+     * row that `tax_documents_freeze()` makes uncorrectable; `principal` there would let a
+     * signed-in customer mint a ใบกำกับภาษี made out to themselves. It moves no status, so it is
+     * not one of the nine. The matching GET is deliberately NOT excluded: reading the documents
+     * raised against your own order is `principal`, which is what this finding asks for.
      */
     const orderRoutes = registry
       .records()
@@ -387,7 +394,8 @@ describeWithPg('RED TEAM 5a round two', () => {
           !record.key.includes('/customer-link') &&
           !record.key.includes('/write-offs') &&
           !record.key.includes('/balance-reminders') &&
-          !record.key.includes('/deposit'),
+          !record.key.includes('/deposit') &&
+          record.key !== 'POST /orders/:orderId/tax-documents',
       );
 
     expect(
