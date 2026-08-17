@@ -338,7 +338,13 @@ const intlTag = (locale: string): string => INTL_TAGS[locale] ?? locale;
  * which one is meant. The code is the disambiguation, and it is what a bank's transfer form
  * asks for.
  */
-function money(minor: bigint, locale: string, currency: Currency): string {
+/**
+ * ⚠️ Exported for `tax-document.ts`, which must format money identically.
+ *
+ * Two formatters would drift, and a ใบกำกับภาษี whose figures are spaced differently from the
+ * ใบเสนอราคา they came from invites the question of whether they are the same figures.
+ */
+export function money(minor: bigint, locale: string, currency: Currency): string {
   const negative = minor < 0n;
   const magnitude = negative ? -minor : minor;
   const exponent = MINOR_EXPONENT[currency];
@@ -367,7 +373,7 @@ function money(minor: bigint, locale: string, currency: Currency): string {
  * `th` renders a Buddhist year through ICU. That is not decoration: 2569 and 2026 are two
  * different documents to somebody reading one.
  */
-function dateIn(iso: string | null, locale: string): string {
+export function dateIn(iso: string | null, locale: string): string {
   if (iso === null) return '—';
 
   /*

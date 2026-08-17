@@ -48,6 +48,7 @@ import { balanceNoticeFor } from './transition-balance';
 import { DepositButton } from './deposit-button';
 import { formatDepositPercent } from './deposit-entry';
 import { BillToCard } from './bill-to-card';
+import { TaxDocumentCard } from './tax-document-card';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -392,6 +393,15 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
              */}
             <div className="border-border mt-6 border-t pt-4">
               <BillToCard orderId={order.id} mayWrite={can('orders.write')} />
+            </div>
+
+            {/*
+              ⭐ เอกสารภาษี directly beneath ผู้ซื้อ, because raising one is the next thing
+              somebody does after filling that block in, and because the commonest refusal —
+              "ยังไม่ได้กรอกข้อมูลผู้ซื้อ" — is answered by the fields immediately above.
+            */}
+            <div className="border-border mt-6 border-t pt-4">
+              <TaxDocumentCard orderId={order.id} mayWrite={can('orders.write')} />
             </div>
           </CardContent>
         </Card>

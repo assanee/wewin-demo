@@ -3,7 +3,11 @@ import 'client-only';
 import { apiFetch, apiJson } from '@/lib/api/client';
 import { apiErrorFromResponse } from '@/lib/api/errors';
 import type { OrderStatus, PayloadKind } from './order-language';
-import type { OrderBillToWire } from '@wewin/contract/forfeit';
+import type {
+  OrderBillToWire,
+  TaxDocumentKindWire,
+  TaxDocumentWire,
+} from '@wewin/contract/forfeit';
 
 /**
  * Every call the order screens make.
@@ -585,4 +589,36 @@ export const putBillTo = async (
 
   if (!response.ok) throw await apiErrorFromResponse(response);
   return (await response.json()) as OrderBillToWire;
+};
+
+/* ------------------------------------------------------------------ *
+ * ⭐ เอกสารภาษี — the numbered documents raised against an order
+ * ------------------------------------------------------------------ */
+
+/** Empty is the ordinary state: most orders never need one. */
+export const getTaxDocuments = async (orderId: string): Promise<readonly TaxDocumentWire[]> => {
+  const response = await apiFetch(`/orders/${orderId}/tax-documents`);
+  if (!response.ok) throw await apiErrorFromResponse(response);
+
+  return (await response.json()) as readonly TaxDocumentWire[];
+};
+
+/**
+ * ⚠️ 201, not 200, and the difference is the point: this creates a numbered document that
+ * cannot afterwards be edited or deleted. The API refuses before it takes a number — feature
+ * switch, per-kind switch, the seller's block, the frozen quotation, the buyer's block, and
+ * whether the printed column adds up — so every failure here arrives with nothing spent.
+ */
+export const issueTaxDocument = async (
+  orderId: string,
+  input: { readonly kind: TaxDocumentKindWire; readonly instalmentId: string | null },
+): Promise<TaxDocumentWire> => {
+  const response = await apiFetch(`/orders/${orderId}/tax-documents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return (await response.json()) as TaxDocumentWire;
 };
