@@ -417,6 +417,171 @@ describeDb('a tax document, as the database sees it', () => {
     });
   });
 
+  describe('whether the series has holes', () => {
+    /**
+     * ⭐ 0063. `next_document_no()` is a public function, and a caller that takes a number and
+     * then commits without writing a document removes it from the series for ever.
+     *
+     * The counter row protects the ROLLED-BACK case, which is what it was built for. Nothing
+     * protects against a committed call that simply never inserted — and `tax_documents_freeze()`
+     * refuses DELETE, so a hole cannot be tidied away afterwards. What is left is being able to
+     * answer the auditor's question, which is what this view is for.
+     */
+    const health = async (series: string) => {
+      const result = await db.execute(sql`
+        select next_seq, documents::text, live_documents::text, voided_documents::text,
+               missing_count::text, missing_seqs
+          from document_series_health
+         where series_code = ${series}
+      `);
+      return ((result as { rows?: readonly Record<string, unknown>[] }).rows ?? [])[0];
+    };
+
+    it('⭐ reports a number that was taken and never became a document', async () => {
+      /* Taken in its own committed statement, exactly like a stray psql call. */
+      const taken = await scalar<number>(sql`select series_seq from next_document_no('ABB', now())`);
+
+      const row = await health('ABB');
+      expect(Number(row?.['missing_count'])).toBeGreaterThan(0);
+      expect(String(row?.['missing_seqs'])).toContain(String(taken));
+    });
+
+    it('⭐ a number that DID become a document is not reported, which is the anti-vacuity half', async () => {
+      /*
+       * A view that always found holes would be as useless as one that never did. Issue one
+       * properly and the count must not move — the number was taken and used.
+       */
+      /*
+       * ⚠️ Built here rather than borrowed from the block above: those helpers are scoped to it,
+       * and a fixture reached across a describe boundary is the kind that silently stops
+       * existing. This one takes a number and writes the document in one statement, which is
+       * exactly what the view is looking for.
+       */
+      const order = ((
+        await db.execute(sql`
+          select o.id::text as order_id, e.id::text as event_id
+            from orders o join order_events e on e.order_id = o.id limit 1
+        `)
+      ) as { rows?: readonly Record<string, unknown>[] }).rows?.[0];
+      if (order === undefined) return;
+
+      const before = Number((await health('INV'))?.['missing_count'] ?? 0);
+
+      const numbered = ((
+        await db.execute(sql`select * from next_document_no('INV', now())`)
+      ) as { rows?: readonly Record<string, unknown>[] }).rows?.[0];
+
+      await db.execute(sql`
+        insert into tax_documents
+          (kind, order_id, series_code, series_year, series_seq, document_no, document,
+           document_hash, pinned_locale, pinned_vat_rate_bp, pinned_vat_treatment,
+           net_thb_minor, vat_thb_minor, grand_total_thb_minor, created_by_event_id)
+        values ('invoice', ${String(order['order_id'])}::uuid, 'INV',
+                ${Number(numbered?.['series_year'])}, ${Number(numbered?.['series_seq'])},
+                ${String(numbered?.['document_no'])}, '{"probe":true}'::jsonb,
+                ${'d'.repeat(64)}, 'th', 700, 'standard', 10000, 700, 10700,
+                ${String(order['event_id'])}::uuid)
+      `);
+
+      const after = await health('INV');
+
+      expect(Number(after?.['missing_count'])).toBe(before);
+      /* And the document is counted, so the arithmetic below still balances. */
+      expect(Number(after?.['documents'])).toBeGreaterThan(0);
+    });
+
+    it('⭐ a series nobody has drawn from has no row, and therefore no complaint', async () => {
+      expect(await health('NOPE')).toBeUndefined();
+    });
+
+    it('⛔ a VOIDED document is not a hole — it has a number and a credit note explaining it', async () => {
+      /*
+       * The distinction the view turns on, and it needs a voided document to mean anything.
+       * Without one this assertion is satisfied by a database that has never struck anything
+       * out — which is how the first version of it passed while the view counted every void as
+       * a missing number.
+       */
+      const order = ((
+        await db.execute(sql`
+          select o.id::text as order_id, e.id::text as event_id
+            from orders o join order_events e on e.order_id = o.id limit 1
+        `)
+      ) as { rows?: readonly Record<string, unknown>[] }).rows?.[0];
+      if (order === undefined) return;
+
+      const write = async (kind: string, series: string, replaces: string | null) => {
+        const id = randomUUID();
+        const numbered = ((
+          await db.execute(sql`select * from next_document_no(${series}, now())`)
+        ) as { rows?: readonly Record<string, unknown>[] }).rows?.[0];
+
+        await db.execute(sql`
+          insert into tax_documents
+            (id, kind, order_id, series_code, series_year, series_seq, document_no, document,
+             document_hash, pinned_locale, pinned_vat_rate_bp, pinned_vat_treatment,
+             net_thb_minor, vat_thb_minor, grand_total_thb_minor, created_by_event_id,
+             replaces_document_id)
+          values (${id}::uuid, ${kind}, ${String(order['order_id'])}::uuid, ${series},
+                  ${Number(numbered?.['series_year'])}, ${Number(numbered?.['series_seq'])},
+                  ${String(numbered?.['document_no'])}, '{"probe":true}'::jsonb,
+                  ${'e'.repeat(64)}, 'th', 700, 'standard', 10000, 700, 10700,
+                  ${String(order['event_id'])}::uuid, ${replaces}::uuid)
+        `);
+        return id;
+      };
+
+      const original = await write('invoice', 'INV', null);
+      const note = await write('credit_note', 'CN', original);
+
+      /* Both columns, or `tax_documents_freeze()` refuses — see 0060. */
+      await db.execute(sql`
+        update tax_documents
+           set status = 'voided', voided_at = now(), voided_by_document_id = ${note}::uuid,
+               void_reason_th = 'ทดสอบว่าใบที่ยกเลิกไม่ใช่รูของชุดเลข'
+         where id = ${original}::uuid
+      `);
+
+      const inv = await health('INV');
+      expect(Number(inv?.['voided_documents']), 'the fixture struck nothing out').toBeGreaterThan(0);
+
+      /* ⭐ And the void is inside `documents`, never inside `missing_count`. */
+      expect(String(inv?.['missing_seqs'] ?? '')).not.toContain('null');
+      expect(Number(inv?.['documents']) + Number(inv?.['missing_count'])).toBe(
+        Number(inv?.['next_seq']) - 1,
+      );
+    });
+
+    it('⭐ documents + missing = every number handed out, for every series', async () => {
+      /*
+       * The distinction the whole view turns on. Striking a document out is a fact ON the
+       * series, not a gap in it; counting it as missing would send somebody looking for a
+       * document that is exactly where it should be, marked as withdrawn.
+       */
+      const result = await db.execute(sql`
+        select coalesce(sum(voided_documents), 0)::text as voided,
+               coalesce(sum(missing_count), 0)::text     as missing
+          from document_series_health
+      `);
+      const row = ((result as { rows?: readonly Record<string, unknown>[] }).rows ?? [])[0];
+
+      /* Whatever this database holds, a void never contributes to `missing_count`. */
+      const perSeries = await db.execute(sql`
+        select series_code, voided_documents::text, missing_count::text, next_seq, documents::text
+          from document_series_health
+      `);
+      for (const line of (perSeries as { rows?: readonly Record<string, unknown>[] }).rows ?? []) {
+        /* documents + missing = every number handed out. A void is inside `documents`. */
+        expect(
+          Number(line['documents']) + Number(line['missing_count']),
+          String(line['series_code']),
+        ).toBe(Number(line['next_seq']) - 1);
+      }
+
+      expect(Number(row?.['voided'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row?.['missing'])).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   describe('who is billed', () => {
     it('⛔ refuses a company buyer with no tax id — a full tax invoice cannot omit it', async () => {
       const result = await db.execute(sql`select id::text as id from orders limit 1`);
