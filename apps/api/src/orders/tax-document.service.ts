@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from '@wewin/db/sql';
 import type { Database } from '@wewin/db/client';
 import { canonicalJson } from '@wewin/db/hash';
@@ -70,6 +70,8 @@ const REQUIRES_SETTING: Partial<Record<TaxDocumentKindWire, string>> = {
  */
 @Injectable()
 export class TaxDocumentService {
+  private readonly logger = new Logger(TaxDocumentService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly scoped: ScopedOrderRepository,
@@ -101,6 +103,106 @@ export class TaxDocumentService {
       grandTotalThbMinor: String(row['grand_total_thb_minor']),
       body: row['document'] as TaxDocumentBodyWire,
     }));
+  }
+
+  /**
+   * ⭐ ออกอัตโนมัติ — the documents the company's own settings say to raise at this moment.
+   *
+   * ── ⛔ A document that cannot be raised must never undo the money ─────────────
+   *
+   * This runs inside the transaction that accepted the payment or recorded the delivery, and
+   * every attempt is wrapped in its own SAVEPOINT. A missing bill-to block, a company that has
+   * not filled in its own name, a supply already documented — any of them would otherwise roll
+   * back a slip the customer really did pay, or a delivery that really did happen. The business
+   * event is the fact; the document is a consequence of it, and a consequence may fail.
+   *
+   * ⚠️ A plain `try/catch` is enough for the refusals THIS service raises — a missing bill-to
+   * block throws in TypeScript before any statement runs. It is not enough for the ones POSTGRES
+   * raises: a duplicate caught by `tax_documents_one_whole_order_tax` aborts the whole
+   * transaction, and every later statement in it fails too, including the ones still recording
+   * the delivery. The SAVEPOINT — which is what a nested `tx.transaction()` emits — is what
+   * makes the catch mean something in that case, and the test named after it is what proves it:
+   * remove the nesting and exactly that test goes red.
+   *
+   * ⛔ AND THE GAP THIS LEAVES, SAID PLAINLY: a swallowed failure is a log line and nothing
+   * else. The commonest cause is benign — a customer who never asked for a tax invoice, so no
+   * bill-to block exists — but a company that switched the delivery moment on and expects a
+   * document per delivered order has, today, no screen that says which ones did not get one.
+   * That list is the next piece of this feature and it is not built. Until it is, the honest
+   * description of automatic issuing is "usually", not "always".
+   */
+  async issueAutomatically(
+    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    input: {
+      readonly orderId: string;
+      readonly moment: 'payment' | 'delivery';
+      readonly instalmentId: string | null;
+      readonly actorUserId: string | null;
+    },
+  ): Promise<readonly TaxDocumentWire[]> {
+    const settings = records(
+      await tx.execute(sql`
+        select tax_doc_enabled, tax_doc_on_instalment, tax_doc_on_delivery,
+               tax_doc_combined_receipt
+          from organisation_profile where id = 1
+      `),
+    )[0];
+
+    if (settings?.['tax_doc_enabled'] !== true) return [];
+
+    const wanted =
+      input.moment === 'payment'
+        ? settings['tax_doc_on_instalment'] === true
+        : settings['tax_doc_on_delivery'] === true;
+    if (!wanted) return [];
+
+    /*
+     * ⚠️ `combinedReceipt` decides one paper or two, and nothing else. Thai practice is usually
+     * a single "ใบเสร็จรับเงิน/ใบกำกับภาษี"; a company that keeps them apart gets both, and both
+     * name the same supply. Which of the two habits is right is the accountant's answer, not
+     * this service's — it is a switch in ข้อมูลบริษัท.
+     */
+    const kinds: readonly TaxDocumentKindWire[] =
+      settings['tax_doc_combined_receipt'] === true
+        ? ['tax_invoice_receipt']
+        : ['receipt', 'tax_invoice'];
+
+    const raised: TaxDocumentWire[] = [];
+
+    for (const kind of kinds) {
+      try {
+        /* ⚠️ Nested → SAVEPOINT. A failure here rolls back to this point and no further. */
+        const document = await tx.transaction(async (attempt) => {
+          const body = await this.buildBody(attempt, {
+            orderId: input.orderId,
+            kind,
+            instalmentId: input.instalmentId,
+          });
+
+          return this.write(attempt, {
+            orderId: input.orderId,
+            kind,
+            instalmentId: input.instalmentId,
+            body,
+            actorUserId: input.actorUserId,
+          });
+        });
+
+        raised.push(document);
+      } catch (cause: unknown) {
+        /*
+         * ⚠️ Logged at `warn` and not `error`: the commonest cause is a customer who never
+         * asked for a tax invoice, so no bill-to block was ever filled in. That is an ordinary
+         * state of an ordinary order, not a fault. It is also, for now, the only trace — see
+         * the note on this method about the list that does not exist yet.
+         */
+        this.logger.warn(
+          `order ${input.orderId}: ${kind} not raised at ${input.moment} — ${String(cause)}`,
+        );
+      }
+    }
+
+    return raised;
   }
 
   /**

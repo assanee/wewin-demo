@@ -7,6 +7,7 @@ import { AppError } from '../../common/errors/app-error';
 import { ImageRejected, normaliseImage } from '../../media/image';
 import type { StoredObject } from '../../media/storage/object-storage';
 import { OrganisationRepository } from '../../organisation/organisation.repository';
+import { TaxDocumentService } from '../../orders/tax-document.service';
 import { OrderRepository } from '../../orders/order.repository';
 import { assertActorMayMove } from '../../orders';
 import {
@@ -162,6 +163,13 @@ export class SlipsService {
      * third seam, twice in one phase.
      */
     private readonly ledger: LedgerService,
+    /**
+     * ⚠️ The company's own settings decide whether accepting money raises a document, and this
+     * module does not read those settings or choose a kind — it says only *when*. Every attempt
+     * runs inside its own SAVEPOINT, so a document that cannot be raised never rolls back a
+     * slip the customer really did pay.
+     */
+    private readonly taxDocuments: TaxDocumentService,
     /**
      * The one place this module checks a `receivedBankAccountId` against — task 13 fix
      * round 1. `activeAccounts()`/`account()` are the same two queries `OrdersService`
@@ -658,6 +666,23 @@ export class SlipsService {
         amountThbMinor: slip.amountThbMinor,
         landed: true,
       });
+
+      /*
+       * ⭐ ออกเอกสารตอนรับเงิน — one document per instalment this slip settled.
+       *
+       * Here rather than after the transaction because the money and the paper belong to one
+       * moment, and here rather than before the freeze because a document is a consequence of
+       * accepted money, not a precondition of it. `issueAutomatically` returns quietly when the
+       * company has not switched the moment on, which is the shipped default.
+       */
+      for (const allocation of body.allocations) {
+        await this.taxDocuments.issueAutomatically(tx, {
+          orderId: order.id,
+          moment: 'payment',
+          instalmentId: allocation.instalmentId,
+          actorUserId: actor.actorKind === 'staff' ? actor.actorUserId : null,
+        });
+      }
 
       const gateOpenAfter = await this.slips.gateIsOpen(order.id, FREEZE_STATUS, tx);
       const gateOpened = hasGate && !gateOpenBefore && gateOpenAfter;

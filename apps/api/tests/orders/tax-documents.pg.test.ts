@@ -139,6 +139,24 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
     const list = (orderId: string, token = sales.token): Promise<Json> =>
       call('GET', `/orders/${orderId}/tax-documents`, { token });
 
+    /** Carry a submitted order all the way to ส่งมอบ, the moment the delivery switch is about. */
+    const deliver = async (orderId: string): Promise<void> => {
+      const confirmed = await call(
+        `POST` as const,
+        `/orders/${orderId}/transitions/production_confirmed`,
+        { token: sales.token, body: { reason: 'ทดสอบออกเอกสารตอนส่งมอบ' } },
+      );
+      expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+
+      for (const next of ['in_production', 'awaiting_installation', 'delivered']) {
+        const moved = await call('POST', `/orders/${orderId}/transitions/${next}`, {
+          token: sales.token,
+          body: {},
+        });
+        expect(moved.status, `${next}: ${JSON.stringify(moved.body)}`).toBe(200);
+      }
+    };
+
     const strike = (
       orderId: string,
       documentId: string,
@@ -152,7 +170,7 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
 
     return {
       app, call, sales, db, settings, sellerProfile, anOrder, aSubmittedOrder, billTo,
-      issue, list, strike,
+      issue, list, strike, deliver,
     };
   };
 
@@ -587,6 +605,107 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
 
     const otherOrder = await h.aSubmittedOrder();
     expect((await h.strike(otherOrder, original.id)).status).toBe(404);
+  });
+
+  it('⭐ ส่งมอบแล้วออกให้เอง — delivery raises the document the settings asked for', async () => {
+    const h = await harness();
+    await h.settings({ onDelivery: true, combinedReceipt: true });
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    expect((await h.list(orderId)).body).toStrictEqual([]);
+
+    await h.deliver(orderId);
+
+    const listed = (await h.list(orderId)).body as readonly TaxDocumentWire[];
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.kind).toBe('tax_invoice_receipt');
+    expect(listed[0]?.documentNo).toMatch(/^TRC-/u);
+  });
+
+  it('⭐ two papers instead of one when the company keeps them apart', async () => {
+    const h = await harness();
+    await h.settings({ onDelivery: true, combinedReceipt: false });
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    await h.deliver(orderId);
+
+    const kinds = ((await h.list(orderId)).body as readonly TaxDocumentWire[])
+      .map((document) => document.kind)
+      .sort();
+    expect(kinds).toStrictEqual(['receipt', 'tax_invoice']);
+  });
+
+  it('⭐ raises nothing when the moment is switched off, which is the shipped default', async () => {
+    const h = await harness();
+    await h.settings({ onDelivery: false, onInstalment: true });
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    await h.deliver(orderId);
+
+    expect((await h.list(orderId)).body).toStrictEqual([]);
+  });
+
+  it('⛔ A DOCUMENT THAT CANNOT BE RAISED DOES NOT UNDO THE DELIVERY', async () => {
+    /*
+     * The property the whole automatic path rests on. This order has no bill-to block — the
+     * ordinary state of the many orders whose customer never asked for a tax invoice — so the
+     * issue attempt fails. It must fail alone.
+     *
+     * ⚠️ Swallowing the error would not be enough by itself: once a statement raises, Postgres
+     * aborts the whole transaction and every later statement fails too. The SAVEPOINT that a
+     * nested `tx.transaction()` emits is what makes the catch mean anything, and this test is
+     * what proves it does.
+     */
+    const h = await harness();
+    await h.settings({ onDelivery: true, combinedReceipt: true });
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    /* Deliberately no billTo(). */
+
+    await h.deliver(orderId);
+
+    /* ⭐ The delivery stands. */
+    const order = await h.call('GET', `/orders/${orderId}`, { token: h.sales.token });
+    expect((order.body as { status: string }).status).toBe('delivered');
+
+    /* ⭐ And no half-written document was left behind. */
+    expect((await h.list(orderId)).body).toStrictEqual([]);
+  });
+
+  it('⛔ NOR DOES A DUPLICATE, WHICH IS THE CASE THE SAVEPOINT IS ACTUALLY FOR', async () => {
+    /*
+     * The test above fails before it reaches SQL: no bill-to block is a refusal this service
+     * raises in TypeScript, so a plain `try/catch` would have survived it and the SAVEPOINT
+     * went unproven. This is the case that needs it.
+     *
+     * The order already carries a whole-order tax document, so the automatic attempt at
+     * delivery hits `tax_documents_one_whole_order_tax` and POSTGRES raises 23505. Once a
+     * statement has raised, the transaction is aborted and every later statement in it fails
+     * too — including the ones that finish recording the delivery. Catching the error changes
+     * nothing about that; rolling back to a SAVEPOINT is what does.
+     */
+    const h = await harness();
+    await h.settings({ onDelivery: true, combinedReceipt: true });
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    /* Raised by hand first, so the automatic one collides with it. */
+    const first = await h.issue(orderId, { kind: 'tax_invoice_receipt', instalmentId: null });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+
+    await h.deliver(orderId);
+
+    /* ⭐ The delivery stands, and there is still exactly one document. */
+    const order = await h.call('GET', `/orders/${orderId}`, { token: h.sales.token });
+    expect((order.body as { status: string }).status).toBe('delivered');
+    expect((await h.list(orderId)).body).toHaveLength(1);
   });
 
   it('🔒 a stranger can neither list nor raise', async () => {

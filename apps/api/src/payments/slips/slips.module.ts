@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 
 import { OrganisationModule } from '../../organisation';
+import { TaxDocumentService } from '../../orders/tax-document.service';
 import { OrderRepository } from '../../orders/order.repository';
 import { OrderScopeModule } from '../../orders/scope';
 import { LedgerModule } from '../ledger';
@@ -92,6 +93,16 @@ export class SlipsModule {
         SlipsRepository,
         SlipImageStore,
         OrderRepository,
+        /*
+         * ⚠️ Provided here rather than imported from `OrdersModule`, on the same terms and for
+         * the same reason as `OrderRepository` above: this module does not reach for
+         * `OrdersService`, and importing that module to get one stateless class would both
+         * cross the boundary this file's header defends and close a cycle — `OrdersModule`
+         * already imports `PaymentLifecycleModule`. Like `OrderRepository`, it is a stateless
+         * class over the `@Global` DRIZZLE connection, so a second instance is the same object
+         * in every way that matters.
+         */
+        TaxDocumentService,
       ],
     };
   }

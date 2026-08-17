@@ -78,6 +78,7 @@ import {
   type CatalogEntry,
 } from './order-document';
 import { OrderRepository, type Tx } from './order.repository';
+import { TaxDocumentService } from './tax-document.service';
 import {
   ScopedOrderRepository,
   isOrderUuid,
@@ -217,6 +218,11 @@ export class OrdersService {
      * dependency is what stops that being possible.
      */
     private readonly payments: PaymentLifecycleService,
+    /**
+     * ⚠️ Consulted at delivery only, and it answers with silence unless the company switched
+     * that moment on. This service decides *when*; `organisation_profile` decides *whether*.
+     */
+    private readonly taxDocuments: TaxDocumentService,
     /**
      * ⭐ The sales-editable quote — 5c's closing seam, and the reason `submit` prices at all.
      *
@@ -942,6 +948,23 @@ export class OrdersService {
          */
         if (row.toStatus === 'delivered') {
           await this.payments.onDelivered(tx, { orderId: order.id, eventId });
+
+          /*
+           * ⭐ ออกเอกสารตอนส่งมอบ — the whole-order document, if the company asked for one.
+           *
+           * ⚠️ After the ledger and not before, and inside its own SAVEPOINT: a delivery that
+           * really happened must not be undone because the buyer's block was never filled in.
+           * `issueAutomatically` returns quietly when the moment is switched off, which is the
+           * shipped default. What it could not raise is a log line and nothing more — the
+           * screen that would list those orders is not built yet, and its absence is written
+           * down on the method rather than left to be discovered.
+           */
+          await this.taxDocuments.issueAutomatically(tx, {
+            orderId: order.id,
+            moment: 'delivery',
+            instalmentId: null,
+            actorUserId: actor.actorKind === 'staff' ? actor.actorUserId : null,
+          });
         }
 
         return eventId;
