@@ -9,6 +9,8 @@ import type { TaxDocumentWire } from '@wewin/contract/forfeit';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { failureMessage } from '@/lib/api/errors';
 import { getTaxDocuments } from '@/components/orders/order-api';
@@ -97,10 +99,16 @@ export function TaxDocumentSheet({
         <Button onClick={() => window.print()}>
           <Printer /> พิมพ์ / บันทึกเป็น PDF
         </Button>
-        <label className="text-muted-foreground flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={isCopy} onChange={(e) => setIsCopy(e.target.checked)} />
-          พิมพ์เป็นสำเนา
-        </label>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="print-as-copy"
+            checked={isCopy}
+            onCheckedChange={(next) => setIsCopy(next === true)}
+          />
+          <Label htmlFor="print-as-copy" className="text-muted-foreground text-sm font-normal">
+            พิมพ์เป็นสำเนา
+          </Label>
+        </div>
       </div>
 
       {page.footingProblemTh !== null && (

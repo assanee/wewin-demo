@@ -7,6 +7,7 @@ import type { OrderBillToWire } from '@wewin/contract/forfeit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { failureMessage } from '@/lib/api/errors';
 
 import { getBillTo, putBillTo } from './order-api';
@@ -118,22 +119,28 @@ export function BillToCard({ orderId, mayWrite }: { readonly orderId: string; re
     <div className="flex flex-col gap-3">
       <h3 className="type-section">ข้อมูลผู้ซื้อ (สำหรับใบกำกับภาษี)</h3>
 
-      <div className="flex gap-4">
+      {/*
+        ⚠️ A radio group and not two checkboxes, because the two are mutually exclusive and the
+        difference is not cosmetic: Radix gives arrow-key movement between the options and one
+        tab stop for the pair, which is what a screen reader announces as a single question.
+      */}
+      <RadioGroup
+        value={draft.buyerKind}
+        onValueChange={(kind) => {
+          setDraft((was) => ({ ...was, buyerKind: kind as BillToDraft['buyerKind'] }));
+          setProblems([]);
+        }}
+        className="flex w-auto flex-row gap-6"
+      >
         {(['individual', 'juristic'] as const).map((kind) => (
-          <label key={kind} className="type-body flex items-center gap-2">
-            <input
-              type="radio"
-              name="buyer-kind"
-              checked={draft.buyerKind === kind}
-              onChange={() => {
-                setDraft((was) => ({ ...was, buyerKind: kind }));
-                setProblems([]);
-              }}
-            />
-            {kind === 'individual' ? 'บุคคลธรรมดา' : 'นิติบุคคล'}
-          </label>
+          <div key={kind} className="flex items-center gap-2">
+            <RadioGroupItem value={kind} id={`buyer-kind-${kind}`} />
+            <Label htmlFor={`buyer-kind-${kind}`} className="type-body font-normal">
+              {kind === 'individual' ? 'บุคคลธรรมดา' : 'นิติบุคคล'}
+            </Label>
+          </div>
         ))}
-      </div>
+      </RadioGroup>
 
       <Field
         id="bill-to-name"
