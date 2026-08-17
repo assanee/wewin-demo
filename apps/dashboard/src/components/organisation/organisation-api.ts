@@ -19,7 +19,11 @@ import {
 } from '@wewin/contract/tax';
 
 import { apiJson } from '@/lib/api/client';
-import type { ForfeitPolicyWire, PublishForfeitPolicyRequestWire } from '@wewin/contract/forfeit';
+import type {
+  ForfeitPolicyWire,
+  PublishForfeitPolicyRequestWire,
+  TaxDocumentSettingsWire,
+} from '@wewin/contract/forfeit';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -466,4 +470,35 @@ export const publishForfeitPolicy = (
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(request),
+  });
+
+/* ------------------------------------------------------------------ *
+ * ⭐ เอกสารภาษี — the switches
+ * ------------------------------------------------------------------ */
+
+export const getTaxDocumentSettings = (): Promise<TaxDocumentSettingsWire> =>
+  apiJson('/admin/organisation/tax-documents', (body) => {
+    const row = asObject(body, 'tax document settings response');
+    return {
+      enabled: row['enabled'] === true,
+      onInstalment: row['onInstalment'] === true,
+      onDelivery: row['onDelivery'] === true,
+      combinedReceipt: row['combinedReceipt'] === true,
+      invoiceOnDemand: row['invoiceOnDemand'] === true,
+      abbreviatedAllowed: row['abbreviatedAllowed'] === true,
+    };
+  });
+
+/**
+ * ⚠️ The whole set every time, not a patch. Six switches that decide what gets issued are read
+ * together on one screen and saved together, and a partial write would let two people with the
+ * page open produce a combination neither of them chose.
+ */
+export const putTaxDocumentSettings = (
+  settings: TaxDocumentSettingsWire,
+): Promise<TaxDocumentSettingsWire> =>
+  apiJson('/admin/organisation/tax-documents', (body) => body as TaxDocumentSettingsWire, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(settings),
   });

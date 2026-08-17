@@ -30,6 +30,7 @@ import {
 } from './profile-form';
 import TaxCountriesSection, { type TaxCountriesState } from './tax-countries';
 import { ForfeitPolicySection } from './forfeit-policy-section';
+import { TaxDocumentSection } from './tax-document-section';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +195,13 @@ export function OrganisationScreen() {
        * refresh it, which would be a refresh of the wrong thing.
        */}
       <ForfeitPolicySection />
+
+      {/*
+       * ⭐ เอกสารภาษี, directly under the forfeit rates: both are "what this company does about
+       * money when the ordinary path is not taken", and the person setting one has an opinion
+       * about the other.
+       */}
+      <TaxDocumentSection />
       <AccountsSection state={accountsState} editable={editable} onChanged={reloadAccounts} />
       {/* Last, and it is the slowest-moving thing here: a row somebody edits a few times a year.
           Being last also puts the most distance between the page's title and the heading that

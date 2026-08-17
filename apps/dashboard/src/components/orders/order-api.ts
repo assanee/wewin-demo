@@ -3,6 +3,7 @@ import 'client-only';
 import { apiFetch, apiJson } from '@/lib/api/client';
 import { apiErrorFromResponse } from '@/lib/api/errors';
 import type { OrderStatus, PayloadKind } from './order-language';
+import type { OrderBillToWire } from '@wewin/contract/forfeit';
 
 /**
  * Every call the order screens make.
@@ -557,4 +558,31 @@ export const requestWriteOff = async (
   });
 
   if (!response.ok) throw await apiErrorFromResponse(response);
+};
+
+/* ------------------------------------------------------------------ *
+ * ⭐ ผู้ซื้อ — the block a tax document is made out to
+ * ------------------------------------------------------------------ */
+
+/** `null` when nobody has filled it in, which is most orders and is not an error. */
+export const getBillTo = async (orderId: string): Promise<OrderBillToWire | null> => {
+  const response = await apiFetch(`/orders/${orderId}/bill-to`);
+  if (!response.ok) throw await apiErrorFromResponse(response);
+
+  const body: unknown = await response.json().catch(() => null);
+  return body === null ? null : (body as OrderBillToWire);
+};
+
+export const putBillTo = async (
+  orderId: string,
+  input: Omit<OrderBillToWire, 'updatedAt'>,
+): Promise<OrderBillToWire> => {
+  const response = await apiFetch(`/orders/${orderId}/bill-to`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return (await response.json()) as OrderBillToWire;
 };

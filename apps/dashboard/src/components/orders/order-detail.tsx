@@ -47,6 +47,7 @@ import { BalanceReminderButton } from './balance-reminder-button';
 import { balanceNoticeFor } from './transition-balance';
 import { DepositButton } from './deposit-button';
 import { formatDepositPercent } from './deposit-entry';
+import { BillToCard } from './bill-to-card';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -382,6 +383,16 @@ export function OrderDetail({ orderId }: { readonly orderId: string }) {
               <dt className="text-muted-foreground">ส่งเมื่อ</dt>
               <dd>{order.submittedAt === null ? 'ยังไม่ได้ส่ง' : at(order.submittedAt)}</dd>
             </dl>
+
+            {/*
+             * ⭐ ผู้ซื้อ, under the contact and inside the same card, because they answer two
+             * halves of one question and are read together: who to telephone, and who the tax
+             * document is made out to. They are often not the same party — a landlord, a
+             * company, a spouse — which is exactly why both are on screen at once.
+             */}
+            <div className="border-border mt-6 border-t pt-4">
+              <BillToCard orderId={order.id} mayWrite={can('orders.write')} />
+            </div>
           </CardContent>
         </Card>
 
