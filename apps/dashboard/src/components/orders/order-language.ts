@@ -129,6 +129,9 @@ export const ORDER_EVENT_TYPES = [
   'change_resolved',
   'balance_reminded',
   'balance_written_off',
+  /* 0062 — a numbered tax document was issued, or struck out. Neither changes the status. */
+  'tax_document_issued',
+  'tax_document_voided',
 ] as const;
 
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
@@ -164,6 +167,17 @@ const EVENT_TH: Record<OrderEventType, string> = {
    * this row appears only once somebody approved it.
    */
   balance_written_off: 'ตัดยอดค้างทิ้งแล้ว',
+  /*
+   * ⭐ 0062. No material noun, and no document name that only one kind of company would
+   * recognise: the payload carries `document_kind`, and the screen prints that beside this
+   * label. `ออกเอกสารภาษี` covers all six kinds without claiming which one this row is.
+   */
+  tax_document_issued: 'ออกเอกสารภาษี',
+  /*
+   * `ยกเลิก` alone would read as the order being cancelled, which is a different row on the
+   * same timeline. An issued document is never deleted — it is struck out and replaced.
+   */
+  tax_document_voided: 'ยกเลิกเอกสารภาษี',
 };
 
 /**

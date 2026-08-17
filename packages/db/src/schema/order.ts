@@ -207,6 +207,14 @@ export const ORDER_EVENT_TYPES = [
    * ฿9,886.80 written off and its timeline still ended at `installation_scheduled`.
    */
   'balance_written_off',
+  /*
+   * ⭐ 0062. A numbered document was issued, or struck out. Beside the two above for the same
+   * reason they are beside each other: no status changed, and the order's own history is where
+   * somebody looks first to find out why TAX-2569-00042 exists. The number and the kind are in
+   * the payload so the timeline reads without joining `tax_documents`.
+   */
+  'tax_document_issued',
+  'tax_document_voided',
 ] as const;
 
 /**

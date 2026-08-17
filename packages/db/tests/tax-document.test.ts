@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 
 import { createDatabase, createPool, type Database, type Pool } from '../src/client.js';
-import { errorCode } from './support/db.js';
+import { PG, errorCode } from './support/db.js';
 
 /**
  * The repo's own idiom: drizzle wraps a driver error and pg's `code` sits on `cause`, so a
@@ -259,6 +259,161 @@ describeDb('a tax document, as the database sees it', () => {
                   ${Number(no?.['series_seq'])}, ${String(no?.['document_no'])}, '{}'::jsonb,
                   ${'c'.repeat(64)}, 'th', 700, 'standard', 10000, 700, 99999, ${order.eventId}::uuid)
         `), '23514');
+    });
+  });
+
+  describe('the timeline entry that says a document exists', () => {
+    /**
+     * ⭐ 0062. Every issue writes `tax_document_issued` on the order's own spine.
+     *
+     * The alternative was to let a document cite the business event that caused it — payment,
+     * delivery — and write nothing extra. That reads well and leaves the timeline silent, which
+     * is the mistake 0051 already cost a commit to learn: a debt was forgiven and the order's
+     * history said nothing about it. A numbered document filed with the Revenue Department is
+     * not a smaller fact.
+     *
+     * ⚠️ These two event types are the sixth and seventh members of a list maintained by hand
+     * inside `order_events_guard_insert()`. That list is the dominant bug class in this schema,
+     * and these tests are what actually hold it.
+     */
+    /**
+     * ⚠️ Builds its own order rather than borrowing one.
+     *
+     * The tests above reach for `orders limit 1` and return early when the table is empty — an
+     * idiom that reads as tolerance and behaves as a silent skip. This suite runs against a
+     * database `globalSetup` creates fresh, so running this file alone leaves that table empty
+     * and every borrowed-order test passes without executing a single assertion. That is how the
+     * first draft of this block passed while asserting a SQLSTATE that does not exist.
+     */
+    const anOwnOrder = async (): Promise<string> =>
+      /*
+       * ⚠️ Both ids are chosen here, before either row exists, and the whole fixture is one
+       * transaction. That is not a shortcut, it is the only order that works — the same one
+       * `order.repository.ts` writes down at length:
+       *
+       *   · the order names the event that put it in its status (`orders_status_event_fk`,
+       *     composite and DEFERRABLE, so it is checked at commit rather than at the statement);
+       *   · the event names the order, and `order_events_guard_insert()` refuses an event whose
+       *     order does not exist yet — that one is checked immediately;
+       *   · and `orders_guard_update()` refuses moving `status_event_id` without moving the
+       *     status, so the row cannot be inserted with a placeholder and corrected afterwards.
+       */
+      db.transaction(async (tx: Parameters<Parameters<Database['transaction']>[0]>[0]) => {
+        const one = async <T>(statement: ReturnType<typeof sql>): Promise<T> => {
+          const result = await tx.execute(statement);
+          const rows = (result as { rows?: readonly Record<string, unknown>[] }).rows ?? [];
+          return Object.values(rows[0] ?? {})[0] as T;
+        };
+
+        const guest = await one<string>(sql`insert into guests default values returning id::text`);
+        const orderId = randomUUID();
+        const eventId = randomUUID();
+
+        await tx.execute(sql`
+          insert into orders (id, status_event_id, guest_id, status)
+          values (${orderId}::uuid, ${eventId}::uuid, ${guest}::uuid, 'draft')
+        `);
+        await tx.execute(sql`
+          insert into order_events (id, order_id, event_type, actor_kind, actor_guest_id, to_status)
+          values (${eventId}::uuid, ${orderId}::uuid, 'created', 'guest', ${guest}::uuid, 'draft')
+        `);
+        return orderId;
+      });
+
+    const writeEvent = (
+      orderId: string,
+      eventType: string,
+      payload: Record<string, unknown>,
+      actorKind = 'system',
+    ): Promise<unknown> =>
+      db.execute(sql`
+        insert into order_events (order_id, event_type, actor_kind, payload)
+        values (${orderId}::uuid, ${eventType}, ${actorKind}, ${JSON.stringify(payload)}::jsonb)
+      `);
+
+    it('⭐ takes a tax_document_issued with no status change at all', async () => {
+      const orderId = await anOwnOrder();
+
+      await writeEvent(orderId, 'tax_document_issued', {
+        document_no: 'TAX-2569-00001',
+        document_kind: 'tax_invoice',
+      });
+
+      const written = await scalar<string>(sql`
+        select count(*)::text from order_events
+         where order_id = ${orderId}::uuid and event_type = 'tax_document_issued'
+           and to_status is null
+      `);
+      expect(written).toBe('1');
+    });
+
+    it('⛔ refuses one that does not name the document — the timeline would say nothing useful', async () => {
+      const orderId = await anOwnOrder();
+
+      await expectViolation(
+        writeEvent(orderId, 'tax_document_issued', { document_kind: 'tax_invoice' }),
+        PG.restrictViolation,
+      );
+      await expectViolation(
+        writeEvent(orderId, 'tax_document_issued', { document_no: 'TAX-2569-00002' }),
+        PG.restrictViolation,
+      );
+    });
+
+    it('⛔ refuses a void that does not say why', async () => {
+      /*
+       * An unexplained strike-through on a numbered series is exactly what an auditor asks
+       * about, and "nobody wrote it down" is not an answer anybody wants to give.
+       */
+      const orderId = await anOwnOrder();
+
+      await expectViolation(
+        writeEvent(orderId, 'tax_document_voided', {
+          document_no: 'TAX-2569-00003',
+          document_kind: 'tax_invoice',
+        }),
+        PG.restrictViolation,
+      );
+
+      /* And takes the same event once it does. */
+      await writeEvent(orderId, 'tax_document_voided', {
+        document_no: 'TAX-2569-00003',
+        document_kind: 'tax_invoice',
+        reason_th: 'ออกผิดชื่อผู้ซื้อ',
+      });
+    });
+
+    it('🔒 refuses a guest — a buyer cannot mint a tax document by asking for one', async () => {
+      const orderId = await anOwnOrder();
+      const guestId = await scalar<string>(
+        sql`select guest_id::text from orders where id = ${orderId}::uuid`,
+      );
+
+      /*
+       * ⚠️ A well-formed guest event, owned by this very order, so what refuses it is the actor
+       * rule in the guard and not the actor-shape CHECK that would refuse any malformed row.
+       */
+      await expectViolation(
+        db.execute(sql`
+          insert into order_events (order_id, event_type, actor_kind, actor_guest_id, payload)
+          values (${orderId}::uuid, 'tax_document_issued', 'guest', ${guestId}::uuid,
+                  ${JSON.stringify({ document_no: 'TAX-2569-00004', document_kind: 'tax_invoice' })}::jsonb)
+        `),
+        PG.restrictViolation,
+      );
+    });
+
+    it('⛔ still refuses an event type nobody added to the list', async () => {
+      /*
+       * The anti-vacuity check. If the no-status-change list stopped being enforced, every
+       * assertion above would pass on a guard that had quietly stopped guarding.
+       */
+      const orderId = await anOwnOrder();
+
+      await expectViolation(
+        writeEvent(orderId, 'tax_document_printed', { document_no: 'X', document_kind: 'y' }),
+        PG.restrictViolation,
+      );
     });
   });
 

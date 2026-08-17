@@ -112,6 +112,9 @@ export const ORDER_EVENT_TYPES_WIRE = [
   'change_resolved',
   'balance_reminded',
   'balance_written_off',
+  /* 0062 — a numbered tax document was issued, or struck out. Neither changes the status. */
+  'tax_document_issued',
+  'tax_document_voided',
 ] as const;
 
 export type OrderEventTypeWire = (typeof ORDER_EVENT_TYPES_WIRE)[number];

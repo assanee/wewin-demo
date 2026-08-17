@@ -435,6 +435,13 @@
       "when": 1786400000032,
       "tag": "0061_next_document_no_conflict",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1786400000033,
+      "tag": "0062_tax_document_events",
+      "breakpoints": true
     }
   ]
 }

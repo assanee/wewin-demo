@@ -398,10 +398,19 @@ describe('who did it and where it came from', () => {
      * The same guard `statusLabel` gets, for the same reason: the old spine rendered the machine
      * string `submitted_for_payment` as its heading on a Thai-only screen.
      */
-    /* Fifteen since 0051 added `balance_written_off`, the fifth event that moves no status. */
-    expect(ORDER_EVENT_TYPES).toHaveLength(15);
+    /*
+     * Seventeen since 0062 added `tax_document_issued` and `tax_document_voided`, the sixth and
+     * seventh events that move no status.
+     *
+     * ⚠️ The count is here on purpose. This same enumeration is written out by hand in four
+     * places — the guard function, a table CHECK, the drizzle schema and the contract — and this
+     * assertion is what noticed the two new members had not reached the fifth.
+     */
+    expect(ORDER_EVENT_TYPES).toHaveLength(17);
     expect(ORDER_EVENT_TYPES).toContain('balance_reminded');
     expect(ORDER_EVENT_TYPES).toContain('balance_written_off');
+    expect(ORDER_EVENT_TYPES).toContain('tax_document_issued');
+    expect(ORDER_EVENT_TYPES).toContain('tax_document_voided');
 
     for (const type of ORDER_EVENT_TYPES) {
       const label = eventLabelTh(type);
