@@ -13,7 +13,7 @@ import type {
 
 import { DRIZZLE } from '../database/database.tokens';
 import { AppError } from '../common/errors/app-error';
-import { message } from '../i18n';
+import { message, thb } from '../i18n';
 import { postgresErrorOf } from './pg-errors';
 import { ScopedOrderRepository } from './scope';
 import type { Scope } from '../rbac';
@@ -106,10 +106,10 @@ export class TaxDocumentService {
   /**
    * ⭐ Raise one.
    *
-   * ⚠️ `issuedAt` is read back from the row rather than stamped here, and `documentNo` comes
-   * from the database function rather than being built in TypeScript. Both are facts the
-   * database owns; a service that guesses either produces a document that disagrees with the
-   * series it claims to belong to.
+   * ⚠️ Both the number and the moment come from the database — `next_document_no()` for one,
+   * `select now()` for the other — and the moment is then written to the column explicitly so
+   * the face and the row cannot disagree. A service that stamps either from its own process
+   * produces a document that contradicts the series it claims to belong to.
    */
   async issue(
     scope: Scope,
@@ -212,14 +212,51 @@ export class TaxDocumentService {
     const buyer = await this.buyerBlock(tx, input.orderId, input.kind);
     const { subject, net, vat, grand } = await this.subjectAndMoney(tx, input, quotation);
 
+    /*
+     * ⚠️ Which basis the quotation was priced on decides what the line column adds up to:
+     * under `exclusive` the lines sum to the net and VAT is a row beneath them; under
+     * `inclusive` they already contain the tax and sum to the grand total. Getting this
+     * backwards prints a page whose own arithmetic disagrees with itself.
+     */
+    const basis = String(
+      (quotation['document'] as { taxBasis?: unknown } | null)?.taxBasis ?? 'exclusive',
+    );
+    const columnTotal = basis === 'inclusive' ? grand : net;
+
+    /*
+     * ⚠️ An instalment document lists ONE line naming the instalment, not the order's goods.
+     * Printing all four windows beside a figure that is 30% of them would be a face claiming
+     * that four windows cost ฿35.31. The goods are identified by the order number, which is on
+     * the page, and in full on the quotation the customer already holds.
+     */
+    const lines =
+      subject.kind === 'instalment'
+        ? [
+            {
+              descriptionTh: `${subject.labelTh} ตามใบเสนอราคาเลขที่ ${text(orderRow?.['order_no']) ?? '—'}`,
+              quantity: 1,
+              unitThbMinor: columnTotal,
+              amountThbMinor: columnTotal,
+            },
+          ]
+        : this.linesFrom(quotation['document']);
+
+    this.assertFoots(lines, columnTotal, basis);
+
     return {
       bodySchemaVersion: 1,
       kind: input.kind,
       orderNo: text(orderRow?.['order_no']),
       seller: {
+        buyerKind: null,
         legalName: String(seller['legal_name_th']),
         taxId: text(seller['tax_id']),
-        /* The company's own branch. Null is สำนักงานใหญ่, which is what this company is. */
+        /*
+         * ⚠️ `null`, and the renderer prints สำนักงานใหญ่ — which is true of this company and is
+         * not read from anywhere, because `organisation_profile` has no branch column. A second
+         * branch would need one before its first document is raised, since a wrong branch on an
+         * issued tax invoice cannot be corrected.
+         */
         branchCode: null,
         addressLine: String(seller['address_th'] ?? ''),
         postalCode: null,
@@ -227,7 +264,7 @@ export class TaxDocumentService {
       },
       buyer,
       subject,
-      lines: this.linesFrom(quotation['document']),
+      lines,
       vat: {
         rateBp: Number(quotation['pinned_vat_rate_bp']),
         treatment: String(quotation['pinned_vat_treatment']),
@@ -238,6 +275,34 @@ export class TaxDocumentService {
       citesDocumentNo: null,
       reasonTh: null,
     };
+  }
+
+  /**
+   * ⛔ The face must add up, or no number is taken.
+   *
+   * A refusal here is a 422 somebody can act on. The alternative is a numbered, frozen document
+   * whose lines sum to ฿0.00 beside a total of ฿117.70 — which is what this service did until
+   * the field names in `linesFrom` were checked against `OrderDocumentLineWire`. This single
+   * assertion catches every one of those four bugs at once, and any future one like them.
+   */
+  private assertFoots(
+    lines: TaxDocumentBodyWire['lines'],
+    columnTotal: string,
+    basis: string,
+  ): void {
+    const summed = lines.reduce((total, line) => total + BigInt(line.amountThbMinor), 0n);
+
+    if (summed !== BigInt(columnTotal)) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        422,
+        message('error.taxdoc.lines_do_not_foot', {
+          summed: thb(summed),
+          total: thb(BigInt(columnTotal)),
+        }),
+        { basis, lineCount: lines.length },
+      );
+    }
   }
 
   /**
@@ -266,6 +331,7 @@ export class TaxDocumentService {
     }
 
     return {
+      buyerKind: row['buyer_kind'] === 'juristic' ? 'juristic' : 'individual',
       legalName: String(row['legal_name']),
       taxId: text(row['tax_id']),
       branchCode: text(row['branch_code']),
@@ -338,17 +404,75 @@ export class TaxDocumentService {
     };
   }
 
-  /** The quotation's lines, as a page prints them. Absent or malformed is one summary line. */
+  /**
+   * The quotation's lines and charges, as a page prints them.
+   *
+   * ── ⚠️ Read the field names off `OrderDocumentLineWire`, not off intuition ────
+   *
+   * The first version of this function read `titleTh`, `quantity`, `unitThbMinor` and
+   * `amountThbMinor`. Not one of those keys exists on a frozen quotation line: the product's
+   * name is `nameTh`, the count is `qty`, and money is `netMinor`, a `MoneyWire` of the shape
+   * `{ unit: 'THB.satang', digits: '11000' }` rather than a bare string. Every `??` fell through
+   * to its default, so every line of every document would have printed with an empty
+   * description, a quantity of 1, and a total of ฿0.00 — on a numbered document that cannot be
+   * corrected after issue. `footsTo()` below is the assertion that would not let it happen
+   * twice.
+   *
+   * ── ⚠️ Charges are lines on the face of a tax document ───────────────────────
+   *
+   * ค่าขนส่ง, ค่าติดตั้ง and any goodwill credit live in `document.charges`, a separate array
+   * that the quotation renders separately. On a tax invoice they are supplies like any other:
+   * they are inside `netThbMinor`, so a face that omits them shows a column of figures that
+   * does not add up to its own total.
+   */
   private linesFrom(document: unknown): TaxDocumentBodyWire['lines'] {
-    const lines = (document as { lines?: readonly Record<string, unknown>[] } | null)?.lines;
-    if (!Array.isArray(lines)) return [];
+    const frozen = document as {
+      lines?: readonly Record<string, unknown>[];
+      charges?: readonly Record<string, unknown>[];
+    } | null;
 
-    return lines.map((line) => ({
-      descriptionTh: String(line['titleTh'] ?? line['descriptionTh'] ?? ''),
-      quantity: Number(line['quantity'] ?? 1),
-      unitThbMinor: String(line['unitThbMinor'] ?? '0'),
-      amountThbMinor: String(line['amountThbMinor'] ?? line['lineTotalThbMinor'] ?? '0'),
+    /** `MoneyWire` is `{ unit, digits }`; a bare `String()` of it yields "[object Object]". */
+    const satang = (money: unknown): string => {
+      const digits = (money as { digits?: unknown } | null)?.digits;
+      return digits === undefined || digits === null ? '0' : String(digits);
+    };
+
+    const goods = (frozen?.lines ?? []).map((line) => {
+      const quantity = Number(line['qty'] ?? 1);
+      const amount = satang(line['netMinor']);
+      const unitPrice = (line['price'] as { unitPriceMinor?: unknown } | null)?.unitPriceMinor;
+
+      return {
+        /*
+         * The product's pinned name, and the salesperson's own words for it when there are any:
+         * `customerDescriptionTh` is what a customer recognises, and `nameTh` is what an
+         * accountant matches against the catalogue. Both, when both exist.
+         */
+        descriptionTh: [line['nameTh'], line['customerDescriptionTh']]
+          .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+          .join(' — '),
+        quantity,
+        /*
+         * ⚠️ Derived from the line total rather than copied from `price.unitPriceMinor`, which
+         * is the machine's figure before any human override. A line a salesperson repriced by
+         * hand would otherwise print a unit price that does not multiply out to its own total.
+         */
+        unitThbMinor:
+          quantity > 0 && unitPrice === undefined
+            ? (BigInt(amount) / BigInt(quantity)).toString()
+            : satang(unitPrice),
+        amountThbMinor: amount,
+      };
+    });
+
+    const charges = (frozen?.charges ?? []).map((charge) => ({
+      descriptionTh: String(charge['customerDescriptionTh'] ?? ''),
+      quantity: 1,
+      unitThbMinor: satang(charge['netMinor']),
+      amountThbMinor: satang(charge['netMinor']),
     }));
+
+    return [...goods, ...charges];
   }
 
   /* ------------------------------------------------------------------ *
@@ -377,7 +501,21 @@ export class TaxDocumentService {
     }
 
     const documentNo = String(numbered['document_no']);
-    const issuedAt = new Date().toISOString();
+
+    /*
+     * ⚠️ The database's clock, not Node's, and the same instant is then written to the column
+     * explicitly rather than left to `DEFAULT now()`.
+     *
+     * The JSDoc on `issue()` claimed this from the beginning and the code did not do it: the
+     * body was stamped `new Date().toISOString()` while the row took the server's `now()` and
+     * the number took its Buddhist year from `next_document_no(series, now())` in Asia/Bangkok.
+     * Three clocks, and on a machine whose time had drifted — or at 23:59 on 31 December — the
+     * face, the row and the number could disagree about what year the document belongs to.
+     * Frozen, and therefore unfixable.
+     */
+    const issuedAt = new Date(
+      String((records(await tx.execute(sql`select now() as at`))[0] ?? {})['at']),
+    ).toISOString();
 
     /*
      * ⚠️ The event first, then the document that cites it — `created_by_event_id` is NOT NULL,
@@ -407,7 +545,7 @@ export class TaxDocumentService {
           (kind, order_id, instalment_id, replaces_document_id, series_code, series_year,
            series_seq, document_no, document, document_hash, pinned_locale, pinned_vat_rate_bp,
            pinned_vat_treatment, net_thb_minor, vat_thb_minor, grand_total_thb_minor,
-           issued_by_user_id, created_by_event_id)
+           issued_at, issued_by_user_id, created_by_event_id)
         values (${input.kind}, ${input.orderId}::uuid,
                 ${input.instalmentId}::uuid, ${input.replacesDocumentId ?? null}::uuid,
                 ${String(numbered['series_code'])}, ${Number(numbered['series_year'])},
@@ -416,7 +554,7 @@ export class TaxDocumentService {
                 'th', ${body.vat.rateBp}, ${body.vat.treatment},
                 ${body.netThbMinor}::bigint, ${body.vatThbMinor}::bigint,
                 ${body.grandTotalThbMinor}::bigint,
-                ${input.actorUserId}::uuid, ${eventId}::uuid)
+                ${issuedAt}::timestamptz, ${input.actorUserId}::uuid, ${eventId}::uuid)
         returning id::text, issued_at
       `)
       .catch((cause: unknown) => {

@@ -3,6 +3,7 @@ import type { TaxDocumentWire } from '@wewin/contract/forfeit';
 
 import { createPgHarness } from '../support/pg-harness';
 import { client, makeActor, type Json } from './support/lifecycle-app';
+import { liveLine } from '../payments/support/payments-app';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -77,9 +78,25 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
      * An order carried far enough to have a FROZEN quotation, which is what a tax document
      * copies. Nothing shorter will do: `order_documents` is written at submit, and every test
      * about the body rather than about a refusal needs one to exist.
+     *
+     * ⚠️ It carries a real PRODUCT LINE as well as a charge, and the difference is not
+     * decoration. The first version added only a charge, so `document.lines` was empty on every
+     * order these tests built — and the whole goods path of `linesFrom()` went unexecuted while
+     * the suite reported green. Forcing every goods amount to '0' changed no result at all,
+     * which is how that was found.
      */
     const aSubmittedOrder = async (): Promise<string> => {
       const orderId = await anOrder();
+
+      const beforeLine = await call('GET', `/orders/${orderId}/quote`, { token: sales.token });
+      const added = await call('POST', `/orders/${orderId}/quote/lines`, {
+        token: sales.token,
+        body: {
+          expect: { quoteRevision: (beforeLine.body as { quoteRevision: string }).quoteRevision },
+          line: await liveLine(call),
+        },
+      });
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
 
       const current = await call('GET', `/orders/${orderId}/quote`, { token: sales.token });
       const charge = await call('POST', `/orders/${orderId}/quote/charges`, {
@@ -260,6 +277,113 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
     const listed = await h.list(orderId);
     expect(listed.status).toBe(200);
     expect((listed.body as readonly TaxDocumentWire[])[0]?.documentNo).toBe(document.documentNo);
+  });
+
+  it('⭐ the lines carry the real goods, and the column adds up to the total', async () => {
+    /*
+     * ⛔ THE TEST THAT WOULD HAVE CAUGHT THE WORST BUG THIS FEATURE HAD.
+     *
+     * `linesFrom()` read `titleTh`, `quantity`, `unitThbMinor` and `amountThbMinor`. A frozen
+     * quotation line has none of those: the name is `nameTh`, the count is `qty`, and money is
+     * `netMinor`, a `{ unit, digits }` object rather than a string. Every fallback fired, so
+     * every line of every document would have printed blank, quantity 1, ฿0.00 — beside a
+     * correct grand total, on a numbered page that cannot be corrected after issue.
+     *
+     * The footing assertion is the one that generalises: a face whose figures do not add up to
+     * its own total is wrong however the fields were named.
+     */
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const raised = await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null });
+    expect(raised.status, JSON.stringify(raised.body)).toBe(201);
+
+    const { body } = raised.body as TaxDocumentWire;
+
+    expect(body.lines.length).toBeGreaterThan(0);
+    for (const line of body.lines) {
+      expect(line.descriptionTh, 'a line with no description').not.toBe('');
+      expect(line.quantity).toBeGreaterThan(0);
+      expect(BigInt(line.amountThbMinor), `${line.descriptionTh} is ฿0.00`).toBeGreaterThan(0n);
+    }
+
+    /* ⭐ Under the exclusive basis this order was priced on, the lines sum to the net. */
+    const summed = body.lines.reduce((total, line) => total + BigInt(line.amountThbMinor), 0n);
+    expect(summed).toBe(BigInt(body.netThbMinor));
+
+    /* And the charge raised on this order is one of them — charges are supplies too. */
+    expect(body.lines.some((line) => line.descriptionTh.includes('ชุดครัวสั่งทำ'))).toBe(true);
+  });
+
+  it('⭐ an instalment document names the instalment, not the whole order’s goods', async () => {
+    /*
+     * Printing four windows beside a figure that is 30% of them would be a face claiming that
+     * four windows cost ฿35.31. One line, naming the งวด and the order it belongs to.
+     */
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    /*
+     * ⚠️ Read from the database rather than guessed off a response shape, and asserted to exist
+     * rather than skipped when absent. A fixture lookup that returns early on a miss is a test
+     * that reports green without running — the failure mode this suite has already had twice.
+     */
+    const found = await h.db.execute(
+      `select id::text as id from order_instalments
+        where order_id = '${orderId}' order by seq limit 1` as never,
+    );
+    const first = ((found as { rows?: readonly Record<string, unknown>[] }).rows ?? [])[0];
+    expect(first, 'the submitted order has no instalments to document').toBeDefined();
+
+    const raised = await h.issue(orderId, { kind: 'receipt', instalmentId: String(first?.['id']) });
+    expect(raised.status, JSON.stringify(raised.body)).toBe(201);
+
+    const { body } = raised.body as TaxDocumentWire;
+    expect(body.lines).toHaveLength(1);
+    expect(body.subject.kind).toBe('instalment');
+    expect(body.lines[0]?.descriptionTh).toContain('งวดที่');
+    expect(BigInt(body.lines[0]?.amountThbMinor ?? '0')).toBe(BigInt(body.netThbMinor));
+  });
+
+  it('⭐ the face, the row and the number agree about when it was issued', async () => {
+    /*
+     * Three clocks were in play: the body took Node's, the row took the server's `now()`, and
+     * the number took its Buddhist year from `now()` in Asia/Bangkok. On a drifted machine — or
+     * at 23:59 on 31 December — they could name different years on one frozen document.
+     */
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const document = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+
+    expect(document.body.issuedAt).toBe(document.issuedAt);
+    const yearBe = new Date(document.issuedAt).getUTCFullYear() + 543;
+    expect(document.documentNo).toContain(String(yearBe));
+  });
+
+  it('⭐ the buyer’s kind is frozen with the rest, so a null tax id can be explained', async () => {
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const document = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+
+    expect(document.body.buyer?.buyerKind).toBe('juristic');
+    /* The seller block is this company; the field is null there rather than guessed. */
+    expect(document.body.seller.buyerKind).toBeNull();
   });
 
   it('⛔ refuses to tax-invoice the same supply twice', async () => {

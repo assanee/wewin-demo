@@ -203,8 +203,16 @@ export const TAX_DOCUMENT_KINDS_WIRE = [
 
 export type TaxDocumentKindWire = (typeof TAX_DOCUMENT_KINDS_WIRE)[number];
 
-/** The company's own block, as it stood at issue. */
+/** A party's block, as it stood at issue — the seller's, or the buyer's. */
 export interface TaxDocumentPartyWire {
+  /**
+   * ⚠️ Individual or company, frozen with the rest.
+   *
+   * Without it, a document whose `taxId` is null cannot be shown to have been legitimately an
+   * individual's rather than a company's issued in breach of the juristic rule — which is the
+   * question an audit asks. `null` on the seller block, which is always this company.
+   */
+  readonly buyerKind: 'individual' | 'juristic' | null;
   readonly legalName: string;
   readonly taxId: string | null;
   /** `null` prints as สำนักงานใหญ่. */

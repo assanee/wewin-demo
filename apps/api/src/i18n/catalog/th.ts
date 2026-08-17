@@ -363,6 +363,9 @@ export const TH: Catalogue = {
     'ยังไม่ได้ตั้งเลขที่เอกสารสำหรับชนิดนี้',
   'error.taxdoc.already_issued':
     'ยอดนี้ออกเอกสารชนิดนี้ไปแล้ว — ออกซ้ำไม่ได้ ถ้าออกผิดให้ยกเลิกใบเดิมด้วยใบลดหนี้',
+  'error.taxdoc.lines_do_not_foot': (params, fmt) =>
+    `รายการบนหน้าเอกสารรวมได้ ${fmt.money(params.summed)} แต่ยอดของเอกสารคือ ${fmt.money(params.total)} — ` +
+    `หน้าเอกสารที่บวกไม่ลงตัวออกไม่ได้ เพราะออกไปแล้วแก้ไม่ได้`,
   'error.billto.juristic_needs_tax_id':
     'ลูกค้านิติบุคคลต้องมีเลขประจำตัวผู้เสียภาษี 13 หลัก จึงจะออกใบกำกับภาษีเต็มรูปได้',
   'error.stale.override_baselines':

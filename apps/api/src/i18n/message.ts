@@ -433,6 +433,8 @@ const PARAM_SHAPES = {
   'error.taxdoc.instalment_unknown': {},
   'error.taxdoc.no_series': {},
   'error.taxdoc.already_issued': {},
+  /** ⛔ The column of figures on the face does not add up to the face's own total. */
+  'error.taxdoc.lines_do_not_foot': { summed: 'money', total: 'money' },
   'error.billto.juristic_needs_tax_id': {},
   'error.stale.override_baselines': {},
   /**
