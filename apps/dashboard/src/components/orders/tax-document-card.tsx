@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { failureMessage } from '@/lib/api/errors';
 
-import { getTaxDocuments, issueTaxDocument } from './order-api';
+import { Input } from '@/components/ui/input';
+
+import { getTaxDocuments, issueTaxDocument, voidTaxDocument } from './order-api';
 
 /**
  * ⭐ เอกสารภาษี — the numbered documents raised against this order, and the button that raises
@@ -45,6 +47,8 @@ export function TaxDocumentCard({
 }) {
   const [documents, setDocuments] = useState<readonly TaxDocumentWire[] | null>(null);
   const [confirming, setConfirming] = useState<TaxDocumentKindWire | null>(null);
+  /** Which document is being struck out, and the reason typed so far. */
+  const [striking, setStriking] = useState<{ id: string; no: string; reason: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const reload = (): void => {
@@ -64,6 +68,21 @@ export function TaxDocumentCard({
       setConfirming(null);
       reload();
       toast.success(`ออก ${TAX_DOCUMENT_CAPTION_TH[kind]} เลขที่ ${raised.documentNo} แล้ว`);
+    } catch (cause: unknown) {
+      toast.error(failureMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const strike = async (): Promise<void> => {
+    if (striking === null) return;
+    setBusy(true);
+    try {
+      const { creditNote } = await voidTaxDocument(orderId, striking.id, striking.reason);
+      setStriking(null);
+      reload();
+      toast.success(`ยกเลิก ${striking.no} แล้ว — ออกใบลดหนี้ ${creditNote.documentNo}`);
     } catch (cause: unknown) {
       toast.error(failureMessage(cause));
     } finally {
@@ -92,12 +111,62 @@ export function TaxDocumentCard({
               >
                 เปิด / พิมพ์
               </Link>
+              {/*
+                ⚠️ Offered only on a live document that is not itself a credit note. A credit
+                note is what does the reducing; the remedy for a wrong one is a ใบเพิ่มหนี้,
+                which this system does not have — so there is no button that pretends otherwise.
+              */}
+              {mayWrite && document.status === 'issued' && document.kind !== 'credit_note' && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStriking({ id: document.id, no: document.documentNo, reason: '' })
+                  }
+                  className="text-muted-foreground hover:text-destructive focus-visible:outline-ring rounded text-sm underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  ยกเลิก
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
 
+      {striking !== null && (
+        <div className="border-destructive/40 flex flex-col gap-2 rounded-md border p-3">
+          <p className="type-body">
+            ยกเลิก <strong>{striking.no}</strong>?
+          </p>
+          <p className="text-muted-foreground type-caption">
+            เอกสารที่ออกแล้วลบไม่ได้ — ระบบจะออกใบลดหนี้อ้างถึงใบนี้ แล้วทำเครื่องหมายว่ายกเลิก
+            ทั้งสองใบยังอยู่ในชุดเลขที่ตามเดิม
+          </p>
+          <Input
+            value={striking.reason}
+            onChange={(event) =>
+              setStriking((was) => (was === null ? was : { ...was, reason: event.target.value }))
+            }
+            placeholder="เหตุผลที่ยกเลิก เช่น ออกผิดชื่อผู้ซื้อ"
+            aria-label="เหตุผลที่ยกเลิก"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={busy || striking.reason.trim() === ''}
+              onClick={() => void strike()}
+            >
+              ยืนยันยกเลิกและออกใบลดหนี้
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setStriking(null)}>
+              ไม่ยกเลิก
+            </Button>
+          </div>
+        </div>
+      )}
+
       {mayWrite &&
+        striking === null &&
         (confirming === null ? (
           <div className="flex flex-wrap gap-2">
             {OFFERED_KINDS.map((kind) => (

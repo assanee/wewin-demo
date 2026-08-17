@@ -384,6 +384,9 @@ describeWithPg('RED TEAM 5a round two', () => {
      * signed-in customer mint a ใบกำกับภาษี made out to themselves. It moves no status, so it is
      * not one of the nine. The matching GET is deliberately NOT excluded: reading the documents
      * raised against your own order is `principal`, which is what this finding asks for.
+     *
+     * ⚠️ `…/:documentId/void` is the same route on the same terms — it raises a second numbered
+     * document and marks a filed one withdrawn — so it is excluded beside its sibling.
      */
     const orderRoutes = registry
       .records()
@@ -395,7 +398,8 @@ describeWithPg('RED TEAM 5a round two', () => {
           !record.key.includes('/write-offs') &&
           !record.key.includes('/balance-reminders') &&
           !record.key.includes('/deposit') &&
-          record.key !== 'POST /orders/:orderId/tax-documents',
+          record.key !== 'POST /orders/:orderId/tax-documents' &&
+          record.key !== 'POST /orders/:orderId/tax-documents/:documentId/void',
       );
 
     expect(

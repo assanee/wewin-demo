@@ -241,8 +241,35 @@ export type TaxDocumentSubjectWire =
   | { readonly kind: 'instalment'; readonly instalmentNo: number; readonly labelTh: string }
   | { readonly kind: 'whole_order' };
 
+/**
+ * ⛔ The four figures มาตรา 86/10 requires on the face of a ใบลดหนี้.
+ *
+ * Not derivable from the credit note's own totals: a reader has to be able to see the value the
+ * original document stated, the value that is now correct, the difference between them, and the
+ * VAT on that difference — four numbers, on the page, without consulting anything else. The body
+ * carried one net/vat/grand triple and had nowhere to put the other three.
+ *
+ * ⚠️ All four are POSITIVE, like every other money field here. A credit note reduces by virtue
+ * of being a credit note; a minus sign in a column is a minus sign somebody forgets to apply.
+ */
+export interface TaxDocumentAdjustmentWire {
+  /** What the document being reduced said, before tax. */
+  readonly originalNetThbMinor: string;
+  /** What it should have said. Zero when the document is struck out in full. */
+  readonly correctedNetThbMinor: string;
+  readonly differenceThbMinor: string;
+  readonly vatOnDifferenceThbMinor: string;
+}
+
 export interface TaxDocumentBodyWire {
-  readonly bodySchemaVersion: 1;
+  /**
+   * ⚠️ Checked on the way in, not trusted on the way out — plan 4.5's list of stored payloads
+   * whose version field and content drifted apart in silence.
+   *
+   * `1` is every body written before credit notes existed; `2` adds `adjustment`. A reader must
+   * handle both, because a document issued under `1` is frozen and can never be migrated.
+   */
+  readonly bodySchemaVersion: 1 | 2;
   readonly kind: TaxDocumentKindWire;
   readonly documentNo: string;
   readonly issuedAt: string;
@@ -256,12 +283,27 @@ export interface TaxDocumentBodyWire {
   readonly buyer: TaxDocumentPartyWire | null;
   readonly subject: TaxDocumentSubjectWire;
   readonly lines: readonly TaxDocumentLineWire[];
+  /**
+   * ⚠️ What the line column adds up to — a FACT about the figures, decided once at issue.
+   *
+   * The lines are copied from the frozen quotation, and whether they already contain the tax
+   * depends on the destination basis that quotation was priced on. Two places were deriving
+   * that independently and by different rules: the issuing service asked the quotation's
+   * `taxBasis`, and the renderer asked whether the document was abbreviated. They agree only
+   * when an abbreviated invoice happens to sit on an inclusive quotation.
+   *
+   * Absent on `bodySchemaVersion: 1`, where a reader should assume `'net'` — the only basis any
+   * document was issued under before this field existed.
+   */
+  readonly linesSumTo?: 'net' | 'grand_total' | undefined;
   readonly vat: { readonly rateBp: number; readonly treatment: string };
   readonly netThbMinor: string;
   readonly vatThbMinor: string;
   readonly grandTotalThbMinor: string;
   /** The document this one reduces. Set on a credit note and on nothing else. */
   readonly citesDocumentNo: string | null;
+  /** Present on a credit note and on nothing else. Absent on every `bodySchemaVersion: 1` body. */
+  readonly adjustment?: TaxDocumentAdjustmentWire | undefined;
   readonly reasonTh: string | null;
   readonly documentHash: string;
 }

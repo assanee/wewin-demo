@@ -33,6 +33,7 @@ import {
 import type { PaymentInstructionsWire } from '@wewin/contract/organisation';
 import {
   issueTaxDocumentSchema,
+  voidTaxDocumentSchema,
   putOrderBillToSchema,
   type OrderBillToWire,
   type TaxDocumentKindWire,
@@ -518,6 +519,26 @@ export class OrdersController {
     body: { kind: TaxDocumentKindWire; instalmentId: string | null },
   ): Promise<TaxDocumentWire> {
     return this.taxDocuments.issue(scope, orderId, body);
+  }
+
+  /**
+   * ยกเลิกเอกสารภาษี — strike one out by raising the ใบลดหนี้ that reduces it.
+   *
+   * ⚠️ `orders.write` and not `principal`, for the reason raising one is: this consumes a second
+   * number from a series and marks a filed document as withdrawn.
+   */
+  @Post(':orderId/tax-documents/:documentId/void')
+  @HttpCode(200)
+  @contractVersion()
+  @privateToTheCaller()
+  @RequirePermissions('orders.write')
+  async taxDocumentVoid(
+    @CurrentScope() scope: Scope,
+    @Param('orderId') orderId: string,
+    @Param('documentId') documentId: string,
+    @Body(new ZodBodyPipe(voidTaxDocumentSchema)) body: { reasonTh: string },
+  ): Promise<{ voidedDocumentNo: string; creditNote: TaxDocumentWire }> {
+    return this.taxDocuments.void(scope, orderId, documentId, body);
   }
 
   /**

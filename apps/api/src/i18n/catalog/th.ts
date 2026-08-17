@@ -366,6 +366,12 @@ export const TH: Catalogue = {
   'error.taxdoc.lines_do_not_foot': (params, fmt) =>
     `รายการบนหน้าเอกสารรวมได้ ${fmt.money(params.summed)} แต่ยอดของเอกสารคือ ${fmt.money(params.total)} — ` +
     `หน้าเอกสารที่บวกไม่ลงตัวออกไม่ได้ เพราะออกไปแล้วแก้ไม่ได้`,
+  'error.taxdoc.not_on_this_order':
+    'ไม่พบเอกสารนี้ในออเดอร์',
+  'error.taxdoc.already_voided':
+    'เอกสารนี้ถูกยกเลิกไปแล้ว',
+  'error.taxdoc.credit_note_not_voidable':
+    'ใบลดหนี้เป็นตัวที่ใช้ยกเลิกเอกสารอื่น จึงยกเลิกซ้ำไม่ได้ — ถ้าลดหนี้ผิดต้องออกใบเพิ่มหนี้ ซึ่งระบบยังไม่รองรับ',
   'error.billto.juristic_needs_tax_id':
     'ลูกค้านิติบุคคลต้องมีเลขประจำตัวผู้เสียภาษี 13 หลัก จึงจะออกใบกำกับภาษีเต็มรูปได้',
   'error.stale.override_baselines':

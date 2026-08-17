@@ -139,9 +139,20 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
     const list = (orderId: string, token = sales.token): Promise<Json> =>
       call('GET', `/orders/${orderId}/tax-documents`, { token });
 
+    const strike = (
+      orderId: string,
+      documentId: string,
+      reasonTh = 'ออกผิดชื่อผู้ซื้อ',
+      token = sales.token,
+    ): Promise<Json> =>
+      call('POST', `/orders/${orderId}/tax-documents/${documentId}/void`, {
+        token,
+        body: { reasonTh },
+      });
+
     return {
       app, call, sales, db, settings, sellerProfile, anOrder, aSubmittedOrder, billTo,
-      issue, list,
+      issue, list, strike,
     };
   };
 
@@ -436,6 +447,146 @@ describe.skipIf(url === undefined || url === '')('raising a tax document', () =>
     expect(seqOf((two.body as TaxDocumentWire).documentNo)).toBe(
       seqOf((one.body as TaxDocumentWire).documentNo) + 1,
     );
+  });
+
+  it('⭐ striking one out raises the ใบลดหนี้ that reduces it, in the same breath', async () => {
+    /*
+     * ⛔ THE RULE THE SCHEMA WAS SHAPED AROUND. `tax_documents_freeze()` refuses a void that
+     * does not name the document replacing it, which is the database saying what the Revenue
+     * Code says: a tax invoice is not cancelled by crossing it out, it is reduced by a credit
+     * note that cites it. So there is no endpoint that can do half of this.
+     */
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const original = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+
+    const struck = await h.strike(orderId, original.id, 'ออกผิดชื่อผู้ซื้อ');
+    expect(struck.status, JSON.stringify(struck.body)).toBe(200);
+
+    const { voidedDocumentNo, creditNote } = struck.body as {
+      voidedDocumentNo: string;
+      creditNote: TaxDocumentWire;
+    };
+    expect(voidedDocumentNo).toBe(original.documentNo);
+
+    /* ⭐ The credit note is its own numbered document, in its own series. */
+    expect(creditNote.kind).toBe('credit_note');
+    expect(creditNote.documentNo).toMatch(/^CN-\d{4}-\d{5}$/u);
+    expect(creditNote.body.citesDocumentNo).toBe(original.documentNo);
+    expect(creditNote.body.reasonTh).toBe('ออกผิดชื่อผู้ซื้อ');
+
+    /* ⭐ And the four figures มาตรา 86/10 wants on its face, all positive. */
+    expect(creditNote.body.adjustment).toStrictEqual({
+      originalNetThbMinor: original.netThbMinor,
+      correctedNetThbMinor: '0',
+      differenceThbMinor: original.netThbMinor,
+      vatOnDifferenceThbMinor: original.vatThbMinor,
+    });
+
+    /* ⭐ The original is struck out, with when and why, and reads back that way. */
+    const listed = (await h.list(orderId)).body as readonly TaxDocumentWire[];
+    const after = listed.find((document) => document.id === original.id);
+    expect(after?.status).toBe('voided');
+    expect(after?.voidedAt).not.toBeNull();
+    expect(after?.voidReasonTh).toBe('ออกผิดชื่อผู้ซื้อ');
+    expect(listed).toHaveLength(2);
+  });
+
+  it('⭐ the order timeline carries both facts, not just the second one', async () => {
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const original = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+    await h.strike(orderId, original.id, 'ลูกค้าขอแก้ที่อยู่');
+
+    const events = await h.call('GET', `/orders/${orderId}/events`, { token: h.sales.token });
+    const spine = (
+      events.body as { events: readonly { eventType: string; payload: Record<string, unknown> }[] }
+    ).events;
+
+    /* Two issues — the tax invoice and the credit note — and one void, all on the order. */
+    expect(spine.filter((e) => e.eventType === 'tax_document_issued')).toHaveLength(2);
+
+    const voided = spine.filter((e) => e.eventType === 'tax_document_voided');
+    expect(voided).toHaveLength(1);
+    expect(voided[0]?.payload['document_no']).toBe(original.documentNo);
+    expect(voided[0]?.payload['reason_th']).toBe('ลูกค้าขอแก้ที่อยู่');
+    /* The replacement is named, so the timeline answers "then what?" without a join. */
+    expect(voided[0]?.payload['credit_note_no']).toMatch(/^CN-/u);
+  });
+
+  it('⭐ striking one out frees the slot, so the corrected document can be raised', async () => {
+    /*
+     * The three unique indexes are partial on `status = 'issued'` precisely for this. A void
+     * that did not free the slot would leave an order permanently unable to have a correct tax
+     * invoice, which is the opposite of what striking one out is for.
+     */
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const first = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+
+    /* Blocked while it stands… */
+    expect((await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null })).status).toBe(409);
+
+    await h.strike(orderId, first.id);
+
+    /* …and permitted once it does not. */
+    const second = await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null });
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect((second.body as TaxDocumentWire).documentNo).not.toBe(first.documentNo);
+  });
+
+  it('⛔ refuses to strike out a credit note, and refuses to strike one out twice', async () => {
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+
+    const original = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+    const { creditNote } = (await h.strike(orderId, original.id)).body as {
+      creditNote: TaxDocumentWire;
+    };
+
+    /* A credit note is what does the reducing; the remedy for a wrong one is a debit note. */
+    const onNote = await h.strike(orderId, creditNote.id);
+    expect(onNote.status, JSON.stringify(onNote.body)).toBe(422);
+    expect(JSON.stringify(onNote.body)).toContain('ใบเพิ่มหนี้');
+
+    const twice = await h.strike(orderId, original.id);
+    expect(twice.status, JSON.stringify(twice.body)).toBe(409);
+    expect(JSON.stringify(twice.body)).toContain('ยกเลิกไปแล้ว');
+  });
+
+  it('⛔ refuses a void with no reason, and a document from another order', async () => {
+    const h = await harness();
+    await h.settings();
+    await h.sellerProfile();
+    const orderId = await h.aSubmittedOrder();
+    await h.billTo(orderId);
+    const original = (await h.issue(orderId, { kind: 'tax_invoice', instalmentId: null }))
+      .body as TaxDocumentWire;
+
+    /* An unexplained strike-through on a numbered series is what an auditor asks about. */
+    expect((await h.strike(orderId, original.id, '   ')).status).toBe(400);
+
+    const otherOrder = await h.aSubmittedOrder();
+    expect((await h.strike(otherOrder, original.id)).status).toBe(404);
   });
 
   it('🔒 a stranger can neither list nor raise', async () => {

@@ -180,6 +180,24 @@ export function TaxDocumentSheet({
           </p>
         )}
 
+        {/*
+          ⛔ The four figures a ใบลดหนี้ must carry on its face: the value the original document
+          stated, the value that is now correct, the difference, and the VAT on that difference.
+          A reader has to see all four without consulting the document being reduced.
+        */}
+        {page.adjustment !== null && (
+          <dl className="border-foreground/15 mb-6 grid grid-cols-[1fr_auto] gap-x-8 gap-y-1 border-y py-4 text-sm">
+            <dt className="text-muted-foreground print:text-black">มูลค่าตามเอกสารเดิม</dt>
+            <dd className="text-right tabular-nums">{page.adjustment.originalText}</dd>
+            <dt className="text-muted-foreground print:text-black">มูลค่าที่ถูกต้อง</dt>
+            <dd className="text-right tabular-nums">{page.adjustment.correctedText}</dd>
+            <dt className="text-muted-foreground print:text-black">ผลต่าง</dt>
+            <dd className="text-right tabular-nums">{page.adjustment.differenceText}</dd>
+            <dt className="text-muted-foreground print:text-black">ภาษีมูลค่าเพิ่มของผลต่าง</dt>
+            <dd className="text-right tabular-nums">{page.adjustment.vatOnDifferenceText}</dd>
+          </dl>
+        )}
+
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-foreground/20 border-b text-left">

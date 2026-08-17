@@ -622,3 +622,25 @@ export const issueTaxDocument = async (
   if (!response.ok) throw await apiErrorFromResponse(response);
   return (await response.json()) as TaxDocumentWire;
 };
+
+/**
+ * ⚠️ Raises a credit note as well as marking the original — one act, because the database will
+ * not accept a void that does not name the document replacing it.
+ */
+export const voidTaxDocument = async (
+  orderId: string,
+  documentId: string,
+  reasonTh: string,
+): Promise<{ readonly voidedDocumentNo: string; readonly creditNote: TaxDocumentWire }> => {
+  const response = await apiFetch(`/orders/${orderId}/tax-documents/${documentId}/void`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reasonTh }),
+  });
+
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return (await response.json()) as {
+    readonly voidedDocumentNo: string;
+    readonly creditNote: TaxDocumentWire;
+  };
+};

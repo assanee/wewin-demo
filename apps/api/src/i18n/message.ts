@@ -435,6 +435,9 @@ const PARAM_SHAPES = {
   'error.taxdoc.already_issued': {},
   /** ⛔ The column of figures on the face does not add up to the face's own total. */
   'error.taxdoc.lines_do_not_foot': { summed: 'money', total: 'money' },
+  'error.taxdoc.not_on_this_order': {},
+  'error.taxdoc.already_voided': {},
+  'error.taxdoc.credit_note_not_voidable': {},
   'error.billto.juristic_needs_tax_id': {},
   'error.stale.override_baselines': {},
   /**

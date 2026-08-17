@@ -162,6 +162,131 @@ export class TaxDocumentService {
     });
   }
 
+  /**
+   * ⭐ ยกเลิกเอกสาร — strike one out, by raising the ใบลดหนี้ that reduces it.
+   *
+   * ── ⚠️ One act, not two ──────────────────────────────────────────────────────
+   *
+   * `tax_documents_freeze()` will not accept a void that does not name the document replacing
+   * it, which is the schema saying what the Revenue Code says: a tax invoice is not cancelled
+   * by crossing it out, it is reduced by a credit note that cites it. So this method raises the
+   * credit note and marks the original in the same transaction, and there is no endpoint that
+   * can do half of it.
+   *
+   * ── ⚠️ A full reversal, and only that ────────────────────────────────────────
+   *
+   * `correctedNetThbMinor` is zero: this is "that document should not have been issued", not
+   * "the price changed". A partial credit note — a discount agreed after invoicing — is a
+   * different act with a different conversation behind it, and giving it the same button would
+   * let somebody reduce an invoice by the wrong amount while believing they had cancelled it.
+   *
+   * ⚠️ Voiding frees the slot. `tax_documents_one_whole_order_tax` and its two siblings are
+   * partial on `status = 'issued'`, so the corrected document can be raised straight afterwards
+   * — which is the whole point of striking one out.
+   */
+  async void(
+    scope: Scope,
+    orderId: string,
+    documentId: string,
+    input: { readonly reasonTh: string },
+  ): Promise<{ readonly voidedDocumentNo: string; readonly creditNote: TaxDocumentWire }> {
+    const order = await this.scoped.findOrFail(scope, orderId, 'act');
+
+    return this.db.transaction(async (tx) => {
+      const original = records(
+        await tx.execute(sql`
+          select id::text, kind, status, document_no, instalment_id::text,
+                 net_thb_minor::text, vat_thb_minor::text, grand_total_thb_minor::text, document
+            from tax_documents
+           where id = ${documentId}::uuid and order_id = ${order.id}::uuid
+           for update
+        `),
+      )[0];
+
+      if (original === undefined) {
+        throw new AppError('NOT_FOUND', 404, message('error.taxdoc.not_on_this_order'));
+      }
+
+      if (original['status'] !== 'issued') {
+        throw new AppError('CONFLICT', 409, message('error.taxdoc.already_voided'));
+      }
+
+      /*
+       * ⛔ A credit note is what does the reducing. Striking one out would need a second credit
+       * note against it, which is not a thing — the remedy for a wrong credit note is a debit
+       * note (ใบเพิ่มหนี้), which this system does not have yet.
+       */
+      if (original['kind'] === 'credit_note') {
+        throw new AppError('VALIDATION_FAILED', 422, message('error.taxdoc.credit_note_not_voidable'));
+      }
+
+      const body = original['document'] as TaxDocumentBodyWire;
+      const net = String(original['net_thb_minor']);
+      const vat = String(original['vat_thb_minor']);
+
+      const creditNote = await this.write(tx, {
+        orderId: order.id,
+        kind: 'credit_note',
+        /*
+         * ⚠️ The credit note does NOT inherit the original's `instalment_id`.
+         *
+         * `tax_documents_one_per_instalment_kind` is keyed on (instalment, kind) and would be
+         * satisfied either way, but the deeper reason is what the column means: it says "this
+         * document is the tax document for that instalment". The credit note is not — it is the
+         * document that withdraws one. Copying it would make a later reader believe the
+         * instalment still has a live document attached to it.
+         */
+        instalmentId: null,
+        replacesDocumentId: String(original['id']),
+        citesDocumentNo: String(original['document_no']),
+        reasonTh: input.reasonTh,
+        actorUserId: scope.kind === 'user' ? scope.userId : null,
+        body: {
+          ...body,
+          bodySchemaVersion: 2,
+          kind: 'credit_note',
+          /* The figures are the original's, positive, with the direction carried by the kind. */
+          netThbMinor: net,
+          vatThbMinor: vat,
+          grandTotalThbMinor: String(original['grand_total_thb_minor']),
+          adjustment: {
+            originalNetThbMinor: net,
+            correctedNetThbMinor: '0',
+            differenceThbMinor: net,
+            vatOnDifferenceThbMinor: vat,
+          },
+        },
+      });
+
+      /*
+       * ⚠️ Both columns, or the trigger refuses — and it is right to. A document marked void
+       * with no replacement named is a hole in the series that nobody can explain.
+       */
+      await tx.execute(sql`
+        update tax_documents
+           set status = 'voided',
+               voided_at = now(),
+               voided_by_document_id = ${creditNote.id}::uuid,
+               void_reason_th = ${input.reasonTh}
+         where id = ${documentId}::uuid
+      `);
+
+      await tx.execute(sql`
+        insert into order_events (order_id, event_type, actor_kind, actor_user_id, payload)
+        values (${order.id}::uuid, 'tax_document_voided', 'staff',
+                ${scope.kind === 'user' ? scope.userId : null}::uuid,
+                ${JSON.stringify({
+                  document_no: String(original['document_no']),
+                  document_kind: String(original['kind']),
+                  reason_th: input.reasonTh,
+                  credit_note_no: creditNote.documentNo,
+                })}::jsonb)
+      `);
+
+      return { voidedDocumentNo: String(original['document_no']), creditNote };
+    });
+  }
+
   /* ------------------------------------------------------------------ *
    * What goes on the page
    * ------------------------------------------------------------------ */
@@ -221,7 +346,7 @@ export class TaxDocumentService {
     const basis = String(
       (quotation['document'] as { taxBasis?: unknown } | null)?.taxBasis ?? 'exclusive',
     );
-    const columnTotal = basis === 'inclusive' ? grand : net;
+    const linesSumTo = basis === 'inclusive' ? ('grand_total' as const) : ('net' as const);
 
     /*
      * ⚠️ An instalment document lists ONE line naming the instalment, not the order's goods.
@@ -235,13 +360,11 @@ export class TaxDocumentService {
             {
               descriptionTh: `${subject.labelTh} ตามใบเสนอราคาเลขที่ ${text(orderRow?.['order_no']) ?? '—'}`,
               quantity: 1,
-              unitThbMinor: columnTotal,
-              amountThbMinor: columnTotal,
+              unitThbMinor: linesSumTo === 'grand_total' ? grand : net,
+              amountThbMinor: linesSumTo === 'grand_total' ? grand : net,
             },
           ]
         : this.linesFrom(quotation['document']);
-
-    this.assertFoots(lines, columnTotal, basis);
 
     return {
       bodySchemaVersion: 1,
@@ -265,6 +388,7 @@ export class TaxDocumentService {
       buyer,
       subject,
       lines,
+      linesSumTo,
       vat: {
         rateBp: Number(quotation['pinned_vat_rate_bp']),
         treatment: String(quotation['pinned_vat_treatment']),
@@ -284,13 +408,16 @@ export class TaxDocumentService {
    * whose lines sum to ฿0.00 beside a total of ฿117.70 — which is what this service did until
    * the field names in `linesFrom` were checked against `OrderDocumentLineWire`. This single
    * assertion catches every one of those four bugs at once, and any future one like them.
+   *
+   * ⚠️ Called from `write()` and not from `buildBody()`, because `write()` is the one door every
+   * document goes through. A credit note is built from another document rather than from a
+   * quotation, so a guard living in `buildBody` would have let exactly the documents that
+   * correct mistakes past unchecked.
    */
-  private assertFoots(
-    lines: TaxDocumentBodyWire['lines'],
-    columnTotal: string,
-    basis: string,
-  ): void {
-    const summed = lines.reduce((total, line) => total + BigInt(line.amountThbMinor), 0n);
+  private assertFoots(body: Omit<TaxDocumentBodyWire, 'documentNo' | 'issuedAt' | 'documentHash'>): void {
+    const summed = body.lines.reduce((total, line) => total + BigInt(line.amountThbMinor), 0n);
+    const columnTotal =
+      body.linesSumTo === 'grand_total' ? body.grandTotalThbMinor : body.netThbMinor;
 
     if (summed !== BigInt(columnTotal)) {
       throw new AppError(
@@ -300,7 +427,7 @@ export class TaxDocumentService {
           summed: thb(summed),
           total: thb(BigInt(columnTotal)),
         }),
-        { basis, lineCount: lines.length },
+        { linesSumTo: body.linesSumTo ?? 'net', lineCount: body.lines.length },
       );
     }
   }
@@ -492,6 +619,9 @@ export class TaxDocumentService {
       readonly reasonTh?: string;
     },
   ): Promise<TaxDocumentWire> {
+    /* ⛔ Before the number, always. A refusal after one is taken is a hole in the series. */
+    this.assertFoots(input.body);
+
     const numbered = records(
       await tx.execute(sql`select * from next_document_no(${SERIES_OF[input.kind]}, now())`),
     )[0];

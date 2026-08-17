@@ -99,6 +99,17 @@ export interface PrintableTaxDocument {
   readonly grandTotalText: string;
   /** Set on a credit note: the number of the document being reduced, and why. */
   readonly citesText: string | null;
+  /**
+   * ⛔ The four figures มาตรา 86/10 wants on the face of a ใบลดหนี้: what the original said,
+   * what is correct, the difference, and the VAT on the difference. Null on every other kind,
+   * and on a credit note issued before the body carried them.
+   */
+  readonly adjustment: {
+    readonly originalText: string;
+    readonly correctedText: string;
+    readonly differenceText: string;
+    readonly vatOnDifferenceText: string;
+  } | null;
   readonly reasonTh: string | null;
   /**
    * ⛔ Struck out. Read from the ROW, never from the body — `tax_documents_freeze()` permits
@@ -142,9 +153,18 @@ export interface TaxDocumentSource {
       readonly amountThbMinor: string;
     }[];
     readonly vat: { readonly rateBp: number; readonly treatment: string };
+    readonly linesSumTo?: 'net' | 'grand_total' | undefined;
     readonly citesDocumentNo: string | null;
+    readonly adjustment?: TaxDocumentAdjustmentSource | undefined;
     readonly reasonTh: string | null;
   };
+}
+
+interface TaxDocumentAdjustmentSource {
+  readonly originalNetThbMinor: string;
+  readonly correctedNetThbMinor: string;
+  readonly differenceThbMinor: string;
+  readonly vatOnDifferenceThbMinor: string;
 }
 
 interface RawParty {
@@ -193,8 +213,21 @@ export function printableTaxDocument(source: TaxDocumentSource): PrintableTaxDoc
     (total, line) => total + BigInt(line.amountThbMinor),
     0n,
   );
-  /* Under the inclusive presentation the column is the grand total; otherwise it is the net. */
-  const columnTotal = BigInt(abbreviated ? source.grandTotalThbMinor : source.netThbMinor);
+  /*
+   * ⚠️ Read from the body, not re-derived here.
+   *
+   * This used to ask whether the document was abbreviated, which is a PRESENTATION choice, while
+   * the issuing service asked the quotation's `taxBasis`, which is a FACT about what the line
+   * figures contain. The two agree only when an abbreviated invoice happens to sit on an
+   * inclusive quotation; everywhere else one of them was wrong. The body now states the fact,
+   * decided once where the basis is known.
+   *
+   * `'net'` for a `bodySchemaVersion: 1` body, which is the only basis anything was issued
+   * under before the field existed.
+   */
+  const columnTotal = BigInt(
+    source.body.linesSumTo === 'grand_total' ? source.grandTotalThbMinor : source.netThbMinor,
+  );
 
   return {
     captionTh: TAX_DOCUMENT_CAPTION_TH[source.kind],
@@ -228,6 +261,15 @@ export function printableTaxDocument(source: TaxDocumentSource): PrintableTaxDoc
       source.body.citesDocumentNo === null
         ? null
         : `อ้างถึงเอกสารเลขที่ ${source.body.citesDocumentNo}`,
+    adjustment:
+      source.body.adjustment === undefined
+        ? null
+        : {
+            originalText: thb(source.body.adjustment.originalNetThbMinor),
+            correctedText: thb(source.body.adjustment.correctedNetThbMinor),
+            differenceText: thb(source.body.adjustment.differenceThbMinor),
+            vatOnDifferenceText: thb(source.body.adjustment.vatOnDifferenceThbMinor),
+          },
     reasonTh: source.body.reasonTh,
     voidedNoticeTh:
       source.status === 'voided'

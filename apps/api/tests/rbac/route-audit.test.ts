@@ -554,6 +554,8 @@ describe('boot-time route audit', () => {
        * signed-in customer mint a ใบกำกับภาษี made out to themselves.
        */
       'POST /orders/:orderId/tax-documents [permissions]',
+      /* Consumes a second number and marks a filed document withdrawn — staff only. */
+      'POST /orders/:orderId/tax-documents/:documentId/void [permissions]',
       'POST /orders/:orderId/transitions/:toStatus [principal]',
       /*
        * ⭐ ขออนุมัติตัดยอดค้างทิ้ง — ask for a customer's outstanding balance to be forgiven.

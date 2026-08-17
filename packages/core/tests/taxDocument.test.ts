@@ -167,6 +167,7 @@ describe('the money', () => {
         body: {
           ...source().body,
           buyer: null,
+          linesSumTo: 'grand_total',
           lines: [
             {
               descriptionTh: 'ชุดครัวสั่งทำ',
@@ -261,5 +262,108 @@ describe('the date and the subject', () => {
       } as Partial<TaxDocumentSource>),
     );
     expect(page.subjectText).toBe('งวดที่ 1');
+  });
+});
+
+describe('a credit note', () => {
+  const creditNote = () =>
+    printableTaxDocument(
+      source({
+        kind: 'credit_note',
+        netThbMinor: '11000',
+        vatThbMinor: '770',
+        grandTotalThbMinor: '11770',
+        body: {
+          ...source().body,
+          citesDocumentNo: 'TAX-2569-00007',
+          reasonTh: 'ออกผิดชื่อผู้ซื้อ',
+          adjustment: {
+            originalNetThbMinor: '11000',
+            correctedNetThbMinor: '0',
+            differenceThbMinor: '11000',
+            vatOnDifferenceThbMinor: '770',
+          },
+        },
+      } as Partial<TaxDocumentSource>),
+    );
+
+  it('⭐ carries the four figures มาตรา 86/10 wants, all positive', () => {
+    /*
+     * A reader has to see the value the original stated, the value that is now correct, the
+     * difference and the VAT on the difference — on the page, without fetching the document
+     * being reduced. The body had one net/vat/grand triple and nowhere to put the other three.
+     */
+    expect(creditNote().adjustment).toStrictEqual({
+      originalText: '฿110.00',
+      correctedText: '฿0.00',
+      differenceText: '฿110.00',
+      vatOnDifferenceText: '฿7.70',
+    });
+  });
+
+  it('⭐ names the document it reduces, and why', () => {
+    expect(creditNote().captionTh).toBe('ใบลดหนี้');
+    expect(creditNote().citesText).toContain('TAX-2569-00007');
+    expect(creditNote().reasonTh).toBe('ออกผิดชื่อผู้ซื้อ');
+  });
+
+  it('⭐ no other kind carries an adjustment block', () => {
+    /* The anti-vacuity half: if this returned an object for everything, the test above is empty. */
+    expect(printableTaxDocument(source()).adjustment).toBeNull();
+  });
+});
+
+describe('what the line column adds up to', () => {
+  it('⛔ is read from the body, not guessed from the kind', () => {
+    /*
+     * Two places were deriving this by different rules: the issuing service asked the
+     * quotation's `taxBasis` — a fact about what the figures contain — and this module asked
+     * whether the document was abbreviated, which is a presentation choice. They agree only
+     * when an abbreviated invoice happens to sit on an inclusive quotation.
+     *
+     * Here is the case that separated them: an ABBREVIATED invoice whose lines are exclusive.
+     * The old rule compared the column against the grand total and reported a false problem.
+     */
+    const page = printableTaxDocument(
+      source({
+        kind: 'abbreviated_tax_invoice',
+        netThbMinor: '11000',
+        vatThbMinor: '770',
+        grandTotalThbMinor: '11770',
+        body: { ...source().body, buyer: null, linesSumTo: 'net' },
+      } as Partial<TaxDocumentSource>),
+    );
+
+    expect(page.footingProblemTh).toBeNull();
+  });
+
+  it('⭐ a body that says grand_total is footed against the grand total', () => {
+    const page = printableTaxDocument(
+      source({
+        netThbMinor: '11000',
+        vatThbMinor: '770',
+        grandTotalThbMinor: '11770',
+        body: {
+          ...source().body,
+          linesSumTo: 'grand_total',
+          lines: [
+            {
+              descriptionTh: 'ชุดครัวสั่งทำ',
+              quantity: 1,
+              unitThbMinor: '11770',
+              amountThbMinor: '11770',
+            },
+          ],
+        },
+      } as Partial<TaxDocumentSource>),
+    );
+
+    expect(page.footingProblemTh).toBeNull();
+  });
+
+  it('⚠️ a bodySchemaVersion 1 body has no such field and is footed against the net', () => {
+    /* Frozen documents cannot be migrated, so the absent case must keep reading correctly. */
+    const page = printableTaxDocument(source());
+    expect(page.footingProblemTh).toBeNull();
   });
 });
